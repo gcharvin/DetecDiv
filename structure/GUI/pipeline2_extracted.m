@@ -4747,6 +4747,38 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isfield(app.RuntimeFieldHandles, 'availableResources') || ~isvalid(app.RuntimeFieldHandles.availableResources)
                 return;
             end
+            if runtimeStartsFromClassifier(app)
+                intent = getRuntimeValue(app, 'intent');
+                if isempty(strtrim(intent))
+                    intent = 'infer';
+                end
+                roiText = getRuntimeValue(app, 'rois');
+                if isempty(strtrim(roiText))
+                    if ~isempty(app.ExplicitRuntimeRoiList)
+                        roiText = sprintf('1:%d', numel(app.ExplicitRuntimeRoiList));
+                    else
+                        roiText = 'unresolved';
+                    end
+                end
+                frameText = getRuntimeValue(app, 'frames');
+                if isempty(strtrim(frameText))
+                    frameText = 'all';
+                end
+                channelText = getRuntimeValue(app, 'channels');
+                if isempty(strtrim(channelText))
+                    channelText = 'classifier default';
+                end
+                lines = {'Run summary: classifier attached ROIs'};
+                lines{end+1} = ['Intent: ' intent];
+                lines{end+1} = sprintf('Classifier ROI inventory: %d ROI(s)', numel(app.ExplicitRuntimeRoiList));
+                lines{end+1} = ['ROIs selected by classifierGUI: ' roiText];
+                lines{end+1} = ['Frames: ' frameText];
+                lines{end+1} = ['Channels: ' channelText];
+                lines{end+1} = 'Authority: classifierGUI train/test split';
+                lines{end+1} = 'Execution target: select on the Runtime options tab';
+                app.RuntimeFieldHandles.availableResources.Value = lines;
+                return;
+            end
             if ~runtimeStartsFromExistingProject(app)
                 lines = {'Run summary: parse raw images into project'};
                 projectPath = getRuntimeValue(app, 'projectPath');
@@ -5095,15 +5127,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 setRuntimeButtonEnabled(app, 'projectPath', false);
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
                 if app.RuntimeInputModeLocked
-                    classifierIntent = lower(strtrim(getRuntimeValue(app, 'intent')));
                     lockedMsg = 'Fixed by classifierGUI train/test selection for this classifier run.';
                     lockRuntimeFieldForClassifier(app, 'fovs', lockedMsg);
-                    if strcmp(classifierIntent, 'validate')
-                        unlockRuntimeFieldForClassifier(app, 'frames', ...
-                            'Validation run: optionally restrict the evaluated frame range. Leave empty for all frames.');
-                    else
-                        lockRuntimeFieldForClassifier(app, 'frames', lockedMsg);
-                    end
+                    unlockRuntimeFieldForClassifier(app, 'frames', ...
+                        'Classifier run: optionally restrict the processed/evaluated frame range. Leave empty for all frames.');
                     lockRuntimeFieldForClassifier(app, 'rois', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'channels', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'outputPolicy', lockedMsg);
