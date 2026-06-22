@@ -396,9 +396,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     mode = 'existing_rois';
                 case {'raw','raw_data','raw_dataloader','parse_raw','parse_raw_images','raw_to_project','parse_raw_images_into_project'}
                     mode = 'raw_dataloader';
+                case {'classifier','classi','classifier_rois','classifier_roi','attached_classifier','attached_rois','classifier_input'}
+                    mode = 'classifier_rois';
                 otherwise
                     error('pipeline2:InvalidInputMode', ...
-                        'Invalid InputMode "%s". Use "project" or "raw".', char(string(value)));
+                        'Invalid InputMode "%s". Use "project", "raw", or "classifier".', char(string(value)));
             end
         end
 
@@ -1093,6 +1095,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 mode = 'existing_rois';
             end
             tf = strcmpi(char(string(mode)), 'existing_rois');
+        end
+
+        function tf = runtimeStartsFromClassifier(app)
+            mode = getRuntimeValue(app, 'inputSourceMode');
+            tf = strcmpi(char(string(mode)), 'classifier_rois');
         end
 
         function tf = hasLoadedRuntimeProject(app)
@@ -3198,8 +3205,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeValues = struct();
             app.RuntimeParseInfo = struct();
 
-            app.RuntimeSourceDropDown.Items = {'Read from existing project','Parse raw images into project'};
-            app.RuntimeSourceDropDown.ItemsData = {'existing_rois','raw_dataloader'};
+            app.RuntimeSourceDropDown.Items = {'Read from existing project','Parse raw images into project','Use classifier attached ROIs'};
+            app.RuntimeSourceDropDown.ItemsData = {'existing_rois','raw_dataloader','classifier_rois'};
             app.RuntimeSourceDropDown.Value = 'existing_rois';
             app.RuntimeSourceDropDown.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'inputSourceMode', src.Value);
 
@@ -3563,11 +3570,12 @@ classdef pipeline2 < matlab.apps.AppBase
             dd = uidropdown(grid);
             dd.Layout.Row = row;
             dd.Layout.Column = [2 4];
-            dd.Items = {'Read from existing project','Parse raw images into project'};
-            dd.ItemsData = {'existing_rois','raw_dataloader'};
+            dd.ItemsData = {'existing_rois','raw_dataloader','classifier_rois'};
+            dd.Items = {'Read from existing project','Parse raw images into project','Use classifier attached ROIs'};
             dd.Value = 'existing_rois';
             dd.Tooltip = ['Read from existing project: use FOV/ROI/channels/dataseries already stored in the selected project; raw-image nodes require saved FOV image sources. ' ...
-                'Parse raw images into project: use the raw folder as the image source and write loaded FOVs, ROIs and outputs into the selected project.'];
+                'Parse raw images into project: use the raw folder as the image source and write loaded FOVs, ROIs and outputs into the selected project. ' ...
+                'Use classifier attached ROIs: classify the ROI objects imported into the classifier, without selecting a project or raw folder.'];
             dd.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'inputSourceMode', src.Value);
 
             app.RuntimeFieldHandles.inputSourceMode = dd;
@@ -3728,7 +3736,10 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeProgress(app, d, 'Refreshing project list...');
             refreshProjectDropdown(app);
 
-            if strcmpi(value, 'raw_dataloader')
+            if strcmpi(value, 'classifier_rois')
+                updateRuntimeProgress(app, d, 'Using classifier-attached ROI inventory...');
+                updateRuntimeResourceInventory(app);
+            elseif strcmpi(value, 'raw_dataloader')
                 rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
                 if (isempty(rawDataPath) || strcmpi(rawDataPath, 'Project source path not resolved')) && ...
                         isfield(app.RuntimeValues, 'rawDataPathActive') && ~isempty(app.RuntimeValues.rawDataPathActive)
@@ -5013,11 +5024,18 @@ classdef pipeline2 < matlab.apps.AppBase
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
             rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
             startsFromProject = runtimeStartsFromExistingProject(app);
+            startsFromClassifier = runtimeStartsFromClassifier(app);
             loadedProjectOk = startsFromProject && hasLoadedRuntimeProject(app);
             projectOk = projectPathOk || loadedProjectOk;
 
             try
-                if startsFromProject
+                if startsFromClassifier
+                    app.RuntimeFieldHandles.projectPath.Tooltip = 'Classifier mode: project selection is not used. The classifier attached ROIs are the runtime input.';
+                    app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Classifier mode: raw data folder is not used. ROI image data already attached to the classifier are classified.';
+                    app.RuntimeFieldHandles.projectSource.Enable = 'off';
+                    app.RuntimeButtonHandles.projectPath.Text = 'Classifier';
+                    app.RuntimeButtonHandles.projectPath.Tooltip = 'The run is attached to the classifier folder.';
+                elseif startsFromProject
                     app.RuntimeFieldHandles.projectPath.Tooltip = 'Read mode: this project supplies existing FOVs, ROIs, channels and dataseries. Raw-image nodes also require usable FOV image sources saved in the project.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Informational only in project-input mode: raw source path inferred from saved project FOVs, when available.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'on';
@@ -5046,11 +5064,18 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
 
-            if ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
+            if startsFromClassifier
+                markRuntimeField(app, 'projectPath', 'blocked', 'Classifier mode uses the classifier object and its attached ROIs, not a shallow project.');
+                markRuntimeField(app, 'rawDataPath', 'blocked', 'Classifier mode uses classifier.roi image data, not a raw data folder.');
+                setRuntimeButtonEnabled(app, 'projectPath', false);
+                setRuntimeButtonEnabled(app, 'rawDataPath', false);
+            elseif ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
                 markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
             end
 
-            if startsFromProject
+            if startsFromClassifier
+                % Project/raw warnings are intentionally suppressed in classifier mode.
+            elseif startsFromProject
                 sourcePath = projectSourcePath(app, app.CurrentProject);
                 if ~isempty(sourcePath)
                     tip = ['Read-only: raw source path recorded in the selected project/FOVs: ' sourcePath];
@@ -5093,11 +5118,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 setRuntimeButtonEnabled(app, 'rawDataPath', true);
             end
 
-            if ~startsFromProject && ~projectOk
+            if startsFromClassifier
+                projectOk = true;
+            elseif ~startsFromProject && ~projectOk
                 markRuntimeField(app, 'projectPath', 'missing', 'Raw-data mode requires creating a new target project.');
             end
 
-            if startsFromProject && ~projectOk
+            if startsFromClassifier
+                setRuntimeButtonEnabled(app, 'channels', true);
+            elseif startsFromProject && ~projectOk
                 markRuntimeField(app, 'channels', 'blocked', 'Select an existing project before selecting ROI channels.');
                 setRuntimeButtonEnabled(app, 'channels', false);
             elseif ~startsFromProject && ~projectOk && ~rawOk
@@ -12412,7 +12441,9 @@ classdef pipeline2 < matlab.apps.AppBase
         function label = runtimeInputModeLabel(app)
             label = 'Read from existing project';
             try
-                if ~runtimeStartsFromExistingProject(app)
+                if runtimeStartsFromClassifier(app)
+                    label = 'Use classifier attached ROIs';
+                elseif ~runtimeStartsFromExistingProject(app)
                     label = 'Parse raw images into project';
                 end
             catch
@@ -12422,7 +12453,18 @@ classdef pipeline2 < matlab.apps.AppBase
         function txt = runtimeAvailableFovSummary(app)
             txt = 'unresolved';
             try
-                if runtimeStartsFromExistingProject(app)
+                if runtimeStartsFromClassifier(app)
+                    n = numel(app.ExplicitRuntimeRoiList);
+                    if n > 0
+                        suffix = '';
+                        if n ~= 1
+                            suffix = 's';
+                        end
+                        txt = sprintf('classifier ROI set (%d ROI%s)', n, suffix);
+                    else
+                        txt = 'classifier ROI set not attached';
+                    end
+                elseif runtimeStartsFromExistingProject(app)
                     if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                         n = numel(app.CurrentProject.fov);
                         txt = sprintf('1:%d from loaded project (%d total)', max(1, n), n);
@@ -13616,6 +13658,7 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run = struct();
             ctx.run.selectedNodes = selectedRunNodeIds(app);
             ctx.run.nodeParams = buildRunNodeParams(app);
+            ctx.run.inputSourceMode = getRuntimeValue(app, 'inputSourceMode');
             ctx.run.runPolicy = resumeModeToRunPolicy(app, app.ResumeoptionsDropDown.Value);
             ctx.run.resume = strcmp(ctx.run.runPolicy, 'resume');
             ctx.run.gpuPolicy = lower(char(string(app.ExecutionDropDown.Value)));
@@ -13699,6 +13742,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
             rawDataPath = effectiveRuntimeRawDataPath(app);
             projectPath = getRuntimeValue(app, 'projectPath');
+            if runtimeStartsFromClassifier(app)
+                rawDataPath = '';
+                projectPath = '';
+            end
             useProjectSources = runtimeShouldUseExistingProjectSources(app);
             ctx.run.rawDataPath = rawDataPath;
             ctx.run.projectPath = projectPath;
@@ -13721,6 +13768,10 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function rawDataPath = effectiveRuntimeRawDataPath(app)
+            if runtimeStartsFromClassifier(app)
+                rawDataPath = '';
+                return;
+            end
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
             if ~runtimeStartsFromExistingProject(app)
                 return;
@@ -13745,6 +13796,10 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function source = inferRuntimeInputSource(app)
+            if runtimeStartsFromClassifier(app)
+                source = 'classifier attached rois';
+                return;
+            end
             rawStartNodeIds = selectedRunNodeIdsByType(app, {'dataloader','roigrid','roiidentify','roimanual','roipattern','roiextract'});
             if ~runtimeStartsFromExistingProject(app)
                 source = 'pipeline start (dataloader)';
@@ -13784,6 +13839,10 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function source = inferRuntimeInputSourceFast(app)
+            if runtimeStartsFromClassifier(app)
+                source = 'classifier attached rois';
+                return;
+            end
             rawStartNodeIds = selectedRunNodeIdsByType(app, {'dataloader','roigrid','roiidentify','roimanual','roipattern','roiextract'});
             if ~runtimeStartsFromExistingProject(app)
                 source = 'pipeline start (dataloader)';
@@ -16220,6 +16279,11 @@ classdef pipeline2 < matlab.apps.AppBase
             mode = '';
             txt = lower(strtrim(char(string(value))));
             if isempty(txt)
+                return;
+            end
+            if any(strcmp(txt, {'classifier','classifier_rois','classifier attached rois'})) || ...
+                    contains(txt, 'classifier attached')
+                mode = 'classifier_rois';
                 return;
             end
             if any(strcmp(txt, {'raw','raw_data','raw_dataloader'})) || ...
