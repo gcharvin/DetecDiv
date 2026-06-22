@@ -14,7 +14,7 @@ if isempty(roiIdx)
     error('classifierOpenValidationPipeline:NoRoi', ...
         'No %s ROI found. Select train/test ROIs in classifierGUI or import ROIs first.', opts.intent);
 end
-roiList = classiObj.roi(roiIdx);
+roiList = classiObj.roi;
 
 pipeObj = buildClassifierPipeline(classiObj, opts);
 ensureClassifierSnapshot(classiObj);

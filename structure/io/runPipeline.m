@@ -2679,8 +2679,9 @@ function ctx = executeClassifierNode(node, ctx)
     if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
         args = [args {'Progress', ctx.progressDlg}]; %#ok<AGROW>
     end
-    if isfield(p,'frames') && ~isempty(p.frames)
-        args = [args {'Frames', p.frames}]; %#ok<AGROW>
+    framesForRun = classifierRuntimeFrames(p, ctx);
+    if ~isempty(framesForRun)
+        args = [args {'Frames', framesForRun}]; %#ok<AGROW>
     end
     if ~isempty(ch)
         args = [args {'Channel', ch}]; %#ok<AGROW>
@@ -2782,6 +2783,30 @@ switch txt
         intent = 'validate';
     otherwise
         intent = 'infer';
+end
+end
+
+function frames = classifierRuntimeFrames(p, ctx)
+frames = [];
+try
+    if isstruct(p) && isfield(p, 'frames') && ~isempty(p.frames)
+        frames = p.frames;
+        return;
+    end
+catch
+end
+try
+    if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'frames') && ~isempty(ctx.run.frames)
+        frames = ctx.run.frames;
+        return;
+    end
+catch
+end
+try
+    if isfield(ctx, 'sel') && isstruct(ctx.sel) && isfield(ctx.sel, 'frames') && ~isempty(ctx.sel.frames)
+        frames = ctx.sel.frames;
+    end
+catch
 end
 end
 

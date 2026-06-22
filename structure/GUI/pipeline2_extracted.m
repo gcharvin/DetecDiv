@@ -5095,9 +5095,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 setRuntimeButtonEnabled(app, 'projectPath', false);
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
                 if app.RuntimeInputModeLocked
+                    classifierIntent = lower(strtrim(getRuntimeValue(app, 'intent')));
                     lockedMsg = 'Fixed by classifierGUI train/test selection for this classifier run.';
                     lockRuntimeFieldForClassifier(app, 'fovs', lockedMsg);
-                    lockRuntimeFieldForClassifier(app, 'frames', lockedMsg);
+                    if strcmp(classifierIntent, 'validate')
+                        unlockRuntimeFieldForClassifier(app, 'frames', ...
+                            'Validation run: optionally restrict the evaluated frame range. Leave empty for all frames.');
+                    else
+                        lockRuntimeFieldForClassifier(app, 'frames', lockedMsg);
+                    end
                     lockRuntimeFieldForClassifier(app, 'rois', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'channels', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'outputPolicy', lockedMsg);
@@ -5184,6 +5190,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 markRuntimeField(app, key, 'blocked', tooltip);
                 if isfield(app.RuntimeFieldHandles, key) && isvalid(app.RuntimeFieldHandles.(key))
                     app.RuntimeFieldHandles.(key).Enable = 'off';
+                end
+            catch
+            end
+        end
+
+        function unlockRuntimeFieldForClassifier(app, key, tooltip)
+            try
+                if isfield(app.RuntimeFieldHandles, key) && isvalid(app.RuntimeFieldHandles.(key))
+                    field = app.RuntimeFieldHandles.(key);
+                    field.Enable = 'on';
+                    field.FontColor = [0 0 0];
+                    field.BackgroundColor = [1 1 1];
+                    field.Tooltip = tooltip;
                 end
             catch
             end
