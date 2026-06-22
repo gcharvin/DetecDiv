@@ -16,6 +16,7 @@ p.sam3Repo = sam3Repo;
 p.artifactsRoot = getenvOrDefault('SAM31_ARTIFACTS_ROOT', '');
 p.trainingFolderName = 'trainingdataset';
 p.ctcSubfolder = '';
+p.writeLegacyCtc = false;
 p.numGpus = 1;
 p.prepareBeforeTrain = true;
 p.prepareOnly = false;

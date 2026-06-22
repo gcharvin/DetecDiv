@@ -4,15 +4,15 @@ This package is intentionally a thin DetecDiv adapter.
 
 The generic SAM3.1 repository remains independent from DetecDiv:
 
-- DetecDiv exports annotations directly as the SAM31 CTC source layout with `SEG`, `TRA`, and `man_track.txt`.
-- The SAM31 benchmark repository converts those CTC folders to its own image/video/tracklet datasets.
+- DetecDiv exports annotations as SAM31-ready JSON plus a HDF5 framebank. The legacy CTC `SEG`, `TRA`, and `man_track.txt` export can still be enabled as a compatibility/debug artifact with the internal `writeLegacyCtc` flag.
+- The SAM31 benchmark repository can train directly from the JSON/framebank export, or fall back to converting CTC folders when only CTC is available.
 - Training and evaluation are launched through the generic `scripts/sam31_moma.py` CLI.
 - Inference from DetecDiv writes one ROI movie to a temporary `.mat`, calls a separate Python runner, then imports `results.mat` masks back into a DetecDiv result channel.
 
 ## MATLAB Entry Points
 
 - `sam31.setparam`: initialize training/inference parameters.
-- `sam31.format`: export DetecDiv annotations to `classif.path/trainingdataset/train/CTC` and `classif.path/trainingdataset/val/CTC`.
+- `sam31.format`: export DetecDiv annotations to `classif.path/trainingdataset/<split>/_annotations.*.json` plus `<classifier>_sam31_framebank.h5`; legacy CTC writing is disabled by default.
 - `sam31.train`: call the generic SAM31 CLI to prepare datasets and train selected modules.
 - `sam31.classify`: run SAM3.1 full-model inference on one ROI.
 - `sam31.executionSpec`: expose inference parameters to pipeline nodes.
@@ -33,6 +33,6 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 
 ## Data Contract
 
-The training export keeps object IDs across frames in `TRA` masks and preserves parentage in `man_track.txt`.
-The SAM31 benchmark preparation scripts consume the CTC root directly, so no intermediate `moma` folder is created for SAM31 classifiers.
-This is the bridge to future mother-bud assignment work: SAM3.1 handles segmentation/tracking, while parentage can be trained later from the same CTC lineage metadata.
+The preferred training export keeps formatted raw images in one HDF5 framebank and stores instance masks as COCO RLE in JSON.
+Video JSON records keep object IDs across frames through `track_id` and preserve parentage through `parent_id` / `parent_track_id`.
+This is the bridge to future mother-bud assignment work: SAM3.1 handles segmentation/tracking, while parentage can be trained later from the same lineage metadata.

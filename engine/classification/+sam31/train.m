@@ -52,16 +52,16 @@ if isempty(strtrim(ctcSubfolder)) || strcmp(strtrim(ctcSubfolder), '.')
 else
     datasetRoot = fullfile(base, trainingFolderName, ctcSubfolder);
 end
-if ~hasCtcSplits(datasetRoot)
+if ~hasSam31DirectSplits(datasetRoot) && ~hasCtcSplits(datasetRoot)
     legacyDatasetRoot = fullfile(base, trainingFolderName, 'moma');
-    if hasCtcSplits(legacyDatasetRoot)
+    if hasSam31DirectSplits(legacyDatasetRoot) || hasCtcSplits(legacyDatasetRoot)
         warning('sam31:LegacyCTCExport', ...
             'Using legacy SAM31 CTC export layout: %s. Re-run sam31.format to use %s.', ...
             legacyDatasetRoot, datasetRoot);
         datasetRoot = legacyDatasetRoot;
     else
-        error('sam31:MissingCTCExport', ...
-            'CTC dataset not found under %s. Expected train/CTC or val/CTC. Run sam31.format first.', ...
+        error('sam31:MissingTrainingExport', ...
+            'SAM31 dataset not found under %s. Expected direct JSON/framebank or train/CTC or val/CTC. Run sam31.format first.', ...
             datasetRoot);
     end
 end
@@ -149,4 +149,9 @@ end
 function tf = hasCtcSplits(root)
 tf = exist(fullfile(root, 'train', 'CTC'), 'dir') == 7 || ...
     exist(fullfile(root, 'val', 'CTC'), 'dir') == 7;
+end
+
+function tf = hasSam31DirectSplits(root)
+tf = exist(fullfile(root, 'train', '_annotations.coco.json'), 'file') == 2 || ...
+    exist(fullfile(root, 'val', '_annotations.coco.json'), 'file') == 2;
 end
