@@ -7,44 +7,55 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     if nargin < 2
         shallowObj = [];
     end
+    opts = localRunStage('parse options', @() localParse(varargin{:}));
     projectArgClass = localClassName(shallowObj);
     shallowObj = localResolveShallowProject(runObj, shallowObj);
-    if isempty(shallowObj)
+    classifierScopedRun = isempty(shallowObj) && localIsClassifierScopedRun(runObj);
+    if isempty(shallowObj) && ~classifierScopedRun
         error('detecdiv_hub_submit_pipeline_run:MissingProject', ...
             'A shallow project is required. Received project argument class: %s.', projectArgClass);
     end
 
-    opts = localRunStage('parse options', @() localParse(varargin{:}));
-    ref = localRunStage('resolve hub project reference', @() detecdiv_hub_project_ref(shallowObj, opts.hub));
-    if isempty(ref.project_id)
-        [shallowObj, ref, ensureStatus] = localRunStage('ensure hub project registration', ...
-            @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, ...
-                'ErrorIfQueued', false, ...
-                'InitialWaitSec', opts.projectResolveInitialWaitSec, ...
-                'ResolveAttempts', opts.projectResolveAttempts, ...
-                'ResolveIntervalSec', opts.projectResolveIntervalSec));
-        if ~isempty(ref.project_id)
-            if opts.saveProject
-                localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
-            end
+    if classifierScopedRun
+        opts.saveProject = false;
+        if isempty(opts.writeScope) || strcmpi(opts.writeScope, 'project_update')
+            opts.writeScope = 'classifier_update';
         end
-        if isempty(ref.project_id)
-            msg = ['This project is not registered in the Hub project catalogue, ' ...
-                'and direct project registration failed.' newline ...
-                char(string(ensureStatus.message)) newline ...
-                'No broad project-root indexing job was queued.'];
-            error('detecdiv_hub_submit_pipeline_run:ProjectRegistrationFailed', '%s', msg);
-        end
+        ref = localRunStage('resolve classifier-scoped run reference', @() localClassifierRunRef(runObj, opts.hub));
     else
-        [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
-            @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, 'ResolveAttempts', 1));
-        if opts.saveProject
-            localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj, opts.hub));
+        ref = localRunStage('resolve hub project reference', @() detecdiv_hub_project_ref(shallowObj, opts.hub));
+        if isempty(ref.project_id)
+            [shallowObj, ref, ensureStatus] = localRunStage('ensure hub project registration', ...
+                @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, ...
+                    'ErrorIfQueued', false, ...
+                    'InitialWaitSec', opts.projectResolveInitialWaitSec, ...
+                    'ResolveAttempts', opts.projectResolveAttempts, ...
+                    'ResolveIntervalSec', opts.projectResolveIntervalSec));
+            if ~isempty(ref.project_id)
+                if opts.saveProject
+                    localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
+                end
+            end
+            if isempty(ref.project_id)
+                msg = ['This project is not registered in the Hub project catalogue, ' ...
+                    'and direct project registration failed.' newline ...
+                    char(string(ensureStatus.message)) newline ...
+                    'No broad project-root indexing job was queued.'];
+                error('detecdiv_hub_submit_pipeline_run:ProjectRegistrationFailed', '%s', msg);
+            end
+        else
+            [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
+                @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, 'ResolveAttempts', 1));
+            if opts.saveProject
+                localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj, opts.hub));
+            end
         end
     end
 
     payload = struct();
-    payload.project_id = ref.project_id;
+    if isfield(ref, 'project_id') && ~isempty(ref.project_id)
+        payload.project_id = ref.project_id;
+    end
     payload.requested_mode = opts.requestedMode;
     payload.priority = opts.priority;
     payload.requested_by = opts.requestedBy;
@@ -54,7 +65,9 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
     payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
 
-    localRunStageNoOutput('release local hub edit lease', @() detecdiv_hub_release_project_open(shallowObj, opts.hub));
+    if ~isempty(shallowObj)
+        localRunStageNoOutput('release local hub edit lease', @() detecdiv_hub_release_project_open(shallowObj, opts.hub));
+    end
     job = localRunStage('POST /pipeline-runs', @() detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub));
     runObj = localRunStage('attach hub job to pipelineRun', @() localAttachHubJob(runObj, job, ref));
     localRunStageNoOutput('save pipelineRun after hub submit', @() localSavePipelineRun(runObj));
@@ -304,6 +317,137 @@ function msg = localLockHumanSummary(lockInfo)
     end
 end
 
+function tf = localIsClassifierScopedRun(runObj)
+    tf = false;
+    refs = {};
+    try
+        refs{end+1} = runObj.targetRef; %#ok<AGROW>
+    catch
+    end
+    try
+        if isstruct(runObj.ctx) && isfield(runObj.ctx, 'targetRef')
+            refs{end+1} = runObj.ctx.targetRef; %#ok<AGROW>
+        end
+    catch
+    end
+    for i = 1:numel(refs)
+        ref = refs{i};
+        if ~isstruct(ref)
+            continue;
+        end
+        typeText = lower(localText(localGetField(ref, 'type', '')));
+        classiPath = localText(localGetField(ref, 'classiPath', ''));
+        if strcmp(typeText, 'classi') || strcmp(typeText, 'classifier') || ~isempty(classiPath)
+            tf = true;
+            return;
+        end
+    end
+end
+
+function ref = localClassifierRunRef(runObj, hub)
+    classiPath = localClassifierPathFromRun(runObj);
+    if isempty(classiPath)
+        error('detecdiv_hub_submit_pipeline_run:MissingClassifierPath', ...
+            'Classifier-scoped Hub submission requires targetRef.classiPath or a classifier modulePath.');
+    end
+    [serverClassiPath, ~] = detecdiv_paths_map_module_path(classiPath, localPathMappingCtx(struct(), hub), 'server');
+    serverClassiPath = strrep(char(string(serverClassiPath)), '\', '/');
+    if localLooksLikeLocalClientPath(serverClassiPath)
+        error('detecdiv_hub_submit_pipeline_run:LocalClassifierPathForHub', ...
+            ['Classifier-scoped Hub training cannot use a local-only classifier path: %s\n' ...
+             'Use a server-visible/mapped classifier path, for example X:\\... mapped to /data/...'], classiPath);
+    end
+    if ~localLooksLikeServerPath(serverClassiPath)
+        error('detecdiv_hub_submit_pipeline_run:NonServerClassifierPathForHub', ...
+            'Classifier path is not server-visible after mapping: %s', serverClassiPath);
+    end
+
+    [~, classiId] = fileparts(regexprep(classiPath, '[\\\/]+$', ''));
+    ref = struct();
+    ref.scope = 'classifier';
+    ref.type = 'classi';
+    ref.project_id = '';
+    ref.project_key = '';
+    ref.project_name = classiId;
+    ref.project_mat_path = '';
+    ref.local_project_mat_path = '';
+    ref.local_project_dir_path = classiPath;
+    ref.project_dir_path = serverClassiPath;
+    ref.local_project_root_path = classiPath;
+    ref.project_root_path = serverClassiPath;
+    ref.local_classifier_path = classiPath;
+    ref.classifier_path = serverClassiPath;
+    ref.classifier_id = classiId;
+end
+
+function classiPath = localClassifierPathFromRun(runObj)
+    classiPath = '';
+    candidates = {};
+    try
+        candidates{end+1} = localGetField(runObj.targetRef, 'classiPath', ''); %#ok<AGROW>
+    catch
+    end
+    try
+        candidates{end+1} = localNested(runObj.ctx, {'targetRef','classiPath'}, ''); %#ok<AGROW>
+    catch
+    end
+    try
+        params = localNested(runObj.ctx, {'run','nodeParams'}, struct());
+        candidates = [candidates localClassifierModulePathsFromNodeParams(params)]; %#ok<AGROW>
+    catch
+    end
+    try
+        spec = localNested(runObj.ctx, {'pipelineSpec'}, struct());
+        if isstruct(spec) && isfield(spec, 'nodes')
+            for i = 1:numel(spec.nodes)
+                node = spec.nodes(i);
+                if ~strcmpi(localText(localGetField(node, 'type', '')), 'classifier')
+                    continue;
+                end
+                candidates{end+1} = localNested(node, {'params','modulePath'}, ''); %#ok<AGROW>
+                candidates{end+1} = localNested(node, {'origin','path'}, ''); %#ok<AGROW>
+            end
+        end
+    catch
+    end
+    for i = 1:numel(candidates)
+        candidate = localText(candidates{i});
+        if ~isempty(candidate)
+            classiPath = candidate;
+            return;
+        end
+    end
+end
+
+function paths = localClassifierModulePathsFromNodeParams(nodeParams)
+    paths = {};
+    if isempty(nodeParams)
+        return;
+    end
+    if iscell(nodeParams)
+        for i = 1:numel(nodeParams)
+            paths = [paths localClassifierModulePathsFromNodeParams(nodeParams{i})]; %#ok<AGROW>
+        end
+        return;
+    end
+    if ~isstruct(nodeParams)
+        return;
+    end
+    if isfield(nodeParams, 'id') && isfield(nodeParams, 'params')
+        for i = 1:numel(nodeParams)
+            p = nodeParams(i).params;
+            if isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath)
+                paths{end+1} = p.modulePath; %#ok<AGROW>
+            end
+        end
+        return;
+    end
+    fields = fieldnames(nodeParams);
+    for i = 1:numel(fields)
+        paths = [paths localClassifierModulePathsFromNodeParams(nodeParams.(fields{i}))]; %#ok<AGROW>
+    end
+end
+
 function msg = localLockResolutionHint(lockInfo)
     if strcmpi(lockInfo.lockKind, 'client_edit_lease')
         msg = ['A new Hub run cannot be submitted while a DetecDiv client holds an edit lease on this project.' newline ...
@@ -378,6 +522,18 @@ end
 
 function projectRef = localBuildProjectRef(ref, hub)
     projectRef = struct();
+    if isstruct(ref) && isfield(ref, 'scope') && strcmpi(char(string(ref.scope)), 'classifier')
+        projectRef.scope = 'classifier';
+        projectRef.type = 'classi';
+        projectRef.project_name = localText(localGetField(ref, 'project_name', ''));
+        projectRef.classifier_id = localText(localGetField(ref, 'classifier_id', projectRef.project_name));
+        projectRef.local_classifier_path = localText(localGetField(ref, 'local_classifier_path', ''));
+        projectRef.classifier_path = localText(localGetField(ref, 'classifier_path', ''));
+        if isempty(projectRef.classifier_path) && ~isempty(projectRef.local_classifier_path)
+            projectRef.classifier_path = localTranslatePathForServer(projectRef.local_classifier_path, ref, hub);
+        end
+        return;
+    end
     projectRef.project_id = ref.project_id;
     projectRef.project_key = ref.project_key;
     projectRef.project_name = ref.project_name;
@@ -619,8 +775,11 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     end
     % Rebuild on every Hub submission. A previous bundle can have the same
     % node ids but stale classifier/processor module contents or paths.
+    includeTrainingData = localRunIntentIsTraining(runObj);
     pipelineExport(exportSource, bundlePath, ...
         'projectObj', shallowObj, ...
+        'includeTrainingData', includeTrainingData, ...
+        'includeTrainingRois', false, ...
         'overwrite', true);
     localPruneHubBundleForRun(bundlePath, runObj);
     localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
@@ -937,6 +1096,59 @@ function localPruneHubBundleForRun(bundlePath, runObj)
     localPruneBundleAssets(bundlePath, keepPaths);
     localPruneBundleManifest(bundlePath, selectedIds);
     localPruneBundlePipeline(pipelineJsonPath, selectedIds);
+end
+
+function tf = localRunIntentIsTraining(runObj)
+    tf = false;
+    candidates = {};
+    try
+        candidates{end+1} = localNested(runObj.ctx, {'run','intent'}, ''); %#ok<AGROW>
+        candidates{end+1} = localNested(runObj.ctx, {'run','classifierIntent'}, ''); %#ok<AGROW>
+    catch
+    end
+    try
+        nodeParams = localNested(runObj.ctx, {'run','nodeParams'}, struct());
+        candidates = [candidates localTrainingIntentCandidatesFromNodeParams(nodeParams)]; %#ok<AGROW>
+    catch
+    end
+    for i = 1:numel(candidates)
+        txt = lower(strtrim(localText(candidates{i})));
+        if any(strcmp(txt, {'train','training','fit'}))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function values = localTrainingIntentCandidatesFromNodeParams(nodeParams)
+    values = {};
+    if isempty(nodeParams)
+        return;
+    end
+    if iscell(nodeParams)
+        for i = 1:numel(nodeParams)
+            values = [values localTrainingIntentCandidatesFromNodeParams(nodeParams{i})]; %#ok<AGROW>
+        end
+        return;
+    end
+    if ~isstruct(nodeParams)
+        return;
+    end
+    if isfield(nodeParams, 'id') && isfield(nodeParams, 'params')
+        for i = 1:numel(nodeParams)
+            p = nodeParams(i).params;
+            if ~isstruct(p)
+                continue;
+            end
+            values{end+1} = localGetField(p, 'intent', ''); %#ok<AGROW>
+            values{end+1} = localGetField(p, 'operation', ''); %#ok<AGROW>
+        end
+        return;
+    end
+    fields = fieldnames(nodeParams);
+    for i = 1:numel(fields)
+        values = [values localTrainingIntentCandidatesFromNodeParams(nodeParams.(fields{i}))]; %#ok<AGROW>
+    end
 end
 
 function selectedIds = localSelectedRunNodeIds(runObj)
@@ -1439,6 +1651,23 @@ function paths = localBuildRunPaths(ctx, ref, hub)
         paths.server_project_path = localTranslatePathForServer(projectPath, ref, hub);
     end
     paths.server_project_data_folder = localText(localNested(ctx, {'run','serverProjectDataFolder'}, localNested(ctx, {'io','serverProjectDataFolder'}, '')));
+    classifierPath = localText(localNested(ctx, {'targetRef','classiPath'}, localNested(ctx, {'run','classiPath'}, '')));
+    if isempty(classifierPath) && isstruct(ref) && isfield(ref, 'local_classifier_path')
+        classifierPath = localText(ref.local_classifier_path);
+    end
+    paths.classifier_path = classifierPath;
+    paths.server_classifier_path = '';
+    if ~isempty(classifierPath)
+        paths.server_classifier_path = localTranslatePathForServer(classifierPath, ref, hub);
+    elseif isstruct(ref) && isfield(ref, 'classifier_path')
+        paths.server_classifier_path = localText(ref.classifier_path);
+    end
+    runPath = localText(localNested(ctx, {'run','runPath'}, localNested(ctx, {'run','path'}, localNested(ctx, {'store','runPath'}, ''))));
+    paths.run_path = runPath;
+    paths.server_run_path = '';
+    if ~isempty(runPath)
+        paths.server_run_path = localTranslatePathForServer(runPath, ref, hub);
+    end
     paths.path_mappings = localHubPathMappings(hub);
 end
 
@@ -1549,12 +1778,16 @@ function runObj = localAttachHubJob(runObj, job, ref)
     if ~isfield(runObj.ctx, 'hub') || ~isstruct(runObj.ctx.hub)
         runObj.ctx.hub = struct();
     end
-    runObj.ctx.hub.project_id = ref.project_id;
-    runObj.ctx.hub.project_key = ref.project_key;
+    runObj.ctx.hub.project_id = localText(localGetField(ref, 'project_id', ''));
+    runObj.ctx.hub.project_key = localText(localGetField(ref, 'project_key', ''));
     runObj.ctx.hub.job_id = char(string(job.id));
     runObj.ctx.hub.status = char(string(job.status));
     runObj.ctx.hub.submitted_at = char(datetime('now'));
-    runObj.ctx.hub.project_stale_after_job = true;
+    runObj.ctx.hub.project_stale_after_job = ~isempty(runObj.ctx.hub.project_id);
+    if isfield(ref, 'scope') && strcmpi(char(string(ref.scope)), 'classifier')
+        runObj.ctx.hub.scope = 'classifier';
+        runObj.ctx.hub.classifier_path = localText(localGetField(ref, 'classifier_path', ''));
+    end
     runObj.status = ['hub_' char(string(job.status))];
 end
 
