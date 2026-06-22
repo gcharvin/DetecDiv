@@ -14237,6 +14237,7 @@ classdef pipeline2 < matlab.apps.AppBase
             checks = struct('label', {}, 'path', {});
             checks = addHubPathCheck(app, checks, 'Project path', getRuntimeValue(app, 'projectPath'));
             checks = addHubPathCheck(app, checks, 'Raw data path', effectiveRuntimeRawDataPath(app));
+            checks = collectClassifierHubPathChecks(app, checks);
             if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 try
                     if isfield(app.CurrentProject.io, 'path') && isfield(app.CurrentProject.io, 'file') && ...
@@ -14247,6 +14248,57 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
                 checks = collectProjectFovSourceChecks(app, checks, app.CurrentProject);
+            end
+        end
+
+        function checks = collectClassifierHubPathChecks(app, checks)
+            try
+                nodes = app.Data.nodes;
+            catch
+                return;
+            end
+            for i = 1:numel(nodes)
+                try
+                    if ~strcmpi(char(string(getField(app, nodes(i), 'type', ''))), 'classifier')
+                        continue;
+                    end
+                    p = getField(app, nodes(i), 'params', struct());
+                    if ~isstruct(p) || ~isfield(p, 'modulePath') || isempty(p.modulePath)
+                        continue;
+                    end
+                    modulePath = char(string(p.modulePath));
+                    nodeId = char(string(getField(app, nodes(i), 'id', sprintf('classifier_%d', i))));
+                    checks = addHubPathCheck(app, checks, sprintf('Classifier %s path', nodeId), modulePath);
+                    if isClassifierTrainingIntent(app, p)
+                        checks = addHubPathCheck(app, checks, sprintf('Classifier %s trainingdataset', nodeId), ...
+                            fullfile(modulePath, 'trainingdataset'));
+                    end
+                catch
+                end
+            end
+        end
+
+        function tf = isClassifierTrainingIntent(app, p)
+            tf = false;
+            intentValues = {};
+            try
+                intentValues{end+1} = getRuntimeValue(app, 'intent');
+            catch
+            end
+            if nargin >= 2 && isstruct(p)
+                fields = {'intent','operation','task','runtype','classifierIntent'};
+                for k = 1:numel(fields)
+                    if isfield(p, fields{k}) && ~isempty(p.(fields{k}))
+                        intentValues{end+1} = p.(fields{k}); %#ok<AGROW>
+                    end
+                end
+            end
+            for k = 1:numel(intentValues)
+                txt = strtrim(char(string(intentValues{k})));
+                if any(strcmpi(txt, {'train','training','fit'}))
+                    tf = true;
+                    return;
+                end
             end
         end
 
@@ -14421,7 +14473,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             message = sprintf(['No active Hub path mapping covers this local path: %s.' newline ...
                 'Active mapping(s): %s.' newline ...
-                'Move/copy the project and raw data under a mapped local root, or set Local root to the Windows folder that contains them and Remote root to the matching server mount.'], ...
+                'Move/copy the project, classifier, and required data under a mapped local root, or set Local root to the Windows folder that contains them and Remote root to the matching server mount.'], ...
                 char(string(localPath)), activeText);
         end
 
