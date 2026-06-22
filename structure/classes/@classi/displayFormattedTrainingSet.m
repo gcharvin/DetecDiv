@@ -65,10 +65,19 @@ pth  = classif.getPath;
 disp(['This classification is of this type: ' cate]);
 
 % ---------------------------------------------------------------------
-% Recherche robuste d'un framebank Pixel / CPSAM (comme trainCPSAMFun)
+% Recherche robuste d'un framebank Pixel / CPSAM / SAM31.
 % ---------------------------------------------------------------------
-pattern = sprintf('%s_framebank*.h5', classif.strid);
-d = dir(fullfile(pth, pattern));
+patterns = { ...
+    sprintf('%s_framebank*.h5', classif.strid), ...
+    sprintf('%s_sam31_framebank*.h5', classif.strid)};
+searchRoots = {pth, fullfile(pth, 'trainingdataset')};
+d = [];
+for rr = 1:numel(searchRoots)
+    for pp = 1:numel(patterns)
+        dtmp = dir(fullfile(searchRoots{rr}, patterns{pp}));
+        d = [d; dtmp(:)]; %#ok<AGROW>
+    end
+end
 
 h5FramebankFile = '';
 hasPixelFramebank = false;

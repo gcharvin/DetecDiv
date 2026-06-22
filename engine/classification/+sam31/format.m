@@ -27,6 +27,12 @@ try
     if isprop(classif,'dataset') && isstruct(classif.dataset) && ...
             isfield(classif.dataset,'split') && isfield(classif.dataset.split,'val')
         valrois = classif.dataset.split.val;
+        if isempty(valrois) && isfield(classif.dataset.split,'test')
+            valrois = classif.dataset.split.test;
+        end
+    elseif isprop(classif,'dataset') && isstruct(classif.dataset) && ...
+            isfield(classif.dataset,'split') && isfield(classif.dataset.split,'test')
+        valrois = classif.dataset.split.test;
     end
 catch
 end
