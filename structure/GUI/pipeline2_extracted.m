@@ -15334,6 +15334,42 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function publishCurrentProjectForTreeRefresh(app, runObj)
             if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow') || exist('detecdiv_event', 'file') ~= 2
+                if exist('detecdiv_event', 'file') == 2 && ~isempty(runObj) && isa(runObj, 'pipelineRun')
+                    classiPath = '';
+                    try
+                        if isprop(runObj,'targetRef') && isstruct(runObj.targetRef) && isfield(runObj.targetRef,'classiPath')
+                            classiPath = char(string(runObj.targetRef.classiPath));
+                        end
+                    catch
+                        classiPath = '';
+                    end
+                    if isempty(classiPath)
+                        try
+                            classiPath = classifierScopedRunRoot(app, false);
+                        catch
+                            classiPath = '';
+                        end
+                    end
+                    if ~isempty(classiPath)
+                        payload = struct();
+                        payload.kind = 'pipelineRun';
+                        payload.action = 'saved';
+                        payload.source = 'pipeline2';
+                        payload.runId = char(string(runObj.runId));
+                        payload.runPath = char(string(runObj.path));
+                        payload.classiPath = classiPath;
+                        payload.projectObj = [];
+                        payload.projectVarName = '';
+                        payload.projectMatPath = '';
+                        payload.projectPath = '';
+                        payload.projectName = '';
+                        try
+                            detecdiv_event('emit', 'pipelineRunSaved', payload);
+                            detecdiv_event('emit', 'workspaceChanged', payload);
+                        catch
+                        end
+                    end
+                end
                 return;
             end
             payload = struct();
