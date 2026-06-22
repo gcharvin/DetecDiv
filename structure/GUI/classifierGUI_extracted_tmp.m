@@ -2301,41 +2301,42 @@ end
                  return;
             end
 
-            nrois=classiObj.trainingset; 
+            if ~isempty(app.UITableData.Data)
+                selectedfortraining = cellfun(@(x) x==1, app.UITableData.Data(:,1));
+                selectedfortest = cellfun(@(x) x==1, app.UITableData.Data(:,2));
+                nrois = find(selectedfortraining');
+                testrois = find(selectedfortest');
+                classiObj.trainingset = nrois;
+                try
+                    if ~isprop(classiObj,'dataset') || ~isstruct(classiObj.dataset)
+                        classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
+                            'split', struct('train', [], 'val', [], 'test', []));
+                    end
+                    if ~isfield(classiObj.dataset,'split') || ~isstruct(classiObj.dataset.split)
+                        classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
+                    end
+                    classiObj.dataset.split.train = nrois;
+                    classiObj.dataset.split.val = [];
+                    classiObj.dataset.split.test = testrois;
+                catch
+                end
+                app.Data.classiObj = classiObj;
+            else
+                nrois=classiObj.trainingset;
+            end
             if numel(nrois)==0
                   uialert(app.ClassifierUIFigure,'You must select at least one ROI in the Dataset panel  !','Error')
                  return;
             end
 
-            d = uiprogressdlg(app.ClassifierUIFigure,'Title','Please Wait...',...
-                'Message','Training network; Please wait...');
-            d.Value=0.5;
-
             try
-                [~, check]=classiObj.loadClassifier('check');
-                if check==1
-                    evalin('base',['clear ' classiObj.strid]);
-                end
-
-                checkStatus(app);
-
-                classiObj.trainClassifier;
-
-                d.Value=1;
-                d.Message='Training completed successfully.';
-                pause(1);
-                close(d)
-
-                uialert(app.ClassifierUIFigure,'Training is complete!','Success','Icon','success');
+                classifierOpenTrainingPipeline(classiObj, ...
+                    'Rois', nrois, ...
+                    'OutputPolicy', 'replace', ...
+                    'Execution', 'Auto');
             catch ME
-                try
-                    if isvalid(d)
-                        close(d);
-                    end
-                catch
-                end
                 msg = localGuiErrorMessage(app, ME);
-                uialert(app.ClassifierUIFigure, msg, 'Training failed', 'Icon','error');
+                uialert(app.ClassifierUIFigure, msg, 'Training pipeline failed', 'Icon','error');
             end
         end
 

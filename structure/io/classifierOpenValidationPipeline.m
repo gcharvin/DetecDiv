@@ -6,12 +6,13 @@ function app = classifierOpenValidationPipeline(classiObj, varargin)
 % A shallow project may still be provided, but it is not required.
 
 opts = parseOptions(varargin{:});
+opts.intent = normalizeIntent(opts.intent);
 validateClassifierObject(classiObj);
 
-roiIdx = resolveValidationRoiIndices(classiObj, opts);
+roiIdx = resolveClassifierRoiIndices(classiObj, opts);
 if isempty(roiIdx)
     error('classifierOpenValidationPipeline:NoRoi', ...
-        'No validation ROI found. Select test ROIs in classifierGUI or import ROIs first.');
+        'No %s ROI found. Select train/test ROIs in classifierGUI or import ROIs first.', opts.intent);
 end
 roiList = classiObj.roi(roiIdx);
 
@@ -20,13 +21,14 @@ ensureClassifierSnapshot(classiObj);
 
 runId = opts.runId;
 if isempty(runId)
-    runId = ['validation_' char(string(classiObj.strid)) '_' char(datetime('now','Format','yyyyMMdd_HHmmss'))];
+    runId = [opts.intent '_' char(string(classiObj.strid)) '_' char(datetime('now','Format','yyyyMMdd_HHmmss'))];
 end
 
 args = {pipeObj, ...
     'InputMode', 'classifier', ...
+    'Intent', opts.intent, ...
     'LockInputMode', true, ...
-    'LockReason', 'Validation launched from a classifier; classifier.roi is the runtime source.', ...
+    'LockReason', ['Classifier ' opts.intent ' run; classifier.roi is the runtime source.'], ...
     'UnlockRuntime', true, ...
     'Rois', roiIdx, ...
     'RoiObjects', roiList, ...
@@ -63,6 +65,7 @@ opts.executionTarget = '';
 opts.gpuPolicy = 'Auto';
 opts.outputPolicy = 'replace';
 opts.runId = '';
+opts.intent = 'validate';
 
 i = 1;
 while i <= numel(varargin)
@@ -98,8 +101,23 @@ while i <= numel(varargin)
             opts.outputPolicy = char(string(value));
         case {'runid','runname'}
             opts.runId = char(string(value));
+        case {'intent','operation','task','runtype'}
+            opts.intent = char(string(value));
     end
     i = i + 2;
+end
+end
+
+function intent = normalizeIntent(value)
+intent = lower(strtrim(char(string(value))));
+switch intent
+    case {'validate','validation','val','test','evaluate','eval'}
+        intent = 'validate';
+    case {'train','training','fit'}
+        intent = 'train';
+    otherwise
+        error('classifierOpenValidationPipeline:InvalidIntent', ...
+            'Invalid classifier pipeline intent "%s". Use "train" or "validate".', char(string(value)));
 end
 end
 
@@ -114,7 +132,7 @@ if isempty(classiObj.roi) || (isscalar(classiObj.roi) && isempty(classiObj.roi(1
 end
 end
 
-function idx = resolveValidationRoiIndices(classiObj, opts)
+function idx = resolveClassifierRoiIndices(classiObj, opts)
 n = numel(classiObj.roi);
 idx = normalizeIndexVector(opts.rois, n);
 if ~isempty(idx)
@@ -123,7 +141,9 @@ end
 
 try
     if isstruct(classiObj.dataset) && isfield(classiObj.dataset, 'split') && isstruct(classiObj.dataset.split)
-        if isfield(classiObj.dataset.split, 'test')
+        if strcmp(opts.intent, 'train') && isfield(classiObj.dataset.split, 'train')
+            idx = normalizeIndexVector(classiObj.dataset.split.train, n);
+        elseif isfield(classiObj.dataset.split, 'test')
             idx = normalizeIndexVector(classiObj.dataset.split.test, n);
         end
         if isempty(idx) && isfield(classiObj.dataset.split, 'val')
@@ -135,7 +155,11 @@ end
 
 if isempty(idx)
     trainIdx = normalizeIndexVector(classiObj.trainingset, n);
-    idx = setdiff(1:n, trainIdx, 'stable');
+    if strcmp(opts.intent, 'train')
+        idx = trainIdx;
+    else
+        idx = setdiff(1:n, trainIdx, 'stable');
+    end
 end
 if isempty(idx)
     idx = 1:n;
@@ -147,9 +171,9 @@ pipeRoot = fullfile(classiObj.path, 'pipeline_templates');
 if exist(pipeRoot, 'dir') ~= 7
     mkdir(pipeRoot);
 end
-pipeName = ['validation_' char(string(classiObj.strid))];
+pipeName = [opts.intent '_' char(string(classiObj.strid))];
 pipeObj = pipelineConstruct(pipeRoot, pipeName, 1);
-pipeObj.description = ['Validation pipeline for classifier ' char(string(classiObj.strid))];
+pipeObj.description = [upper(opts.intent(1)) opts.intent(2:end) ' pipeline for classifier ' char(string(classiObj.strid))];
 
 params = classifierNodeParams(classiObj, opts);
 pkg = char(string(classiObj.classifierPkg));
@@ -199,6 +223,8 @@ params.modulePath = char(string(classiObj.path));
 params.moduleId = char(string(classiObj.strid));
 params.outputName = char(string(classiObj.strid));
 params.existingPolicy = opts.outputPolicy;
+params.intent = opts.intent;
+params.operation = opts.intent;
 params.classes = classiObj.classes;
 params.description = classiObj.description;
 params.category = classiObj.category;

@@ -2529,6 +2529,7 @@ function ctx = executeClassifierNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getRuntimeNodeParams(ctx, node, 'classifier');
+    intent = classifierRunIntent(ctx, p);
     refClassi = resolveClassifierReference(node, p, ctx);
     clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));
@@ -2582,7 +2583,33 @@ function ctx = executeClassifierNode(node, ctx)
             'store', getfielddefault(ctx, 'store', struct()), ...
             'cancel', getfielddefault(ctx, 'cancel', struct()), ...
             'progress', getfielddefault(ctx, 'progress', struct()));
+        clsObj.runProfiles.train = struct( ...
+            'io', getfielddefault(ctx, 'io', struct()), ...
+            'store', getfielddefault(ctx, 'store', struct()), ...
+            'cancel', getfielddefault(ctx, 'cancel', struct()), ...
+            'progress', getfielddefault(ctx, 'progress', struct()), ...
+            'pipeline', getfielddefault(ctx, 'run', struct()));
     catch
+    end
+
+    if strcmp(intent, 'train')
+        try
+            clsObj.roi = rois;
+            clsObj.trainingset = 1:numel(rois);
+            if isprop(clsObj, 'dataset')
+                clsObj.dataset = struct('classes', {clsObj.classes}, 'channels', {{}}, ...
+                    'split', struct('train', 1:numel(rois), 'val', [], 'test', []));
+            end
+            checkPipelineCancelled(ctx, ['before classifier training ' char(string(node.id))]);
+            clsObj.trainClassifier;
+        catch ME
+            throwNodeFailed(node, ME);
+        end
+        ctx.roiList = rois;
+        ctx.dataSeries = collectDataSeriesFromRois(rois);
+        ctx.channels = inferChannelsFromRois(rois, ctx);
+        ctx.masks = inferMaskChannelsFromRois(rois);
+        return;
     end
 
     outputName = char(string(node.id));
@@ -2715,6 +2742,46 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
         end
     catch
     end
+end
+end
+
+function intent = classifierRunIntent(ctx, p)
+intent = 'infer';
+try
+    if isstruct(p)
+        if isfield(p, 'operation') && ~isempty(p.operation)
+            intent = normalizeClassifierIntent(p.operation);
+            return;
+        elseif isfield(p, 'intent') && ~isempty(p.intent)
+            intent = normalizeClassifierIntent(p.intent);
+            return;
+        end
+    end
+catch
+end
+try
+    if isfield(ctx, 'run') && isstruct(ctx.run)
+        if isfield(ctx.run, 'classifierIntent') && ~isempty(ctx.run.classifierIntent)
+            intent = normalizeClassifierIntent(ctx.run.classifierIntent);
+            return;
+        elseif isfield(ctx.run, 'intent') && ~isempty(ctx.run.intent)
+            intent = normalizeClassifierIntent(ctx.run.intent);
+            return;
+        end
+    end
+catch
+end
+end
+
+function intent = normalizeClassifierIntent(value)
+txt = lower(strtrim(char(string(value))));
+switch txt
+    case {'train','training','fit'}
+        intent = 'train';
+    case {'validate','validation','val','test','evaluate','eval'}
+        intent = 'validate';
+    otherwise
+        intent = 'infer';
 end
 end
 

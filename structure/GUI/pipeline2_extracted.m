@@ -255,6 +255,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false, ...
                 'fovs', '', 'frames', '', 'rois', '', 'channels', '', 'roiObjects', [], ...
                 'outputPolicy', '', 'executionTarget', '', 'gpuPolicy', '', 'runId', '', ...
+                'intent', '', ...
                 'batchPrototype', false, 'modal', false, 'editExistingRun', false, ...
                 'projectVarName', '');
             positionalArgs = {};
@@ -327,6 +328,9 @@ classdef pipeline2 < matlab.apps.AppBase
                             opts.unlockRuntime = true;
                         case {'runid','runname'}
                             opts.runId = char(string(value));
+                            opts.unlockRuntime = true;
+                        case {'intent','operation','task','runtype','classifierintent'}
+                            opts.intent = normalizeStartupIntent(app, value);
                             opts.unlockRuntime = true;
                         case {'unlockruntime','newrun','runtimeunlocked'}
                             opts.unlockRuntime = logicalStartupOption(app, value);
@@ -401,6 +405,23 @@ classdef pipeline2 < matlab.apps.AppBase
                 otherwise
                     error('pipeline2:InvalidInputMode', ...
                         'Invalid InputMode "%s". Use "project", "raw", or "classifier".', char(string(value)));
+            end
+        end
+
+        function intent = normalizeStartupIntent(app, value) %#ok<INUSD>
+            txt = lower(strtrim(char(string(value))));
+            txt = strrep(txt, '-', '_');
+            txt = strrep(txt, ' ', '_');
+            switch txt
+                case {'','infer','inference','classify','classification','run'}
+                    intent = 'infer';
+                case {'validate','validation','val','test','evaluate','eval'}
+                    intent = 'validate';
+                case {'train','training','fit'}
+                    intent = 'train';
+                otherwise
+                    error('pipeline2:InvalidIntent', ...
+                        'Invalid Intent "%s". Use "train", "validate", or "infer".', char(string(value)));
             end
         end
 
@@ -479,6 +500,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if isfield(opts, 'runId') && ~isempty(strtrim(opts.runId))
                 runtimeRunIdChanged(app, opts.runId);
+            end
+            if isfield(opts, 'intent') && ~isempty(strtrim(opts.intent))
+                app.RuntimeValues.intent = opts.intent;
             end
             if isfield(opts, 'inputMode') && ~isempty(strtrim(opts.inputMode))
                 applyRuntimeInputSourceMode(app, opts.inputMode);
@@ -3264,6 +3288,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeValues.outputPolicy = 'skip';
             app.RuntimeValues.outputPolicyUserChosen = false;
             app.RuntimeValues.runId = '';
+            app.RuntimeValues.intent = 'infer';
             refreshProjectDropdown(app);
         end
 
@@ -5069,6 +5094,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 markRuntimeField(app, 'rawDataPath', 'blocked', 'Classifier mode uses classifier.roi image data, not a raw data folder.');
                 setRuntimeButtonEnabled(app, 'projectPath', false);
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
+                if app.RuntimeInputModeLocked
+                    lockedMsg = 'Fixed by classifierGUI train/test selection for this classifier run.';
+                    lockRuntimeFieldForClassifier(app, 'fovs', lockedMsg);
+                    lockRuntimeFieldForClassifier(app, 'frames', lockedMsg);
+                    lockRuntimeFieldForClassifier(app, 'rois', lockedMsg);
+                    lockRuntimeFieldForClassifier(app, 'channels', lockedMsg);
+                    lockRuntimeFieldForClassifier(app, 'outputPolicy', lockedMsg);
+                    setRuntimeButtonEnabled(app, 'channels', false);
+                end
             elseif ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
                 markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
             end
@@ -5124,7 +5158,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 markRuntimeField(app, 'projectPath', 'missing', 'Raw-data mode requires creating a new target project.');
             end
 
-            if startsFromClassifier
+            if startsFromClassifier && app.RuntimeInputModeLocked
+                % Already locked above; only the execution target remains user-editable.
+            elseif startsFromClassifier
                 setRuntimeButtonEnabled(app, 'channels', true);
             elseif startsFromProject && ~projectOk
                 markRuntimeField(app, 'channels', 'blocked', 'Select an existing project before selecting ROI channels.');
@@ -5141,6 +5177,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 markRuntimeField(app, 'outputPolicy', severity, message);
             end
             applyBatchPrototypeUiRestrictions(app);
+        end
+
+        function lockRuntimeFieldForClassifier(app, key, tooltip)
+            try
+                markRuntimeField(app, key, 'blocked', tooltip);
+                if isfield(app.RuntimeFieldHandles, key) && isvalid(app.RuntimeFieldHandles.(key))
+                    app.RuntimeFieldHandles.(key).Enable = 'off';
+                end
+            catch
+            end
         end
 
         function markRuntimeField(app, key, state, tooltip)
@@ -12392,6 +12438,7 @@ classdef pipeline2 < matlab.apps.AppBase
             lines{end+1} = '';
             lines{end+1} = ['Run id: ' safeTextLocal(app, getField(app, ctx, 'runId', getRuntimeValue(app, 'runId')), '(auto)')];
             lines{end+1} = ['Target: ' runTargetLabel(app)];
+            lines{end+1} = ['Intent: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','intent'}, getRuntimeValue(app, 'intent')), 'infer')];
             lines{end+1} = ['Input source: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','inputSource'}, inferRuntimeInputSource(app)), '')];
             lines{end+1} = ['Input mode: ' runtimeInputModeLabel(app)];
             lines{end+1} = ['Raw images: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','rawDataPath'}, getRuntimeValue(app, 'rawDataPath')), '(none)')];
@@ -12426,6 +12473,7 @@ classdef pipeline2 < matlab.apps.AppBase
             lines{end+1} = 'Smoke output persistence: memory only; final ROI/H5/dataseries saves are disabled.';
             lines{end+1} = '';
             lines{end+1} = ['Run id: ' safeTextLocal(app, getField(app, ctx, 'runId', getRuntimeValue(app, 'runId')), '(auto)')];
+            lines{end+1} = ['Intent: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','intent'}, getRuntimeValue(app, 'intent')), 'infer')];
             lines{end+1} = ['Input source: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','inputSource'}, inferRuntimeInputSource(app)), '')];
             lines{end+1} = ['Input mode: ' runtimeInputModeLabel(app)];
             lines{end+1} = ['Raw images: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','rawDataPath'}, getRuntimeValue(app, 'rawDataPath')), '(none)')];
@@ -13659,6 +13707,12 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.selectedNodes = selectedRunNodeIds(app);
             ctx.run.nodeParams = buildRunNodeParams(app);
             ctx.run.inputSourceMode = getRuntimeValue(app, 'inputSourceMode');
+            intent = getRuntimeValue(app, 'intent');
+            if isempty(strtrim(intent))
+                intent = 'infer';
+            end
+            ctx.run.intent = intent;
+            ctx.run.classifierIntent = intent;
             ctx.run.runPolicy = resumeModeToRunPolicy(app, app.ResumeoptionsDropDown.Value);
             ctx.run.resume = strcmp(ctx.run.runPolicy, 'resume');
             ctx.run.gpuPolicy = lower(char(string(app.ExecutionDropDown.Value)));
@@ -16188,6 +16242,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     inputMode = runtimeInputModeFromRunContext(app, ctx);
                     if ~isempty(inputMode)
                         setRuntimeValuePreserveParse(app, 'inputSourceMode', inputMode);
+                    end
+                    if isfield(ctx.run, 'intent') && ~isempty(ctx.run.intent)
+                        setRuntimeValuePreserveParse(app, 'intent', normalizeStartupIntent(app, ctx.run.intent));
+                    elseif isfield(ctx.run, 'classifierIntent') && ~isempty(ctx.run.classifierIntent)
+                        setRuntimeValuePreserveParse(app, 'intent', normalizeStartupIntent(app, ctx.run.classifierIntent));
                     end
                     if isfield(ctx.run, 'executionTarget') && isstruct(app.HubFieldHandles) && ...
                             isfield(app.HubFieldHandles, 'executionTarget') && isvalid(app.HubFieldHandles.executionTarget)
