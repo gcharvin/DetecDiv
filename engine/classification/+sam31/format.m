@@ -1,5 +1,5 @@
 function out = format(classif, rois, ctx)
-% sam31.format  Export DetecDiv annotations to a generic CTC/MoMA dataset.
+% sam31.format  Export DetecDiv annotations to the SAM3.1 CTC source layout.
 
 if nargin < 3 || isempty(ctx)
     ctx = struct();
@@ -36,15 +36,28 @@ if isfield(ctx,'params') && isstruct(ctx.params) && isfield(ctx.params,'folderna
     foldername = char(string(ctx.params.foldername));
 end
 
+ctcSubfolder = sam31.utils.getParam(classif.trainingParam, 'ctcSubfolder', '');
+if isfield(ctx,'params') && isstruct(ctx.params) && isfield(ctx.params,'ctcSubfolder')
+    ctcSubfolder = ctx.params.ctcSubfolder;
+end
+ctcSubfolder = char(string(ctcSubfolder));
+
 output = formatPixelTrainingSetCellTracktr(foldername, classif, trainrois, valrois, ...
     'layoutMode', "split_root", ...
+    'datasetSubfolder', ctcSubfolder, ...
     'runQA', false, ...
     'qa_write_png', false, ...
     'runCocoConversion', false, ...
     'writeOverlayMovies', false);
 
 out.status = "OK";
-out.artifacts.ctcRoot = fullfile(classif.path, foldername, 'moma');
+if isempty(strtrim(ctcSubfolder)) || strcmp(strtrim(ctcSubfolder), '.')
+    out.artifacts.ctcRoot = fullfile(classif.path, foldername);
+else
+    out.artifacts.ctcRoot = fullfile(classif.path, foldername, ctcSubfolder);
+end
+out.artifacts.layout = 'split_root_ctc';
+out.artifacts.manTrackParentage = true;
 if isnumeric(output)
     out.metrics.outputCount = output;
 end

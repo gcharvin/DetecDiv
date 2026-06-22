@@ -47,9 +47,24 @@ trainingFolderName = 'trainingdataset';
 if isfield(tp, 'trainingFolderName') && ~isempty(tp.trainingFolderName)
     trainingFolderName = char(string(tp.trainingFolderName));
 end
-datasetRoot = fullfile(base, trainingFolderName, 'moma');
-if exist(datasetRoot, 'dir') ~= 7
-    error('sam31:MissingCTCExport', 'CTC dataset not found: %s. Run sam31.format first.', datasetRoot);
+ctcSubfolder = char(string(getStructField(tp, 'ctcSubfolder', '')));
+if isempty(strtrim(ctcSubfolder)) || strcmp(strtrim(ctcSubfolder), '.')
+    datasetRoot = fullfile(base, trainingFolderName);
+else
+    datasetRoot = fullfile(base, trainingFolderName, ctcSubfolder);
+end
+if ~hasCtcSplits(datasetRoot)
+    legacyDatasetRoot = fullfile(base, trainingFolderName, 'moma');
+    if hasCtcSplits(legacyDatasetRoot)
+        warning('sam31:LegacyCTCExport', ...
+            'Using legacy SAM31 CTC export layout: %s. Re-run sam31.format to use %s.', ...
+            legacyDatasetRoot, datasetRoot);
+        datasetRoot = legacyDatasetRoot;
+    else
+        error('sam31:MissingCTCExport', ...
+            'CTC dataset not found under %s. Expected train/CTC or val/CTC. Run sam31.format first.', ...
+            datasetRoot);
+    end
 end
 
 cfg = struct();
@@ -108,4 +123,9 @@ value = defaultValue;
 if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
     value = s.(name);
 end
+end
+
+function tf = hasCtcSplits(root)
+tf = exist(fullfile(root, 'train', 'CTC'), 'dir') == 7 || ...
+    exist(fullfile(root, 'val', 'CTC'), 'dir') == 7;
 end
