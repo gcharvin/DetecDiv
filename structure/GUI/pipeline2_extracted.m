@@ -12264,6 +12264,7 @@ classdef pipeline2 < matlab.apps.AppBase
             projectPathOk = ~isempty(projectPath) && (exist(projectPath, 'dir') == 7 || exist(projectPath, 'file') == 2);
             rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
             startsFromProject = runtimeStartsFromExistingProject(app);
+            startsFromClassifier = runtimeStartsFromClassifier(app);
             loadedProjectOk = startsFromProject && hasLoadedRuntimeProject(app);
             projectOk = projectPathOk || loadedProjectOk;
             rawStartNodeIds = selectedRunNodeIdsByType(app, {'dataloader','roigrid','roiidentify','roimanual','roipattern','roiextract'});
@@ -12302,6 +12303,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     issues{end+1} = ['Selected raw-start nodes need raw images, but no raw data link was found in the existing project: ' ...
                         strjoin(rawStartNodeIds, ', ') '. Relink/save the project raw data or switch Input mode to "Parse raw images into project".']; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw-start nodes will use the selected project raw data link; none was found.');
+                end
+            elseif startsFromClassifier
+                if isempty(app.ExplicitRuntimeRoiList)
+                    issues{end+1} = 'Classifier-attached ROI mode requires ROI objects attached to the classifier run.'; %#ok<AGROW>
+                    markRuntimeField(app, 'rois', 'missing', 'Classifier mode uses classifier.roi as runtime input.');
                 end
             elseif ~selectedRunHasNodeType(app, 'dataLoader')
                 issues{end+1} = ['Input mode is "Parse raw images into project", but the selected run does not include a dataloader node. ' ...

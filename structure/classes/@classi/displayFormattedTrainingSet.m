@@ -88,7 +88,7 @@ if ~isempty(d)
     d = d(idxSort);
 
     for k = 1:numel(d)
-        cand = fullfile(pth, d(k).name);
+        cand = fullfile(d(k).folder, d(k).name);
         try
             h5info(cand);      % test lisibilité
             h5FramebankFile = cand;
