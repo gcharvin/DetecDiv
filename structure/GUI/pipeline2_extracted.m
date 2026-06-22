@@ -5127,10 +5127,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 setRuntimeButtonEnabled(app, 'projectPath', false);
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
                 if app.RuntimeInputModeLocked
+                    classifierIntent = lower(strtrim(getRuntimeValue(app, 'intent')));
                     lockedMsg = 'Fixed by classifierGUI train/test selection for this classifier run.';
                     lockRuntimeFieldForClassifier(app, 'fovs', lockedMsg);
-                    unlockRuntimeFieldForClassifier(app, 'frames', ...
-                        'Classifier run: optionally restrict the processed/evaluated frame range. Leave empty for all frames.');
+                    if strcmp(classifierIntent, 'validate')
+                        unlockRuntimeFieldForClassifier(app, 'frames', ...
+                            'Validation run: optionally restrict the evaluated frame range. Leave empty for all frames.');
+                    else
+                        lockRuntimeFieldForClassifier(app, 'frames', ...
+                            'Training run: frames are defined by the exported training set/framebank.');
+                    end
                     lockRuntimeFieldForClassifier(app, 'rois', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'channels', lockedMsg);
                     lockRuntimeFieldForClassifier(app, 'outputPolicy', lockedMsg);
