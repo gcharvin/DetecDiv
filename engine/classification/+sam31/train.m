@@ -28,6 +28,7 @@ if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
 end
 
+detecdiv_check_cancel(ctx, 'sam31 train start');
 runSam31Train(classif, ctx);
 out.status = "OK";
 end
@@ -92,6 +93,7 @@ cfg.max_tracks_per_datapoint = double(runtimeParam(tp, internal, 'maxTracksPerDa
 cfg.run_policy = pipelineRunPolicy(ctx);
 cfg.run_id = pipelineRunField(ctx, 'runId', '');
 cfg.run_path = pipelineRunField(ctx, 'runPath', pipelineRunField(ctx, 'path', ''));
+cfg.cancel_path = cancelTokenFileFromCtx(ctx);
 cfg.detecdiv_runtime = struct( ...
     'sam31_train_mfile', which('sam31.train'), ...
     'sam31_bridge_mfile', mfilename('fullpath'), ...
@@ -101,7 +103,9 @@ configPath = fullfile(workDir, 'train_sam31_config.json');
 writeJson(configPath, cfg);
 
 scriptPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'train_sam31.py');
+detecdiv_check_cancel(ctx, 'sam31 train before Python');
 sam31.utils.runPythonScript(scriptPath, configPath, tp, workDir);
+detecdiv_check_cancel(ctx, 'sam31 train after Python');
 end
 
 function parts = splitWords(value)
@@ -241,5 +245,17 @@ try
         end
     end
 catch
+end
+end
+
+function tokenFile = cancelTokenFileFromCtx(ctx)
+tokenFile = '';
+try
+    if isstruct(ctx) && isfield(ctx, 'cancel') && isstruct(ctx.cancel) ...
+            && isfield(ctx.cancel, 'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+        tokenFile = char(string(ctx.cancel.tokenFile));
+    end
+catch
+    tokenFile = '';
 end
 end

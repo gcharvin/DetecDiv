@@ -27,6 +27,7 @@ output.pos.channelname={};
 output.comments='';
 output.datatype='';
 progress=[];
+cancelTokenFile='';
 typ=[];
 
 % check if string represents a valid file or folder
@@ -60,7 +61,12 @@ for i=1:numel(varargin)
     if strcmp(varargin{i}, 'progress') % progress bar
         progress=varargin{i+1};
     end
+    if strcmpi(varargin{i}, 'canceltokenfile') || strcmpi(varargin{i}, 'cancel_token_file')
+        cancelTokenFile=char(string(varargin{i+1}));
+    end
 end
+progress = attachCancelTokenToProgress(progress, cancelTokenFile);
+detecdiv_check_cancel(progress, 'raw parser startup');
 
 % list files and folder present in the propose directory
 info='Listing files and folders....';
@@ -68,6 +74,7 @@ disp(info);
 if numel(progress)
     progress.Message=info;
 end
+detecdiv_check_cancel(progress, info);
 
 if inputIsFile
     list=dir(pathdir);
@@ -271,43 +278,63 @@ disp(info);
 if numel(progress)
     progress.Message=info;
 end
+detecdiv_check_cancel(progress, info);
 
 
 switch typ
     case 'phylocell'  % this is a phyloCell project
+        detecdiv_check_cancel(progress, 'raw parser phylocell');
         
         output.comments=['The folder contains a phylocell project' char(10)];
         output= buildphylocell(phyloproj,output,progress);
         
     case 'folders' % process each folder as independent positions (incldues micromanager)
+        detecdiv_check_cancel(progress, 'raw parser folders');
         
         output.comments=['The folder(s) contains (a) series of individual images' char(10)];
         output = buildfolders(list,output,progress);
         
     case 'multifiles' % contains a list of files, potentially with multiple poistions
+        detecdiv_check_cancel(progress, 'raw parser multifiles');
         output.comments=['The folder contains (a) series of individual images with multiple positions' char(10)];
         output = buildmultifiles(list,output,progress);
         
     case 'multitif'  % check if it a list of files or a collection of mutitiff files (positions)
+        detecdiv_check_cancel(progress, 'raw parser multitiff');
         
         output.comments=['The folder contains (a) series of multi-tiff images' char(10)];
         output=buildmultitif(list,output,progress);
         
     case 'ndtiff'
+        detecdiv_check_cancel(progress, 'raw parser ndtiff');
         output.comments=['The folder contains one or more NDTiff datasets' char(10)];
         output=buildndtiff(ndtiffDirs,output,progress);
 
     case 'omezarr'
+        detecdiv_check_cancel(progress, 'raw parser omezarr');
         output.comments=['The folder contains one or more OME-Zarr datasets' char(10)];
         output=buildomezarr(omezarrDirs,output,progress);
 
     case 'stkseries'
+        detecdiv_check_cancel(progress, 'raw parser stkseries');
         output.comments=['The folder contains a time series of stack files' char(10)];
         output=buildstkseries(stkFiles,output,progress);
 end
 
 output.datatype=typ;
+detecdiv_check_cancel(progress, 'raw parser finished');
 
+end
+
+function progress = attachCancelTokenToProgress(progress, cancelTokenFile)
+if isempty(cancelTokenFile)
+    return;
+end
+if isempty(progress)
+    progress = struct('CancelTokenFile', cancelTokenFile);
+elseif isstruct(progress)
+    progress.CancelTokenFile = cancelTokenFile;
+end
 end
 
 function tf = localHasZarrRootMetadata(pathstr)

@@ -62,6 +62,7 @@ for i = 1:numel(filelist)
         progress.Message = info;
         progress.Value = min(1, 0.67 + 0.33*(i-1)/max(1,numel(filelist)));
     end
+    detecdiv_check_cancel(progress, info);
 
     foldername = filelist(i).folder;
     fileName = filelist(i).name;

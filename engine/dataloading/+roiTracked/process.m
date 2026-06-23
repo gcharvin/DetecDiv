@@ -4,6 +4,7 @@ function ctx = process(ctx)
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
+    detecdiv_check_cancel(ctx, 'roiTracked start');
 
     if isfield(ctx, 'interactive') && ctx.interactive
         ctx = roiTracked.ui(ctx);
@@ -94,8 +95,14 @@ function ctx = process(ctx)
     if ~isempty(p.saveArgs)
         callArgs = [callArgs, {'SaveArgs', p.saveArgs}]; %#ok<AGROW>
     end
+    tokenFile = cancelTokenFileFromCtxLocal(ctx);
+    if ~isempty(tokenFile)
+        callArgs = [callArgs, {'CancelTokenFile', tokenFile}]; %#ok<AGROW>
+    end
 
+    detecdiv_check_cancel(ctx, 'roiTracked before createTrackedCellROIs');
     created = roiTracked.createTrackedCellROIs(shallowObj, callArgs{:});
+    detecdiv_check_cancel(ctx, 'roiTracked after createTrackedCellROIs');
 
     try
         if ~isfield(shallowObj.runProfiles, 'dataloading') || isempty(shallowObj.runProfiles.dataloading)
@@ -114,6 +121,18 @@ function ctx = process(ctx)
     end
     ctx.createdTracked = created;
     ctx.roiList = collectROIsLocal(shallowObj.fov);
+end
+
+function tokenFile = cancelTokenFileFromCtxLocal(ctx)
+tokenFile = '';
+try
+    if isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+            && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+        tokenFile = char(string(ctx.cancel.tokenFile));
+    end
+catch
+    tokenFile = '';
+end
 end
 
 function out = mergeStructOverrideLocal(base, override)

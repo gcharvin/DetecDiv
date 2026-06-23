@@ -41,6 +41,7 @@ for d = 1:numel(omezarrDirs)
         progress.Message = info;
         progress.Value = min(1, 0.33 + 0.33*(d-1)/max(1,numel(omezarrDirs)));
     end
+    detecdiv_check_cancel(progress, info);
 
     if exist(fullfile(zarrPath, 'zarr.json'), 'file') == 2
         [outPos, cc] = localBuildZarrV3(zarrPath, templatePos, outPos, cc);

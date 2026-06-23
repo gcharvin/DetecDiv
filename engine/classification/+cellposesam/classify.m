@@ -853,7 +853,11 @@ else
     cmd = sprintf('"%s" -u "%s" "%s" > "%s" 2> "%s"', ...
         pythonExe, runnerPath, configPath, stdoutPath, stderrPath);
 end
-[exitCode, runnerOut] = system(cmd);
+if ~isempty(cancelPath) && ~ispc
+    [exitCode, runnerOut] = localRunExternalCommandWithCancel(cmd, classifPath, cancelPath, liveLogPath);
+else
+    [exitCode, runnerOut] = system(cmd);
+end
 
 try
     fid = fopen(statusPath, 'w');
@@ -865,6 +869,77 @@ catch
 end
 
 localFlushRunnerLog(liveLogPath, 0);
+end
+
+function [exitCode, runnerOut] = localRunExternalCommandWithCancel(cmd, workDir, cancelPath, liveLogPath)
+statusPath = fullfile(workDir, 'runner_status.txt');
+scriptPath = fullfile(workDir, 'runner_command.sh');
+deleteIfExistsLocal(statusPath);
+deleteIfExistsLocal(scriptPath);
+
+fid = fopen(scriptPath, 'w');
+if fid == -1
+    error('cellposesam:RunnerWriteFailed', 'Unable to write CellposeSAM runner script: %s', scriptPath);
+end
+cleanup = onCleanup(@() fclose(fid));
+fprintf(fid, '#!/usr/bin/env bash\n');
+fprintf(fid, 'set +e\n');
+fprintf(fid, 'cd %s\n', localShellQuote(workDir));
+fprintf(fid, '%s\n', cmd);
+fprintf(fid, 'status=$?\n');
+fprintf(fid, 'printf "%%s\\n" "$status" > %s\n', localShellQuote(statusPath));
+fprintf(fid, 'exit "$status"\n');
+clear cleanup
+
+launchCmd = sprintf('setsid bash %s < /dev/null & echo $!', localShellQuote(scriptPath));
+[launchStatus, launchOut] = system(launchCmd);
+if launchStatus ~= 0
+    error('cellposesam:RunnerLaunchFailed', ...
+        'Unable to launch CellposeSAM runner (%d):%s%s', launchStatus, newline, launchOut);
+end
+
+pid = strtrim(launchOut);
+if isempty(pid) || isnan(str2double(pid))
+    error('cellposesam:RunnerLaunchFailed', 'CellposeSAM runner did not return a valid PID: %s', launchOut);
+end
+
+printedBytes = 0;
+while true
+    if exist(statusPath, 'file') == 2
+        exitCode = localReadExitCode(statusPath);
+        runnerOut = '';
+        localFlushRunnerLog(liveLogPath, printedBytes);
+        return;
+    end
+
+    if ~localProcessExists(pid)
+        pause(0.5);
+        exitCode = localReadExitCode(statusPath);
+        runnerOut = '';
+        localFlushRunnerLog(liveLogPath, printedBytes);
+        return;
+    end
+
+    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+        localKillProcessGroup(pid);
+        runnerOut = 'Pipeline run cancelled by user during CellposeSAM execution.';
+        exitCode = 130;
+        return;
+    end
+
+    localFlushRunnerLog(liveLogPath, printedBytes);
+    printedBytes = localFileBytes(liveLogPath);
+    pause(2);
+end
+end
+
+function deleteIfExistsLocal(pathValue)
+try
+    if exist(pathValue, 'file') == 2
+        delete(pathValue);
+    end
+catch
+end
 end
 
 function out = localShellQuote(value)
@@ -945,6 +1020,26 @@ try
         end
     end
 catch
+end
+end
+
+function localKillProcessGroup(pid)
+try
+    if isempty(pid)
+        return;
+    end
+    if ispc
+        localKillProcess(pid);
+    else
+        pgid = strtrim(char(string(pid)));
+        system(sprintf('kill -TERM -- -%s 2>/dev/null', pgid));
+        pause(5);
+        if localProcessExists(pid)
+            system(sprintf('kill -KILL -- -%s 2>/dev/null', pgid));
+        end
+    end
+catch
+    localKillProcess(pid);
 end
 end
 

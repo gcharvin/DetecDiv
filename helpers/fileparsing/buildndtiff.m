@@ -28,6 +28,7 @@ for d = 1:numel(ndtiffDirs)
         progress.Message = info;
         progress.Value = min(1, 0.33 + 0.33*(d-1)/max(1,numel(ndtiffDirs)));
     end
+    detecdiv_check_cancel(progress, info);
 
     % Open dataset (Java)
     [okIdx, reason] = localWaitForNDTiffIndex(dsPath, 5);
@@ -108,6 +109,7 @@ for d = 1:numel(ndtiffDirs)
     [~, dsName] = fileparts(dsPath);
 
     for p = 1:nPos
+        detecdiv_check_cancel(progress, sprintf('Processing NDTiff position %d/%d', p, nPos));
         posMask = axesTable.pos == posVals(p);
         tValsPos = unique(double(axesTable.t(posMask))');
         if isempty(tValsPos), tValsPos = 0; end

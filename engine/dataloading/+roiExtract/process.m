@@ -6,6 +6,7 @@ function ctx = process(ctx)
     end
 
     ctx.errors = {};
+    checkRoiExtractCancellation(ctx, 'start');
 
     % interactive path
     if isfield(ctx,'interactive') && ctx.interactive
@@ -128,6 +129,7 @@ function ctx = process(ctx)
 
     % loop per fov for ROI-granularity
     for i = fovIdx
+        checkRoiExtractCancellation(ctx, sprintf('before FOV %d', i));
         if i > numel(fovList)
             continue;
         end
@@ -173,7 +175,7 @@ function ctx = process(ctx)
             end
         end
 
-        args = buildExtractArgs(p, progressDlg);
+        args = buildExtractArgs(p, progressDlg, ctx);
         args = [args {'FOVIndex'} {i} {'ROISelect'} {todo}];
         if ~persistOutputs
             args = [args {'MemoryOnly'} {true}]; %#ok<AGROW>
@@ -182,6 +184,7 @@ function ctx = process(ctx)
         try
             if ~isempty(shallowObj)
                 extractAllROICrops(shallowObj, args{:});
+                checkRoiExtractCancellation(ctx, sprintf('after FOV %d extraction', i));
                 try
                     fovList = shallowObj.fov;
                 catch
@@ -191,6 +194,7 @@ function ctx = process(ctx)
                 tmp = shallow();
                 tmp.fov = f;
                 extractAllROICrops(tmp, args{:});
+                checkRoiExtractCancellation(ctx, sprintf('after FOV %d extraction', i));
                 try
                     fovList(i) = tmp.fov(1);
                 catch
@@ -249,6 +253,22 @@ function ctx = process(ctx)
             shallowObj.runProfiles.dataloading.roiExtract = p;
         catch
         end
+    end
+end
+
+function checkRoiExtractCancellation(ctx, where)
+    tokenFile = '';
+    try
+        if isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+                && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+            tokenFile = char(string(ctx.cancel.tokenFile));
+        end
+    catch
+        tokenFile = '';
+    end
+
+    if ~isempty(tokenFile) && exist(tokenFile, 'file') == 2
+        error('runPipeline:Cancelled', 'ROI extraction cancelled by user at %s.', char(string(where)));
     end
 end
 
@@ -640,7 +660,7 @@ function ds = collectDataSeries(roiList)
     end
 end
 
-function args = buildExtractArgs(p, progressDlg)
+function args = buildExtractArgs(p, progressDlg, ctx)
     args = {};
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames'} {p.frames}];
@@ -680,6 +700,18 @@ function args = buildExtractArgs(p, progressDlg)
     end
     if nargin >= 2 && ~isempty(progressDlg)
         args = [args {'hprogressbar'} {progressDlg}];
+    end
+    tokenFile = '';
+    try
+        if nargin >= 3 && isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+                && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+            tokenFile = char(string(ctx.cancel.tokenFile));
+        end
+    catch
+        tokenFile = '';
+    end
+    if ~isempty(tokenFile)
+        args = [args {'CancelTokenFile'} {tokenFile}];
     end
 end
 

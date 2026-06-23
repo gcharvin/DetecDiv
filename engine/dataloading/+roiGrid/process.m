@@ -4,6 +4,7 @@ function ctx = process(ctx)
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
+    detecdiv_check_cancel(ctx, 'roiGrid start');
 
     if isfield(ctx, 'interactive') && ctx.interactive
         ctx = roiGrid.ui(ctx);

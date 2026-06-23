@@ -17,6 +17,7 @@ if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName'
     outputName = ctx.names.outputName;
 end
 
+detecdiv_check_cancel(ctx, 'sam31 classify start');
 [data, image] = classifySam31Internal(roiobj, classif, frames, channels, outputName, ctx);
 out.data = data;
 out.image = image;
@@ -116,12 +117,15 @@ cfg.video_score_threshold = double(tp.videoScoreThreshold);
 cfg.video_new_det_threshold = double(tp.videoNewDetThreshold);
 cfg.video_det_nms_threshold = double(tp.videoDetNmsThreshold);
 cfg.video_assoc_iou_threshold = double(tp.videoAssocIouThreshold);
+cfg.cancel_path = cancelTokenFileFromCtx(ctx);
 
 configPath = fullfile(workDir, 'classify_sam31_config.json');
 writeJson(configPath, cfg);
 
 scriptPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'classify_sam31.py');
+detecdiv_check_cancel(ctx, 'sam31 classify before Python');
 sam31.utils.runPythonScript(scriptPath, configPath, tp, workDir);
+detecdiv_check_cancel(ctx, 'sam31 classify after Python');
 
 resultsPath = fullfile(workDir, 'results.mat');
 if exist(resultsPath, 'file') ~= 2
@@ -192,5 +196,17 @@ if isstruct(internal) && isfield(internal, name)
 end
 if isstruct(tp) && isfield(tp, name) && ~isempty(tp.(name))
     value = sam31.utils.paramValue(tp, name, value);
+end
+end
+
+function tokenFile = cancelTokenFileFromCtx(ctx)
+tokenFile = '';
+try
+    if isstruct(ctx) && isfield(ctx, 'cancel') && isstruct(ctx.cancel) ...
+            && isfield(ctx.cancel, 'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+        tokenFile = char(string(ctx.cancel.tokenFile));
+    end
+catch
+    tokenFile = '';
 end
 end

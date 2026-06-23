@@ -4,6 +4,7 @@ function ctx = process(ctx)
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
+    detecdiv_check_cancel(ctx, 'dataLoader start');
 
     p = dataLoader.setparam(struct());
     if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader) && ~isempty(ctx.dataLoader)
@@ -39,6 +40,7 @@ function ctx = process(ctx)
     end
 
     if isfield(p, 'useExistingProjectSources') && ~isempty(p.useExistingProjectSources) && logical(p.useExistingProjectSources)
+        detecdiv_check_cancel(ctx, 'dataLoader use existing project sources');
         if ~isfield(ctx, 'shallow') || isempty(ctx.shallow) || ~isa(ctx.shallow, 'shallow')
             error('dataLoader.process:NoProject', ...
                 'useExistingProjectSources requires ctx.shallow to be a loaded shallow project.');
@@ -90,10 +92,17 @@ function ctx = process(ctx)
         if isfield(p,'progress') && ~isempty(p.progress)
             args = [args {'progress'} {p.progress}];
         end
+        tokenFile = cancelTokenFileFromCtx(ctx);
+        if ~isempty(tokenFile)
+            args = [args {'canceltokenfile'} {tokenFile}];
+        end
+        detecdiv_check_cancel(ctx, 'dataLoader before parseInputData');
         out = parseInputData(p.path, args{:});
+        detecdiv_check_cancel(ctx, 'dataLoader after parseInputData');
     end
 
     if isfield(p,'positionIdx') && ~isempty(p.positionIdx) && isfield(out,'pos') && ~isempty(out.pos)
+        detecdiv_check_cancel(ctx, 'dataLoader before position selection');
         idx = p.positionIdx(:)';
         idx = idx(idx >= 1 & idx <= numel(out.pos));
         if ~isempty(idx)
@@ -113,12 +122,14 @@ function ctx = process(ctx)
     end
 
     ctx.dataOutput = out;
+    detecdiv_check_cancel(ctx, 'dataLoader before addData');
 
     if ~isfield(ctx,'shallow') || isempty(ctx.shallow)
         ctx.shallow = shallow();
     end
 
     ctx.shallow.addData(out);
+    detecdiv_check_cancel(ctx, 'dataLoader after addData');
     if p.write
         try
             shallowSave(ctx.shallow);
@@ -157,6 +168,18 @@ function ctx = process(ctx)
         end
         rp.dataloading.dataLoader = p;
         ctx.shallow.runProfiles = rp;
+    end
+end
+
+function tokenFile = cancelTokenFileFromCtx(ctx)
+    tokenFile = '';
+    try
+        if isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+                && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+            tokenFile = char(string(ctx.cancel.tokenFile));
+        end
+    catch
+        tokenFile = '';
     end
 end
 

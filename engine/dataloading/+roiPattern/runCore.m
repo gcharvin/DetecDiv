@@ -4,6 +4,7 @@ function ctx = runCore(ctx)
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
+    detecdiv_check_cancel(ctx, 'roiPattern runCore start');
 
 
     shallowObj = [];
@@ -86,6 +87,7 @@ function ctx = runCore(ctx)
     patternList = normalizePatternList(ctx, p, shallowObj, fovList);
 
     if testOnly
+        detecdiv_check_cancel(ctx, 'roiPattern before test');
         detections = runPatternTest(fovList, fovIdx, ctx, p, patternList);
         ctx.fovList = fovList;
         ctx.roiList = collectROIs(fovList);
@@ -103,6 +105,7 @@ function ctx = runCore(ctx)
 
     fovIdxToProcess = [];
     for i = fovIdx
+        detecdiv_check_cancel(ctx, sprintf('roiPattern plan FOV %d', i));
         if shouldSkipExistingFov(fovList(i), p)
             continue;
         end
@@ -125,11 +128,14 @@ function ctx = runCore(ctx)
 
     for k = 1:numel(fovIdxToProcess)
         i = fovIdxToProcess(k);
+        detecdiv_check_cancel(ctx, sprintf('roiPattern before FOV %d/%d', k, numel(fovIdxToProcess)));
         currentFov = fovList(i);
         pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
 
         if hasValidPattern(pattern)
+            detecdiv_check_cancel(ctx, sprintf('roiPattern before patch FOV %d', i));
             [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p, ctx);
+            detecdiv_check_cancel(ctx, sprintf('roiPattern before identify FOV %d', i));
             identifyROIsLocal('FOV', currentFov, ...
                 'Frames', refFrame, ...
                 'Threshold', p.threshold, ...
@@ -137,7 +143,9 @@ function ctx = runCore(ctx)
                 'Crop', crop, ...
                 'Channel', chanIdx, ...
                 'Keep', p.keepExisting);
+            detecdiv_check_cancel(ctx, sprintf('roiPattern after identify FOV %d', i));
         elseif p.fallbackFullFrame
+            detecdiv_check_cancel(ctx, sprintf('roiPattern fallback FOV %d', i));
             applyFullFrameFallback(currentFov, p);
         else
             error('roiPattern.runCore:NoPattern', 'No pattern available for FOV %d.', i);
@@ -683,6 +691,7 @@ end
 function out = runPatternTest(fovList, fovIdx, ctx, p, patternList)
 out = struct([]);
 for kk = 1:numel(fovIdx)
+    detecdiv_check_cancel(ctx, sprintf('roiPattern test FOV %d/%d', kk, numel(fovIdx)));
     i = fovIdx(kk);
     currentFov = fovList(i);
     pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
@@ -706,7 +715,9 @@ for kk = 1:numel(fovIdx)
         disp(sprintf('[roiPattern][test] no crop for FOV %d', i));
     end
 
+    detecdiv_check_cancel(ctx, sprintf('roiPattern before test identify FOV %d', i));
     thisOut = identifyROIsLocal(args{:});
+    detecdiv_check_cancel(ctx, sprintf('roiPattern after test identify FOV %d', i));
     if isempty(thisOut)
         continue;
     end

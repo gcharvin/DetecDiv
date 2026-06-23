@@ -4,6 +4,7 @@ function ctx = runCore(ctx)
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
+    detecdiv_check_cancel(ctx, 'roiGrid runCore start');
 
     shallowObj = [];
     fovList = [];
@@ -61,6 +62,7 @@ function ctx = runCore(ctx)
 
     for i = 1:numel(fovIdx)
         idx = fovIdx(i);
+        detecdiv_check_cancel(ctx, sprintf('roiGrid FOV %d/%d', i, numel(fovIdx)));
         if p.errorOnExisting && fovHasValidRois(fovList(idx))
             error('roiGrid.runCore:ExistingROI', ...
                 'FOV %d already contains ROIs and existingPolicy=error.', idx);
@@ -88,7 +90,9 @@ function ctx = runCore(ctx)
         else
             refFrame = resolveReferenceFrameLocal(p);
             refChannel = resolveReferenceChannelLocal(p, fovList(idx), ctx);
+            detecdiv_check_cancel(ctx, sprintf('roiGrid before readImage FOV %d', idx));
             img = readImage(fovList(idx), refFrame, refChannel);
+            detecdiv_check_cancel(ctx, sprintf('roiGrid after readImage FOV %d', idx));
             if isempty(img)
                 error('roiGrid.runCore:ReadImageFailed', ...
                     'Cannot read reference image for FOV %d at frame %d, channel %d.', idx, refFrame, refChannel);

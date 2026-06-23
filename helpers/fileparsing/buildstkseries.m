@@ -59,6 +59,7 @@ for p = 1:numel(uniquePrefixes)
         progress.Message = info;
         progress.Value = min(1, 0.67 + 0.33*(p-1)/max(1,numel(uniquePrefixes)));
     end
+    detecdiv_check_cancel(progress, info);
 
     firstPath = fullfile(files(1).folder, files(1).name);
     try

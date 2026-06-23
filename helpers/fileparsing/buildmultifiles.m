@@ -172,6 +172,7 @@ for i=1:numel(npos)
         progress.Message=info;
         progress.Value=min(1,0.67+0.33*(i-1)./numel(npos));
     end
+    detecdiv_check_cancel(progress, info);
     
     % npos
     ispos=contains({filelist.name},npos(i));

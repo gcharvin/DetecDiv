@@ -68,6 +68,7 @@ p.addParameter('ExtractChannels', [], @(x) isempty(x) || isnumeric(x) || iscell(
 p.addParameter('SaveArgs', {}, @(x) iscell(x));
 p.addParameter('ExistingPolicy', 'upsert', @(x) ischar(x) || isstring(x));
 p.addParameter('IdPrefix', '', @(x) ischar(x) || isstring(x));
+p.addParameter('CancelTokenFile', '', @(x) isempty(x) || ischar(x) || isstring(x));
 p.parse(varargin{:});
 
 fovSelection = p.Results.FOV;
@@ -81,6 +82,8 @@ extraSaveArgs = p.Results.SaveArgs;
 existingPolicy = normalizeExistingPolicyLocal(p.Results.ExistingPolicy, 'upsert');
 idPrefix = char(string(p.Results.IdPrefix));
 idPrefix = regexprep(idPrefix, '[^A-Za-z0-9_]', '_');
+cancelTokenFile = char(string(p.Results.CancelTokenFile));
+detecdiv_check_cancel(cancelTokenFile, 'tracked ROI startup');
 
 if mod(numel(extraSaveArgs), 2) ~= 0
     error('createTrackedCellROIs:InvalidSaveArgs', ...
@@ -124,6 +127,7 @@ channelsByFOV = cell(1, numel(shallowObj.fov));
 channelNamesByFOV = cell(1, numel(shallowObj.fov));
 
 for idxF = 1:numel(fovSelection)
+    detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI FOV %d/%d', idxF, numel(fovSelection)));
     fovId = fovSelection(idxF);
     if fovId < 1 || fovId > numel(shallowObj.fov)
         warning('createTrackedCellROIs:InvalidFOV', ...
@@ -154,6 +158,7 @@ for idxF = 1:numel(fovSelection)
 
     totalCreatedForROI = 0;
     for idxR = 1:numel(roiIndices)
+        detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI parent ROI %d/%d', idxR, numel(roiIndices)));
         roiId = roiIndices(idxR);
         if roiId < 1 || roiId > numel(fovObj.roi)
             warning('createTrackedCellROIs:InvalidROI', ...
@@ -225,7 +230,7 @@ for idxF = 1:numel(fovSelection)
 
         [created, createdCount, processedFOV, createdNow] = ...
             processTrackedObjects(created, createdCount, processedFOV, ...
-            fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, fovId, roiId, fovOutputPath, idPrefix);
+            fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, fovId, roiId, fovOutputPath, idPrefix, cancelTokenFile);
         totalCreatedForROI = totalCreatedForROI + createdNow;
         fprintf('FOV %s / ROI %s: detected %d tracked cell(s).\n', fovObj.id, roiObj.id, createdNow);
     end
@@ -234,6 +239,7 @@ for idxF = 1:numel(fovSelection)
 end
 
 if doExtract && ~isempty(processedFOV)
+     detecdiv_check_cancel(cancelTokenFile, 'tracked ROI before extraction');
      uniqueFOV = unique(processedFOV, 'stable');
 
     callArgs = [{'FOVIndex', uniqueFOV}];
@@ -372,11 +378,15 @@ end
 
 % --- Options additionnelles ---
 callArgs = [callArgs {'Extend', false}, {'ForceChannelNames', forceNames}];
+if ~isempty(cancelTokenFile)
+    callArgs = [callArgs {'CancelTokenFile', cancelTokenFile}];
+end
 callArgs = [callArgs extraSaveArgs(:)'];
 
 % --- Appel extraction ---
 try
     shallowObj.extractAllROICrops(callArgs{:});
+    detecdiv_check_cancel(cancelTokenFile, 'tracked ROI after extraction');
 catch ME
     warning('createTrackedCellROIs:ExtractionFailed', 'extractAllROICrops failed: %s', ME.message);
 end
@@ -868,9 +878,10 @@ end
 function [created, createdCount, processedFOV, createdNow] = processTrackedObjects( ...
         created, createdCount, processedFOV, ...
         fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, ...
-        fovId, parentROIIndex, fovOutputPath, idPrefix)
+        fovId, parentROIIndex, fovOutputPath, idPrefix, cancelTokenFile)
 
     [rows, cols, framesCount] = size(labelStack);
+    detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI objects for ROI %s', roiObj.id));
 
     % garder uniquement les IDs présents à la 1re frame
     if framesCount < 1
@@ -918,6 +929,7 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
     createdNow = 0;
 
     for idIdx = 1:numel(uniqueIds)
+        detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI object %d/%d', idIdx, numel(uniqueIds)));
         cellId = uniqueIds(idIdx);
 
         % 1) présence & bbox par frame (repère ROI parente)
@@ -926,6 +938,9 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
         minRow = inf; minCol = inf; maxRow = 0; maxCol = 0;
 
         for frame = 1:framesCount
+            if frame == 1 || mod(frame, 25) == 0
+                detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI object %d frame %d/%d', idIdx, frame, framesCount));
+            end
             pix = (labelStack(:,:,frame) == cellId);
             if ~any(pix(:)), continue; end
             presence(frame) = true;
@@ -1046,6 +1061,9 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
 % volume masque [hmax x wmax x 1 x Tfull] en uint8
 volFull = zeros(hmax, wmax, 1, Tfull, 'uint8');
 for mIdx = 1:numel(frameList)
+    if mIdx == 1 || mod(mIdx, 25) == 0
+        detecdiv_check_cancel(cancelTokenFile, sprintf('tracked ROI mask frame %d/%d', mIdx, numel(frameList)));
+    end
     fId = frameList(mIdx);
     absX = double(Pnorm(mIdx,1)); absY = double(Pnorm(mIdx,2));
     relX = round(absX - parentVal(1) + 1);

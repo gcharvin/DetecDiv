@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -21,22 +24,67 @@ def as_local_path(value: str | Path | None) -> Path | None:
     return Path(text).expanduser()
 
 
-def run(cmd: list[str | Path], cwd: Path, log_path: Path) -> str:
+def is_cancel_requested(cancel_path: Path | None) -> bool:
+    return cancel_path is not None and cancel_path.exists()
+
+
+def terminate_process_tree(proc: subprocess.Popen) -> None:
+    try:
+        if platform.system() == "Windows":
+            proc.terminate()
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    try:
+        proc.wait(timeout=10)
+        return
+    except Exception:
+        pass
+    try:
+        if platform.system() == "Windows":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def run(cmd: list[str | Path], cwd: Path, log_path: Path, cancel_path: Path | None = None) -> str:
     printable = " ".join(str(part) for part in cmd)
     print(printable, flush=True)
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"\n$ {printable}\n")
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [str(part) for part in cmd],
             cwd=str(cwd),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=(platform.system() != "Windows"),
         )
-        log.write(proc.stdout)
+        while True:
+            try:
+                stdout, _ = proc.communicate(timeout=2)
+                break
+            except subprocess.TimeoutExpired:
+                if is_cancel_requested(cancel_path):
+                    terminate_process_tree(proc)
+                    stdout, _ = proc.communicate()
+                    log.write(stdout or "")
+                    log.write("\n[CANCELLED] DetecDiv cancel token detected.\n")
+                    raise SystemExit(130)
+                time.sleep(0.1)
+        log.write(stdout or "")
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)
-    return proc.stdout
+    return stdout or ""
 
 
 def split_list(value) -> list[str]:
@@ -69,6 +117,7 @@ def main() -> None:
     sam3_repo = as_local_path(cfg["sam3_repo"])
     artifacts_root = as_local_path(cfg["artifacts_root"])
     dataset_root = as_local_path(cfg["dataset_root"])
+    cancel_path = as_local_path(cfg.get("cancel_path"))
     python = cfg.get("python") or sys.executable
     resolution = int(cfg.get("resolution", 280))
     num_gpus = int(cfg.get("num_gpus", 1))
@@ -94,6 +143,8 @@ def main() -> None:
 
     if repo_root is None or sam3_repo is None or artifacts_root is None or dataset_root is None:
         raise SystemExit("Missing repo_root, sam3_repo, artifacts_root, or dataset_root")
+    if is_cancel_requested(cancel_path):
+        raise SystemExit("DetecDiv run cancelled before SAM31 training.")
 
     common = [
         python,
@@ -140,7 +191,10 @@ def main() -> None:
             ],
             cwd=repo_root,
             log_path=log_path,
+            cancel_path=cancel_path,
         )
+        if is_cancel_requested(cancel_path):
+            raise SystemExit("DetecDiv run cancelled after SAM31 prepare.")
 
     if bool(cfg.get("prepare_only", False)):
         print("prepare_only=true: stopping before SAM31 training.", flush=True)
@@ -172,6 +226,7 @@ def main() -> None:
         train_cmd,
         cwd=repo_root,
         log_path=log_path,
+        cancel_path=cancel_path,
     )
     if not bool(cfg.get("dry_run", False)) and "Train Epoch:" not in train_output:
         message = (

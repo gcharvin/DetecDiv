@@ -32,6 +32,15 @@ def optional_path(value: str | None) -> Path | None:
     return path
 
 
+def is_cancel_requested(cancel_path: Path | None) -> bool:
+    return cancel_path is not None and cancel_path.exists()
+
+
+def check_cancel(cancel_path: Path | None, where: str) -> None:
+    if is_cancel_requested(cancel_path):
+        raise SystemExit(f"DetecDiv run cancelled during SAM31 classify ({where}).")
+
+
 def robust_u8(image: np.ndarray) -> np.ndarray:
     arr = np.asarray(image, dtype=np.float32)
     lo, hi = np.percentile(arr, [1.0, 99.8])
@@ -59,11 +68,13 @@ def load_raw_stack(path: Path) -> tuple[np.ndarray, np.ndarray]:
     return raw, frames.astype(np.int64)
 
 
-def write_image_sequence(raw: np.ndarray, image_dir: Path) -> None:
+def write_image_sequence(raw: np.ndarray, image_dir: Path, cancel_path: Path | None = None) -> None:
     if image_dir.exists():
         shutil.rmtree(image_dir)
     image_dir.mkdir(parents=True, exist_ok=True)
     for frame_idx in range(raw.shape[3]):
+        if frame_idx % 10 == 0:
+            check_cancel(cancel_path, f"write frame {frame_idx + 1}/{raw.shape[3]}")
         plane = raw[:, :, 0, frame_idx]
         gray = robust_u8(plane)
         rgb = np.repeat(gray[:, :, None], 3, axis=2)
@@ -78,13 +89,15 @@ def resize_labels_nearest(labels: np.ndarray, shape: tuple[int, int]) -> np.ndar
     return np.asarray(image, dtype=np.uint16)
 
 
-def run_sam31_text_movie(predictor, image_dir: Path, num_frames: int, prompt: str, min_score: float, fallback_shape: tuple[int, int]):
+def run_sam31_text_movie(predictor, image_dir: Path, num_frames: int, prompt: str, min_score: float, fallback_shape: tuple[int, int], cancel_path: Path | None = None):
     from sam31_ctc_benchmark.sam31_runner import output_to_label_mask, propagate_in_video
 
+    check_cancel(cancel_path, "before start_session")
     response = predictor.handle_request(request={"type": "start_session", "resource_path": str(image_dir)})
     session_id = response["session_id"]
     try:
         predictor.handle_request(request={"type": "reset_session", "session_id": session_id})
+        check_cancel(cancel_path, "before prompt")
         predictor.handle_request(
             request={
                 "type": "add_prompt",
@@ -94,10 +107,14 @@ def run_sam31_text_movie(predictor, image_dir: Path, num_frames: int, prompt: st
                 "output_prob_thresh": min_score,
             }
         )
+        check_cancel(cancel_path, "before propagation")
         outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)
+        check_cancel(cancel_path, "after propagation")
         labels_by_frame: list[np.ndarray] = []
         stats_by_frame: list[dict] = []
         for frame_idx in range(num_frames):
+            if frame_idx % 10 == 0:
+                check_cancel(cancel_path, f"label frame {frame_idx + 1}/{num_frames}")
             output = outputs.get(frame_idx)
             if output is None:
                 labels_by_frame.append(np.zeros(fallback_shape, dtype=np.uint16))
@@ -124,8 +141,10 @@ def main() -> None:
     sam3_repo = as_local_path(cfg["sam3_repo"])
     input_mat_path = as_local_path(cfg["input_mat_path"])
     output_dir = as_local_path(cfg["output_dir"])
+    cancel_path = as_local_path(cfg.get("cancel_path"))
     if repo_root is None or sam3_repo is None or input_mat_path is None or output_dir is None:
         raise SystemExit("Missing repo_root, sam3_repo, input_mat_path, or output_dir")
+    check_cancel(cancel_path, "startup")
 
     sys.path.insert(0, str(repo_root))
     sys.path.insert(0, str(repo_root / "scripts"))
@@ -135,7 +154,8 @@ def main() -> None:
 
     raw, frames = load_raw_stack(input_mat_path)
     image_dir = output_dir / "sam31_images"
-    write_image_sequence(raw, image_dir)
+    write_image_sequence(raw, image_dir, cancel_path=cancel_path)
+    check_cancel(cancel_path, "after image export")
 
     if bool(cfg.get("smoke_only", False)):
         height, width = raw.shape[0], raw.shape[1]
@@ -178,11 +198,14 @@ def main() -> None:
         prompt=str(cfg.get("prompt", "cell")),
         min_score=float(cfg.get("min_score", 0.0)),
         fallback_shape=(raw.shape[0], raw.shape[1]),
+        cancel_path=cancel_path,
     )
 
     height, width = raw.shape[0], raw.shape[1]
     masks = np.zeros((height, width, 1, len(labels_by_frame)), dtype=np.uint16)
     for idx, labels in enumerate(labels_by_frame):
+        if idx % 10 == 0:
+            check_cancel(cancel_path, f"mask frame {idx + 1}/{len(labels_by_frame)}")
         masks[:, :, 0, idx] = resize_labels_nearest(labels, (height, width))
 
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -36,6 +36,7 @@ for i=npos
  progress.Message=info;
  progress.Value=min(1,0.67+0.33*(i-1));
  end
+ detecdiv_check_cancel(progress, info);
  
   %  strpos=fullfile(phyloproj.folder,[timeLapse.filename '-pos' num2str(i)]);
     
