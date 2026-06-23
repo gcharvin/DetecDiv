@@ -75,6 +75,7 @@ end
  opts = score_collectDisplayOptions(arg{:});
  %cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI);
+ syncChannelTableLevels(app, opts);
 
  %opts.paintChannel = app.DisplaySettings.Movie.paintChannel;  % peut être 0, un rang, ou un nom
 
@@ -219,6 +220,44 @@ end
 
 
 %profile viewer
+end
+
+function syncChannelTableLevels(app, opts)
+try
+    if ~isprop(app, 'UIChannelTable') || isempty(app.UIChannelTable) || isempty(app.UIChannelTable.Data)
+        return;
+    end
+    if ~isfield(opts, 'channel') || ~isfield(opts, 'levels') || isempty(opts.channel)
+        return;
+    end
+    data = app.UIChannelTable.Data;
+    if size(data, 2) < 4
+        return;
+    end
+    optNames = opts.channel;
+    if isstring(optNames)
+        optNames = cellstr(optNames);
+    elseif ~iscell(optNames)
+        optNames = cellstr(string(optNames(:)));
+    end
+    for row = 1:size(data, 1)
+        rowName = char(string(data{row, 2}));
+        hit = find(strcmpi(optNames, rowName), 1, 'first');
+        if isempty(hit) || hit > numel(opts.levels)
+            continue;
+        end
+        lev = opts.levels{hit};
+        if iscell(lev)
+            data{row, 4} = char(string(lev{1}));
+        elseif isnumeric(lev) && numel(lev) >= 2
+            data{row, 4} = sprintf('%g %g', lev(1), lev(2));
+        end
+    end
+    app.UIChannelTable.Data = data;
+catch ME
+    warning("score_display:SyncChannelTableLevelsFailed", ...
+        "Could not update display level table: %s", ME.message);
+end
 end
 
 

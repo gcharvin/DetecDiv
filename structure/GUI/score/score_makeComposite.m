@@ -274,7 +274,7 @@ for ch = 1:numel(channel)
 
     % indices par défaut
     if isempty(indices) || (numel(indices)==1 && indices==-1)
-        if defaultClass && ~isempty(currentIndx) && ~any(paintChannel == currentIndx)
+        if shouldHideIndexedBackgroundClass(defaultClass, currentIndx, paintChannel, thisName)
             indices = 2:max(L(:));
         else
             indices = 1:max(L(:));
@@ -428,6 +428,29 @@ end
 % Dernier fallback: borne (évite crash)
 dispIdx = min(max(1, dispIdx), nDisp);
 
+end
+
+function tf = shouldHideIndexedBackgroundClass(defaultClass, currentIndx, paintChannel, channelName)
+tf = false;
+try
+    isPaintThis = false;
+    if ischar(paintChannel) || isstring(paintChannel)
+        isPaintThis = strlength(string(paintChannel)) > 0 && strcmpi(string(channelName), string(paintChannel));
+    else
+        isPaintThis = any(paintChannel ~= 0) && ~isempty(currentIndx) && any(paintChannel == currentIndx);
+    end
+    if isPaintThis
+        return;
+    end
+
+    name = lower(string(channelName));
+    looksLikeMask = startsWith(name, "results_") || contains(name, "mask") || ...
+        contains(name, "seg") || contains(name, "track") || contains(name, "lineage") || ...
+        endsWith(name, "_cell");
+    tf = logical(defaultClass) || looksLikeMask;
+catch
+    tf = logical(defaultClass);
+end
 end
 
 
