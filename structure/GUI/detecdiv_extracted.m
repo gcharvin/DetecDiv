@@ -6628,7 +6628,7 @@ end
                 clas=evalin('base',proj);
 
 
-                if numel(app.Tree.SelectedNodes.Children)==0
+                if ~app.treeNodeHasChildTag(app.Tree.SelectedNodes, 'Classifierrois')
                     roiLabels = buildRoiTreeLabels(app, clas.roi);
                     if ~isempty(roiLabels)
 
@@ -6636,7 +6636,7 @@ end
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
-                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc,n],'Projectposrois'};
+                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc,n],'Classifierrois'};
                             %  'ContextMenu',cm
                             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 

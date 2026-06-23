@@ -5624,14 +5624,14 @@ end
                 clas=evalin('base',proj);
 
 
-                if numel(app.Tree.SelectedNodes.Children)==0
+                if isempty(app.Tree.SelectedNodes.Children) || ~any(arrayfun(@(child) strcmp(child.Tag,'Classifierrois'), app.Tree.SelectedNodes.Children))
                     if numel(app.Data.Classifierrois{cc})
 
                         for n=1:numel(app.Data.Classifierrois{cc})
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
-                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc,n],'Projectposrois'};
+                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc,n],'Classifierrois'};
                             %  'ContextMenu',cm
                             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
