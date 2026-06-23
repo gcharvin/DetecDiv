@@ -5432,7 +5432,7 @@ function openRecentProjectCallback(app, projectPath)
     d.Value = 0.66;
     pause(0.2);
 
-    name = proj.io.file;
+    name = makeSafeVariableName(proj.io.file);
     assignin('base', name, proj);
 
 
@@ -7242,7 +7242,7 @@ end
             if numel(proj)==0
                 return;
             end
-            name=proj.io.file;
+            name=makeSafeVariableName(proj.io.file);
             assignin('base',name,proj);
             gatherVarsFromWorkspace(app);
             displayNodes(app)
@@ -7281,7 +7281,7 @@ end
             pause(0.2);  % (garde si tu veux forcer l'update graphique)
 
             % mettre l'objet dans le workspace base sous son nom
-            name = proj.io.file;
+            name = makeSafeVariableName(proj.io.file);
             assignin('base', name, proj);
 
             % chemin absolu du .mat du projet
