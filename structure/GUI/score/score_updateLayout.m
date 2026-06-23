@@ -32,6 +32,7 @@ dsC = roitmp.display;
 % On ne considère que les channels sélectionnés
 
 dsC = normalizeChannelSelectionForScore(dsC);
+dsC = normalizeChannelScaleForScore(dsC);
 
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
@@ -95,6 +96,12 @@ if ~isempty(selCh)
     layoutOptions.levels=levels;
     layoutOptions.RGB=colors;
     layoutOptions.weights=weights;
+    layoutOptions.scale=logical(dsC.scale(selCh));
+    if isfield(dsC, 'log') && ~isempty(dsC.log)
+        layoutOptions.log=logical(dsC.log(selCh));
+    else
+        layoutOptions.log=false(1, numel(selCh));
+    end
 end
 
 %% data specfic parameters
@@ -158,6 +165,8 @@ end
 % Comptage des canaux non-indexés
 nChannel = 0;
 nonIndexedNames = {};
+nonIndexedScale = [];
+nonIndexedLog = [];
 for j = 1:numel(layoutOptions.channel)
     if ~iscell(layoutOptions.levels{j})
         nChannel = nChannel + 1;
@@ -166,9 +175,20 @@ for j = 1:numel(layoutOptions.channel)
         else
             nonIndexedNames{end+1} = layoutOptions.channel(j);
         end
+        if isfield(layoutOptions, 'scale') && numel(layoutOptions.scale) >= j
+            nonIndexedScale(end+1) = logical(layoutOptions.scale(j)); %#ok<AGROW>
+        else
+            nonIndexedScale(end+1) = false; %#ok<AGROW>
+        end
+        if isfield(layoutOptions, 'log') && numel(layoutOptions.log) >= j
+            nonIndexedLog(end+1) = logical(layoutOptions.log(j)); %#ok<AGROW>
+        else
+            nonIndexedLog(end+1) = false; %#ok<AGROW>
+        end
     end
 end
-if nChannel == 0  end
+layoutOptions.scale = logical(nonIndexedScale);
+layoutOptions.log = logical(nonIndexedLog);
 
 %% layout parameters
 
@@ -177,6 +197,7 @@ if ~isempty(layoutOptions.crop)
     basesize(1) = layoutOptions.crop(3);
     basesize(2) = layoutOptions.crop(4);
 end
+
 if layoutOptions.scalingFactor ~= 1
     basesize(1) = basesize(1) * layoutOptions.scalingFactor;
     basesize(2) = basesize(2) * layoutOptions.scalingFactor;
@@ -190,6 +211,24 @@ layoutOptions.tileH = basesize(1);
 layoutOptions.tileW = basesize(2);
 layoutOptions.Nchannel=nChannel;
 layoutOut=layoutOptions;
+end
+
+function dsC = normalizeChannelScaleForScore(dsC)
+if ~isstruct(dsC) || ~isfield(dsC, 'channel') || isempty(dsC.channel)
+    return;
+end
+
+nCh = numel(dsC.channel);
+if ~isfield(dsC, 'scale') || isempty(dsC.scale)
+    dsC.scale = false(1, nCh);
+else
+    scale = logical(dsC.scale(:)');
+    scale = scale(1:min(numel(scale), nCh));
+    if numel(scale) < nCh
+        scale(end+1:nCh) = false;
+    end
+    dsC.scale = scale;
+end
 end
 
 function dsC = normalizeChannelSelectionForScore(dsC)

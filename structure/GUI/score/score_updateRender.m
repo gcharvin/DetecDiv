@@ -31,7 +31,7 @@ switch mode
             tileIndex = 1;
           %  set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
 
-            h = graphicsHandles.imgHandles(tileIndex);
+            h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
             if ~isequal(get(h, 'CData'), displayImage)
                 set(h, 'CData', displayImage);
             end
@@ -54,7 +54,8 @@ switch mode
                 newImg = displayImage(:,:,:,ch);
                 %  aa= graphicsHandles.imgHandles(tileIndex);
                 %  tmp=graphicsHandles.imgHandles(tileIndex)
-                set(graphicsHandles.imgHandles(tileIndex), 'CData', newImg);
+                h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
+                set(h, 'CData', newImg);
 
 
                 set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
@@ -147,12 +148,14 @@ switch mode
                     %compositeImg = squeeze(max(roiData.image, [], 3));
 
                     if isKey(graphicsHandles.imgHandles, tileIndex)
-                        set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
+                        h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
+                        set(h, 'CData', displayImage);
                     end
 
                     if isKey(graphicsHandles.imgHandles, tileIndex)
-                        set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,1));
-                        ax=graphicsHandles.imgHandles(tileIndex); ax=ax.Parent;
+                        h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
+                        set(h, 'CData', displayImage(:,:,:,1));
+                        ax=h.Parent;
 
                         [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -168,8 +171,9 @@ switch mode
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
 
                         if isKey(graphicsHandles.imgHandles, tileIndex)
-                            set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,ch));
-                            ax=graphicsHandles.imgHandles(tileIndex); ax=ax.Parent;
+                            h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
+                            set(h, 'CData', displayImage(:,:,:,ch));
+                            ax=h.Parent;
 
                             [htext, hvector]=score_displayVectorGraphics(ax, newframe, ch, vContours , layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -296,6 +300,18 @@ catch ME
    % warning('Lineage refresh failed: %s', ME.message);
 end
 
+end
+
+function h = localImageHandle(hIn)
+h = hIn;
+if numel(h) > 1
+    isImg = arrayfun(@(x) isgraphics(x) && isa(x, 'matlab.graphics.primitive.Image'), h);
+    h = h(find(isImg, 1, 'first'));
+end
+if isempty(h) || ~isgraphics(h) || ~isa(h, 'matlab.graphics.primitive.Image')
+    error('score_updateRender:InvalidImageHandle', ...
+        'Stored image handle is not a matlab.graphics.primitive.Image.');
+end
 end
 
 function updateMarkers(hLineAll, fIdx, layoutOptions)

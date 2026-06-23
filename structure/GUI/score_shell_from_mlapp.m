@@ -23,6 +23,72 @@ classdef score < matlab.apps.AppBase
         NewdatasetMenu                  matlab.ui.container.Menu
         DuplicatedatasetMenu            matlab.ui.container.Menu
         DeleteselecteddataseriesMenu    matlab.ui.container.Menu
+        TabGroup                        matlab.ui.container.TabGroup
+        ROIslistTab                     matlab.ui.container.Tab
+        ROisPanel                       matlab.ui.container.Panel
+        UIROITable                      matlab.ui.control.Table
+        DisplaySettingsTab              matlab.ui.container.Tab
+        DisplaysettingsPanel            matlab.ui.container.Panel
+        PanButton                       matlab.ui.control.StateButton
+        ResetButton                     matlab.ui.control.Button
+        ChannelPanel                    matlab.ui.container.Panel
+        LowHighDisplaySlider            matlab.ui.control.RangeSlider
+        LevelsLabel                     matlab.ui.control.Label
+        OverlayCheckBox                 matlab.ui.control.CheckBox
+        SelectedChannelLabel            matlab.ui.control.Label
+        ChannelColorPicker              matlab.ui.control.ColorPicker
+        WeightSlider                    matlab.ui.control.Slider
+        WeightSliderLabel               matlab.ui.control.Label
+        FrameEditField                  matlab.ui.control.NumericEditField
+        FrameSlider                     matlab.ui.control.Slider
+        FrameSliderLabel                matlab.ui.control.Label
+        ZoomSlider                      matlab.ui.control.Slider
+        ZoomLabel                       matlab.ui.control.Label
+        UIChannelTable                  matlab.ui.control.Table
+        UIDisplayAxes                   matlab.ui.control.UIAxes
+        QuantificationTab               matlab.ui.container.Tab
+        IntensityQuantificationPanel    matlab.ui.container.Panel
+        ShapeButton                     matlab.ui.control.StateButton
+        LineIntensityprofileButton      matlab.ui.control.StateButton
+        UIProfileAxes                   matlab.ui.control.UIAxes
+        ROIDataTab                      matlab.ui.container.Tab
+        DataSettingsPanel               matlab.ui.container.Panel
+        FrameEditField_2                matlab.ui.control.NumericEditField
+        FrameEditField_2Label           matlab.ui.control.Label
+        NewdatasetButton                matlab.ui.control.Button
+        NewdataseriesButton             matlab.ui.control.Button
+        UIGroupTable                    matlab.ui.control.Table
+        NewdatagroupButton              matlab.ui.control.Button
+        DeselectallsubdataButton        matlab.ui.control.Button
+        DeselectalldataButton           matlab.ui.control.Button
+        ClassDropDown                   matlab.ui.control.DropDown
+        ClassDropDownLabel              matlab.ui.control.Label
+        AssignvalueEditField            matlab.ui.control.EditField
+        AssignvalueLabel                matlab.ui.control.Label
+        SelecteddataLabel               matlab.ui.control.Label
+        UISubDataTable                  matlab.ui.control.Table
+        UIDataTable                     matlab.ui.control.Table
+        AnnotationsTab                  matlab.ui.container.Tab
+        AnnotationPanel                 matlab.ui.container.Panel
+        isthedefautcolorCheckBox        matlab.ui.control.CheckBox
+        DeleteclassButton               matlab.ui.control.Button
+        NewclassButton                  matlab.ui.control.Button
+        DeleteAnnnotationButton         matlab.ui.control.Button
+        NewAnnotationButton             matlab.ui.control.Button
+        ObjectspanelPanel               matlab.ui.container.Panel
+        Transparency                    matlab.ui.control.Slider
+        TransparencyLabel               matlab.ui.control.Label
+        MaskColorPicker                 matlab.ui.control.ColorPicker
+        AnnoatationcolorLabel           matlab.ui.control.Label
+        copyobjectstonextframeButton    matlab.ui.control.Button
+        ComputemetricsButton            matlab.ui.control.Button
+        SelectedLabel                   matlab.ui.control.Label
+        SelectedobjectindexEditField    matlab.ui.control.NumericEditField
+        SelectedobjectindexEditFieldLabel  matlab.ui.control.Label
+        PaintButton                     matlab.ui.control.StateButton
+        IndexChannelLabel               matlab.ui.control.Label
+        UIAnnotationTable               matlab.ui.control.Table
+        MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
         ShowmovieandfolderButton        matlab.ui.control.Button
         MovielegendCheckBox             matlab.ui.control.CheckBox
@@ -65,65 +131,6 @@ classdef score < matlab.apps.AppBase
         MovieROIArraysizeEditFieldLabel  matlab.ui.control.Label
         MovieFramesEditField            matlab.ui.control.EditField
         MovieFramesEditFieldLabel       matlab.ui.control.Label
-        IntensityQuantificationPanel    matlab.ui.container.Panel
-        ShapeButton                     matlab.ui.control.StateButton
-        LineIntensityprofileButton      matlab.ui.control.StateButton
-        UIProfileAxes                   matlab.ui.control.UIAxes
-        AnnotationPanel                 matlab.ui.container.Panel
-        isthedefautcolorCheckBox        matlab.ui.control.CheckBox
-        DeleteclassButton               matlab.ui.control.Button
-        NewclassButton                  matlab.ui.control.Button
-        DeleteAnnnotationButton         matlab.ui.control.Button
-        NewAnnotationButton             matlab.ui.control.Button
-        ObjectspanelPanel               matlab.ui.container.Panel
-        Transparency                    matlab.ui.control.Slider
-        TransparencyLabel               matlab.ui.control.Label
-        MaskColorPicker                 matlab.ui.control.ColorPicker
-        AnnoatationcolorLabel           matlab.ui.control.Label
-        copyobjectstonextframeButton    matlab.ui.control.Button
-        ComputemetricsButton            matlab.ui.control.Button
-        SelectedLabel                   matlab.ui.control.Label
-        SelectedobjectindexEditField    matlab.ui.control.NumericEditField
-        SelectedobjectindexEditFieldLabel  matlab.ui.control.Label
-        PaintButton                     matlab.ui.control.StateButton
-        IndexChannelLabel               matlab.ui.control.Label
-        UIAnnotationTable               matlab.ui.control.Table
-        DataSettingsPanel               matlab.ui.container.Panel
-        FrameEditField_2                matlab.ui.control.NumericEditField
-        FrameEditField_2Label           matlab.ui.control.Label
-        NewdatasetButton                matlab.ui.control.Button
-        NewdataseriesButton             matlab.ui.control.Button
-        UIGroupTable                    matlab.ui.control.Table
-        NewdatagroupButton              matlab.ui.control.Button
-        DeselectallsubdataButton        matlab.ui.control.Button
-        DeselectalldataButton           matlab.ui.control.Button
-        ClassDropDown                   matlab.ui.control.DropDown
-        ClassDropDownLabel              matlab.ui.control.Label
-        AssignvalueEditField            matlab.ui.control.EditField
-        AssignvalueLabel                matlab.ui.control.Label
-        SelecteddataLabel               matlab.ui.control.Label
-        UISubDataTable                  matlab.ui.control.Table
-        UIDataTable                     matlab.ui.control.Table
-        ROisPanel                       matlab.ui.container.Panel
-        UIROITable                      matlab.ui.control.Table
-        DisplaysettingsPanel            matlab.ui.container.Panel
-        PanButton                       matlab.ui.control.StateButton
-        ResetButton                     matlab.ui.control.Button
-        ChannelPanel                    matlab.ui.container.Panel
-        LowHighDisplaySlider            matlab.ui.control.RangeSlider
-        LevelsLabel                     matlab.ui.control.Label
-        OverlayCheckBox                 matlab.ui.control.CheckBox
-        SelectedChannelLabel            matlab.ui.control.Label
-        ChannelColorPicker              matlab.ui.control.ColorPicker
-        WeightSlider                    matlab.ui.control.Slider
-        WeightSliderLabel               matlab.ui.control.Label
-        FrameEditField                  matlab.ui.control.NumericEditField
-        FrameSlider                     matlab.ui.control.Slider
-        FrameSliderLabel                matlab.ui.control.Label
-        ZoomSlider                      matlab.ui.control.Slider
-        ZoomLabel                       matlab.ui.control.Label
-        UIChannelTable                  matlab.ui.control.Table
-        UIDisplayAxes                   matlab.ui.control.UIAxes
     end
 
 
@@ -166,7 +173,7 @@ classdef score < matlab.apps.AppBase
     end
 
     properties (Access = private)
-        IsUpdatingPanelsLayout logical = false
+
     end
 
     methods (Access = private)
@@ -179,12 +186,6 @@ classdef score < matlab.apps.AppBase
             else
                 menuItem.Checked = 'on';
                 newVisibility = 'on';
-            end
-        end
-
-        function releasePanelsLayoutGuard(app)
-            if isvalid(app)
-                app.IsUpdatingPanelsLayout = false;
             end
         end
 
@@ -236,7 +237,7 @@ classdef score < matlab.apps.AppBase
             app.UIROITable.ColumnName = {'Display', 'Name', 'Size'};
 
             % Ajuster les largeurs des colonnes
-            app.UIROITable.ColumnWidth = {50, 'auto', 60};
+            app.UIROITable.ColumnWidth = {70, 400, 100};
 
             % Définir un callback pour gérer les sélections
             app.UIROITable.CellEditCallback = @(src, event) app.handleROITableEdit(event);
@@ -370,6 +371,7 @@ classdef score < matlab.apps.AppBase
             % % Préparer la liste des canaux affichables :
             % % On inclut les canaux dont l'intensité n'est pas nulle et aussi ceux qui correspondent à des images RGB (3 canaux)
              numChannels = numel(selectedROI.display.channel);
+            score_applyDefaultChannelSelection(selectedROI);
             % 
             % colorChannels = [];
             % indexedChannels=[];
@@ -431,9 +433,8 @@ end
 
 
             % Préparer les colonnes pour la table : Display, Name, Levels, RGB, Weight, Auto
-            app.initializeSelectedChannelsForScore(selectedROI);
-
-            tableData = cell(numel(colorChannels), 6);
+            app.initializeChannelScaleForScore(selectedROI);
+            tableData = cell(numel(colorChannels), 8);
 
 
             for i = 1:numel(colorChannels)
@@ -442,6 +443,7 @@ end
                 tableData{i, 1} = logical(selectedROI.display.selectedchannel(chIndex));
                 % Colonne "Name" : nom du canal
                 tableData{i, 2} = selectedROI.display.channel{chIndex};
+                tableData{i, 3} = logical(selectedROI.display.scale(chIndex));
                 % Colonne "Levels" : niveaux d'affichage (convertis en échelle 0-65535)
 
   nCh = size(selectedROI.image, 3);
@@ -477,7 +479,7 @@ if isempty(subIdx)
 end
 
 dl = selectedROI.display.displaylim;
-tableData{i, 3} = sprintf('%.0f %.0f', ...
+tableData{i, 4} = sprintf('%.0f %.0f', ...
     round(65535 * dl(1, subIdx)), ...
     round(65535 * dl(2, subIdx)));
 
@@ -486,27 +488,27 @@ tableData{i, 3} = sprintf('%.0f %.0f', ...
                 % Colonne "RGB" : affichage de la couleur (pour les images RGB, vous pouvez afficher par exemple 'RGB' ou la valeur si définie)
                 if numel(selectedROI.findChannelID(selectedROI.display.channel{chIndex}))==3
                     % Optionnel : vous pouvez afficher "RGB" ou une valeur par défaut
-                    tableData{i, 4} = 'RGB';
+                    tableData{i, 5} = 'RGB';
                 else
-                    tableData{i, 4} = sprintf('%.1f %.1f %.1f', selectedROI.display.rgb(chIndex, :));
+                    tableData{i, 5} = sprintf('%.1f %.1f %.1f', selectedROI.display.rgb(chIndex, :));
                 end
                 % Colonne "Weight" : poids du canal
 
 
-                tableData{i, 5} = sprintf('%.1f', selectedROI.display.alpha(chIndex));
+                tableData{i, 6} = sprintf('%.1f', selectedROI.display.alpha(chIndex));
 
                 % Colonne "Auto" : par défaut, "Auto" est désactivé
-                tableData{i, 6} = false;
-                tableData{i, 7} = selectedROI.display.log(chIndex);
+                tableData{i, 7} = false;
+                tableData{i, 8} = selectedROI.display.log(chIndex);
 
             end
 
             % Mettre à jour la table et ses propriétés
             app.UIChannelTable.Data = tableData;
-            app.UIChannelTable.ColumnName = {'Display', 'Name', 'Levels', 'RGB', 'Weight', 'Auto','Log'};
-            app.UIChannelTable.ColumnWidth = {40, 100, 80, 80, 60, 45};
+            app.UIChannelTable.ColumnName = {'Display', 'Name', 'Scale', 'Levels', 'RGB', 'Weight', 'Auto','Log'};
+            app.UIChannelTable.ColumnWidth = {70, 200, 55, 70, 70, 70, 50, 50};
             % Rendre certaines colonnes éditables (ici Display, Levels, RGB, Weight, Auto)
-            app.UIChannelTable.ColumnEditable = [true, false, true, true, true, true,true];
+            app.UIChannelTable.ColumnEditable = [true, false, true, true, true, true, true, true];
 
             % Définir le callback pour gérer les modifications
             app.UIChannelTable.CellEditCallback = @(src, event) app.handleChannelTableEdit(event, selectedROI, colorChannels);
@@ -558,7 +560,7 @@ tableData{i, 3} = sprintf('%.0f %.0f', ...
 
             app.UIAnnotationTable.Data = tableDataIndex;
             app.UIAnnotationTable.ColumnName = {'Display', 'Annotation', 'Class','Weight','Contour', 'Width'};
-            app.UIAnnotationTable.ColumnWidth = {50, 'auto', 'auto', 'auto', 60, 60};
+            app.UIAnnotationTable.ColumnWidth = {70, 200, 100, 70, 70, 70};
             app.UIAnnotationTable.ColumnEditable = [true, true, true,true,true, true];
 
 
@@ -591,7 +593,10 @@ tableData{i, 3} = sprintf('%.0f %.0f', ...
                 case 1 % Modification dans la colonne "Display" (checkbox)
                     selectedROI.display.selectedchannel(chIndex) = event.NewData;
 
-case 3
+                case 3 % Modification dans la colonne "Scale" (checkbox)
+                    selectedROI.display.scale(chIndex) = logical(event.NewData);
+
+case 4
      % Expect: "low high" in uint16 units (0..65535)
     vals = sscanf(event.NewData, '%f');
     if numel(vals) < 2
@@ -627,7 +632,7 @@ case 3
 
 
 
-                case 4 % Modification dans la colonne "RGB"
+                case 5 % Modification dans la colonne "RGB"
                     % Valider l'entrée comme un triplet RGB
                     rgbValues = str2double(strsplit(event.NewData, {' ', ','}));
 
@@ -644,7 +649,7 @@ case 3
                         app.displayROIChannels(); % Réinitialiser la table
                     end
 
-                case 5 % Modification dans la colonne "Weight"
+                case 6 % Modification dans la colonne "Weight"
                     % Valider l'entrée comme un nombre positif
                     weightValue = str2double(event.NewData);
                     if ~isnan(weightValue) && weightValue >= 0
@@ -655,7 +660,7 @@ case 3
                         app.displayROIChannels(); % Réinitialiser la table
                     end
 
-                case 6 % Modification dans la colonne "Auto" (checkbox pour auto-adjust)
+                case 7 % Modification dans la colonne "Auto" (checkbox pour auto-adjust)
                     if event.NewData
 
                         % Appliquer un auto-ajustement des niveaux
@@ -663,7 +668,7 @@ case 3
                         app.displayROIChannels();
 
                     end
-                 case 7 % Modification dans la colonne "Auto" (checkbox pour auto-adjust)
+                 case 8 % Modification dans la colonne "Log"
                   %  if event.NewData
 
                  
@@ -677,6 +682,9 @@ case 3
 
             displayChannelFeatures(app);
             displayData(app);
+            if any(colIndex == [3 4 7 8])
+                score_display(app, 'slow');
+            end
            % score_display(app, 'slow');
 
             % event=[];
@@ -836,8 +844,6 @@ case 3
             end
 
             % Trouver les canaux à afficher (colorChannels)
-            app.initializeSelectedChannelsForScore(selectedROI);
-
             numChannels = size(selectedROI.display.rgb, 1);
             colorChannels = [];
 
@@ -892,22 +898,22 @@ case 3
                 chanIndex = colorChannels(i); % Indice réel du canal dans `selectedROI.display`
 
                 % Mettre à jour la colonne "Levels" (conversion en 65535)
-                tableData{i, 1} = logical(selectedROI.display.selectedchannel(chanIndex));
-                tableData{i, 3} = sprintf('%.2f %.2f', ...
+                tableData{i, 3} = logical(selectedROI.display.scale(chanIndex));
+                tableData{i, 4} = sprintf('%.2f %.2f', ...
                     round(65535 * selectedROI.display.displaylim(1, chanIndex)), ...
                     round(65535 * selectedROI.display.displaylim(2, chanIndex)));
 
                 % Mettre à jour la colonne "RGB" (sans crochets)
-                tableData{i, 4} = sprintf('%.2f %.2f %.2f', selectedROI.display.rgb(chanIndex, :));
+                tableData{i, 5} = sprintf('%.2f %.2f %.2f', selectedROI.display.rgb(chanIndex, :));
 
 
                 % Mettre à jour la colonne "Weight"
                 %   if ~isprop(selectedROI.display,'alpha') || numel(selectedROI.display.alpha)<chanIndex
                 %       selectedROI.display.alpha(chanIndex)=1;
                 %   end
-                tableData{i, 5} = sprintf('%.2f', selectedROI.display.alpha(chanIndex));
+                tableData{i, 6} = sprintf('%.2f', selectedROI.display.alpha(chanIndex));
 
-                tableData{i, 7} =  selectedROI.display.log(chanIndex);
+                tableData{i, 8} =  selectedROI.display.log(chanIndex);
 
             end
 
@@ -916,27 +922,19 @@ case 3
             score_display(app, 'refresh');
         end
 
-        function initializeSelectedChannelsForScore(app, selectedROI) %#ok<INUSD>
+        function initializeChannelScaleForScore(app, selectedROI) %#ok<INUSD>
             nCh = numel(selectedROI.display.channel);
-            if ~isfield(selectedROI.display, 'selectedchannel') || isempty(selectedROI.display.selectedchannel)
-                sel = true(1, nCh);
+            if ~isfield(selectedROI.display, 'scale') || isempty(selectedROI.display.scale)
+                scale = false(1, nCh);
             else
-                sel = logical(selectedROI.display.selectedchannel(:)');
-                sel = sel(1:min(numel(sel), nCh));
-                if numel(sel) < nCh
-                    sel(end+1:nCh) = true;
+                scale = logical(selectedROI.display.scale(:)');
+                scale = scale(1:min(numel(scale), nCh));
+                if numel(scale) < nCh
+                    scale(end+1:nCh) = false;
                 end
             end
 
-            if nCh > 10 && ...
-                    (~isfield(selectedROI.display, 'scoreDefaultChannelSelectionApplied') || ...
-                     ~selectedROI.display.scoreDefaultChannelSelectionApplied)
-                sel = false(1, nCh);
-                sel(1) = true;
-                selectedROI.display.scoreDefaultChannelSelectionApplied = true;
-            end
-
-            selectedROI.display.selectedchannel = sel;
+            selectedROI.display.scale = scale;
         end
 
     function handleIndexedChannelTableEdit(app, event, selectedROI, indexedChannels)
@@ -1266,6 +1264,9 @@ end
                  if ~isfield(roiobj.display,'log') || numel(roiobj.display.log)~= numel(roiobj.display.channel)
                     roiobj.display.log=logical(zeros(1,numel(roiobj.display.channel)));
                 end
+                if ~isfield(roiobj.display,'scale') || numel(roiobj.display.scale)~= numel(roiobj.display.channel)
+                    roiobj.display.scale=logical(zeros(1,numel(roiobj.display.channel)));
+                end
 
                 selectedROI=roiobj;
 nCh = size(selectedROI.image, 3);
@@ -1402,11 +1403,15 @@ app.DisplaySettings.annotation.dataidx = pix;
 
             % Appliquer ces réglages dans l'interface
 
-            app.ROisPanel.Visible                  = app.DisplaySettings.panels.ROisPanel;
-            app.DisplaysettingsPanel.Visible = app.DisplaySettings.panels.DisplaysettingsPanel;
-            app.DataSettingsPanel.Visible     = app.DisplaySettings.panels.DataSettingsPanel;
-            app.AnnotationPanel.Visible = app.DisplaySettings.panels.AnnotationPanel;
-            app.IntensityQuantificationPanel.Visible = app.DisplaySettings.panels.IntensityQuantificationPanel;
+            app.setAllPanelTabsVisible();
+            if nargin==3
+                switch options
+                    case 'dataAnnotation'
+                        app.selectPanelTab('data');
+                    case 'pixelAnnotation'
+                        app.selectPanelTab('annotation');
+                end
+            end
            
             % --- Sécuriser l'accès aux réglages de panneaux ---
 % S'assurer que la sous-structure 'panels' existe
@@ -1426,7 +1431,7 @@ if ~isfield(app.DisplaySettings.panels, 'MoviePanel')
 end
 
 % Maintenant seulement on applique la valeur
-app.MoviePanel.Visible = app.DisplaySettings.panels.MoviePanel;
+app.setAllPanelTabsVisible();
 
 % (optionnel) resynchroniser la variable de base
 assignin('base', 'DisplaySettings', app.DisplaySettings);
@@ -2009,10 +2014,6 @@ end
         return;
     end
 
-    while iscell(val) && isscalar(val)
-        val = val{1};
-    end
-
 % ==========================================================
 % CLASSES (seulement si la valeur est une classe/categorical)
 % ==========================================================
@@ -2080,12 +2081,6 @@ end
             v = char(val);
         elseif ischar(val)
             v = val;
-        elseif iscell(val)
-            try
-                v = strjoin(cellstr(string(val(:))), ', ');
-            catch
-                v = '<cell>';
-            end
         else
             v = char(string(val));             % dernier recours
         end
@@ -2100,29 +2095,13 @@ end
     end
 end
 
-        function updatePanelsLayout(app, autoFitWindow)
-            if nargin < 2
-                autoFitWindow = true;
-            end
-
-            if app.IsUpdatingPanelsLayout || ~isvalid(app) || isempty(app.ScoreAppUIFigure) || ~isvalid(app.ScoreAppUIFigure)
-                return;
-            end
-
-            app.IsUpdatingPanelsLayout = true;
-            cleanupObj = onCleanup(@() app.releasePanelsLayoutGuard()); %#ok<NASGU>
+        function updatePanelsLayout(app)
+            app.setAllPanelTabsVisible();
+            app.updateDisplayMenu();
+            return;
 
             % Liste des panels potentiellement affichables
-            panelNames = {'ROisPanel', 'DisplaysettingsPanel', 'DataSettingsPanel', 'AnnotationPanel', 'IntensityQuantificationPanel', 'MoviePanel'};
-            panels = {};
-            for k = 1:numel(panelNames)
-                if isprop(app, panelNames{k})
-                    panelObj = app.(panelNames{k});
-                    if ~isempty(panelObj) && isvalid(panelObj)
-                        panels{end+1} = panelObj; %#ok<AGROW>
-                    end
-                end
-            end
+            panels = {app.ROisPanel, app.DisplaysettingsPanel, app.DataSettingsPanel, app.AnnotationPanel, app.IntensityQuantificationPanel,app.MoviePanel};
 
             % Filtrer les panels visibles
             visiblePanels = panels(cellfun(@(p) strcmp(p.Visible, 'on'), panels));
@@ -2136,12 +2115,10 @@ end
 
             % Paramètres de mise en page
             margin = 10;           % marge entre panels
-            figPos = app.ScoreAppUIFigure.Position;
-            maxColumnHeight = max(200, figPos(4) - 2 * margin);
+            maxColumnHeight = 800; % hauteur maximum d'une colonne
 
-            currentX = margin;
-            currentY = margin + maxColumnHeight; % départ en haut de la colonne
-            currentColumnWidth = 0;
+            currentColumn = 1;
+            currentY = maxColumnHeight; % départ en haut de la colonne
             newPositions = cell(size(visiblePanels));
 
             for i = 1:numel(visiblePanels)
@@ -2150,20 +2127,18 @@ end
                 panelHeight = pos(4);
 
                 % Passage à une nouvelle colonne si nécessaire
-                if currentY - panelHeight < margin && currentColumnWidth > 0
-                    currentX = currentX + currentColumnWidth + margin;
-                    currentY = margin + maxColumnHeight;
-                    currentColumnWidth = 0;
+                if currentY - panelHeight - margin < 0
+                    currentColumn = currentColumn + 1;
+                    currentY = maxColumnHeight;
                 end
 
                 % Calcul de la nouvelle position pour le panel courant
-                newX = currentX;
+                newX = (currentColumn - 1) * (panelWidth + margin) + margin;
                 newY = currentY - panelHeight;
                 newPositions{i} = [newX, newY, panelWidth, panelHeight];
 
                 % Mettre à jour la position verticale pour le panel suivant
                 currentY = newY - margin;
-                currentColumnWidth = max(currentColumnWidth, panelWidth);
             end
 
             % Appliquer les nouvelles positions aux panels visibles
@@ -2171,42 +2146,276 @@ end
                 visiblePanels{i}.Position = newPositions{i};
             end
 
-            % Calculer l'encombrement total du layout
-            totalWidth = currentX + currentColumnWidth + margin;
-            totalHeight = maxColumnHeight + 2 * margin;
+            % Calculer la largeur totale nécessaire pour la fenêtre principale
+            totalWidth = currentColumn * (max(cellfun(@(p) p.Position(3), visiblePanels)) + margin) + margin;
+            newMainHeight = maxColumnHeight + 2*margin;
 
-            % Ajuster la taille de la fenêtre principale si le contenu dépasse
-            if autoFitWindow
-                newMainWidth = max(figPos(3), totalWidth);
-                newMainHeight = max(figPos(4), totalHeight);
-                if newMainWidth ~= figPos(3) || newMainHeight ~= figPos(4)
-                    app.ScoreAppUIFigure.Position(3:4) = [newMainWidth, newMainHeight];
-                    figPos = app.ScoreAppUIFigure.Position;
-                end
-            end
+            % Ajuster la taille de la fenêtre principale
+            % Window size is controlled by the App Designer tab layout.
 
             % Si l'image figure existe, l'ajuster pour qu'elle se positionne à droite
             if  isprop(app, 'ImageFigure') && ~isempty(app.ImageFigure) && ishandle(app.ImageFigure)
                 % Récupérer la position de la fenêtre principale
-                mainPos = figPos;
+                mainPos = app.ScoreAppUIFigure.Position;
                 % Conserver la largeur et hauteur actuelles de l'image figure
                 imageFigWidth = app.ImageFigure.Position(3);
                 imageFigHeight = app.ImageFigure.Position(4);
                 % Placer l'image figure à droite de la fenêtre principale, en conservant la même coordonnée Y
                 newX = mainPos(1) + mainPos(3);
                 newY = mainPos(2);
-                app.ImageFigure.Position = [newX, newY, imageFigWidth, imageFigHeight];
+                % Image figure placement is left unchanged by panel tabs.
             end
         end
 
-        function ScoreAppUIFigureSizeChanged(app, event)
-            if nargin < 2 %#ok<INUSD>
+
+        function setAllPanelTabsVisible(app)
+            panelNames = {'ROisPanel', 'DisplaysettingsPanel', 'DataSettingsPanel', ...
+                'AnnotationPanel', 'IntensityQuantificationPanel', 'MoviePanel'};
+            for k = 1:numel(panelNames)
+                if isprop(app, panelNames{k})
+                    panelObj = app.(panelNames{k});
+                    if ~isempty(panelObj) && isvalid(panelObj)
+                        panelObj.Visible = 'on';
+                    end
+                end
             end
-            app.updatePanelsLayout(false);
         end
 
+        function selectPanelTab(app, tabName)
+            if ~isprop(app, 'TabGroup') || isempty(app.TabGroup) || ~isvalid(app.TabGroup)
+                return;
+            end
+
+            tabObj = [];
+            switch lower(char(string(tabName)))
+                case {'roi', 'rois', 'roislist'}
+                    tabObj = app.ROIslistTab;
+                case {'display', 'displaysettings'}
+                    tabObj = app.DisplaySettingsTab;
+                case {'data', 'roidata'}
+                    tabObj = app.ROIDataTab;
+                case {'annotation', 'annotations'}
+                    tabObj = app.AnnotationsTab;
+                case {'quantification', 'intensity'}
+                    tabObj = app.QuantificationTab;
+                case {'movie', 'movieoutput'}
+                    tabObj = app.MovieoutputTab;
+            end
+
+            if ~isempty(tabObj) && isvalid(tabObj)
+                app.TabGroup.SelectedTab = tabObj;
+            end
+
+            app.setAllPanelTabsVisible();
+            app.updateDisplayMenu();
+        end
+
+        function setupBrushSizeMenu(app)
+            if ~isprop(app, 'AnnotationMenu') || isempty(app.AnnotationMenu) || ~isvalid(app.AnnotationMenu)
+                return;
+            end
+
+            existing = findall(app.AnnotationMenu, 'Tag', 'ScoreBrushSizeMenu');
+            if ~isempty(existing)
+                delete(existing);
+            end
+
+            uimenu(app.AnnotationMenu, ...
+                'Text', 'Brush size...', ...
+                'Tag', 'ScoreBrushSizeMenu', ...
+                'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~) app.openBrushSizeDialog());
+        end
+
+        function loadBrushSettings(app)
+            brush = struct('leftRadius', 7, 'middleRadius', 13, 'rightRadius', 4, 'eraserRadius', 7);
+
+            try
+                userprefs = detecdiv_prefs_load();
+                if isfield(userprefs, 'painting_left_brush_radius')
+                    brush.leftRadius = userprefs.painting_left_brush_radius;
+                elseif isfield(userprefs, 'painting_normal_brush_radius')
+                    brush.leftRadius = userprefs.painting_normal_brush_radius;
+                elseif isfield(userprefs, 'painting_large_brush_size')
+                    brush.leftRadius = sqrt(double(userprefs.painting_large_brush_size));
+                end
+
+                if isfield(userprefs, 'painting_middle_brush_radius')
+                    brush.middleRadius = userprefs.painting_middle_brush_radius;
+                elseif isfield(userprefs, 'painting_huge_brush_radius')
+                    brush.middleRadius = userprefs.painting_huge_brush_radius;
+                elseif isfield(userprefs, 'painting_huge_brush_size')
+                    brush.middleRadius = sqrt(double(userprefs.painting_huge_brush_size));
+                end
+
+                if isfield(userprefs, 'painting_right_brush_radius')
+                    brush.rightRadius = userprefs.painting_right_brush_radius;
+                elseif isfield(userprefs, 'painting_large_brush_radius')
+                    brush.rightRadius = userprefs.painting_large_brush_radius;
+                end
+
+                if isfield(userprefs, 'painting_eraser_brush_radius')
+                    brush.eraserRadius = userprefs.painting_eraser_brush_radius;
+                elseif isfield(userprefs, 'painting_fine_brush_radius')
+                    brush.eraserRadius = userprefs.painting_fine_brush_radius;
+                elseif isfield(userprefs, 'painting_small_brush_size')
+                    brush.eraserRadius = sqrt(double(userprefs.painting_small_brush_size));
+                end
+            catch
+            end
+
+            app.DisplaySettings.Paint = app.normalizeBrushSettings(brush);
+            assignin('base', 'DisplaySettings', app.DisplaySettings);
+        end
+
+        function brush = normalizeBrushSettings(app, brush) %#ok<INUSD>
+            if ~isstruct(brush)
+                brush = struct();
+            end
+            brush.leftRadius = localRadius({'leftRadius', 'normalRadius'}, 7);
+            brush.middleRadius = localRadius({'middleRadius', 'hugeRadius'}, 13);
+            brush.rightRadius = localRadius({'rightRadius', 'largeRadius'}, 4);
+            brush.eraserRadius = localRadius({'eraserRadius', 'fineRadius'}, 7);
+
+            function r = localRadius(fieldNames, fallback)
+                r = fallback;
+                try
+                    for iName = 1:numel(fieldNames)
+                        fieldName = fieldNames{iName};
+                        if isfield(brush, fieldName) && ~isempty(brush.(fieldName))
+                            v = double(brush.(fieldName));
+                            if isfinite(v) && v > 0
+                                r = min(50, max(1, round(v)));
+                                return;
+                            end
+                        end
+                    end
+                catch
+                end
+            end
+        end
+
+        function openBrushSizeDialog(app)
+            if ~isfield(app.DisplaySettings, 'Paint') || ~isstruct(app.DisplaySettings.Paint)
+                app.loadBrushSettings();
+            end
+            brush = app.normalizeBrushSettings(app.DisplaySettings.Paint);
+
+            dlg = uifigure('Name', 'Brush size', 'WindowStyle', 'modal', ...
+                'Position', [300 300 450 340], 'Resize', 'off');
+            grid = uigridlayout(dlg, [6 3]);
+            grid.RowHeight = {28, 28, 28, 28, '1x', 34};
+            grid.ColumnWidth = {155, 90, '1x'};
+            grid.Padding = [12 12 12 12];
+            grid.RowSpacing = 8;
+            grid.ColumnSpacing = 10;
+
+            uilabel(grid, 'Text', 'Left click radius');
+            leftSpin = uispinner(grid, 'Limits', [1 50], 'RoundFractionalValues', 'on', ...
+                'Value', brush.leftRadius);
+            leftSpin.Layout.Row = 1; leftSpin.Layout.Column = 2;
+            uilabel(grid, 'Text', 'normal brush');
+
+            uilabel(grid, 'Text', 'Middle click radius');
+            middleSpin = uispinner(grid, 'Limits', [1 50], 'RoundFractionalValues', 'on', ...
+                'Value', brush.middleRadius);
+            middleSpin.Layout.Row = 2; middleSpin.Layout.Column = 2;
+            uilabel(grid, 'Text', 'enorme brush');
+
+            uilabel(grid, 'Text', 'Right click radius');
+            rightSpin = uispinner(grid, 'Limits', [1 50], 'RoundFractionalValues', 'on', ...
+                'Value', brush.rightRadius);
+            rightSpin.Layout.Row = 3; rightSpin.Layout.Column = 2;
+            uilabel(grid, 'Text', 'gros brush');
+
+            uilabel(grid, 'Text', 'Shift+left eraser radius');
+            eraserSpin = uispinner(grid, 'Limits', [1 50], 'RoundFractionalValues', 'on', ...
+                'Value', brush.eraserRadius);
+            eraserSpin.Layout.Row = 4; eraserSpin.Layout.Column = 2;
+            uilabel(grid, 'Text', 'eraser');
+
+            ax = uiaxes(grid);
+            ax.Layout.Row = 5;
+            ax.Layout.Column = [1 3];
+            ax.XTick = [];
+            ax.YTick = [];
+            ax.Box = 'on';
+            axis(ax, 'equal');
+
+            leftSpin.ValueChangedFcn = @(~,~) updatePreview();
+            middleSpin.ValueChangedFcn = @(~,~) updatePreview();
+            rightSpin.ValueChangedFcn = @(~,~) updatePreview();
+            eraserSpin.ValueChangedFcn = @(~,~) updatePreview();
+
+            saveButton = uibutton(grid, 'Text', 'Save', 'ButtonPushedFcn', @(~,~) saveBrush());
+            saveButton.Layout.Row = 6; saveButton.Layout.Column = 2;
+            cancelButton = uibutton(grid, 'Text', 'Cancel', 'ButtonPushedFcn', @(~,~) delete(dlg));
+            cancelButton.Layout.Row = 6; cancelButton.Layout.Column = 3;
+
+            updatePreview();
+
+            function updatePreview()
+                cla(ax);
+                hold(ax, 'on');
+                drawCircle(leftSpin.Value, [0 0], [0.15 0.45 0.85]);
+                drawCircle(middleSpin.Value, [80 0], [0.55 0.25 0.85]);
+                drawCircle(rightSpin.Value, [160 0], [0.8 0.25 0.25]);
+                drawCircle(eraserSpin.Value, [240 0], [0.1 0.1 0.1]);
+                text(ax, 0, -62, 'Left', 'HorizontalAlignment', 'center');
+                text(ax, 80, -62, 'Middle', 'HorizontalAlignment', 'center');
+                text(ax, 160, -62, 'Right', 'HorizontalAlignment', 'center');
+                text(ax, 240, -62, 'Eraser', 'HorizontalAlignment', 'center');
+                xlim(ax, [-55 295]);
+                ylim(ax, [-75 60]);
+                hold(ax, 'off');
+            end
+
+            function drawCircle(radius, center, color)
+                theta = linspace(0, 2*pi, 80);
+                patch(ax, center(1) + radius*cos(theta), center(2) + radius*sin(theta), color, ...
+                    'FaceAlpha', 0.25, 'EdgeColor', color, 'LineWidth', 1.5);
+            end
+
+            function saveBrush()
+                brushOut = app.normalizeBrushSettings(struct( ...
+                    'leftRadius', leftSpin.Value, ...
+                    'middleRadius', middleSpin.Value, ...
+                    'rightRadius', rightSpin.Value, ...
+                    'eraserRadius', eraserSpin.Value));
+                app.DisplaySettings.Paint = brushOut;
+                assignin('base', 'DisplaySettings', app.DisplaySettings);
+
+                try
+                    userprefs = detecdiv_prefs_load();
+                    userprefs.painting_left_brush_radius = brushOut.leftRadius;
+                    userprefs.painting_middle_brush_radius = brushOut.middleRadius;
+                    userprefs.painting_right_brush_radius = brushOut.rightRadius;
+                    userprefs.painting_eraser_brush_radius = brushOut.eraserRadius;
+                    userprefs.painting_normal_brush_radius = brushOut.leftRadius;
+                    userprefs.painting_large_brush_radius = brushOut.rightRadius;
+                    userprefs.painting_fine_brush_radius = brushOut.eraserRadius;
+                    userprefs.painting_large_brush_size = brushOut.leftRadius^2;
+                    userprefs.painting_small_brush_size = brushOut.eraserRadius^2;
+                    userprefs.painting_huge_brush_size = brushOut.middleRadius^2;
+                    detecdiv_prefs_save(userprefs);
+                catch ME
+                    warning('score:BrushPrefsSaveFailed', 'Could not save brush preferences: %s', ME.message);
+                end
+
+                delete(dlg);
+            end
+        end
 
         function updateDisplaySettings(app)
+            app.setAllPanelTabsVisible();
+            app.DisplaySettings.panels.ROisPanel = 'on';
+            app.DisplaySettings.panels.DisplaysettingsPanel = 'on';
+            app.DisplaySettings.panels.DataSettingsPanel = 'on';
+            app.DisplaySettings.panels.AnnotationPanel = 'on';
+            app.DisplaySettings.panels.IntensityQuantificationPanel = 'on';
+            app.DisplaySettings.panels.MoviePanel = 'on';
+            assignin('base', 'DisplaySettings', app.DisplaySettings);
+            return;
             % Met à jour la structure en fonction de l'état actuel des panels
             app.DisplaySettings.panels.ROisPanel = app.ROisPanel.Visible;
             app.DisplaySettings.panels.DisplaysettingsPanel = app.DisplaysettingsPanel.Visible;
@@ -2220,7 +2429,29 @@ end
              assignin('base', 'DisplaySettings', app.DisplaySettings);
         end
 
+        function localMenuState = localMenuChecked(app, selectedTab, tabProp)
+            localMenuState = 'off';
+            if isprop(app, tabProp)
+                tabObj = app.(tabProp);
+                if ~isempty(selectedTab) && ~isempty(tabObj) && isvalid(tabObj) && isequal(selectedTab, tabObj)
+                    localMenuState = 'on';
+                end
+            end
+        end
+
         function updateDisplayMenu(app)
+            selectedTab = [];
+            if isprop(app, 'TabGroup') && ~isempty(app.TabGroup) && isvalid(app.TabGroup)
+                selectedTab = app.TabGroup.SelectedTab;
+            end
+
+            app.ROIsMenu.Checked = app.localMenuChecked(selectedTab, 'ROIslistTab');
+            app.DisplaysettingsMenu.Checked = app.localMenuChecked(selectedTab, 'DisplaySettingsTab');
+            app.IntensityquantificationMenu.Checked = app.localMenuChecked(selectedTab, 'QuantificationTab');
+            app.AnnotationMenu.Checked = app.localMenuChecked(selectedTab, 'AnnotationsTab');
+            app.DatasettingsMenu.Checked = app.localMenuChecked(selectedTab, 'ROIDataTab');
+            app.MovieMenu.Checked = app.localMenuChecked(selectedTab, 'MovieoutputTab');
+            return;
             % Met à jour le menu "Display" pour refléter l'état de visibilité des panels
 
             % ROIs panel
@@ -2689,11 +2920,40 @@ end
 
 
             % load shortcut keys
-            [keys, specialkeys, userprefs] = detecdiv_prefs_get_shortcuts();
-            app.specialkeys = specialkeys;
-            app.keys = keys;
+            pth=userpath;
+            if ispc
+                fle= fullfile(pth,'Detecdiv/userprefs.mat');
+            else
+                tmpfile=getenv("HOME");
+                fle=fullfile(strcat(tmpfile,'/Detecdiv'),'userprefs.mat');
+            end
+
+            if exist(fle)
+                load(fle) % loads userprefs variable
+                keys=textscan(userprefs.roi_view_shortcut_keys,'%s');
+                keys=keys{1};
+                keys=keys';
+
+
+                specialkeys={};
+                tmp=userprefs.roi_view_corr_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{1}=tmp;
+                tmp=userprefs.roi_view_bounds_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{2}=tmp;
+                tmp=userprefs.roi_view_frames_jump_size;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{3}=tmp;
+                tmp=userprefs.painting_fill_holes_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{4}=tmp;
+                tmp=userprefs.painting_transparency_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{5}=tmp;
+
+                app.specialkeys=specialkeys;
+                app.keys=keys;
+
+            else % structure must me created
+                errordlg('Could not file the shortcut preferences; Please reset user preferences before launching this window again!,Error');
+                close
+                return;
+            end
 
                 setupMovieCallbacks(app);
+                app.loadBrushSettings();
+                app.setupBrushSizeMenu();
 
             applyMovieDisplaySettings(app);
 
@@ -2755,25 +3015,19 @@ end
 
         % Menu selected function: ROIsMenu
         function ROIsMenuSelected2(app, event)
-            app.ROisPanel.Visible = app.toggleVisibility(app.ROIsMenu);
-            % app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();  % Recalcule la disposition des panel
+            app.selectPanelTab('roi');
             app.updateDisplaySettings();
         end
 
         % Menu selected function: DatasettingsMenu
         function DatasettingsMenuSelected2(app, event)
-            app.DataSettingsPanel.Visible = app.toggleVisibility(app.DatasettingsMenu);
-            %app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();
+            app.selectPanelTab('data');
             app.updateDisplaySettings();
         end
 
         % Menu selected function: DisplaysettingsMenu
         function DisplaysettingsMenuSelected3(app, event)
-            app.DisplaysettingsPanel.Visible = app.toggleVisibility(app.DisplaysettingsMenu);
-            %   app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();
+            app.selectPanelTab('display');
             updateDisplaySettings(app);
         end
 
@@ -3586,17 +3840,13 @@ end
 
         % Menu selected function: IntensityquantificationMenu
         function IntensityquantificationMenuSelected(app, event)
-            app.IntensityQuantificationPanel.Visible = app.toggleVisibility(app.IntensityquantificationMenu);
-            % app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();  % Recalcule la disposition des panel
+            app.selectPanelTab('quantification');
             updateDisplaySettings(app)
         end
 
         % Menu selected function: AnnotationMenu
         function AnnotationMenuSelected(app, event)
-            app.AnnotationPanel.Visible = app.toggleVisibility(app.AnnotationMenu);
-            % app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();  % Recalcule la disposition des panel
+            app.selectPanelTab('annotation');
             updateDisplaySettings(app)
         end
 
@@ -4038,11 +4288,7 @@ end
 
     try
         % Sauvegarder la ROI via la méthode dédiée
-        if ismethod(roiObj,'saveDisplayedChannels')
-            roiObj.saveDisplayedChannels();
-        else
-            roiObj.save();
-        end
+        roiObj.save();
 
         % Mise à jour de la barre (optionnelle)
         d.Message = 'ROI successfully saved!';
@@ -4263,11 +4509,12 @@ end
 
             % 1) Copier la visibilité des panels
             presets.panels = struct(...
-                'ROisPanel', app.ROisPanel.Visible, ...
-                'DisplaysettingsPanel', app.DisplaysettingsPanel.Visible, ...
-                'DataSettingsPanel', app.DataSettingsPanel.Visible, ...
-                'AnnotationPanel', app.AnnotationPanel.Visible, ...
-                'IntensityQuantificationPanel', app.IntensityQuantificationPanel.Visible);
+                'ROisPanel', 'on', ...
+                'DisplaysettingsPanel', 'on', ...
+                'DataSettingsPanel', 'on', ...
+                'AnnotationPanel', 'on', ...
+                'IntensityQuantificationPanel', 'on', ...
+                'MoviePanel', 'on');
 
             % 2) Copier les réglages des channels
             % On copie le champ display de la ROI sélectionnée (s'il existe)
@@ -4316,11 +4563,7 @@ end
 
             % 1) Mise à jour de la visibilité des panels
             if isfield(presets, 'panels')
-                app.ROisPanel.Visible = presets.panels.ROisPanel;
-                app.DisplaysettingsPanel.Visible = presets.panels.DisplaysettingsPanel;
-                app.DataSettingsPanel.Visible = presets.panels.DataSettingsPanel;
-                app.AnnotationPanel.Visible = presets.panels.AnnotationPanel;
-                app.IntensityQuantificationPanel.Visible = presets.panels.IntensityQuantificationPanel;
+                app.setAllPanelTabsVisible();
             end
 
             % 2) Mise à jour des réglages des channels uniquement si les noms correspondent exactement
@@ -4357,6 +4600,9 @@ end
                           if isfield(presets.channels, 'log') && numel(presets.channels.log) >= i
                             roi.display.log(idx) = presets.channels.log(i);
                         end
+                        if isfield(presets.channels, 'scale') && numel(presets.channels.scale) >= i
+                            roi.display.scale(idx) = presets.channels.scale(i);
+                        end
                         if isfield(presets.channels, 'width') && numel(presets.channels.width) >= i
                             roi.display.width(idx) = presets.channels.width(i);
                         end
@@ -4367,7 +4613,6 @@ end
                     end
                 end
                 % Sauvegarder les mises à jour dans la ROI et rafraîchir la table des channels
-                app.initializeSelectedChannelsForScore(roi);
                 app.content.ROIList{selectedROIIndex} = roi;
                 app.DisplaySettings=presets;
                 applyMovieDisplaySettings(app);
@@ -4483,9 +4728,7 @@ end
 
         % Menu selected function: MovieMenu
         function MovieMenuSelected(app, event)
-            app.MoviePanel.Visible = app.toggleVisibility(app.MovieMenu);
-            %app.resizeUIImageAxes();  % Ajuster UIImageAxes
-            app.updatePanelsLayout();
+            app.selectPanelTab('movie');
             app.updateDisplaySettings();
         end
 
@@ -4978,12 +5221,10 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
 
             % Create ScoreAppUIFigure and hide until all components are created
             app.ScoreAppUIFigure = uifigure('Visible', 'off');
-            app.ScoreAppUIFigure.AutoResizeChildren = 'off';
-            app.ScoreAppUIFigure.Position = [100 100 1406 980];
+            app.ScoreAppUIFigure.Position = [100 100 656 949];
             app.ScoreAppUIFigure.Name = 'ScoreApp';
             app.ScoreAppUIFigure.CloseRequestFcn = createCallbackFcn(app, @ScoreAppUIFigureCloseRequest, true);
             app.ScoreAppUIFigure.KeyPressFcn = createCallbackFcn(app, @ScoreAppUIFigureKeyPress, true);
-            app.ScoreAppUIFigure.SizeChangedFcn = createCallbackFcn(app, @ScoreAppUIFigureSizeChanged, true);
 
             % Create FileMenu
             app.FileMenu = uimenu(app.ScoreAppUIFigure);
@@ -5085,34 +5326,61 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.DeleteselecteddataseriesMenu.MenuSelectedFcn = createCallbackFcn(app, @DeleteselecteddataseriesMenuSelected, true);
             app.DeleteselecteddataseriesMenu.Text = 'Delete selected dataseries';
 
+            % Create TabGroup
+            app.TabGroup = uitabgroup(app.ScoreAppUIFigure);
+            app.TabGroup.Position = [13 17 631 923];
+
+            % Create ROIslistTab
+            app.ROIslistTab = uitab(app.TabGroup);
+            app.ROIslistTab.Title = 'ROIs list';
+
+            % Create ROisPanel
+            app.ROisPanel = uipanel(app.ROIslistTab);
+            app.ROisPanel.Title = 'ROis';
+            app.ROisPanel.FontSize = 10;
+            app.ROisPanel.Position = [17 59 608 831];
+
+            % Create UIROITable
+            app.UIROITable = uitable(app.ROisPanel);
+            app.UIROITable.ColumnName = {'Display'; 'Name'; 'Size'};
+            app.UIROITable.ColumnWidth = {70, 400, 100};
+            app.UIROITable.RowName = {};
+            app.UIROITable.ColumnEditable = [true false false];
+            app.UIROITable.FontSize = 10;
+            app.UIROITable.Position = [6 18 582 790];
+
+            % Create DisplaySettingsTab
+            app.DisplaySettingsTab = uitab(app.TabGroup);
+            app.DisplaySettingsTab.Title = 'Display Settings';
+
             % Create DisplaysettingsPanel
-            app.DisplaysettingsPanel = uipanel(app.ScoreAppUIFigure);
+            app.DisplaysettingsPanel = uipanel(app.DisplaySettingsTab);
             app.DisplaysettingsPanel.AutoResizeChildren = 'off';
             app.DisplaysettingsPanel.Title = 'Display settings';
             app.DisplaysettingsPanel.FontSize = 10;
-            app.DisplaysettingsPanel.Position = [17 314 450 494];
+            app.DisplaysettingsPanel.Position = [17 21 608 870];
 
             % Create UIDisplayAxes
             app.UIDisplayAxes = uiaxes(app.DisplaysettingsPanel);
             xlabel(app.UIDisplayAxes, 'X')
             ylabel(app.UIDisplayAxes, 'Y')
             zlabel(app.UIDisplayAxes, 'Z')
-            app.UIDisplayAxes.Position = [15 14 418 144];
+            app.UIDisplayAxes.Position = [15 24 573 306];
 
             % Create UIChannelTable
             app.UIChannelTable = uitable(app.DisplaysettingsPanel);
-            app.UIChannelTable.ColumnName = {'Display'; 'Name'; 'Levels'; 'RGB'; 'Weight'; 'Auto'; 'Log'};
-            app.UIChannelTable.ColumnWidth = {'1x'};
+            app.UIChannelTable.ColumnName = {'Display'; 'Name'; 'Scale'; 'Levels'; 'RGB'; 'Weight'; 'Auto'; 'Log'};
+            app.UIChannelTable.ColumnWidth = {70, 200, 55, 70, 70, 70, 50, 50};
             app.UIChannelTable.RowName = {};
             app.UIChannelTable.SelectionChangedFcn = createCallbackFcn(app, @UIChannelTableSelectionChanged, true);
             app.UIChannelTable.FontSize = 10;
-            app.UIChannelTable.Position = [8 338 429 124];
+            app.UIChannelTable.Position = [8 511 584 327];
 
             % Create ZoomLabel
             app.ZoomLabel = uilabel(app.DisplaysettingsPanel);
             app.ZoomLabel.HorizontalAlignment = 'right';
             app.ZoomLabel.FontSize = 10;
-            app.ZoomLabel.Position = [6 199 31 22];
+            app.ZoomLabel.Position = [11 356 31 22];
             app.ZoomLabel.Text = 'Zoom';
 
             % Create ZoomSlider
@@ -5121,30 +5389,30 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.ZoomSlider.MajorTicks = [100 500];
             app.ZoomSlider.ValueChangingFcn = createCallbackFcn(app, @ZoomSliderValueChanging, true);
             app.ZoomSlider.FontSize = 10;
-            app.ZoomSlider.Position = [59 217 132 3];
+            app.ZoomSlider.Position = [64 374 132 3];
             app.ZoomSlider.Value = 100;
 
             % Create FrameSliderLabel
             app.FrameSliderLabel = uilabel(app.DisplaysettingsPanel);
             app.FrameSliderLabel.HorizontalAlignment = 'right';
-            app.FrameSliderLabel.Position = [199 205 40 22];
+            app.FrameSliderLabel.Position = [204 362 40 22];
             app.FrameSliderLabel.Text = 'Frame';
 
             % Create FrameSlider
             app.FrameSlider = uislider(app.DisplaysettingsPanel);
             app.FrameSlider.ValueChangingFcn = createCallbackFcn(app, @FrameSliderValueChanging, true);
             app.FrameSlider.FontSize = 10;
-            app.FrameSlider.Position = [256 215 128 3];
+            app.FrameSlider.Position = [261 372 128 3];
 
             % Create FrameEditField
             app.FrameEditField = uieditfield(app.DisplaysettingsPanel, 'numeric');
             app.FrameEditField.ValueChangedFcn = createCallbackFcn(app, @FrameEditFieldValueChanged, true);
-            app.FrameEditField.Position = [395 202 38 22];
+            app.FrameEditField.Position = [400 359 38 22];
 
             % Create ChannelPanel
             app.ChannelPanel = uipanel(app.DisplaysettingsPanel);
             app.ChannelPanel.Title = 'Channel';
-            app.ChannelPanel.Position = [5 233 434 97];
+            app.ChannelPanel.Position = [6 395 434 97];
 
             % Create WeightSliderLabel
             app.WeightSliderLabel = uilabel(app.ChannelPanel);
@@ -5198,33 +5466,49 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             % Create ResetButton
             app.ResetButton = uibutton(app.DisplaysettingsPanel, 'push');
             app.ResetButton.ButtonPushedFcn = createCallbackFcn(app, @ResetButtonPushed, true);
-            app.ResetButton.Position = [76 188 47 22];
+            app.ResetButton.Position = [81 345 47 22];
             app.ResetButton.Text = 'Reset';
 
             % Create PanButton
             app.PanButton = uibutton(app.DisplaysettingsPanel, 'state');
             app.PanButton.ValueChangedFcn = createCallbackFcn(app, @PanButtonValueChanged, true);
             app.PanButton.Text = 'Pan';
-            app.PanButton.Position = [129 188 49 23];
+            app.PanButton.Position = [134 345 49 23];
 
-            % Create ROisPanel
-            app.ROisPanel = uipanel(app.ScoreAppUIFigure);
-            app.ROisPanel.Title = 'ROis';
-            app.ROisPanel.FontSize = 10;
-            app.ROisPanel.Position = [17 815 450 159];
+            % Create QuantificationTab
+            app.QuantificationTab = uitab(app.TabGroup);
+            app.QuantificationTab.Title = 'Quantification';
 
-            % Create UIROITable
-            app.UIROITable = uitable(app.ROisPanel);
-            app.UIROITable.ColumnName = {'Display'; 'Name'; 'Size'};
-            app.UIROITable.RowName = {};
-            app.UIROITable.ColumnEditable = [true false false];
-            app.UIROITable.FontSize = 10;
-            app.UIROITable.Position = [6 12 432 124];
+            % Create IntensityQuantificationPanel
+            app.IntensityQuantificationPanel = uipanel(app.QuantificationTab);
+            app.IntensityQuantificationPanel.Title = 'Intensity Quantification';
+            app.IntensityQuantificationPanel.FontSize = 10;
+            app.IntensityQuantificationPanel.Position = [18 483 450 407];
+
+            % Create UIProfileAxes
+            app.UIProfileAxes = uiaxes(app.IntensityQuantificationPanel);
+            app.UIProfileAxes.Position = [10 10 403 345];
+
+            % Create LineIntensityprofileButton
+            app.LineIntensityprofileButton = uibutton(app.IntensityQuantificationPanel, 'state');
+            app.LineIntensityprofileButton.ValueChangedFcn = createCallbackFcn(app, @LineIntensityprofileButtonValueChanged2, true);
+            app.LineIntensityprofileButton.Text = 'Line Intensity profile';
+            app.LineIntensityprofileButton.Position = [11 358 121 22];
+
+            % Create ShapeButton
+            app.ShapeButton = uibutton(app.IntensityQuantificationPanel, 'state');
+            app.ShapeButton.ValueChangedFcn = createCallbackFcn(app, @ShapeButtonValueChanged, true);
+            app.ShapeButton.Text = 'Shape intensity';
+            app.ShapeButton.Position = [138 359 100 22];
+
+            % Create ROIDataTab
+            app.ROIDataTab = uitab(app.TabGroup);
+            app.ROIDataTab.Title = 'ROI Data';
 
             % Create DataSettingsPanel
-            app.DataSettingsPanel = uipanel(app.ScoreAppUIFigure);
+            app.DataSettingsPanel = uipanel(app.ROIDataTab);
             app.DataSettingsPanel.Title = 'Data';
-            app.DataSettingsPanel.Position = [480 12 450 529];
+            app.DataSettingsPanel.Position = [15 9 610 881];
 
             % Create UIDataTable
             app.UIDataTable = uitable(app.DataSettingsPanel);
@@ -5234,169 +5518,174 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.UIDataTable.CellEditCallback = createCallbackFcn(app, @UIDataTableCellEdit, true);
             app.UIDataTable.SelectionChangedFcn = createCallbackFcn(app, @UIDataTableSelectionChanged, true);
             app.UIDataTable.FontSize = 10;
-            app.UIDataTable.Position = [14 371 425 103];
+            app.UIDataTable.Position = [14 566 576 260];
 
             % Create UISubDataTable
             app.UISubDataTable = uitable(app.DataSettingsPanel);
             app.UISubDataTable.ColumnName = {'Plot'; 'PlotName'; 'Type'; 'Color'; 'Width'; 'Plot group'};
-            app.UISubDataTable.ColumnWidth = {50, 100, 100, 70, 50, 100};
+            app.UISubDataTable.ColumnWidth = {50, 200, 100, 70, 50, 100};
             app.UISubDataTable.RowName = {};
             app.UISubDataTable.ColumnEditable = [true false false true true true];
             app.UISubDataTable.CellEditCallback = createCallbackFcn(app, @UISubDataTableCellEdit, true);
             app.UISubDataTable.SelectionChangedFcn = createCallbackFcn(app, @UISubDataTableSelectionChanged, true);
             app.UISubDataTable.FontSize = 10;
-            app.UISubDataTable.Position = [19 67 422 144];
+            app.UISubDataTable.Position = [8 79 586 329];
 
             % Create SelecteddataLabel
             app.SelecteddataLabel = uilabel(app.DataSettingsPanel);
-            app.SelecteddataLabel.Position = [17 29 331 22];
+            app.SelecteddataLabel.Position = [17 41 331 22];
             app.SelecteddataLabel.Text = 'Selected data';
 
             % Create AssignvalueLabel
             app.AssignvalueLabel = uilabel(app.DataSettingsPanel);
             app.AssignvalueLabel.HorizontalAlignment = 'right';
-            app.AssignvalueLabel.Position = [12 3 76 22];
+            app.AssignvalueLabel.Position = [12 15 76 22];
             app.AssignvalueLabel.Text = 'Assign value:';
 
             % Create AssignvalueEditField
             app.AssignvalueEditField = uieditfield(app.DataSettingsPanel, 'text');
             app.AssignvalueEditField.ValueChangedFcn = createCallbackFcn(app, @AssignvalueEditFieldValueChanged, true);
-            app.AssignvalueEditField.Position = [118 3 100 22];
+            app.AssignvalueEditField.Position = [118 15 100 22];
 
             % Create ClassDropDownLabel
             app.ClassDropDownLabel = uilabel(app.DataSettingsPanel);
             app.ClassDropDownLabel.HorizontalAlignment = 'right';
-            app.ClassDropDownLabel.Position = [283 3 35 22];
+            app.ClassDropDownLabel.Position = [283 15 35 22];
             app.ClassDropDownLabel.Text = 'Class';
 
             % Create ClassDropDown
             app.ClassDropDown = uidropdown(app.DataSettingsPanel);
             app.ClassDropDown.ValueChangedFcn = createCallbackFcn(app, @ClassDropDownValueChanged, true);
-            app.ClassDropDown.Position = [330 3 100 22];
+            app.ClassDropDown.Position = [330 15 100 22];
 
             % Create DeselectalldataButton
             app.DeselectalldataButton = uibutton(app.DataSettingsPanel, 'push');
             app.DeselectalldataButton.ButtonPushedFcn = createCallbackFcn(app, @DeselectalldataButtonPushed, true);
-            app.DeselectalldataButton.Position = [8 479 104 23];
+            app.DeselectalldataButton.Position = [8 831 104 23];
             app.DeselectalldataButton.Text = 'Deselect all data';
 
             % Create DeselectallsubdataButton
             app.DeselectallsubdataButton = uibutton(app.DataSettingsPanel, 'push');
             app.DeselectallsubdataButton.ButtonPushedFcn = createCallbackFcn(app, @DeselectallsubdataButtonPushed, true);
-            app.DeselectallsubdataButton.Position = [117 480 123 23];
+            app.DeselectallsubdataButton.Position = [117 832 123 23];
             app.DeselectallsubdataButton.Text = 'Deselect all subdata';
 
             % Create NewdatagroupButton
             app.NewdatagroupButton = uibutton(app.DataSettingsPanel, 'push');
             app.NewdatagroupButton.ButtonPushedFcn = createCallbackFcn(app, @NewdatagroupButtonPushed, true);
-            app.NewdatagroupButton.Position = [19 341 100 23];
+            app.NewdatagroupButton.Position = [11 532 100 23];
             app.NewdatagroupButton.Text = 'New data group';
 
             % Create UIGroupTable
             app.UIGroupTable = uitable(app.DataSettingsPanel);
             app.UIGroupTable.ColumnName = {'GroupName'; 'Type'; 'XLim'; 'YLim'};
-            app.UIGroupTable.ColumnWidth = {100, 100, 100, 100};
+            app.UIGroupTable.ColumnWidth = {250, 120, 100, 100};
             app.UIGroupTable.RowName = {};
             app.UIGroupTable.ColumnEditable = [true true true true];
             app.UIGroupTable.CellEditCallback = createCallbackFcn(app, @UIGroupTableCellEdit, true);
-            app.UIGroupTable.Position = [17 222 419 106];
+            app.UIGroupTable.Position = [8 417 582 106];
 
             % Create NewdataseriesButton
             app.NewdataseriesButton = uibutton(app.DataSettingsPanel, 'push');
             app.NewdataseriesButton.ButtonPushedFcn = createCallbackFcn(app, @NewdataseriesButtonPushed, true);
-            app.NewdataseriesButton.Position = [244 480 100 23];
+            app.NewdataseriesButton.Position = [244 832 100 23];
             app.NewdataseriesButton.Text = 'New dataseries';
 
             % Create NewdatasetButton
             app.NewdatasetButton = uibutton(app.DataSettingsPanel, 'push');
             app.NewdatasetButton.ButtonPushedFcn = createCallbackFcn(app, @NewdatasetButtonPushed, true);
-            app.NewdatasetButton.Position = [348 480 92 23];
+            app.NewdatasetButton.Position = [348 832 92 23];
             app.NewdatasetButton.Text = 'New dataset';
 
             % Create FrameEditField_2Label
             app.FrameEditField_2Label = uilabel(app.DataSettingsPanel);
             app.FrameEditField_2Label.HorizontalAlignment = 'right';
-            app.FrameEditField_2Label.Position = [336 33 43 22];
+            app.FrameEditField_2Label.Position = [336 45 43 22];
             app.FrameEditField_2Label.Text = 'Frame:';
 
             % Create FrameEditField_2
             app.FrameEditField_2 = uieditfield(app.DataSettingsPanel, 'numeric');
             app.FrameEditField_2.ValueChangedFcn = createCallbackFcn(app, @FrameEditField_2ValueChanged, true);
-            app.FrameEditField_2.Position = [387 33 50 22];
+            app.FrameEditField_2.Position = [387 45 50 22];
+
+            % Create AnnotationsTab
+            app.AnnotationsTab = uitab(app.TabGroup);
+            app.AnnotationsTab.Title = 'Annotations';
 
             % Create AnnotationPanel
-            app.AnnotationPanel = uipanel(app.ScoreAppUIFigure);
+            app.AnnotationPanel = uipanel(app.AnnotationsTab);
             app.AnnotationPanel.Title = 'Annotation Panel';
             app.AnnotationPanel.FontSize = 10;
-            app.AnnotationPanel.Position = [483 550 450 401];
+            app.AnnotationPanel.Position = [7 24 583 864];
 
             % Create UIAnnotationTable
             app.UIAnnotationTable = uitable(app.AnnotationPanel);
             app.UIAnnotationTable.ColumnName = {'Display'; 'Name'; 'Class'; 'Weight'; 'Contour'; 'Width'};
+            app.UIAnnotationTable.ColumnWidth = {70, 200, 100, 70, 70, 70};
             app.UIAnnotationTable.RowName = {};
             app.UIAnnotationTable.ColumnEditable = [true true true true true true];
             app.UIAnnotationTable.SelectionChangedFcn = createCallbackFcn(app, @UIAnnotationTableSelectionChanged, true);
             app.UIAnnotationTable.FontSize = 10;
-            app.UIAnnotationTable.Position = [13 177 421 143];
+            app.UIAnnotationTable.Position = [13 438 553 345];
 
             % Create ObjectspanelPanel
             app.ObjectspanelPanel = uipanel(app.AnnotationPanel);
             app.ObjectspanelPanel.Title = 'Objects panel';
             app.ObjectspanelPanel.FontSize = 10;
-            app.ObjectspanelPanel.Position = [11 4 425 163];
+            app.ObjectspanelPanel.Position = [19 264 547 162];
 
             % Create IndexChannelLabel
             app.IndexChannelLabel = uilabel(app.ObjectspanelPanel);
-            app.IndexChannelLabel.Position = [65 117 333 22];
+            app.IndexChannelLabel.Position = [65 116 333 22];
             app.IndexChannelLabel.Text = 'IndexChannelLabel';
 
             % Create PaintButton
             app.PaintButton = uibutton(app.ObjectspanelPanel, 'state');
             app.PaintButton.ValueChangedFcn = createCallbackFcn(app, @PaintButtonValueChanged, true);
             app.PaintButton.Text = 'Paint';
-            app.PaintButton.Position = [260 40 149 25];
+            app.PaintButton.Position = [260 39 149 25];
 
             % Create SelectedobjectindexEditFieldLabel
             app.SelectedobjectindexEditFieldLabel = uilabel(app.ObjectspanelPanel);
             app.SelectedobjectindexEditFieldLabel.HorizontalAlignment = 'right';
-            app.SelectedobjectindexEditFieldLabel.Position = [9 41 119 22];
+            app.SelectedobjectindexEditFieldLabel.Position = [9 40 119 22];
             app.SelectedobjectindexEditFieldLabel.Text = 'Selected object index';
 
             % Create SelectedobjectindexEditField
             app.SelectedobjectindexEditField = uieditfield(app.ObjectspanelPanel, 'numeric');
             app.SelectedobjectindexEditField.ValueChangedFcn = createCallbackFcn(app, @SelectedobjectindexEditFieldValueChanged, true);
-            app.SelectedobjectindexEditField.Position = [143 41 100 22];
+            app.SelectedobjectindexEditField.Position = [143 40 100 22];
 
             % Create SelectedLabel
             app.SelectedLabel = uilabel(app.ObjectspanelPanel);
-            app.SelectedLabel.Position = [9 117 55 22];
+            app.SelectedLabel.Position = [9 116 55 22];
             app.SelectedLabel.Text = 'Selected:';
 
             % Create ComputemetricsButton
             app.ComputemetricsButton = uibutton(app.ObjectspanelPanel, 'push');
-            app.ComputemetricsButton.Position = [95 9 150 23];
+            app.ComputemetricsButton.Position = [95 8 150 23];
             app.ComputemetricsButton.Text = 'Compute metrics';
 
             % Create copyobjectstonextframeButton
             app.copyobjectstonextframeButton = uibutton(app.ObjectspanelPanel, 'push');
-            app.copyobjectstonextframeButton.Position = [256 9 155 23];
+            app.copyobjectstonextframeButton.Position = [256 8 155 23];
             app.copyobjectstonextframeButton.Text = 'copy objects to next frame';
 
             % Create AnnoatationcolorLabel
             app.AnnoatationcolorLabel = uilabel(app.ObjectspanelPanel);
             app.AnnoatationcolorLabel.HorizontalAlignment = 'right';
-            app.AnnoatationcolorLabel.Position = [266 81 92 22];
+            app.AnnoatationcolorLabel.Position = [266 80 92 22];
             app.AnnoatationcolorLabel.Text = 'Annotation color';
 
             % Create MaskColorPicker
             app.MaskColorPicker = uicolorpicker(app.ObjectspanelPanel);
             app.MaskColorPicker.ValueChangedFcn = createCallbackFcn(app, @MaskColorPickerValueChanged, true);
-            app.MaskColorPicker.Position = [373 82 38 22];
+            app.MaskColorPicker.Position = [373 81 38 22];
 
             % Create TransparencyLabel
             app.TransparencyLabel = uilabel(app.ObjectspanelPanel);
             app.TransparencyLabel.HorizontalAlignment = 'right';
-            app.TransparencyLabel.Position = [3 94 78 22];
+            app.TransparencyLabel.Position = [3 93 78 22];
             app.TransparencyLabel.Text = 'Transparency';
 
             % Create Transparency
@@ -5404,65 +5693,47 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.Transparency.Limits = [0 1];
             app.Transparency.ValueChangedFcn = createCallbackFcn(app, @TransparencyValueChanged, true);
             app.Transparency.ValueChangingFcn = createCallbackFcn(app, @TransparencyValueChanging, true);
-            app.Transparency.Position = [101 102 150 3];
+            app.Transparency.Position = [101 101 150 3];
             app.Transparency.Value = 0.5;
 
             % Create NewAnnotationButton
             app.NewAnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.NewAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @NewAnnotationButtonPushed, true);
-            app.NewAnnotationButton.Position = [4 354 95 23];
+            app.NewAnnotationButton.Position = [4 817 95 23];
             app.NewAnnotationButton.Text = 'New Annotation';
 
             % Create DeleteAnnnotationButton
             app.DeleteAnnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.DeleteAnnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteAnnnotationButtonPushed, true);
-            app.DeleteAnnnotationButton.Position = [103 354 109 23];
+            app.DeleteAnnnotationButton.Position = [103 817 109 23];
             app.DeleteAnnnotationButton.Text = 'Delete Annnotation';
 
             % Create NewclassButton
             app.NewclassButton = uibutton(app.AnnotationPanel, 'push');
             app.NewclassButton.ButtonPushedFcn = createCallbackFcn(app, @NewclassButtonPushed, true);
-            app.NewclassButton.Position = [218 354 94 23];
+            app.NewclassButton.Position = [218 817 94 23];
             app.NewclassButton.Text = 'New class';
 
             % Create DeleteclassButton
             app.DeleteclassButton = uibutton(app.AnnotationPanel, 'push');
             app.DeleteclassButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteclassButtonPushed, true);
-            app.DeleteclassButton.Position = [318 354 108 23];
+            app.DeleteclassButton.Position = [318 817 108 23];
             app.DeleteclassButton.Text = 'Delete class';
 
             % Create isthedefautcolorCheckBox
             app.isthedefautcolorCheckBox = uicheckbox(app.AnnotationPanel);
             app.isthedefautcolorCheckBox.ValueChangedFcn = createCallbackFcn(app, @isthedefautcolorCheckBoxValueChanged, true);
             app.isthedefautcolorCheckBox.Text = '''1'' is the defaut color';
-            app.isthedefautcolorCheckBox.Position = [9 326 131 22];
+            app.isthedefautcolorCheckBox.Position = [9 789 131 22];
 
-            % Create IntensityQuantificationPanel
-            app.IntensityQuantificationPanel = uipanel(app.ScoreAppUIFigure);
-            app.IntensityQuantificationPanel.Title = 'Intensity Quantification';
-            app.IntensityQuantificationPanel.FontSize = 10;
-            app.IntensityQuantificationPanel.Position = [15 80 450 220];
-
-            % Create UIProfileAxes
-            app.UIProfileAxes = uiaxes(app.IntensityQuantificationPanel);
-            app.UIProfileAxes.Position = [10 4 403 164];
-
-            % Create LineIntensityprofileButton
-            app.LineIntensityprofileButton = uibutton(app.IntensityQuantificationPanel, 'state');
-            app.LineIntensityprofileButton.ValueChangedFcn = createCallbackFcn(app, @LineIntensityprofileButtonValueChanged2, true);
-            app.LineIntensityprofileButton.Text = 'Line Intensity profile';
-            app.LineIntensityprofileButton.Position = [11 174 121 22];
-
-            % Create ShapeButton
-            app.ShapeButton = uibutton(app.IntensityQuantificationPanel, 'state');
-            app.ShapeButton.ValueChangedFcn = createCallbackFcn(app, @ShapeButtonValueChanged, true);
-            app.ShapeButton.Text = 'Shape intensity';
-            app.ShapeButton.Position = [138 172 100 22];
+            % Create MovieoutputTab
+            app.MovieoutputTab = uitab(app.TabGroup);
+            app.MovieoutputTab.Title = 'Movie output';
 
             % Create MoviePanel
-            app.MoviePanel = uipanel(app.ScoreAppUIFigure);
+            app.MoviePanel = uipanel(app.MovieoutputTab);
             app.MoviePanel.Title = 'Movie';
-            app.MoviePanel.Position = [940 471 450 480];
+            app.MoviePanel.Position = [11 411 598 480];
 
             % Create MovieFramesEditFieldLabel
             app.MovieFramesEditFieldLabel = uilabel(app.MoviePanel);
