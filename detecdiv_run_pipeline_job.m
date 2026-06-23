@@ -384,7 +384,7 @@ function classiPath = localClassifierPathFromPayload(payload)
 end
 
 function ctx = localAttachClassifierScopedRuntime(ctx, pipeObj, payload)
-    if isfield(ctx, 'roiList') && ~isempty(ctx.roiList)
+    if isfield(ctx, 'roiList') && ~isempty(ctx.roiList) && isa(ctx.roiList, 'roi')
         return;
     end
     [classiObj, snapPath] = localLoadClassifierForScopedRun(pipeObj, ctx, payload);
@@ -658,6 +658,17 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         ctx.run = struct();
         ctx.run.selectedNodes = localNormalizeSelectedNodes(localGetField(rr, 'selected_nodes', {}));
         ctx.run.nodeParams = localNormalizeNodeParams(localGetField(rr, 'node_params', struct('id', {}, 'params', {})), payload);
+        intent = localNormalizeRunIntent(localGetText(rr, {'intent'}, localGetText(rr, {'classifier_intent'}, '')));
+        if isempty(intent)
+            intent = localInferRunIntentFromNodeParams(ctx.run.nodeParams);
+        end
+        if isempty(intent)
+            intent = localInferRunIntentFromPipeline(pipeObj);
+        end
+        if ~isempty(intent)
+            ctx.run.intent = intent;
+            ctx.run.classifierIntent = intent;
+        end
         ctx.run.runPolicy = localGetText(rr, {'run_policy'}, 'resume');
         inputSource = localGetText(rr, {'input_source'}, localGetText(rr, {'inputSource'}, ''));
         if isfield(rr, 'paths') && isstruct(rr.paths)
@@ -733,6 +744,64 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         cancelTokenFile = localGetText(payload, {'execution','cancel_token_file'}, '');
         if ~isempty(cancelTokenFile)
             ctx.cancel = struct('tokenFile', cancelTokenFile);
+        end
+    end
+end
+
+function intent = localNormalizeRunIntent(value)
+    intent = '';
+    txt = lower(strtrim(char(string(value))));
+    switch txt
+        case {'train','training','fit'}
+            intent = 'train';
+        case {'validate','validation','val','test','evaluate','eval'}
+            intent = 'validate';
+        case {'infer','inference','classify','classification','predict','prediction'}
+            intent = 'infer';
+    end
+end
+
+function intent = localInferRunIntentFromNodeParams(nodeParams)
+    intent = '';
+    if isempty(nodeParams) || ~isstruct(nodeParams)
+        return;
+    end
+    for i = 1:numel(nodeParams)
+        params = localGetField(nodeParams(i), 'params', struct());
+        cand = '';
+        if isstruct(params)
+            cand = localNormalizeRunIntent(localGetText(params, {'operation'}, localGetText(params, {'intent'}, '')));
+        end
+        if strcmp(cand, 'train')
+            intent = cand;
+            return;
+        elseif isempty(intent) && ~isempty(cand)
+            intent = cand;
+        end
+    end
+end
+
+function intent = localInferRunIntentFromPipeline(pipeObj)
+    intent = '';
+    try
+        nodes = pipeObj.nodes;
+    catch
+        nodes = [];
+    end
+    if isempty(nodes)
+        return;
+    end
+    for i = 1:numel(nodes)
+        params = localGetField(nodes(i), 'params', struct());
+        cand = '';
+        if isstruct(params)
+            cand = localNormalizeRunIntent(localGetText(params, {'operation'}, localGetText(params, {'intent'}, '')));
+        end
+        if strcmp(cand, 'train')
+            intent = cand;
+            return;
+        elseif isempty(intent) && ~isempty(cand)
+            intent = cand;
         end
     end
 end

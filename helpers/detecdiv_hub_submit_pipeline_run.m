@@ -9,8 +9,12 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     end
     opts = localRunStage('parse options', @() localParse(varargin{:}));
     projectArgClass = localClassName(shallowObj);
-    shallowObj = localResolveShallowProject(runObj, shallowObj);
-    classifierScopedRun = isempty(shallowObj) && localIsClassifierScopedRun(runObj);
+    classifierScopedRun = localIsClassifierScopedRun(runObj);
+    if classifierScopedRun
+        shallowObj = [];
+    else
+        shallowObj = localResolveShallowProject(runObj, shallowObj);
+    end
     if isempty(shallowObj) && ~classifierScopedRun
         error('detecdiv_hub_submit_pipeline_run:MissingProject', ...
             'A shallow project is required. Received project argument class: %s.', projectArgClass);
@@ -1424,6 +1428,14 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest = struct();
     runRequest.run_id = char(string(runObj.runId));
     runRequest.description = char(string(runObj.description));
+    intent = localText(localNested(ctx, {'run','intent'}, localNested(ctx, {'run','classifierIntent'}, '')));
+    if isempty(intent)
+        intent = localInferRunIntentFromNodeParams(localNested(ctx, {'run','nodeParams'}, struct()));
+    end
+    if ~isempty(intent)
+        runRequest.intent = intent;
+        runRequest.classifier_intent = intent;
+    end
     runRequest.selected_nodes = localCellText(localNested(ctx, {'run','selectedNodes'}, {}));
     runRequest.node_params = localBuildNodeParamsList( ...
         localNested(ctx, {'run','nodeParams'}, struct()), runRequest.selected_nodes, ref, hub);
@@ -1445,6 +1457,23 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+end
+
+function intent = localInferRunIntentFromNodeParams(nodeParams)
+    intent = '';
+    candidates = localTrainingIntentCandidatesFromNodeParams(nodeParams);
+    for i = 1:numel(candidates)
+        txt = lower(strtrim(localText(candidates{i})));
+        switch txt
+            case {'train','training','fit'}
+                intent = 'train';
+                return;
+            case {'validate','validation','val','test','evaluate','eval'}
+                if isempty(intent)
+                    intent = 'validate';
+                end
+        end
+    end
 end
 
 function localValidateInputSourceForSelectedNodes(inputSource, selectedNodes, ctx, runObj)

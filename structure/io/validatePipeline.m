@@ -1947,10 +1947,11 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
                 artifactReport.status = 'missing_model';
                 return;
             end
-        case 'cellposesam'
-            % CellposeSAM may intentionally use the default SAM model when no
-            % package-local model file exists. The linked classi snapshot is
-            % sufficient for execution defaults.
+        case {'cellposesam','sam31'}
+            % Python-backed classifiers may intentionally use package-managed
+            % default weights or explicit checkpoint paths from their runtime
+            % config. The linked classi snapshot is sufficient for pipeline
+            % wiring; do not require a MATLAB <classifierId>.mat model file.
         otherwise
             modelPath = fullfile(modulePath, [moduleId '.mat']);
             artifactReport.modelPath = modelPath;
@@ -2198,7 +2199,7 @@ end
 
 function tf = classifierRequiresLocalArtifacts(pkgName)
     pkgName = lower(char(string(pkgName)));
-    tf = ~any(strcmp(pkgName, {'cellposesam'}));
+    tf = ~any(strcmp(pkgName, {'cellposesam','sam31'}));
 end
 
 function msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, reason)

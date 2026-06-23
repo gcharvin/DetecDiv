@@ -25,7 +25,7 @@ if isempty(runId)
 end
 
 args = {pipeObj, ...
-    'InputMode', 'classifier', ...
+    'InputMode', 'classifier_rois', ...
     'Intent', opts.intent, ...
     'LockInputMode', true, ...
     'LockReason', ['Classifier ' opts.intent ' run; classifier.roi is the runtime source.'], ...
@@ -51,6 +51,7 @@ elseif ~isempty(opts.projectPath)
     args = [args {'ProjectPath', opts.projectPath}];
 end
 
+ensureActivePipelineGuiPath();
 app = pipeline2(args{:});
 end
 
@@ -205,12 +206,10 @@ node.origin = struct('kind','classifier', 'path', classiObj.path, 'id', classiOb
 
 pipeObj.nodes = pipelineNormalizeNodes(node, 'persist');
 pipeObj.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
-try
-    pipelineSave(pipeObj);
-catch ME
-    warning('classifierOpenValidationPipeline:PipelineSaveFailed', ...
-        'Could not save validation pipeline template: %s', ME.message);
-end
+% Do not save here. pipeline2 receives the pipeline object directly and will
+% persist the template when the user saves/runs it. Saving at this stage makes
+% classifierGUI feel sluggish on network-backed classifier folders because
+% pipelineSave also runs dependency audits.
 end
 
 function params = classifierNodeParams(classiObj, opts)
@@ -324,5 +323,36 @@ if isnumeric(value)
     value = double(value(:)');
     value = value(isfinite(value));
     idx = unique(round(value(value >= 1 & value <= n)), 'stable');
+end
+end
+
+function ensureActivePipelineGuiPath()
+thisFile = mfilename('fullpath');
+repoRoot = fileparts(fileparts(fileparts(thisFile)));
+backupRoot = localNormalizePath(fullfile(repoRoot, 'backups'));
+guiDir = fullfile(repoRoot, 'structure', 'GUI');
+
+parts = strsplit(path, pathsep);
+for i = 1:numel(parts)
+    p = parts{i};
+    if isempty(p)
+        continue;
+    end
+    pNorm = localNormalizePath(p);
+    if strcmpi(pNorm, backupRoot) || startsWith([lower(pNorm) filesep], [lower(backupRoot) filesep])
+        rmpath(p);
+    end
+end
+
+if exist(guiDir, 'dir') == 7
+    addpath(guiDir, '-begin');
+end
+end
+
+function p = localNormalizePath(p)
+p = char(string(p));
+p = strrep(p, '/', filesep);
+while endsWith(p, filesep)
+    p(end) = [];
 end
 end

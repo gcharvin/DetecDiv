@@ -2367,12 +2367,33 @@ end
                  return;
             end
 
+            d = [];
             try
+                d = uiprogressdlg(app.ClassifierUIFigure, ...
+                    'Title', 'Preparing training run', ...
+                    'Message', 'Preparing classifier training pipeline...', ...
+                    'Indeterminate', 'on', ...
+                    'Cancelable', 'off');
+                drawnow;
+            catch
+            end
+
+            try
+                if ~isempty(d) && isvalid(d)
+                    d.Message = 'Checking classifier inputs and opening pipeline2...';
+                    drawnow;
+                end
                 classifierOpenTrainingPipeline(classiObj, ...
                     'Rois', nrois, ...
                     'OutputPolicy', 'replace', ...
                     'Execution', 'Auto');
+                if ~isempty(d) && isvalid(d)
+                    close(d);
+                end
             catch ME
+                if ~isempty(d) && isvalid(d)
+                    close(d);
+                end
                 msg = localGuiErrorMessage(app, ME);
                 uialert(app.ClassifierUIFigure, msg, 'Training pipeline failed', 'Icon','error');
             end

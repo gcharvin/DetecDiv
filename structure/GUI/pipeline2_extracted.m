@@ -18099,8 +18099,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create RuntimeSourceDropDown
             app.RuntimeSourceDropDown = uidropdown(app.RuntimeInputsTab);
-            app.RuntimeSourceDropDown.Items = {'Read from existing project', 'Parse raw images into project'};
-            app.RuntimeSourceDropDown.ItemsData = {'existing_rois', 'raw_dataloader'};
+            app.RuntimeSourceDropDown.Items = {'Read from existing project', 'Parse raw images into project', 'Use classifier attached ROIs'};
+            app.RuntimeSourceDropDown.ItemsData = {'existing_rois', 'raw_dataloader', 'classifier_rois'};
             app.RuntimeSourceDropDown.Position = [110 395 585 22];
             app.RuntimeSourceDropDown.Value = 'existing_rois';
 
