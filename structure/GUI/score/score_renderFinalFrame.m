@@ -117,7 +117,7 @@ switch lower(displayHandles.mode)
                             %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
                             graphicsHandles.imgHandles(tileIndex) = ax.Children;
                             if frame == 1
-                                ylabel(ax, layoutOptions.channel{ch}, 'FontName', 'Arial', ...
+                                ylabel(ax, score_wrapDisplayLabel(layoutOptions.channel{ch}), 'FontName', 'Arial', ...
                                     'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor,'Interpreter','none');
                             end
 
@@ -340,7 +340,7 @@ newPath = fullfile(folder, [name '.pdf']);
 
                     imshow(displayImage, []);
 
-titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+titleStr = score_wrapDisplayLabel(localBuildMovieRoiTitle_(layoutOptions, roiData), 28);
 if strlength(titleStr) > 0
     text(ax, 0.99, 0.99, titleStr, ...
         'Units','normalized', ...
@@ -378,7 +378,7 @@ end
                         imshow(displayImage(:,:,:,ch), []);
 
 if ch == 1
-    titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+    titleStr = score_wrapDisplayLabel(localBuildMovieRoiTitle_(layoutOptions, roiData), 28);
     if strlength(titleStr) > 0
         text(ax, 0.99, 0.99, titleStr, ...
             'Units','normalized', ...
@@ -392,6 +392,11 @@ if ch == 1
 end
 
                         %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
+                        ylabel(ax, score_wrapDisplayLabel(layoutOptions.channel{ch}), ...
+                            'FontName', 'Arial', ...
+                            'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
+                            'Color', textColor, ...
+                            'Interpreter','none');
 
                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
 

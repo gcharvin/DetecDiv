@@ -117,7 +117,7 @@ for roiIdx = 1:numROI
                         set(ax, 'Color', background);
                         displayVectorGraphics(ax, f, imgRow, roiOverlay(roiIdx), layout, param);
                         if f == 1
-                            ylabel(ax, layout.nonIndexedNames{imgRow}, 'FontName', 'Arial', ...
+                            ylabel(ax, score_wrapDisplayLabel(layout.nonIndexedNames{imgRow}), 'FontName', 'Arial', ...
                                 'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor);
                         end
                     end
@@ -249,7 +249,7 @@ end
 varname = data.data.Properties.VariableNames(dataIndices);
 str = cell(1, size(ydata,2));
 for i = 1:size(ydata,2)
-    str{i} = varname{i};
+    str{i} = score_wrapDisplayLabel(varname{i}, 32);
 end
 
 % Tracé des données avec conversion de l'axe X en minutes et récupération des handles
@@ -281,7 +281,7 @@ end
 hold(ax, 'off');
 
 % Affichage du titre en ylabel (au lieu d'un titre en haut)
-ylabel(ax, layout.plotidxgroup{groupIdx}, ...
+ylabel(ax, score_wrapDisplayLabel(layout.plotidxgroup{groupIdx}), ...
     'FontSize', floor(param.fontsize), ...
     'FontName', 'Arial', 'Color', param.textColor, 'Interpreter', 'none');
 
