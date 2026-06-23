@@ -42,6 +42,7 @@ for i = 1:scoreChannelCount
     paramout.(sprintf('channel%d_name', i)) = [listChannels listChannels{1}];
 end
 paramout.BrightestPixels = 20;
+paramout.computeMaskCombinations = true;
 paramout.tip = buildTips(maskChannelCount, scoreChannelCount);
 end
 
@@ -89,6 +90,7 @@ function tip = buildTips(maskChannelCount, scoreChannelCount)
         tip{end+1} = sprintf('Channel name #%d to score', i); %#ok<AGROW>
     end
     tip{end+1} = 'Number of brightest pixels used for top-pixel intensity metrics';
+    tip{end+1} = 'When multiple masks are selected, compute pairwise AND and NOT composite-mask fluorescence metrics';
 end
 
 function out = normalizeChannelList(ch)

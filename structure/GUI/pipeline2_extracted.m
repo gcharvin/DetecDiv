@@ -11621,7 +11621,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     sprintf('mask%d_label', i), ...
                     sprintf('mask%d_stat', i)}]; %#ok<AGROW>
             end
-            keys = [keys, {'BrightestPixels'}];
+            keys = [keys, {'BrightestPixels','computeMaskCombinations'}];
         end
 
         function n = computeMetricsMaskSlotCountForNode(app, node)

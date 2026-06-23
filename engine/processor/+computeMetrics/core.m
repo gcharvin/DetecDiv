@@ -182,6 +182,10 @@ if ~isfield(paramout, 'BrightestPixels') || isempty(paramout.BrightestPixels)
     paramout.BrightestPixels = 20;
 end
 paramout.BrightestPixels = max(1, round(numericScalar(paramout.BrightestPixels, 20)));
+if ~isfield(paramout, 'computeMaskCombinations') || isempty(paramout.computeMaskCombinations)
+    paramout.computeMaskCombinations = true;
+end
+paramout.computeMaskCombinations = logicalScalar(paramout.computeMaskCombinations, true);
 end
 
 function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha, frames)
@@ -320,6 +324,14 @@ for m = 1:maskCount
     end
 end
 
+if logical(paramout.computeMaskCombinations)
+    maskSpecs = validQuantificationMasks(roiobj, paramout);
+    if numel(maskSpecs) > 1
+        [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
+            varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N);
+    end
+end
+
 if isempty(varNames)
     maskNames = cell(1, maskCount);
     for m = 1:maskCount
@@ -354,7 +366,179 @@ if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per non-zero mask index listed in the corresponding MaskIdx_* cell.';
+dataout(cc).userData.composite_mask_semantics = ['For *_AND_* and *_NOT_* variables, each table cell contains one value per ' ...
+    'non-zero mask index listed in the corresponding MaskIdx_* composite variable. AND is baseMask>0 intersect otherMask>0; ' ...
+    'NOT is baseMask>0 excluding otherMask>0.'];
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
+end
+
+function maskSpecs = validQuantificationMasks(roiobj, paramout)
+maskSpecs = struct('index', {}, 'channel', {}, 'name', {}, 'label', {}, 'labelSafe', {});
+for m = 1:paramout.maskChannelCount
+    maskName = paramout.(sprintf('mask%d_name', m));
+    if strcmp(maskName, 'N/A')
+        continue;
+    end
+    maskChannel = roiobj.findChannelID(maskName);
+    if isempty(maskChannel)
+        continue;
+    end
+    maskLabel = paramout.(sprintf('mask%d_label', m));
+    maskSpecs(end+1) = struct( ... %#ok<AGROW>
+        'index', m, ...
+        'channel', maskChannel(1), ...
+        'name', maskName, ...
+        'label', maskLabel, ...
+        'labelSafe', makeSafeVariableName(maskLabel));
+end
+end
+
+function [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
+    varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N)
+
+nFrames = size(im, 4);
+for a = 1:numel(maskSpecs)
+    for b = a+1:numel(maskSpecs)
+        relationSpecs = { ...
+            maskSpecs(a), maskSpecs(b), 'AND'; ...
+            maskSpecs(a), maskSpecs(b), 'NOT'; ...
+            maskSpecs(b), maskSpecs(a), 'NOT'};
+
+        for r = 1:size(relationSpecs, 1)
+            baseSpec = relationSpecs{r, 1};
+            otherSpec = relationSpecs{r, 2};
+            relation = relationSpecs{r, 3};
+            relationLabel = compositeRelationLabel(baseSpec.label, relation, otherSpec.label);
+
+            idxCol = cell(nFrames, 1);
+            for t = 1:nFrames
+                labels = maskInstanceLabels(im(:,:,baseSpec.channel,t));
+                idxCol{t} = labelsWithNonEmptyCompositeRegion( ...
+                    im(:,:,baseSpec.channel,t), im(:,:,otherSpec.channel,t), labels, relation);
+            end
+
+            varNames{end+1} = ['MaskIdx_' makeSafeVariableName(relationLabel)]; %#ok<AGROW>
+            columns{end+1} = idxCol; %#ok<AGROW>
+            plotgroup{end+1} = 'id'; %#ok<AGROW>
+            defplot{end+1} = false; %#ok<AGROW>
+
+            metricByChannel = cell(1, numel(channelsExtract));
+            for i = 1:numel(channelsExtract)
+                metricByChannel{i} = fluorescenceForCompositeMask( ...
+                    im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N);
+                channelName = channelsName{i};
+                metricSpecs = { ...
+                    'Mean', 'Mean', false; ...
+                    'Tot', 'Total', false; ...
+                    'MeanTop', 'Mean', false; ...
+                    'TotTop', 'Total', false; ...
+                    'Mean_Bckg', 'Mean', false; ...
+                    'MeanNoBckg', 'Mean', true};
+                for s = 1:size(metricSpecs, 1)
+                    prefix = metricSpecs{s, 1};
+                    groupPrefix = metricSpecs{s, 2};
+                    varNames{end+1} = localMetricVarName(prefix, channelName, relationLabel); %#ok<AGROW>
+                    columns{end+1} = metricByChannel{i}.(metricFieldName(prefix)); %#ok<AGROW>
+                    plotgroup{end+1} = [groupPrefix '_' channelName]; %#ok<AGROW>
+                    defplot{end+1} = false; %#ok<AGROW>
+                end
+            end
+
+            for i = 1:numel(channelsExtract)
+                for j = i+1:numel(channelsExtract)
+                    ratioCol = cell(nFrames, 1);
+                    for t = 1:nFrames
+                        denom = metricByChannel{j}.MeanNoBckg{t};
+                        numer = metricByChannel{i}.MeanNoBckg{t};
+                        ratioCol{t} = numer ./ denom;
+                    end
+                    ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, relationLabel);
+                    varNames{end+1} = ratioName; %#ok<AGROW>
+                    columns{end+1} = ratioCol; %#ok<AGROW>
+                    plotgroup{end+1} = ratioName; %#ok<AGROW>
+                    defplot{end+1} = false; %#ok<AGROW>
+                end
+            end
+        end
+    end
+end
+end
+
+function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N)
+nFrames = size(im, 4);
+fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
+for f = 1:numel(fields)
+    metrics.(fields{f}) = cell(nFrames, 1);
+end
+
+for t = 1:nFrames
+    baseFrame = im(:,:,baseMaskChannel,t);
+    otherFrame = im(:,:,otherMaskChannel,t);
+    labels = maskInstanceLabels(baseFrame);
+    compositeFrame = compositeRegion(baseFrame > 0, otherFrame > 0, relation);
+    backgroundPix = ~compositeFrame;
+    backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
+    backgroundMean = mean(backgroundValues(:), 'omitnan');
+
+    validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation);
+    meanVals = NaN(1, numel(validLabels));
+    totalVals = NaN(1, numel(validLabels));
+    meanTopVals = NaN(1, numel(validLabels));
+    totalTopVals = NaN(1, numel(validLabels));
+    bckgVals = repmat(backgroundMean, 1, numel(validLabels));
+    diffVals = NaN(1, numel(validLabels));
+
+    for i = 1:numel(validLabels)
+        pix = compositeRegion(baseFrame == validLabels(i), otherFrame > 0, relation);
+        values = pixelValuesForChannels(im, scoreChannels, t, pix);
+        values = values(:);
+        meanVals(i) = mean(values, 'omitnan');
+        totalVals(i) = sum(values, 'omitnan');
+        meanTopVals(i) = meanTopNValues(values, N);
+        totalTopVals(i) = sumTopNValues(values, N);
+        diffVals(i) = meanVals(i) - backgroundMean;
+    end
+
+    metrics.Mean{t} = meanVals;
+    metrics.Tot{t} = totalVals;
+    metrics.MeanTop{t} = meanTopVals;
+    metrics.TotTop{t} = totalTopVals;
+    metrics.Mean_Bckg{t} = bckgVals;
+    metrics.MeanNoBckg{t} = diffVals;
+end
+end
+
+function labelsOut = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation)
+labelsOut = [];
+otherMask = otherFrame > 0;
+for i = 1:numel(labels)
+    pix = compositeRegion(baseFrame == labels(i), otherMask, relation);
+    if any(pix(:))
+        labelsOut(end+1) = labels(i); %#ok<AGROW>
+    end
+end
+end
+
+function pix = compositeRegion(baseMask, otherMask, relation)
+switch upper(char(string(relation)))
+    case 'AND'
+        pix = baseMask & otherMask;
+    case 'NOT'
+        pix = baseMask & ~otherMask;
+    otherwise
+        error('computeMetrics:UnknownCompositeMaskRelation', 'Unknown composite mask relation "%s".', char(string(relation)));
+end
+end
+
+function label = compositeRelationLabel(baseLabel, relation, otherLabel)
+switch upper(char(string(relation)))
+    case 'AND'
+        label = sprintf('%s_AND_%s', char(string(baseLabel)), char(string(otherLabel)));
+    case 'NOT'
+        label = sprintf('%s_NOT_%s', char(string(baseLabel)), char(string(otherLabel)));
+    otherwise
+        label = sprintf('%s_%s_%s', char(string(baseLabel)), char(string(relation)), char(string(otherLabel)));
+end
 end
 
 function warnOnceLocal(id, key, varargin)
@@ -508,6 +692,33 @@ catch
 end
 if isempty(out) || ~isscalar(out) || ~isfinite(out)
     out = defaultValue;
+end
+end
+
+function out = logicalScalar(value, defaultValue)
+out = defaultValue;
+try
+    if iscell(value)
+        value = value{end};
+    end
+    if ischar(value) || isstring(value)
+        txt = lower(strtrim(char(string(value))));
+        if any(strcmp(txt, {'true','1','yes','on'}))
+            out = true;
+            return;
+        elseif any(strcmp(txt, {'false','0','no','off'}))
+            out = false;
+            return;
+        end
+    end
+    value = logical(value);
+catch
+    value = defaultValue;
+end
+if isempty(value) || ~isscalar(value)
+    out = defaultValue;
+else
+    out = logical(value);
 end
 end
 
