@@ -1064,6 +1064,7 @@ function ctx = executeNode(node, ctx)
         case 'dataloader'
             try
                 ctx = dataLoader.process(ctx);
+                ctx = markDataloaderFovSelectionApplied(ctx);
             catch ME
                 throwNodeFailed(node, ME);
             end
@@ -1118,6 +1119,49 @@ function ctx = executeNode(node, ctx)
 
     % optional output coherence check
     ctx = ensureOutputs(node, ctx);
+end
+
+function ctx = markDataloaderFovSelectionApplied(ctx)
+    if ~isstruct(ctx)
+        return;
+    end
+
+    useExistingProjectSources = false;
+    try
+        if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader) && ...
+                isfield(ctx.dataLoader,'useExistingProjectSources') && ~isempty(ctx.dataLoader.useExistingProjectSources)
+            useExistingProjectSources = logical(ctx.dataLoader.useExistingProjectSources);
+        end
+    catch
+        useExistingProjectSources = false;
+    end
+    if useExistingProjectSources
+        return;
+    end
+
+    appliedFovs = [];
+    try
+        if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader) && ...
+                isfield(ctx.dataLoader,'positionIdx') && ~isempty(ctx.dataLoader.positionIdx)
+            appliedFovs = normalizeIndexVectorLocal(ctx.dataLoader.positionIdx);
+        elseif isfield(ctx,'positionIdx') && ~isempty(ctx.positionIdx)
+            appliedFovs = normalizeIndexVectorLocal(ctx.positionIdx);
+        end
+    catch
+        appliedFovs = [];
+    end
+    if isempty(appliedFovs)
+        return;
+    end
+
+    if ~isfield(ctx,'sel') || ~isstruct(ctx.sel) || isempty(ctx.sel)
+        ctx.sel = struct();
+    end
+    ctx.sel.sourceFovs = appliedFovs;
+    ctx.sel.fovs = [];
+    if isfield(ctx,'run') && isstruct(ctx.run)
+        ctx.run.sourceFovIndex = appliedFovs;
+    end
 end
 
 function tf = shouldUseRoiMajorExecution(report, nodeMap, ctx)
