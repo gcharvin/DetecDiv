@@ -2102,6 +2102,13 @@ end
                     end
 
                     tmprun={};
+                    [tmp, runsLoadedFromDisk] = app.ensureProjectPipelineRunsLoaded(tmp);
+                    if runsLoadedFromDisk
+                        try
+                            assignin('base', varlist{i}, tmp);
+                        catch
+                        end
+                    end
                     if isfield(tmp.processing,'pipelineRun') && ~isempty(tmp.processing.pipelineRun)
                         for k=1:numel(tmp.processing.pipelineRun)
                             runObj = tmp.processing.pipelineRun(k);
@@ -2235,6 +2242,83 @@ end
             app.Data=st;
 
             %  st
+        end
+
+        function [shallowObj, loaded] = ensureProjectPipelineRunsLoaded(app, shallowObj)
+            loaded = false;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            hasRuns = false;
+            try
+                hasRuns = isfield(shallowObj.processing, 'pipelineRun') && ~isempty(shallowObj.processing.pipelineRun);
+            catch
+                hasRuns = false;
+            end
+            if hasRuns
+                return;
+            end
+
+            projectRoot = '';
+            try
+                projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+            catch
+                projectRoot = '';
+            end
+            if isempty(projectRoot)
+                return;
+            end
+
+            pipelineRoot = fullfile(projectRoot, 'pipeline');
+            if exist(pipelineRoot, 'dir') ~= 7
+                return;
+            end
+
+            listpipe = dir(pipelineRoot);
+            listpipe = listpipe(arrayfun(@(x)x.isdir, listpipe));
+            listpipe = listpipe(~ismember({listpipe.name}, {'.','..'}));
+            if isempty(listpipe)
+                return;
+            end
+
+            order = zeros(1, numel(listpipe));
+            for j = 1:numel(listpipe)
+                suffix = regexp(listpipe(j).name, '\d+$', 'match');
+                if ~isempty(suffix)
+                    order(j) = str2double(suffix{1});
+                else
+                    order(j) = j;
+                end
+            end
+            [~, ix] = sort(order);
+            listpipe = listpipe(ix);
+
+            pipeList = pipelineRun.empty;
+            for j = 1:numel(listpipe)
+                runPath = fullfile(pipelineRoot, listpipe(j).name);
+                try
+                    [runObj, msg] = pipelineRunLoad(runPath);
+                    if isempty(runObj)
+                        if ~isempty(msg)
+                            warning('detecdiv:PipelineRunLoadFailed', 'pipelineRunLoad failed for %s: %s', runPath, msg);
+                        end
+                        continue;
+                    end
+                    pipeList(end+1) = runObj; %#ok<AGROW>
+                catch ME
+                    warning('detecdiv:PipelineRunLoadError', 'pipelineRunLoad error for %s: %s', runPath, ME.message);
+                end
+            end
+
+            if isempty(pipeList)
+                return;
+            end
+            if ~isfield(shallowObj.processing, 'pipelineRun')
+                shallowObj.processing.pipelineRun = pipelineRun.empty;
+            end
+            shallowObj.processing.pipelineRun = pipeList;
+            loaded = true;
         end
 
 
