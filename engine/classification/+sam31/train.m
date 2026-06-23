@@ -167,6 +167,28 @@ try
             policy = char(string(ctx.run.runPolicy));
         elseif isfield(ctx.run, 'resume') && ~logical(ctx.run.resume)
             policy = 'restart';
+        elseif isfield(ctx.run, 'control') && isstruct(ctx.run.control) ...
+                && isfield(ctx.run.control, 'resume_policy') && ~isempty(ctx.run.control.resume_policy)
+            policy = char(string(ctx.run.control.resume_policy));
+        end
+    end
+    if strcmpi(policy, 'resume') && isstruct(ctx) && isfield(ctx, 'pipeline') && isstruct(ctx.pipeline)
+        if isfield(ctx.pipeline, 'runPolicy') && ~isempty(ctx.pipeline.runPolicy)
+            policy = char(string(ctx.pipeline.runPolicy));
+        elseif isfield(ctx.pipeline, 'resume') && ~logical(ctx.pipeline.resume)
+            policy = 'restart';
+        elseif isfield(ctx.pipeline, 'control') && isstruct(ctx.pipeline.control) ...
+                && isfield(ctx.pipeline.control, 'resume_policy') && ~isempty(ctx.pipeline.control.resume_policy)
+            policy = char(string(ctx.pipeline.control.resume_policy));
+        end
+    end
+    if strcmpi(policy, 'resume') && isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params)
+        if isfield(ctx.params, 'runPolicy') && ~isempty(ctx.params.runPolicy)
+            policy = char(string(ctx.params.runPolicy));
+        elseif isfield(ctx.params, 'resumePolicy') && ~isempty(ctx.params.resumePolicy)
+            policy = char(string(ctx.params.resumePolicy));
+        elseif isfield(ctx.params, 'resume') && ~logical(ctx.params.resume)
+            policy = 'restart';
         end
     end
 catch
