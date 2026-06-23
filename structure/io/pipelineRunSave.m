@@ -218,6 +218,7 @@ function writeRunLogFile(runObj, S, runPath)
             end
         end
     end
+    lines = appendRuntimeSidecarLogs(lines, runPath);
     txt = [strjoin(lines, newline) newline];
     fid = fopen(txtFile, 'w');
     if fid < 0
@@ -226,6 +227,97 @@ function writeRunLogFile(runObj, S, runPath)
     end
     fwrite(fid, txt, 'char');
     fclose(fid);
+end
+
+function lines = appendRuntimeSidecarLogs(lines, runPath)
+    classifierRoot = classifierRootFromRunPath(runPath);
+    lines = appendFileSection(lines, 'Runtime progress', fullfile(runPath, 'progress.json'), 120);
+    if isempty(classifierRoot)
+        return;
+    end
+
+    runnerLog = fullfile(classifierRoot, 'sam31_train', 'train_sam31_runner.log');
+    lines = appendFileSection(lines, 'SAM31 runner log', runnerLog, 240);
+
+    [internalLog, internalStats] = findLatestSam31TrainingLogs(classifierRoot);
+    lines = appendFileSection(lines, 'SAM31 internal training log', internalLog, 300);
+    lines = appendFileSection(lines, 'SAM31 train stats', internalStats, 120);
+end
+
+function classifierRoot = classifierRootFromRunPath(runPath)
+    classifierRoot = '';
+    if isempty(runPath)
+        return;
+    end
+    try
+        [pipelineRunsDir, ~] = fileparts(runPath);
+        [rootCandidate, leaf] = fileparts(pipelineRunsDir);
+        if strcmpi(leaf, 'pipeline_runs') && ~isempty(rootCandidate)
+            classifierRoot = rootCandidate;
+        end
+    catch
+        classifierRoot = '';
+    end
+end
+
+function [logPath, statsPath] = findLatestSam31TrainingLogs(classifierRoot)
+    logPath = '';
+    statsPath = '';
+    if isempty(classifierRoot)
+        return;
+    end
+    artifactsRoot = fullfile(classifierRoot, 'sam31_artifacts');
+    if exist(artifactsRoot, 'dir') ~= 7
+        return;
+    end
+    logPath = newestFile(fullfile(artifactsRoot, '**', 'logs', '*', 'log.txt'));
+    statsPath = newestFile(fullfile(artifactsRoot, '**', 'logs', '*', 'train_stats.json'));
+end
+
+function path = newestFile(pattern)
+    path = '';
+    try
+        files = dir(pattern);
+        files = files(~[files.isdir]);
+        if isempty(files)
+            return;
+        end
+        [~, idx] = max([files.datenum]);
+        path = fullfile(files(idx).folder, files(idx).name);
+    catch
+        path = '';
+    end
+end
+
+function lines = appendFileSection(lines, title, path, maxLines)
+    if isempty(path) || exist(path, 'file') ~= 2
+        return;
+    end
+    body = tailTextFile(path, maxLines);
+    if isempty(strtrim(body))
+        return;
+    end
+    lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = sprintf('%s: %s', title, path); %#ok<AGROW>
+    lines{end+1} = body; %#ok<AGROW>
+end
+
+function txt = tailTextFile(path, maxLines)
+    txt = '';
+    try
+        raw = fileread(path);
+    catch
+        return;
+    end
+    parts = regexp(raw, '\r\n|\n|\r', 'split');
+    if ~isempty(parts) && isempty(parts{end})
+        parts(end) = [];
+    end
+    if numel(parts) > maxLines
+        parts = parts(end - maxLines + 1:end);
+        parts = [{sprintf('[showing last %d lines]', maxLines)} parts];
+    end
+    txt = strjoin(parts, newline);
 end
 
 function writeRunReviewFile(runObj, runPath)

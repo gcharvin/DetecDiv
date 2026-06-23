@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -56,35 +57,149 @@ def terminate_process_tree(proc: subprocess.Popen) -> None:
             pass
 
 
-def run(cmd: list[str | Path], cwd: Path, log_path: Path, cancel_path: Path | None = None) -> str:
+TRAIN_RE = re.compile(r"Train Epoch:\s*\[(?P<epoch>\d+)\]\[\s*(?P<iter>\d+)\s*/\s*(?P<total>\d+)\]")
+LOSS_RE = re.compile(
+    r"Losses/train_(?:all|moma_video)_loss:\s*(?P<current>[0-9.eE+-]+)\s*\((?P<average>[0-9.eE+-]+)\)"
+)
+ETA_RE = re.compile(r"Estimated time remaining:\s*(?P<eta>.+)$")
+
+
+def write_progress(progress_path: Path | None, payload: dict) -> None:
+    if progress_path is None:
+        return
+    try:
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = progress_path.with_suffix(progress_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(progress_path)
+    except Exception:
+        pass
+
+
+def update_progress_from_line(
+    line: str,
+    *,
+    progress_path: Path | None,
+    state: dict,
+) -> None:
+    changed = False
+    m = TRAIN_RE.search(line)
+    if m:
+        epoch = int(m.group("epoch"))
+        iteration = int(m.group("iter"))
+        total = int(m.group("total"))
+        state.update(
+            {
+                "status": "training",
+                "epoch": epoch,
+                "iter": iteration,
+                "iter_total": total,
+                "where": epoch + (iteration / total if total else 0),
+                "last_train_line": line.rstrip(),
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        changed = True
+    m = LOSS_RE.search(line)
+    if m:
+        state["loss_current"] = float(m.group("current"))
+        state["loss_average"] = float(m.group("average"))
+        changed = True
+    m = ETA_RE.search(line)
+    if m:
+        state["eta"] = m.group("eta").strip()
+        changed = True
+    if changed:
+        write_progress(progress_path, state)
+
+
+def run(
+    cmd: list[str | Path],
+    cwd: Path,
+    log_path: Path,
+    cancel_path: Path | None = None,
+    progress_path: Path | None = None,
+    progress_state: dict | None = None,
+) -> str:
     printable = " ".join(str(part) for part in cmd)
     print(printable, flush=True)
+    if progress_state is not None:
+        progress_state.update(
+            {
+                "status": progress_state.get("status", "running"),
+                "command": printable,
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        write_progress(progress_path, progress_state)
     with log_path.open("a", encoding="utf-8") as log:
         log.write(f"\n$ {printable}\n")
+        log.flush()
         proc = subprocess.Popen(
             [str(part) for part in cmd],
             cwd=str(cwd),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            bufsize=1,
             start_new_session=(platform.system() != "Windows"),
         )
-        while True:
-            try:
-                stdout, _ = proc.communicate(timeout=2)
-                break
-            except subprocess.TimeoutExpired:
+        output: list[str] = []
+        assert proc.stdout is not None
+        while proc.poll() is None:
+            line = proc.stdout.readline()
+            if line:
+                output.append(line)
+                print(line, end="", flush=True)
+                log.write(line)
+                log.flush()
+                if progress_state is not None:
+                    update_progress_from_line(line, progress_path=progress_path, state=progress_state)
+            else:
                 if is_cancel_requested(cancel_path):
                     terminate_process_tree(proc)
-                    stdout, _ = proc.communicate()
-                    log.write(stdout or "")
+                    remaining = proc.stdout.read() or ""
+                    if remaining:
+                        output.append(remaining)
+                        print(remaining, end="", flush=True)
+                        log.write(remaining)
                     log.write("\n[CANCELLED] DetecDiv cancel token detected.\n")
+                    log.flush()
+                    if progress_state is not None:
+                        progress_state.update({"status": "cancelled", "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+                        write_progress(progress_path, progress_state)
                     raise SystemExit(130)
-                time.sleep(0.1)
-        log.write(stdout or "")
+                time.sleep(0.2)
+        remaining = proc.stdout.read() or ""
+        if remaining:
+            output.append(remaining)
+            print(remaining, end="", flush=True)
+            log.write(remaining)
+            if progress_state is not None:
+                for line in remaining.splitlines():
+                    update_progress_from_line(line, progress_path=progress_path, state=progress_state)
+        log.flush()
     if proc.returncode != 0:
+        if progress_state is not None:
+            progress_state.update(
+                {
+                    "status": "failed",
+                    "returncode": proc.returncode,
+                    "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            )
+            write_progress(progress_path, progress_state)
         raise SystemExit(proc.returncode)
-    return stdout or ""
+    if progress_state is not None:
+        progress_state.update(
+            {
+                "status": "done",
+                "returncode": proc.returncode,
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        write_progress(progress_path, progress_state)
+    return "".join(output)
 
 
 def split_list(value) -> list[str]:
@@ -130,6 +245,21 @@ def main() -> None:
         )
     run_policy = normalize_run_policy(cfg.get("run_policy"))
     log_path = args.config.with_name("train_sam31_runner.log")
+    run_path = as_local_path(cfg.get("run_path"))
+    progress_path = (run_path / "progress.json") if run_path is not None else args.config.with_name("progress.json")
+    progress_state = {
+        "status": "starting",
+        "stage": "sam31",
+        "run_id": cfg.get("run_id", ""),
+        "run_path": cfg.get("run_path", ""),
+        "log_path": str(log_path),
+        "modules": modules,
+        "max_epochs": int(cfg.get("epochs", 20)),
+        "resolution": resolution,
+        "run_policy": run_policy,
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    write_progress(progress_path, progress_state)
     log_path.write_text(
         (
             "[SAM31 TRAIN RUNNER]\n"
@@ -192,6 +322,8 @@ def main() -> None:
             cwd=repo_root,
             log_path=log_path,
             cancel_path=cancel_path,
+            progress_path=progress_path,
+            progress_state={**progress_state, "status": "preparing", "stage": "prepare"},
         )
         if is_cancel_requested(cancel_path):
             raise SystemExit("DetecDiv run cancelled after SAM31 prepare.")
@@ -227,6 +359,8 @@ def main() -> None:
         cwd=repo_root,
         log_path=log_path,
         cancel_path=cancel_path,
+        progress_path=progress_path,
+        progress_state={**progress_state, "status": "training", "stage": "train"},
     )
     if not bool(cfg.get("dry_run", False)) and "Train Epoch:" not in train_output:
         message = (

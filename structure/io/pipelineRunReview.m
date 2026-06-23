@@ -316,7 +316,7 @@ function artifacts = listRunArtifacts(runPath)
         return;
     end
     names = {'run.json','run_params.json','run_summary.txt','run_log.txt', ...
-        'run_events.jsonl','run_review.txt','smoke_report.txt'};
+        'run_events.jsonl','run_review.txt','smoke_report.txt','progress.json'};
     for i = 1:numel(names)
         p = fullfile(runPath, names{i});
         if isfile(p)
