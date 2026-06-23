@@ -11619,7 +11619,8 @@ classdef pipeline2 < matlab.apps.AppBase
             for i = 1:maskCount
                 keys = [keys, { ...
                     sprintf('mask%d_label', i), ...
-                    sprintf('mask%d_stat', i)}]; %#ok<AGROW>
+                    sprintf('mask%d_stat', i), ...
+                    sprintf('mask%d_backgroundLabel', i)}]; %#ok<AGROW>
             end
             keys = [keys, {'BrightestPixels','computeMaskCombinations'}];
         end

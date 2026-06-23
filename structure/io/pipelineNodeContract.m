@@ -1298,7 +1298,8 @@ function keys = computeMetricsMaskStaticKeys(n)
     for i = 1:n
         keys = [keys, { ...
             sprintf('mask%d_label', i), ...
-            sprintf('mask%d_stat', i)}]; %#ok<AGROW>
+            sprintf('mask%d_stat', i), ...
+            sprintf('mask%d_backgroundLabel', i)}]; %#ok<AGROW>
     end
 end
 

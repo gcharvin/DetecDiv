@@ -168,6 +168,11 @@ for i = 1:paramout.maskChannelCount
         paramout.(labelKey) = defaultMaskLabel(i);
     end
     paramout.(labelKey) = selectedText(paramout.(labelKey), defaultMaskLabel(i));
+    backgroundKey = sprintf('mask%d_backgroundLabel', i);
+    if ~isfield(paramout, backgroundKey) || isempty(paramout.(backgroundKey))
+        paramout.(backgroundKey) = 'auto';
+    end
+    paramout.(backgroundKey) = normalizeBackgroundLabelParam(paramout.(backgroundKey));
 end
 
 for i = 1:paramout.scoreChannelCount
@@ -191,6 +196,7 @@ end
 function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha, frames)
 maskName = paramout.(sprintf('mask%d_name', maskIndex));
 maskLabel = paramout.(sprintf('mask%d_label', maskIndex));
+backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', maskIndex));
 maskImage = roiobj.image(:,:,cha,frames);
 maskLabelSafe = makeSafeVariableName(maskLabel);
 groupId = ['mask_quantification_' maskLabelSafe];
@@ -218,7 +224,7 @@ surfCol = cell(nFrames, 1);
 
 for t = 1:nFrames
     frame = maskImage(:,:,1,t);
-    labels = maskInstanceLabels(frame);
+    labels = maskInstanceLabels(frame, backgroundLabel, maskName);
     idxCol{t} = labels(:)';
     [areaCol{t}, minorCol{t}, majorCol{t}, eccCol{t}] = geometryForLabels(frame, labels);
     r = minorCol{t};
@@ -248,6 +254,7 @@ if ~isstruct(dataout(cc).userData)
 end
 dataout(cc).userData.mask_channel = maskName;
 dataout(cc).userData.mask_label = maskLabel;
+dataout(cc).userData.mask_background_label = backgroundLabel;
 dataout(cc).userData.mask_index_variable = varNames{1};
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
@@ -274,11 +281,12 @@ for m = 1:maskCount
     end
     maskChannel = maskChannel(1);
     maskLabel = paramout.(sprintf('mask%d_label', m));
+    backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', m));
     maskLabelSafe = makeSafeVariableName(maskLabel);
 
     idxCol = cell(nFrames, 1);
     for t = 1:nFrames
-        idxCol{t} = maskInstanceLabels(im(:,:,maskChannel,t));
+        idxCol{t} = maskInstanceLabels(im(:,:,maskChannel,t), backgroundLabel, maskName);
     end
     varNames{end+1} = ['MaskIdx_' maskLabelSafe]; %#ok<AGROW>
     columns{end+1} = idxCol; %#ok<AGROW>
@@ -287,7 +295,7 @@ for m = 1:maskCount
 
     metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
-        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N);
+        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName);
         channelName = channelsName{i};
         metricSpecs = { ...
             'Mean', 'Mean', false; ...
@@ -365,15 +373,15 @@ dataout(cc).class = "processing";
 if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
-dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per non-zero mask index listed in the corresponding MaskIdx_* cell.';
+dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per foreground mask index listed in the corresponding MaskIdx_* cell.';
 dataout(cc).userData.composite_mask_semantics = ['For *_AND_* and *_NOT_* variables, each table cell contains one value per ' ...
-    'non-zero mask index listed in the corresponding MaskIdx_* composite variable. AND is baseMask>0 intersect otherMask>0; ' ...
-    'NOT is baseMask>0 excluding otherMask>0.'];
+    'foreground mask index listed in the corresponding MaskIdx_* composite variable. Foreground excludes each mask background label ' ...
+    '(auto, 0, or 1). AND is base foreground intersect other foreground; NOT is base foreground excluding other foreground.'];
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
 function maskSpecs = validQuantificationMasks(roiobj, paramout)
-maskSpecs = struct('index', {}, 'channel', {}, 'name', {}, 'label', {}, 'labelSafe', {});
+maskSpecs = struct('index', {}, 'channel', {}, 'name', {}, 'label', {}, 'labelSafe', {}, 'backgroundLabel', {});
 for m = 1:paramout.maskChannelCount
     maskName = paramout.(sprintf('mask%d_name', m));
     if strcmp(maskName, 'N/A')
@@ -384,12 +392,14 @@ for m = 1:paramout.maskChannelCount
         continue;
     end
     maskLabel = paramout.(sprintf('mask%d_label', m));
+    backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', m));
     maskSpecs(end+1) = struct( ... %#ok<AGROW>
         'index', m, ...
         'channel', maskChannel(1), ...
         'name', maskName, ...
         'label', maskLabel, ...
-        'labelSafe', makeSafeVariableName(maskLabel));
+        'labelSafe', makeSafeVariableName(maskLabel), ...
+        'backgroundLabel', backgroundLabel);
 end
 end
 
@@ -412,9 +422,10 @@ for a = 1:numel(maskSpecs)
 
             idxCol = cell(nFrames, 1);
             for t = 1:nFrames
-                labels = maskInstanceLabels(im(:,:,baseSpec.channel,t));
+                labels = maskInstanceLabels(im(:,:,baseSpec.channel,t), baseSpec.backgroundLabel, baseSpec.name);
                 idxCol{t} = labelsWithNonEmptyCompositeRegion( ...
-                    im(:,:,baseSpec.channel,t), im(:,:,otherSpec.channel,t), labels, relation);
+                    im(:,:,baseSpec.channel,t), im(:,:,otherSpec.channel,t), labels, relation, ...
+                    otherSpec.backgroundLabel, otherSpec.name);
             end
 
             varNames{end+1} = ['MaskIdx_' makeSafeVariableName(relationLabel)]; %#ok<AGROW>
@@ -425,7 +436,8 @@ for a = 1:numel(maskSpecs)
             metricByChannel = cell(1, numel(channelsExtract));
             for i = 1:numel(channelsExtract)
                 metricByChannel{i} = fluorescenceForCompositeMask( ...
-                    im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N);
+                    im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N, ...
+                    baseSpec.backgroundLabel, baseSpec.name, otherSpec.backgroundLabel, otherSpec.name);
                 channelName = channelsName{i};
                 metricSpecs = { ...
                     'Mean', 'Mean', false; ...
@@ -464,7 +476,8 @@ for a = 1:numel(maskSpecs)
 end
 end
 
-function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N)
+function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N, ...
+    baseBackgroundLabel, baseMaskName, otherBackgroundLabel, otherMaskName)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -474,13 +487,15 @@ end
 for t = 1:nFrames
     baseFrame = im(:,:,baseMaskChannel,t);
     otherFrame = im(:,:,otherMaskChannel,t);
-    labels = maskInstanceLabels(baseFrame);
-    compositeFrame = compositeRegion(baseFrame > 0, otherFrame > 0, relation);
+    labels = maskInstanceLabels(baseFrame, baseBackgroundLabel, baseMaskName);
+    baseForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName);
+    otherForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName);
+    compositeFrame = compositeRegion(baseForeground, otherForeground, relation);
     backgroundPix = ~compositeFrame;
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
 
-    validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation);
+    validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName);
     meanVals = NaN(1, numel(validLabels));
     totalVals = NaN(1, numel(validLabels));
     meanTopVals = NaN(1, numel(validLabels));
@@ -489,7 +504,7 @@ for t = 1:nFrames
     diffVals = NaN(1, numel(validLabels));
 
     for i = 1:numel(validLabels)
-        pix = compositeRegion(baseFrame == validLabels(i), otherFrame > 0, relation);
+        pix = compositeRegion(baseFrame == validLabels(i), otherForeground, relation);
         values = pixelValuesForChannels(im, scoreChannels, t, pix);
         values = values(:);
         meanVals(i) = mean(values, 'omitnan');
@@ -508,9 +523,9 @@ for t = 1:nFrames
 end
 end
 
-function labelsOut = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation)
+function labelsOut = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName)
 labelsOut = [];
-otherMask = otherFrame > 0;
+otherMask = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName);
 for i = 1:numel(labels)
     pix = compositeRegion(baseFrame == labels(i), otherMask, relation);
     if any(pix(:))
@@ -554,7 +569,7 @@ warned(mapKey) = true;
 warning(id, varargin{:});
 end
 
-function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N)
+function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N, backgroundLabel, maskName)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -563,8 +578,9 @@ end
 
 for t = 1:nFrames
     maskFrame = im(:,:,maskChannel,t);
-    labels = maskInstanceLabels(maskFrame);
-    backgroundPix = maskFrame == 0;
+    labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName);
+    foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName);
+    backgroundPix = ~foregroundPix;
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
 
@@ -604,10 +620,85 @@ end
 values = double(values);
 end
 
-function labels = maskInstanceLabels(maskFrame)
+function labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName)
 labels = unique(maskFrame(:));
-labels = labels(labels ~= 0);
+labels = labels(~isnan(double(labels)));
+backgroundLabels = resolveBackgroundLabels(maskFrame, backgroundLabel, maskName);
+if ~isempty(backgroundLabels)
+    labels = labels(~ismember(double(labels), double(backgroundLabels(:))));
+end
 labels = double(labels(:)');
+end
+
+function pix = foregroundMask(maskFrame, backgroundLabel, maskName)
+labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName);
+if isempty(labels)
+    pix = false(size(maskFrame));
+else
+    pix = ismember(double(maskFrame), labels);
+end
+end
+
+function backgroundLabels = resolveBackgroundLabels(maskFrame, backgroundLabel, maskName)
+backgroundLabel = normalizeBackgroundLabelParam(backgroundLabel);
+switch lower(char(string(backgroundLabel)))
+    case '0'
+        backgroundLabels = 0;
+    case '1'
+        backgroundLabels = 1;
+    otherwise
+        vals = unique(double(maskFrame(:)));
+        vals = vals(isfinite(vals));
+        if any(vals == 0)
+            backgroundLabels = 0;
+        elseif any(vals == 1) && looksLikePixelClassifierMask(maskName, maskFrame)
+            backgroundLabels = 1;
+        else
+            backgroundLabels = [];
+        end
+end
+end
+
+function value = normalizeBackgroundLabelParam(value)
+value = selectedText(value, 'auto');
+value = lower(strtrim(char(string(value))));
+switch value
+    case {'0','zero'}
+        value = '0';
+    case {'1','one'}
+        value = '1';
+    case {'auto',''}
+        value = 'auto';
+    otherwise
+        numericValue = str2double(value);
+        if isfinite(numericValue) && ismember(numericValue, [0 1])
+            value = char(string(round(numericValue)));
+        else
+            value = 'auto';
+        end
+end
+end
+
+function tf = looksLikePixelClassifierMask(maskName, maskFrame)
+name = lower(char(string(maskName)));
+tf = startsWith(name, 'results_') || contains(name, 'classif') || contains(name, 'classification') || ...
+    contains(name, 'unet') || contains(name, 'u-net') || contains(name, 'deeplab') || ...
+    contains(name, 'seg') || contains(name, 'mask');
+if tf
+    return;
+end
+
+vals = unique(double(maskFrame(:)));
+vals = vals(isfinite(vals));
+if any(vals == 0) || ~any(vals == 1) || numel(vals) < 2
+    tf = false;
+    return;
+end
+
+labelOneFraction = nnz(double(maskFrame(:)) == 1) / max(1, numel(maskFrame));
+border = [maskFrame(1,:) maskFrame(end,:) maskFrame(:,1).' maskFrame(:,end).'];
+borderOneFraction = nnz(double(border(:)) == 1) / max(1, numel(border));
+tf = labelOneFraction >= 0.5 && borderOneFraction >= 0.5;
 end
 
 function [area, minorAxis, majorAxis, eccentricity] = geometryForLabels(maskFrame, labels)
