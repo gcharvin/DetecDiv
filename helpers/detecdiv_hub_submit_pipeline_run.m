@@ -531,10 +531,12 @@ function projectRef = localBuildProjectRef(ref, hub)
         projectRef.type = 'classi';
         projectRef.project_name = localText(localGetField(ref, 'project_name', ''));
         projectRef.classifier_id = localText(localGetField(ref, 'classifier_id', projectRef.project_name));
-        projectRef.local_classifier_path = localText(localGetField(ref, 'local_classifier_path', ''));
         projectRef.classifier_path = localText(localGetField(ref, 'classifier_path', ''));
-        if isempty(projectRef.classifier_path) && ~isempty(projectRef.local_classifier_path)
-            projectRef.classifier_path = localTranslatePathForServer(projectRef.local_classifier_path, ref, hub);
+        if isempty(projectRef.classifier_path)
+            localClassifierPath = localText(localGetField(ref, 'local_classifier_path', ''));
+            if ~isempty(localClassifierPath)
+                projectRef.classifier_path = localTranslatePathForServer(localClassifierPath, ref, hub);
+            end
         end
         return;
     end
@@ -550,6 +552,7 @@ function projectRef = localBuildProjectRef(ref, hub)
 end
 
 function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
+    %#ok<INUSD>
     pipelineRef = struct();
     pipelineRef.pipeline_key = '';
     pipelineRef.pipeline_bundle_uri = '';
@@ -574,19 +577,9 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
         catch
         end
     end
-    try
-        bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj);
-        if ~isempty(bundleRef.pipeline_json_path)
-            pipelineRef.pipeline_bundle_uri = bundleRef.pipeline_bundle_uri;
-            pipelineRef.export_manifest_uri = bundleRef.export_manifest_uri;
-            pipelineRef.pipeline_json_path = bundleRef.pipeline_json_path;
-        end
-    catch ME
-        error('detecdiv_hub_submit_pipeline_run:PipelineBundleExportFailed', ...
-            ['Unable to export a server-visible Hub pipeline bundle. ' ...
-             'Hub submission was stopped before sending a local pipeline path to the worker: %s'], ME.message);
-    end
     localAssertServerVisiblePipelineRef(pipelineRef);
+    localAssertPipelineNodeLinksServerVisible(runObj, ref, hub);
+    pipelineRef.link_mode = 'server_visible';
 end
 
 function localAssertServerVisiblePipelineRef(pipelineRef)
@@ -597,12 +590,12 @@ function localAssertServerVisiblePipelineRef(pipelineRef)
     if isempty(pipelinePath)
         error('detecdiv_hub_submit_pipeline_run:MissingServerPipelineRef', ...
             ['Hub submission requires a server-visible pipeline JSON path. ' ...
-             'Export a Hub pipeline bundle before submitting the run.']);
+             'Save the pipeline template under a path visible to the worker, or configure a Hub path mapping.']);
     end
     if localLooksLikeLocalClientPath(pipelinePath)
         error('detecdiv_hub_submit_pipeline_run:LocalPipelinePathForHub', ...
             ['Hub submission would send a local client pipeline path to the worker: %s\n' ...
-             'The pipeline must be exported to the run hub_pipeline_bundle first.'], pipelinePath);
+             'Move the pipeline template under a mapped/server-visible path before launching on the Hub.'], pipelinePath);
     end
     if ~localLooksLikeServerPath(pipelinePath)
         error('detecdiv_hub_submit_pipeline_run:NonServerPipelinePathForHub', ...
@@ -615,6 +608,39 @@ function localAssertServerVisiblePipelineRef(pipelineRef)
     end
 end
 
+function localAssertPipelineNodeLinksServerVisible(runObj, ref, hub)
+    spec = localRunPipelineExportSource(runObj);
+    if isempty(spec) || ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+    for i = 1:numel(spec.nodes)
+        node = spec.nodes(i);
+        nodeId = localText(localGetField(node, 'id', sprintf('node_%d', i)));
+        modulePath = localText(localNested(node, {'params','modulePath'}, ''));
+        localAssertLinkedPathServerVisible(modulePath, sprintf('node %s params.modulePath', nodeId), ref, hub);
+        originPath = localText(localNested(node, {'origin','path'}, ''));
+        localAssertLinkedPathServerVisible(originPath, sprintf('node %s origin.path', nodeId), ref, hub);
+    end
+end
+
+function localAssertLinkedPathServerVisible(pathValue, label, ref, hub)
+    pathValue = localText(pathValue);
+    if isempty(pathValue)
+        return;
+    end
+    serverPath = localTranslatePathForServer(pathValue, ref, hub);
+    if localLooksLikeLocalClientPath(serverPath)
+        error('detecdiv_hub_submit_pipeline_run:LocalLinkedPathForHub', ...
+            ['Hub submission would send a local client-linked path for %s: %s\n' ...
+             'Move this resource under a mapped/server-visible path before launching on the Hub.'], ...
+            label, pathValue);
+    end
+    if ~localLooksLikeServerPath(serverPath)
+        error('detecdiv_hub_submit_pipeline_run:NonServerLinkedPathForHub', ...
+            'Hub-linked path for %s is not server-visible after mapping: %s', label, serverPath);
+    end
+end
+
 function exportSource = localRunPipelineExportSource(runObj)
     if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineSpec') && isstruct(runObj.ctx.pipelineSpec) && ...
             isfield(runObj.ctx.pipelineSpec, 'nodes') && ~isempty(runObj.ctx.pipelineSpec.nodes)
@@ -623,7 +649,7 @@ function exportSource = localRunPipelineExportSource(runObj)
     end
     error('detecdiv_hub_submit_pipeline_run:MissingRunPipelineSpec', ...
         ['Hub submission requires the effective pipeline spec stored on the pipelineRun. ' ...
-         'Rebuild or save the run before submitting so the Hub bundle can be created from the run-specific node parameters.']);
+         'Rebuild or save the run before submitting so the Hub can send the run-specific node parameters.']);
 end
 
 function spec = localPipelineSpecForSelectedRunNodes(spec, selectedIds)
@@ -1437,8 +1463,12 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
         runRequest.classifier_intent = intent;
     end
     runRequest.selected_nodes = localCellText(localNested(ctx, {'run','selectedNodes'}, {}));
+    nodeParams = localNested(ctx, {'run','nodeParams'}, struct());
+    if localNodeParamsEmpty(nodeParams)
+        nodeParams = localNodeParamsFromPipelineSpec(localNested(ctx, {'pipelineSpec'}, struct()), runRequest.selected_nodes);
+    end
     runRequest.node_params = localBuildNodeParamsList( ...
-        localNested(ctx, {'run','nodeParams'}, struct()), runRequest.selected_nodes, ref, hub);
+        nodeParams, runRequest.selected_nodes, ref, hub);
     runRequest.run_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
     runRequest.input_source = localText(localNested(ctx, {'run','inputSource'}, ''));
     localValidateInputSourceForSelectedNodes(runRequest.input_source, runRequest.selected_nodes, ctx, runObj);
@@ -1457,6 +1487,7 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+    localAssertNoLocalClientPathsInValue(runRequest, 'run_request');
 end
 
 function intent = localInferRunIntentFromNodeParams(nodeParams)
@@ -1473,6 +1504,48 @@ function intent = localInferRunIntentFromNodeParams(nodeParams)
                     intent = 'validate';
                 end
         end
+    end
+end
+
+function tf = localNodeParamsEmpty(nodeParams)
+    tf = true;
+    if isempty(nodeParams)
+        return;
+    end
+    if isstruct(nodeParams)
+        try
+            tf = isempty(fieldnames(nodeParams));
+        catch
+            tf = true;
+        end
+    elseif iscell(nodeParams)
+        tf = isempty(nodeParams);
+    else
+        tf = true;
+    end
+end
+
+function nodeParams = localNodeParamsFromPipelineSpec(spec, selectedNodes)
+    nodeParams = struct();
+    if isempty(spec) || ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+    selectedNodes = localCellText(selectedNodes);
+    nodes = spec.nodes;
+    for i = 1:numel(nodes)
+        nodeId = localText(localGetField(nodes(i), 'id', ''));
+        if isempty(nodeId)
+            continue;
+        end
+        if ~isempty(selectedNodes) && ~any(strcmp(selectedNodes, nodeId))
+            continue;
+        end
+        params = localGetField(nodes(i), 'params', struct());
+        if ~isstruct(params)
+            params = struct();
+        end
+        key = matlab.lang.makeValidName(nodeId);
+        nodeParams.(key) = params;
     end
 end
 
@@ -1665,6 +1738,38 @@ function item = localNormalizeNodeParamEntry(value, fallbackId, ref, hub)
         'params', localTranslateValuePathsForServer(params, ref, hub));
 end
 
+function localAssertNoLocalClientPathsInValue(value, label)
+    if isstruct(value)
+        for i = 1:numel(value)
+            names = fieldnames(value(i));
+            for j = 1:numel(names)
+                localAssertNoLocalClientPathsInValue(value(i).(names{j}), [label '.' names{j}]);
+            end
+        end
+    elseif iscell(value)
+        for i = 1:numel(value)
+            localAssertNoLocalClientPathsInValue(value{i}, sprintf('%s{%d}', label, i));
+        end
+    elseif isstring(value)
+        for i = 1:numel(value)
+            localAssertNoLocalClientPathText(char(value(i)), sprintf('%s(%d)', label, i));
+        end
+    elseif ischar(value)
+        localAssertNoLocalClientPathText(value, label);
+    end
+end
+
+function localAssertNoLocalClientPathText(value, label)
+    value = char(string(value));
+    if isempty(value) || ~localLooksLikeLocalClientPath(value)
+        return;
+    end
+    error('detecdiv_hub_submit_pipeline_run:LocalPathInHubPayload', ...
+        ['Hub submission would send a local client path in %s: %s\n' ...
+         'Move/map the resource so the worker can access it, or launch locally.'], ...
+        label, value);
+end
+
 function paths = localBuildRunPaths(ctx, ref, hub)
     rawDataPath = localText(localNested(ctx, {'run','rawDataPath'}, localNested(ctx, {'io','rawDataPath'}, localNested(ctx, {'rawDataPath'}, ''))));
     projectPath = localText(localNested(ctx, {'run','projectPath'}, localNested(ctx, {'io','projectPath'}, localNested(ctx, {'projectPath'}, ''))));
@@ -1679,6 +1784,12 @@ function paths = localBuildRunPaths(ctx, ref, hub)
     if isempty(paths.server_project_path) && ~isempty(projectPath)
         paths.server_project_path = localTranslatePathForServer(projectPath, ref, hub);
     end
+    if ~isempty(paths.server_raw_data_path)
+        paths.raw_data_path = paths.server_raw_data_path;
+    end
+    if ~isempty(paths.server_project_path)
+        paths.project_path = paths.server_project_path;
+    end
     paths.server_project_data_folder = localText(localNested(ctx, {'run','serverProjectDataFolder'}, localNested(ctx, {'io','serverProjectDataFolder'}, '')));
     classifierPath = localText(localNested(ctx, {'targetRef','classiPath'}, localNested(ctx, {'run','classiPath'}, '')));
     if isempty(classifierPath) && isstruct(ref) && isfield(ref, 'local_classifier_path')
@@ -1691,11 +1802,17 @@ function paths = localBuildRunPaths(ctx, ref, hub)
     elseif isstruct(ref) && isfield(ref, 'classifier_path')
         paths.server_classifier_path = localText(ref.classifier_path);
     end
+    if ~isempty(paths.server_classifier_path)
+        paths.classifier_path = paths.server_classifier_path;
+    end
     runPath = localText(localNested(ctx, {'run','runPath'}, localNested(ctx, {'run','path'}, localNested(ctx, {'store','runPath'}, ''))));
     paths.run_path = runPath;
     paths.server_run_path = '';
     if ~isempty(runPath)
         paths.server_run_path = localTranslatePathForServer(runPath, ref, hub);
+    end
+    if ~isempty(paths.server_run_path)
+        paths.run_path = paths.server_run_path;
     end
     paths.path_mappings = localHubPathMappings(hub);
 end
@@ -1734,7 +1851,22 @@ function tf = localLooksLikePathText(value)
 end
 
 function mappings = localHubPathMappings(hub)
-    mappings = detecdiv_paths_module_mappings(localPathMappingCtx(struct(), hub));
+    raw = detecdiv_paths_module_mappings(localPathMappingCtx(struct(), hub));
+    mappings = struct('localRoot', {}, 'remoteRoot', {});
+    if isempty(raw)
+        return;
+    end
+    for i = 1:numel(raw)
+        try
+            remoteRoot = regexprep(strrep(char(string(raw(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+            if isempty(remoteRoot) || ~localLooksLikeServerPath(remoteRoot)
+                continue;
+            end
+            mappings(end+1).localRoot = remoteRoot; %#ok<AGROW>
+            mappings(end).remoteRoot = remoteRoot;
+        catch
+        end
+    end
 end
 
 function ctx = localPathMappingCtx(ref, hub)

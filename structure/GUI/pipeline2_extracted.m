@@ -13032,6 +13032,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function pipeObj = buildExecutablePipelineObject(app, targetPath, ctx)
+            targetPath = canonicalPipelineTemplatePath(app, targetPath);
             pipeObj = buildPipelineObject(app, targetPath);
             pipeStruct = selectedPipelineStructForRun(app, struct('nodes', pipeObj.nodes, 'edges', pipeObj.edges, 'branches', pipeObj.branches));
             pipeObj.nodes = pipeStruct.nodes;
@@ -15101,12 +15102,45 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function ref = buildPipelineRef(app)
-            ref = struct('id', currentPipelineName(app), 'path', app.CurrentPipelinePath, 'version', '');
+            ref = struct('id', currentPipelineName(app), 'path', canonicalPipelineTemplatePath(app, app.CurrentPipelinePath), 'version', '');
             if ~isempty(app.CurrentPipeline) && isa(app.CurrentPipeline, 'pipeline')
                 ref.id = currentPipelineName(app);
-                ref.path = app.CurrentPipeline.path;
+                ref.path = canonicalPipelineTemplatePath(app, app.CurrentPipeline.path);
                 ref.version = app.CurrentPipeline.version;
             end
+        end
+
+        function pathOut = canonicalPipelineTemplatePath(app, pathIn)
+            pathOut = char(string(pathIn));
+            if isempty(pathOut) || ~runtimeStartsFromClassifier(app) || ~isHubBundlePipelinePath(app, pathOut)
+                return;
+            end
+            classiPath = classifierScopedRunRoot(app, false);
+            if isempty(classiPath)
+                return;
+            end
+            templateId = currentPipelineName(app);
+            if isempty(templateId) || strcmpi(templateId, 'pipeline') || strcmpi(templateId, guiAppName(app))
+                try
+                    if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                        if ~isempty(app.CurrentRun.templateId)
+                            templateId = char(string(app.CurrentRun.templateId));
+                        elseif isstruct(app.CurrentRun.pipelineRef) && isfield(app.CurrentRun.pipelineRef, 'id') && ~isempty(app.CurrentRun.pipelineRef.id)
+                            templateId = char(string(app.CurrentRun.pipelineRef.id));
+                        end
+                    end
+                catch
+                end
+            end
+            candidate = fullfile(classiPath, 'pipeline_templates', templateId);
+            if exist(fullfile(candidate, 'pipeline.json'), 'file') == 2
+                pathOut = candidate;
+            end
+        end
+
+        function tf = isHubBundlePipelinePath(app, pathValue) %#ok<INUSD>
+            txt = lower(strrep(char(string(pathValue)), '\', '/'));
+            tf = contains(txt, '/pipeline_runs/') && contains(txt, '/hub_pipeline_bundle/pipeline');
         end
 
         function ref = buildTargetRef(app)
@@ -17555,9 +17589,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 appendRunReport(app, 'Dry-run: OK', dryReport);
 
                 if strcmp(runtimeExecutionTarget(app), 'hub')
-                    if ~isempty(d), d.Message = 'Submitting run to DetecDiv Hub...'; end
+                    if ~isempty(d), d.Message = 'Preparing Hub submission locally...'; end
                     hub = hubSettingsFromUi(app);
+                    if ~isempty(d), d.Message = 'Checking Hub session...'; drawnow limitrate nocallbacks; end
                     hub = ensureHubSessionFromUi(app, hub);
+                    if ~isempty(d), d.Message = 'Checking server-visible paths...'; drawnow limitrate nocallbacks; end
                     pathReport = hubPathPreflight(app, hub);
                     if ~pathReport.ok
                         runObj.status = 'failed';
@@ -17574,10 +17610,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub = hub;
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
-                    logRunEvent(app, runObj, 'Submitting run to DetecDiv Hub.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving project before Hub submit...', true);
+                    logRunEvent(app, runObj, 'Preparing Hub run submission.', 'pipeline2');
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local run state before Hub submit...', true);
                     if ~isempty(d)
-                        d.Message = 'Resolving Hub project id and submitting run...';
+                        d.Message = 'Sending run request to DetecDiv Hub...';
                         drawnow limitrate nocallbacks;
                     end
                     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
