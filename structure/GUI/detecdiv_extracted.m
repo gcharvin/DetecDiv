@@ -1491,10 +1491,17 @@ end
                     shallowObj.processing.pipelineRun(runIdx) = runObj;
                     assignin('base', projVar, shallowObj);
                     pipelineRunSave(runObj);
+                    reloadMsg = '';
+                    if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
+                        [~, reloadMsg] = localReloadProjectFromDiskAfterHubTerminalStatus(projVar, shallowObj, runObj, runIdx);
+                    end
                     if showDialog
                         msg = sprintf('Hub job: %s\nStatus: %s', char(string(job.id)), char(string(job.status)));
                         if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
-                            msg = sprintf('%s\n\nProject changed on hub/server. Reload before local editing.', msg);
+                            if isempty(reloadMsg)
+                                reloadMsg = 'Project changed on hub/server.';
+                            end
+                            msg = sprintf('%s\n\n%s', msg, reloadMsg);
                         end
                         uialert(app.DetecDivUIFigure, msg, 'Hub status', 'Icon', 'info');
                     end
@@ -1545,6 +1552,69 @@ end
                         jobId = char(string(runObj.ctx.run.control.jobId));
                     end
                 catch
+                end
+            end
+
+            function [ok, msg] = localReloadProjectFromDiskAfterHubTerminalStatus(projVar, shallowObj, runObj, runIdx)
+                ok = false;
+                msg = '';
+                projectMatPath = localProjectMatPath(shallowObj);
+                if isempty(projectMatPath) || exist(projectMatPath, 'file') ~= 2
+                    msg = 'Project changed on hub/server. Reload before local editing.';
+                    return;
+                end
+                try
+                    S = load(projectMatPath, 'shallowObj');
+                    if ~isfield(S, 'shallowObj') || ~isa(S.shallowObj, 'shallow')
+                        msg = 'Project changed on hub/server, but automatic reload failed.';
+                        return;
+                    end
+                    reloadedObj = S.shallowObj;
+                    try
+                        [pathstr, namestr] = fileparts(projectMatPath);
+                        if isunix || ismac
+                            reloadedObj.setPath([pathstr '/'], namestr);
+                        else
+                            reloadedObj.setPath([pathstr '\'], namestr);
+                        end
+                    catch
+                    end
+                    try
+                        if isfield(reloadedObj.processing, 'pipelineRun') ...
+                                && runIdx >= 1 && runIdx <= numel(reloadedObj.processing.pipelineRun)
+                            reloadedObj.processing.pipelineRun(runIdx) = runObj;
+                        end
+                    catch
+                    end
+                    assignin('base', projVar, reloadedObj);
+                    try
+                        app.autoLoadPipelinesForProjectRuns(reloadedObj);
+                    catch
+                    end
+                    try
+                        gatherVarsFromWorkspace(app);
+                        displayNodes(app);
+                    catch
+                    end
+                    ok = true;
+                    msg = 'Project reloaded from disk; local FOV/ROI tree has been refreshed.';
+                catch
+                    msg = 'Project changed on hub/server, but automatic reload failed. Reload before local editing.';
+                end
+            end
+
+            function projectMatPath = localProjectMatPath(projectObj)
+                projectMatPath = '';
+                try
+                    if isempty(projectObj) || ~isa(projectObj, 'shallow')
+                        return;
+                    end
+                    if isempty(projectObj.io.path) || isempty(projectObj.io.file)
+                        return;
+                    end
+                    projectMatPath = fullfile(char(string(projectObj.io.path)), [char(string(projectObj.io.file)) '.mat']);
+                catch
+                    projectMatPath = '';
                 end
             end
 
@@ -5891,6 +5961,11 @@ end
                 return;
             end
             app.syncProjectFromWorkspaceEvent(payload);
+            try
+                gatherVarsFromWorkspace(app);
+                displayNodes(app);
+            catch
+            end
             RefreshtreewindowMenuSelected(app, []);
             drawnow limitrate;
         end
