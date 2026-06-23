@@ -11622,7 +11622,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 keys = [keys, { ...
                     sprintf('mask%d_label', i), ...
                     sprintf('mask%d_stat', i), ...
-                    sprintf('mask%d_backgroundLabel', i)}]; %#ok<AGROW>
+                    sprintf('mask%d_backgroundLabel', i), ...
+                    sprintf('mask%d_scoreLabel', i)}]; %#ok<AGROW>
             end
             keys = [keys, {'BrightestPixels','computeMaskCombinations'}];
         end
@@ -11983,6 +11984,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 label = sprintf('Mask %s background label', bgMatch{1});
                 return;
             end
+            scoreMatch = regexp(keyLower, '^mask(\d+)_scorelabel$', 'tokens', 'once');
+            if ~isempty(scoreMatch)
+                label = sprintf('Mask %s scored label', scoreMatch{1});
+                return;
+            end
             switch keyLower
                 case 'mode'
                     label = 'ROI layout';
@@ -12045,6 +12051,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
                 txt = ['Background index excluded from mask measurements. auto uses 0 when present; otherwise it uses 1 for U-Net/DeepLab/pixel-classifier maps. ' ...
                     'Force 0 for instance masks such as CellposeSAM, or 1 for old U-Net/classifier maps.'];
+                return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'processor') && strcmp(pkg, 'computemetrics') && ...
+                    ~isempty(regexp(keyLower, '^mask\d+_scorelabel$', 'once'))
+                txt = ['Foreground index to measure. Use all, empty, or 0 to score every non-background label separately. ' ...
+                    'Use a numeric label such as 2 to measure only that class; mask combinations are computed only when every mask in the pair has a numeric scored label.'];
                 return;
             end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')

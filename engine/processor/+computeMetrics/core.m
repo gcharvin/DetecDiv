@@ -173,6 +173,11 @@ for i = 1:paramout.maskChannelCount
         paramout.(backgroundKey) = 'auto';
     end
     paramout.(backgroundKey) = normalizeBackgroundLabelParam(paramout.(backgroundKey));
+    scoreKey = sprintf('mask%d_scoreLabel', i);
+    if ~isfield(paramout, scoreKey) || isempty(paramout.(scoreKey))
+        paramout.(scoreKey) = 'all';
+    end
+    paramout.(scoreKey) = normalizeScoreLabelParam(paramout.(scoreKey));
 end
 
 for i = 1:paramout.scoreChannelCount
@@ -197,6 +202,7 @@ function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha
 maskName = paramout.(sprintf('mask%d_name', maskIndex));
 maskLabel = paramout.(sprintf('mask%d_label', maskIndex));
 backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', maskIndex));
+scoreLabel = paramout.(sprintf('mask%d_scoreLabel', maskIndex));
 maskImage = roiobj.image(:,:,cha,frames);
 maskLabelSafe = makeSafeVariableName(maskLabel);
 groupId = ['mask_quantification_' maskLabelSafe];
@@ -224,7 +230,7 @@ surfCol = cell(nFrames, 1);
 
 for t = 1:nFrames
     frame = maskImage(:,:,1,t);
-    labels = maskInstanceLabels(frame, backgroundLabel, maskName);
+    labels = maskInstanceLabels(frame, backgroundLabel, maskName, scoreLabel);
     idxCol{t} = labels(:)';
     [areaCol{t}, minorCol{t}, majorCol{t}, eccCol{t}] = geometryForLabels(frame, labels);
     r = minorCol{t};
@@ -255,6 +261,7 @@ end
 dataout(cc).userData.mask_channel = maskName;
 dataout(cc).userData.mask_label = maskLabel;
 dataout(cc).userData.mask_background_label = backgroundLabel;
+dataout(cc).userData.mask_score_label = scoreLabel;
 dataout(cc).userData.mask_index_variable = varNames{1};
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
@@ -282,11 +289,12 @@ for m = 1:maskCount
     maskChannel = maskChannel(1);
     maskLabel = paramout.(sprintf('mask%d_label', m));
     backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', m));
+    scoreLabel = paramout.(sprintf('mask%d_scoreLabel', m));
     maskLabelSafe = makeSafeVariableName(maskLabel);
 
     idxCol = cell(nFrames, 1);
     for t = 1:nFrames
-        idxCol{t} = maskInstanceLabels(im(:,:,maskChannel,t), backgroundLabel, maskName);
+        idxCol{t} = maskInstanceLabels(im(:,:,maskChannel,t), backgroundLabel, maskName, scoreLabel);
     end
     varNames{end+1} = ['MaskIdx_' maskLabelSafe]; %#ok<AGROW>
     columns{end+1} = idxCol; %#ok<AGROW>
@@ -295,7 +303,7 @@ for m = 1:maskCount
 
     metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
-        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName);
+        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName, scoreLabel);
         channelName = channelsName{i};
         metricSpecs = { ...
             'Mean', 'Mean', false; ...
@@ -375,13 +383,13 @@ if ~isstruct(dataout(cc).userData)
 end
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per foreground mask index listed in the corresponding MaskIdx_* cell.';
 dataout(cc).userData.composite_mask_semantics = ['For *_AND_* and *_NOT_* variables, each table cell contains one value per ' ...
-    'foreground mask index listed in the corresponding MaskIdx_* composite variable. Foreground excludes each mask background label ' ...
-    '(auto, 0, or 1). AND is base foreground intersect other foreground; NOT is base foreground excluding other foreground.'];
+    'selected foreground mask index listed in the corresponding MaskIdx_* composite variable. Foreground excludes each mask background label ' ...
+    '(auto, 0, or 1), and mask*_scoreLabel can restrict the measured label. AND/NOT composites are computed only when every mask in the pair has a numeric score label.'];
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
 function maskSpecs = validQuantificationMasks(roiobj, paramout)
-maskSpecs = struct('index', {}, 'channel', {}, 'name', {}, 'label', {}, 'labelSafe', {}, 'backgroundLabel', {});
+maskSpecs = struct('index', {}, 'channel', {}, 'name', {}, 'label', {}, 'labelSafe', {}, 'backgroundLabel', {}, 'scoreLabel', {}, 'hasPreciseScoreLabel', {});
 for m = 1:paramout.maskChannelCount
     maskName = paramout.(sprintf('mask%d_name', m));
     if strcmp(maskName, 'N/A')
@@ -393,13 +401,16 @@ for m = 1:paramout.maskChannelCount
     end
     maskLabel = paramout.(sprintf('mask%d_label', m));
     backgroundLabel = paramout.(sprintf('mask%d_backgroundLabel', m));
+    scoreLabel = paramout.(sprintf('mask%d_scoreLabel', m));
     maskSpecs(end+1) = struct( ... %#ok<AGROW>
         'index', m, ...
         'channel', maskChannel(1), ...
         'name', maskName, ...
         'label', maskLabel, ...
         'labelSafe', makeSafeVariableName(maskLabel), ...
-        'backgroundLabel', backgroundLabel);
+        'backgroundLabel', backgroundLabel, ...
+        'scoreLabel', scoreLabel, ...
+        'hasPreciseScoreLabel', hasPreciseScoreLabel(scoreLabel));
 end
 end
 
@@ -409,6 +420,14 @@ function [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( .
 nFrames = size(im, 4);
 for a = 1:numel(maskSpecs)
     for b = a+1:numel(maskSpecs)
+        if ~maskSpecs(a).hasPreciseScoreLabel || ~maskSpecs(b).hasPreciseScoreLabel
+            warnOnceLocal('computeMetrics:CompositeRequiresScoreLabel', ...
+                sprintf('%s|%s', maskSpecs(a).name, maskSpecs(b).name), ...
+                ['Skipping composite mask metrics for %s and %s because computeMaskCombinations requires a numeric ' ...
+                 'mask*_scoreLabel on every mask in the pair. Use all/empty/0 only for non-composite per-label measurements.'], ...
+                maskSpecs(a).name, maskSpecs(b).name);
+            continue;
+        end
         relationSpecs = { ...
             maskSpecs(a), maskSpecs(b), 'AND'; ...
             maskSpecs(a), maskSpecs(b), 'NOT'; ...
@@ -422,10 +441,10 @@ for a = 1:numel(maskSpecs)
 
             idxCol = cell(nFrames, 1);
             for t = 1:nFrames
-                labels = maskInstanceLabels(im(:,:,baseSpec.channel,t), baseSpec.backgroundLabel, baseSpec.name);
+                labels = maskInstanceLabels(im(:,:,baseSpec.channel,t), baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel);
                 idxCol{t} = labelsWithNonEmptyCompositeRegion( ...
                     im(:,:,baseSpec.channel,t), im(:,:,otherSpec.channel,t), labels, relation, ...
-                    otherSpec.backgroundLabel, otherSpec.name);
+                    otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel);
             end
 
             varNames{end+1} = ['MaskIdx_' makeSafeVariableName(relationLabel)]; %#ok<AGROW>
@@ -437,7 +456,8 @@ for a = 1:numel(maskSpecs)
             for i = 1:numel(channelsExtract)
                 metricByChannel{i} = fluorescenceForCompositeMask( ...
                     im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N, ...
-                    baseSpec.backgroundLabel, baseSpec.name, otherSpec.backgroundLabel, otherSpec.name);
+                    baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel, ...
+                    otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel);
                 channelName = channelsName{i};
                 metricSpecs = { ...
                     'Mean', 'Mean', false; ...
@@ -477,7 +497,7 @@ end
 end
 
 function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N, ...
-    baseBackgroundLabel, baseMaskName, otherBackgroundLabel, otherMaskName)
+    baseBackgroundLabel, baseMaskName, baseScoreLabel, otherBackgroundLabel, otherMaskName, otherScoreLabel)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -487,15 +507,15 @@ end
 for t = 1:nFrames
     baseFrame = im(:,:,baseMaskChannel,t);
     otherFrame = im(:,:,otherMaskChannel,t);
-    labels = maskInstanceLabels(baseFrame, baseBackgroundLabel, baseMaskName);
-    baseForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName);
-    otherForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName);
+    labels = maskInstanceLabels(baseFrame, baseBackgroundLabel, baseMaskName, baseScoreLabel);
+    baseForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName, baseScoreLabel);
+    otherForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName, otherScoreLabel);
     compositeFrame = compositeRegion(baseForeground, otherForeground, relation);
     backgroundPix = ~compositeFrame;
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
 
-    validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName);
+    validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName, otherScoreLabel);
     meanVals = NaN(1, numel(validLabels));
     totalVals = NaN(1, numel(validLabels));
     meanTopVals = NaN(1, numel(validLabels));
@@ -523,9 +543,9 @@ for t = 1:nFrames
 end
 end
 
-function labelsOut = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName)
+function labelsOut = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName, otherScoreLabel)
 labelsOut = [];
-otherMask = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName);
+otherMask = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName, otherScoreLabel);
 for i = 1:numel(labels)
     pix = compositeRegion(baseFrame == labels(i), otherMask, relation);
     if any(pix(:))
@@ -569,7 +589,7 @@ warned(mapKey) = true;
 warning(id, varargin{:});
 end
 
-function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N, backgroundLabel, maskName)
+function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N, backgroundLabel, maskName, scoreLabel)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -578,8 +598,8 @@ end
 
 for t = 1:nFrames
     maskFrame = im(:,:,maskChannel,t);
-    labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName);
-    foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName);
+    labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName, scoreLabel);
+    foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName, scoreLabel);
     backgroundPix = ~foregroundPix;
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
@@ -620,18 +640,29 @@ end
 values = double(values);
 end
 
-function labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName)
+function labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName, scoreLabel)
+if nargin < 4
+    scoreLabel = 'all';
+end
 labels = unique(maskFrame(:));
 labels = labels(~isnan(double(labels)));
 backgroundLabels = resolveBackgroundLabels(maskFrame, backgroundLabel, maskName);
 if ~isempty(backgroundLabels)
     labels = labels(~ismember(double(labels), double(backgroundLabels(:))));
 end
+scoreLabel = normalizeScoreLabelParam(scoreLabel);
+if hasPreciseScoreLabel(scoreLabel)
+    targetLabel = str2double(char(string(scoreLabel)));
+    labels = labels(double(labels) == targetLabel);
+end
 labels = double(labels(:)');
 end
 
-function pix = foregroundMask(maskFrame, backgroundLabel, maskName)
-labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName);
+function pix = foregroundMask(maskFrame, backgroundLabel, maskName, scoreLabel)
+if nargin < 4
+    scoreLabel = 'all';
+end
+labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName, scoreLabel);
 if isempty(labels)
     pix = false(size(maskFrame));
 else
@@ -677,6 +708,28 @@ switch value
             value = 'auto';
         end
 end
+end
+
+function value = normalizeScoreLabelParam(value)
+value = selectedText(value, 'all');
+value = lower(strtrim(char(string(value))));
+switch value
+    case {'','0','all','any','each'}
+        value = 'all';
+    otherwise
+        numericValue = str2double(value);
+        if isfinite(numericValue) && isscalar(numericValue) && numericValue > 0
+            value = char(string(round(numericValue)));
+        else
+            value = 'all';
+        end
+end
+end
+
+function tf = hasPreciseScoreLabel(value)
+value = normalizeScoreLabelParam(value);
+numericValue = str2double(char(string(value)));
+tf = isfinite(numericValue) && isscalar(numericValue) && numericValue > 0;
 end
 
 function tf = looksLikePixelClassifierMask(maskName, maskFrame)
