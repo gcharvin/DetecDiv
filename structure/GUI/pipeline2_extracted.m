@@ -17598,7 +17598,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 appendRunReport(app, 'Dry-run: OK', dryReport);
 
                 if strcmp(runtimeExecutionTarget(app), 'hub')
-                    if ~isempty(d), d.Message = 'Preparing Hub submission locally...'; end
+                    if ~isempty(d), d.Message = 'Preparing local Hub run checks...'; end
                     hub = hubSettingsFromUi(app);
                     if ~isempty(d), d.Message = 'Checking Hub session...'; drawnow limitrate nocallbacks; end
                     hub = ensureHubSessionFromUi(app, hub);
@@ -17620,9 +17620,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
                     logRunEvent(app, runObj, 'Preparing Hub run submission.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving local run state before Hub submit...', true);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local run state...', true);
                     if ~isempty(d)
-                        d.Message = 'Sending run request to DetecDiv Hub...';
+                        d.Message = 'Resolving Hub target and creating job request...';
                         drawnow limitrate nocallbacks;
                     end
                     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
