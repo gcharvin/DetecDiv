@@ -207,6 +207,12 @@ value = defaultValue;
 try
     if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, name) && ~isempty(ctx.run.(name))
         value = char(string(ctx.run.(name)));
+    elseif isstruct(ctx) && isfield(ctx, 'pipeline') && isstruct(ctx.pipeline) ...
+            && isfield(ctx.pipeline, name) && ~isempty(ctx.pipeline.(name))
+        value = char(string(ctx.pipeline.(name)));
+    elseif isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params) ...
+            && isfield(ctx.params, name) && ~isempty(ctx.params.(name))
+        value = char(string(ctx.params.(name)));
     elseif isstruct(ctx) && isfield(ctx, name) && ~isempty(ctx.(name))
         value = char(string(ctx.(name)));
     end
