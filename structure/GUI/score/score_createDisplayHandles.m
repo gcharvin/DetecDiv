@@ -70,6 +70,7 @@ set(fig, 'Color', background);
             fig=hfig;
 
             set(fig, 'Color', background);
+            localResizeScoreFigure(fig, figWidth, figHeight);
     
             clf;
             else
@@ -118,3 +119,25 @@ set(fig, 'Color', background);
 
     displayHandles.Figure=fig;
 
+end
+
+function localResizeScoreFigure(fig, figWidth, figHeight)
+try
+    oldUnits = fig.Units;
+    fig.Units = 'pixels';
+    pos = fig.Position;
+    pos(3) = max(1, figWidth);
+    pos(4) = max(1, figHeight);
+    fig.Position = pos;
+    fig.Units = oldUnits;
+catch
+    try
+        set(fig, 'Units', 'pixels');
+        pos = get(fig, 'Position');
+        pos(3) = max(1, figWidth);
+        pos(4) = max(1, figHeight);
+        set(fig, 'Position', pos);
+    catch
+    end
+end
+end
