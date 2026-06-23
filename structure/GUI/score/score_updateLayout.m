@@ -65,8 +65,13 @@ if ~isempty(selCh)
         if isempty(subIdx)
             subIdx = idx; % fallback
         end
-        lowVal  = round(65535 * dsC.displaylim(1, subIdx));
-        highVal = round(65535 * dsC.displaylim(2, subIdx));
+        lims = dsC.displaylim(:, subIdx);
+        if ~dsC.indexed(idx) && isDefaultDisplayLim(lims)
+            [lowVal, highVal] = autoDisplayLevelsFromImage(roitmp, subIdx);
+        else
+            lowVal  = round(65535 * lims(1));
+            highVal = round(65535 * lims(2));
+        end
 
         levels{i} = [lowVal, highVal];
 
@@ -211,6 +216,42 @@ layoutOptions.tileH = basesize(1);
 layoutOptions.tileW = basesize(2);
 layoutOptions.Nchannel=nChannel;
 layoutOut=layoutOptions;
+end
+
+function tf = isDefaultDisplayLim(lims)
+tf = false;
+try
+    tf = numel(lims) >= 2 && abs(double(lims(1))) < eps && abs(double(lims(2)) - 1) < eps;
+catch
+    tf = false;
+end
+end
+
+function [lowVal, highVal] = autoDisplayLevelsFromImage(roitmp, subIdx)
+lowVal = 0;
+highVal = 65535;
+try
+    vals = double(roitmp.image(:,:,subIdx,:));
+    vals = vals(:);
+    vals = vals(isfinite(vals));
+    if isempty(vals)
+        return;
+    end
+    lo = prctile(vals, 0.1);
+    hi = prctile(vals, 99.9);
+    if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+        lo = min(vals);
+        hi = max(vals);
+    end
+    if ~isfinite(lo) || ~isfinite(hi) || hi <= lo
+        hi = lo + 1;
+    end
+    lowVal = max(0, round(lo));
+    highVal = min(65535, max(lowVal + 1, round(hi)));
+catch
+    lowVal = 0;
+    highVal = 65535;
+end
 end
 
 function dsC = normalizeChannelScaleForScore(dsC)

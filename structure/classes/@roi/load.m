@@ -536,8 +536,23 @@ if hasBadIdx
 else
     % Utiliser les indices fournis
     idxList = idxRaw;
-    C = max([idxList{:}]);
-    debugPrintf('[DEBUG] Using provided channel_indices: total C=%d\n', C);
+    allIdx = [idxList{:}];
+    expectedIdx = 1:sum(kList);
+    if isempty(allIdx) || any(~isfinite(double(allIdx))) || any(double(allIdx) < 1) || ...
+            numel(unique(double(allIdx))) ~= numel(allIdx) || ~isequal(sort(double(allIdx)), expectedIdx)
+        idxList = cell(1,N);
+        c0 = 0;
+        for i = 1:N
+            k = kList(i);
+            idxList{i} = (c0+1):(c0+k);
+            c0 = c0 + k;
+        end
+        C = sum(kList);
+        debugPrintf('[DEBUG] Repacked non-compact channel_indices sequentially: total C=%d\n', C);
+    else
+        C = max(allIdx);
+        debugPrintf('[DEBUG] Using provided channel_indices: total C=%d\n', C);
+    end
 end
 
 % --- Allocation & remplissage de l'image globale ---
