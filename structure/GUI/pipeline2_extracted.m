@@ -11252,7 +11252,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 case 'processor'
                     pkg = lower(char(string(getField(app, node, 'pkg', ''))));
-                    if strcmp(pkg, 'computerls') && strcmp(keyLower, 'statedecoder')
+                    if strcmp(pkg, 'computemetrics') && ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
+                        choices = {'auto','0','1'};
+                    elseif strcmp(pkg, 'computerls') && strcmp(keyLower, 'statedecoder')
                         choices = {'off','viterbi','median'};
                     elseif strcmp(pkg, 'singlecelloscillations')
                         switch keyLower
@@ -11974,7 +11976,14 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function label = friendlyParamLabel(app, key) %#ok<INUSD>
-            switch lower(char(string(key)))
+            keyText = char(string(key));
+            keyLower = lower(keyText);
+            bgMatch = regexp(keyLower, '^mask(\d+)_backgroundlabel$', 'tokens', 'once');
+            if ~isempty(bgMatch)
+                label = sprintf('Mask %s background label', bgMatch{1});
+                return;
+            end
+            switch keyLower
                 case 'mode'
                     label = 'ROI layout';
                 case 'gridcount'
@@ -12031,6 +12040,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+            keyLower = lower(char(string(key)));
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'processor') && strcmp(pkg, 'computemetrics') && ...
+                    ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
+                txt = ['Background index excluded from mask measurements. auto uses 0 when present; otherwise it uses 1 for U-Net/DeepLab/pixel-classifier maps. ' ...
+                    'Force 0 for instance masks such as CellposeSAM, or 1 for old U-Net/classifier maps.'];
+                return;
+            end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')
                 try
                     spec = cellposeExecutionSpec(app);
