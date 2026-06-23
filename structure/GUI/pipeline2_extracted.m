@@ -9215,7 +9215,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function tf = isZStackPlaceholderBinding(app, value) %#ok<INUSD>
-            value = lower(strtrim(char(string(value))));
+            value = lower(choiceScalarText(app, value));
             tf = isempty(value) || any(strcmp(value, {'<z_stack output>','<z-stack output>', ...
                 '@z_stack','@z-stack','@z_stack output','@z-stack output'}));
         end

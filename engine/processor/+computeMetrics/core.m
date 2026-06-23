@@ -78,6 +78,12 @@ if isempty(channelsExtract)
 end
 
 dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames);
+if logical(paramout.computeMaskCombinations)
+    [imageout, compositeChannelNames] = buildCompositeMaskAnnotationChannels(roiobj, paramout, frames);
+    if ~isempty(compositeChannelNames)
+        paramout.saveChannels = compositeChannelNames;
+    end
+end
 end
 
 function frames = normalizeFramesSelection(frames, nFrames)
@@ -494,6 +500,113 @@ for a = 1:numel(maskSpecs)
         end
     end
 end
+end
+
+function [imageout, channelNames] = buildCompositeMaskAnnotationChannels(roiobj, paramout, frames)
+imageout = [];
+channelNames = {};
+maskSpecs = validQuantificationMasks(roiobj, paramout);
+if numel(maskSpecs) < 2
+    return;
+end
+
+if isempty(roiobj.image)
+    roiobj.load;
+end
+if isempty(roiobj.image)
+    return;
+end
+
+imageout = roiobj.image;
+nFramesTotal = size(imageout, 4);
+frames = normalizeFramesSelection(frames, nFramesTotal);
+framePosition = frames(:).';
+
+for a = 1:numel(maskSpecs)
+    for b = a+1:numel(maskSpecs)
+        if ~maskSpecs(a).hasPreciseScoreLabel || ~maskSpecs(b).hasPreciseScoreLabel
+            continue;
+        end
+
+        baseSpec = maskSpecs(a);
+        otherSpec = maskSpecs(b);
+        andName = compositeAnnotationChannelName(baseSpec.label, 'AND', otherSpec.label);
+        notName = compositeAnnotationChannelName(baseSpec.label, 'not', otherSpec.label);
+        andData = zeros(size(imageout, 1), size(imageout, 2), 1, nFramesTotal, 'uint16');
+        notData = zeros(size(imageout, 1), size(imageout, 2), 1, nFramesTotal, 'uint16');
+
+        existingAnd = roiobj.findChannelID(andName, 'exact');
+        if ~isempty(existingAnd)
+            andData(:,:,:,1:nFramesTotal) = uint16(imageout(:,:,existingAnd(1),:));
+        end
+        existingNot = roiobj.findChannelID(notName, 'exact');
+        if ~isempty(existingNot)
+            notData(:,:,:,1:nFramesTotal) = uint16(imageout(:,:,existingNot(1),:));
+        end
+
+        for t = framePosition
+            baseFrame = imageout(:,:,baseSpec.channel,t);
+            otherFrame = imageout(:,:,otherSpec.channel,t);
+            baseForeground = foregroundMask(baseFrame, baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel);
+            otherForeground = foregroundMask(otherFrame, otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel);
+            labelValue = uint16(str2double(char(string(baseSpec.scoreLabel))));
+
+            andFrame = zeros(size(baseFrame), 'uint16');
+            andFrame(baseForeground & otherForeground) = labelValue;
+            andData(:,:,1,t) = andFrame;
+
+            notFrame = zeros(size(baseFrame), 'uint16');
+            notFrame(baseForeground & ~otherForeground) = labelValue;
+            notData(:,:,1,t) = notFrame;
+        end
+
+        [imageout, roiobj] = upsertCompositeAnnotationChannel(roiobj, imageout, andData, andName);
+        [imageout, roiobj] = upsertCompositeAnnotationChannel(roiobj, imageout, notData, notName);
+        channelNames = [channelNames, {andName, notName}]; %#ok<AGROW>
+    end
+end
+channelNames = unique(channelNames, 'stable');
+end
+
+function [imageout, roiobj] = upsertCompositeAnnotationChannel(roiobj, imageout, data, channelName)
+idx = roiobj.findChannelID(channelName, 'exact');
+if isempty(idx)
+    roiobj.image = imageout;
+    roiobj.addChannel(data, channelName, [1 1 1], [0 0 0]);
+    imageout = roiobj.image;
+else
+    imageout(:,:,idx(1),:) = uint16(data);
+    roiobj.image = imageout;
+    displayIndex = logicalChannelIndex(roiobj, channelName);
+    if ~isempty(displayIndex)
+        roiobj.display.intensity(displayIndex,:) = [0 0 0];
+        roiobj.display.indexed(displayIndex) = 1;
+        roiobj.display.contour(displayIndex) = 1;
+        roiobj.display.alpha(displayIndex) = 0.35;
+        roiobj.display.width(displayIndex) = 1.5;
+    end
+end
+end
+
+function idx = logicalChannelIndex(roiobj, channelName)
+idx = [];
+try
+    names = roiobj.display.channel;
+    if ischar(names) || isstring(names)
+        names = cellstr(names);
+    end
+    idx = find(strcmp(names, channelName), 1);
+catch
+    idx = [];
+end
+end
+
+function name = compositeAnnotationChannelName(baseLabel, relation, otherLabel)
+name = sprintf('mask_%s_%s_%s', channelNameToken(baseLabel), char(string(relation)), channelNameToken(otherLabel));
+end
+
+function token = channelNameToken(label)
+token = lower(makeSafeVariableName(label));
 end
 
 function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N, ...
