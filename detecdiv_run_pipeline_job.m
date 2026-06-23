@@ -1311,25 +1311,91 @@ function localWriteResultIfRequested(resultPath, result)
 end
 
 function localAddRepoPaths(repoRoot)
-    persistent done;
-    if ~isempty(done) && done
+    persistent doneRoot;
+    repoRoot = char(string(repoRoot));
+    if ~isempty(doneRoot) && strcmpi(doneRoot, repoRoot)
         return;
     end
-    rawPaths = regexp(genpath(repoRoot), pathsep, 'split');
-    keep = {};
-    for i = 1:numel(rawPaths)
-        p = rawPaths{i};
-        if isempty(p)
-            continue;
+
+    restoredefaultpath();
+    rehash toolboxcache;
+    addpath(repoRoot, '-begin');
+
+    setupFun = fullfile(repoRoot, 'detecdiv_setup_path.m');
+    if exist(setupFun, 'file') == 2
+        detecdiv_setup_path(repoRoot, 'ResetPath', true, 'Verbose', true);
+    else
+        runtimeDirs = {repoRoot, fullfile(repoRoot, 'structure'), ...
+            fullfile(repoRoot, 'helpers'), fullfile(repoRoot, 'engine')};
+        keep = {};
+        for i = 1:numel(runtimeDirs)
+            if exist(runtimeDirs{i}, 'dir') ~= 7
+                continue;
+            end
+            rawPaths = regexp(genpath(runtimeDirs{i}), pathsep, 'split');
+            for j = 1:numel(rawPaths)
+                p = rawPaths{j};
+                if isempty(p) || exist(p, 'dir') ~= 7 || localIsForbiddenRuntimePath(p)
+                    continue;
+                end
+                keep{end+1} = p; %#ok<AGROW>
+            end
         end
-        normp = lower(strrep(p, '/', '\'));
-        if contains(normp, [filesep '.git']) || contains(normp, [filesep 'backups']) || contains(normp, [filesep 'doc'])
-            continue;
+        if ~isempty(keep)
+            addpath(keep{:}, '-begin');
         end
-        keep{end+1} = p; %#ok<AGROW>
     end
-    if ~isempty(keep)
-        addpath(keep{:}, '-begin');
+
+    rehash;
+    localAssertFunctionFromRepo('runPipelineStructured', repoRoot, true);
+    localAssertFunctionFromRepo('pipelineRunSave', repoRoot, true);
+    if exist(fullfile(repoRoot, 'engine', 'classification', '+sam31', 'train.m'), 'file') == 2
+        localAssertFunctionFromRepo('sam31.train', repoRoot, true);
     end
-    done = true;
+    fprintf('[detecdiv_run_pipeline_job] repoRoot: %s\n', repoRoot);
+    fprintf('[detecdiv_run_pipeline_job] runPipelineStructured: %s\n', which('runPipelineStructured'));
+    fprintf('[detecdiv_run_pipeline_job] sam31.train: %s\n', which('sam31.train'));
+    doneRoot = repoRoot;
+end
+
+function tf = localIsForbiddenRuntimePath(pathStr)
+    p = lower(strrep(char(string(pathStr)), '/', filesep));
+    parts = regexp(p, ['\' filesep '+'], 'split');
+    forbidden = {'.git', '.github', '.vs', '.idea', '.codex_transfer_tmp', ...
+        '.codex_deploy_backup', 'backups', 'detecdiv_deploy_backups', ...
+        'doc', 'catalog', '__pycache__'};
+    tf = any(ismember(parts, forbidden));
+end
+
+function localAssertFunctionFromRepo(funName, repoRoot, required)
+    resolved = which(funName);
+    if isempty(resolved)
+        if required
+            error('detecdiv_run_pipeline_job:RuntimeFunctionMissing', ...
+                'Required runtime function is not on the MATLAB path: %s', funName);
+        end
+        return;
+    end
+    resolvedNorm = localNormalizePathForRuntime(resolved);
+    repoNorm = localNormalizePathForRuntime(repoRoot);
+    if ~startsWith(resolvedNorm, [repoNorm '/']) && ~strcmp(resolvedNorm, repoNorm)
+        error('detecdiv_run_pipeline_job:RuntimeFunctionOutsideRepo', ...
+            'Runtime function %s resolves outside repo root.%sResolved: %s%sRepo: %s', ...
+            funName, newline, resolved, newline, repoRoot);
+    end
+    if localIsForbiddenRuntimePath(resolved)
+        error('detecdiv_run_pipeline_job:RuntimeFunctionFromForbiddenPath', ...
+            'Runtime function %s resolves from a forbidden backup/cache path: %s', ...
+            funName, resolved);
+    end
+end
+
+function out = localNormalizePathForRuntime(pathStr)
+    out = char(string(pathStr));
+    out = strrep(out, '\', '/');
+    out = regexprep(out, '/+', '/');
+    if numel(out) > 1 && endsWith(out, '/')
+        out = extractBefore(out, strlength(out));
+    end
+    out = lower(out);
 end

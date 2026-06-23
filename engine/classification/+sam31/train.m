@@ -92,6 +92,10 @@ cfg.max_tracks_per_datapoint = double(runtimeParam(tp, internal, 'maxTracksPerDa
 cfg.run_policy = pipelineRunPolicy(ctx);
 cfg.run_id = pipelineRunField(ctx, 'runId', '');
 cfg.run_path = pipelineRunField(ctx, 'runPath', pipelineRunField(ctx, 'path', ''));
+cfg.detecdiv_runtime = struct( ...
+    'sam31_train_mfile', which('sam31.train'), ...
+    'sam31_bridge_mfile', mfilename('fullpath'), ...
+    'run_context_fields', contextFieldSummary(ctx));
 
 configPath = fullfile(workDir, 'train_sam31_config.json');
 writeJson(configPath, cfg);
@@ -218,5 +222,24 @@ try
     end
 catch
     value = defaultValue;
+end
+end
+
+function fields = contextFieldSummary(ctx)
+fields = struct('root', {{}}, 'run', {{}}, 'pipeline', {{}}, 'params', {{}});
+try
+    if isstruct(ctx)
+        fields.root = fieldnames(ctx)';
+        if isfield(ctx, 'run') && isstruct(ctx.run)
+            fields.run = fieldnames(ctx.run)';
+        end
+        if isfield(ctx, 'pipeline') && isstruct(ctx.pipeline)
+            fields.pipeline = fieldnames(ctx.pipeline)';
+        end
+        if isfield(ctx, 'params') && isstruct(ctx.params)
+            fields.params = fieldnames(ctx.params)';
+        end
+    end
+catch
 end
 end

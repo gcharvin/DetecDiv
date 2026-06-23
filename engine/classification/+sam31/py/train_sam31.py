@@ -74,6 +74,11 @@ def main() -> None:
     num_gpus = int(cfg.get("num_gpus", 1))
     modules = split_list(cfg.get("modules")) or ["instance"]
     splits = split_list(cfg.get("splits")) or ["train", "val"]
+    if "run_policy" not in cfg or not str(cfg.get("run_policy") or "").strip():
+        raise SystemExit(
+            "SAM31 training config is missing run_policy. "
+            "This usually means the Hub worker loaded a stale DetecDiv MATLAB path."
+        )
     run_policy = normalize_run_policy(cfg.get("run_policy"))
     log_path = args.config.with_name("train_sam31_runner.log")
     log_path.write_text(
