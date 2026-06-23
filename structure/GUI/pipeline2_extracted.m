@@ -503,6 +503,15 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if isfield(opts, 'intent') && ~isempty(strtrim(opts.intent))
                 app.RuntimeValues.intent = opts.intent;
+                if strcmpi(char(string(opts.intent)), 'train') && ...
+                        (isempty(app.CurrentRun) || app.CurrentRunIsSeed) && ...
+                        isprop(app, 'ResumeoptionsDropDown') && ~isempty(app.ResumeoptionsDropDown)
+                    try
+                        app.ResumeoptionsDropDown.Value = 'Restart from scratch';
+                        applyRecommendedOutputPolicyForResume(app);
+                    catch
+                    end
+                end
             end
             if isfield(opts, 'inputMode') && ~isempty(strtrim(opts.inputMode))
                 applyRuntimeInputSourceMode(app, opts.inputMode);

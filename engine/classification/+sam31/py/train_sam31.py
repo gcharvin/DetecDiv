@@ -21,7 +21,7 @@ def as_local_path(value: str | Path | None) -> Path | None:
     return Path(text).expanduser()
 
 
-def run(cmd: list[str | Path], cwd: Path, log_path: Path) -> None:
+def run(cmd: list[str | Path], cwd: Path, log_path: Path) -> str:
     printable = " ".join(str(part) for part in cmd)
     print(printable, flush=True)
     with log_path.open("a", encoding="utf-8") as log:
@@ -36,6 +36,7 @@ def run(cmd: list[str | Path], cwd: Path, log_path: Path) -> None:
         log.write(proc.stdout)
     if proc.returncode != 0:
         raise SystemExit(proc.returncode)
+    return proc.stdout
 
 
 def split_list(value) -> list[str]:
@@ -44,6 +45,18 @@ def split_list(value) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value if str(item)]
     return [part for part in str(value).split() if part]
+
+
+def normalize_run_policy(value) -> str:
+    text = str(value or "resume").strip().lower()
+    if text in {"restart", "fresh", "replace", "reset"}:
+        return "restart"
+    return "resume"
+
+
+def append_log(log_path: Path, message: str) -> None:
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write(message.rstrip() + "\n")
 
 
 def main() -> None:
@@ -61,7 +74,18 @@ def main() -> None:
     num_gpus = int(cfg.get("num_gpus", 1))
     modules = split_list(cfg.get("modules")) or ["instance"]
     splits = split_list(cfg.get("splits")) or ["train", "val"]
+    run_policy = normalize_run_policy(cfg.get("run_policy"))
     log_path = args.config.with_name("train_sam31_runner.log")
+    log_path.write_text(
+        (
+            "[SAM31 TRAIN RUNNER]\n"
+            f"config: {args.config}\n"
+            f"run_policy: {run_policy}\n"
+            f"run_id: {cfg.get('run_id', '')}\n"
+            f"run_path: {cfg.get('run_path', '')}\n"
+        ),
+        encoding="utf-8",
+    )
 
     if repo_root is None or sam3_repo is None or artifacts_root is None or dataset_root is None:
         raise SystemExit("Missing repo_root, sam3_repo, artifacts_root, or dataset_root")
@@ -117,30 +141,47 @@ def main() -> None:
         print("prepare_only=true: stopping before SAM31 training.", flush=True)
         return
 
-    run(
-        [
-            *common,
-            "train",
-            "--modules",
-            *modules,
-            "--image-dataset-name",
-            cfg.get("image_dataset_name", "moma_sam31_image_coco"),
-            "--tracklet-dataset-name",
-            cfg.get("tracklet_dataset_name", "moma_sam31_tracklet_clips_len8_ref"),
-            "--epochs",
-            int(cfg.get("epochs", 20)),
-            "--save-freq",
-            int(cfg.get("save_freq", 100000)),
-            "--clip-length",
-            int(cfg.get("clip_length", 8)),
-            "--stage-stride-max",
-            int(cfg.get("stage_stride_max", 4)),
-            "--max-tracks-per-datapoint",
-            int(cfg.get("max_tracks_per_datapoint", 8)),
-        ],
+    train_cmd = [
+        *common,
+        "train",
+        "--modules",
+        *modules,
+        "--image-dataset-name",
+        cfg.get("image_dataset_name", "moma_sam31_image_coco"),
+        "--tracklet-dataset-name",
+        cfg.get("tracklet_dataset_name", "moma_sam31_tracklet_clips_len8_ref"),
+        "--epochs",
+        int(cfg.get("epochs", 20)),
+        "--save-freq",
+        int(cfg.get("save_freq", 100000)),
+        "--clip-length",
+        int(cfg.get("clip_length", 8)),
+        "--stage-stride-max",
+        int(cfg.get("stage_stride_max", 4)),
+        "--max-tracks-per-datapoint",
+        int(cfg.get("max_tracks_per_datapoint", 8)),
+        "--resume-policy",
+        run_policy,
+    ]
+    train_output = run(
+        train_cmd,
         cwd=repo_root,
         log_path=log_path,
     )
+    if not bool(cfg.get("dry_run", False)) and "Train Epoch:" not in train_output:
+        message = (
+            "[SAM31 WARNING] The SAM3.1 training command completed without any "
+            "'Train Epoch:' log line. In resume mode this usually means that an "
+            "existing checkpoint has already reached the requested --epochs value. "
+            "Select 'Restart from scratch' in pipeline2, delete the module artifact "
+            "checkpoints, or increase epochs if you want additional training."
+        )
+        print(message, flush=True)
+        append_log(log_path, message)
+        if run_policy == "restart":
+            raise SystemExit(
+                "SAM31 restart run produced no training epochs; inspect train_sam31_runner.log."
+            )
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ runSam31Train(classif, ctx);
 out.status = "OK";
 end
 
-function runSam31Train(classif, ~)
+function runSam31Train(classif, ctx)
 tp = classif.trainingParam;
 internal = sam31.utils.internalDefaults();
 base = classif.path;
@@ -89,6 +89,9 @@ cfg.max_tracks_per_clip = double(tp.maxTracksPerClip);
 cfg.min_visible_frames = double(tp.minVisibleFrames);
 cfg.stage_stride_max = double(runtimeParam(tp, internal, 'stageStrideMax'));
 cfg.max_tracks_per_datapoint = double(runtimeParam(tp, internal, 'maxTracksPerDatapoint'));
+cfg.run_policy = pipelineRunPolicy(ctx);
+cfg.run_id = pipelineRunField(ctx, 'runId', '');
+cfg.run_path = pipelineRunField(ctx, 'runPath', pipelineRunField(ctx, 'path', ''));
 
 configPath = fullfile(workDir, 'train_sam31_config.json');
 writeJson(configPath, cfg);
@@ -154,4 +157,38 @@ end
 function tf = hasSam31DirectSplits(root)
 tf = exist(fullfile(root, 'train', '_annotations.coco.json'), 'file') == 2 || ...
     exist(fullfile(root, 'val', '_annotations.coco.json'), 'file') == 2;
+end
+
+function policy = pipelineRunPolicy(ctx)
+policy = 'resume';
+try
+    if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run)
+        if isfield(ctx.run, 'runPolicy') && ~isempty(ctx.run.runPolicy)
+            policy = char(string(ctx.run.runPolicy));
+        elseif isfield(ctx.run, 'resume') && ~logical(ctx.run.resume)
+            policy = 'restart';
+        end
+    end
+catch
+    policy = 'resume';
+end
+policy = strtrim(char(string(policy)));
+if any(strcmpi(policy, {'restart','fresh','replace','reset'}))
+    policy = 'restart';
+else
+    policy = 'resume';
+end
+end
+
+function value = pipelineRunField(ctx, name, defaultValue)
+value = defaultValue;
+try
+    if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, name) && ~isempty(ctx.run.(name))
+        value = char(string(ctx.run.(name)));
+    elseif isstruct(ctx) && isfield(ctx, name) && ~isempty(ctx.(name))
+        value = char(string(ctx.(name)));
+    end
+catch
+    value = defaultValue;
+end
 end
