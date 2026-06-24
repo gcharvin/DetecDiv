@@ -6895,6 +6895,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 switch lower(char(string(pkg)))
                     case 'cellposesam'
                         app.Data.nodes(idx).params = applyCellposeExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                    case 'sam31'
+                        app.Data.nodes(idx).params = applySam31ExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'deeplab_pixel_classification'
                         app.Data.nodes(idx).params = applyDeeplabPixelExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'cnn_lstm'
@@ -6903,6 +6905,70 @@ classdef pipeline2 < matlab.apps.AppBase
                 refreshAfterModelChange(app);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Import classifier defaults', 'Icon', 'error');
+            end
+        end
+
+        function params = applySam31ExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
+            if nargin < 4 || isempty(mode)
+                mode = 'missing';
+            end
+            if ~isstruct(params)
+                params = struct();
+            end
+            spec = sam31ExecutionSpec(app, classiObj);
+            defaults = spec.defaults;
+            keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
+                    continue;
+                end
+                if isfield(defaults, key)
+                    params.(key) = defaults.(key);
+                end
+            end
+            if isfield(params, 'sam31Runner')
+                params.sam31Runner = normalizeSam31RunnerForPipeline(app, params.sam31Runner);
+            end
+        end
+
+        function spec = sam31ExecutionSpec(app, classiObj) %#ok<INUSD>
+            if nargin < 2
+                classiObj = [];
+            end
+            try
+                spec = sam31.executionSpec(classiObj);
+            catch
+                spec = struct();
+                spec.staticKeys = {'resolution','detectorCheckpointPath','trackerCheckpointPath', ...
+                    'maxNumObjects','prompt','minScore','chunkSize','chunkOverlap', ...
+                    'videoScoreThreshold','videoNewDetThreshold','videoDetNmsThreshold', ...
+                    'videoAssocIouThreshold','sam31Runner'};
+                spec.outputKeys = {};
+                spec.defaultImportKeys = spec.staticKeys;
+                spec.defaults = struct('resolution', {{'280','1008','280'}}, ...
+                    'detectorCheckpointPath','', 'trackerCheckpointPath','', ...
+                    'maxNumObjects',40, 'prompt','cell', 'minScore',0, ...
+                    'chunkSize',0, 'chunkOverlap',0, ...
+                    'videoScoreThreshold',0.4, 'videoNewDetThreshold',0.4, ...
+                    'videoDetNmsThreshold',0.1, 'videoAssocIouThreshold',0.5, ...
+                    'sam31Runner', {{'session','external','session'}});
+                spec.labels = struct();
+                spec.tips = struct();
+                spec.choices = struct('resolution', {{'280','1008'}}, ...
+                    'sam31Runner', {{'session','external'}});
+            end
+        end
+
+        function runner = normalizeSam31RunnerForPipeline(app, runner) %#ok<INUSD>
+            runner = lower(strtrim(char(string(runner))));
+            runner = strrep(runner, '-', '_');
+            runner = strrep(runner, ' ', '_');
+            if any(strcmp(runner, {'external','process','subprocess'}))
+                runner = 'external';
+            else
+                runner = 'session';
             end
         end
 
@@ -11251,6 +11317,26 @@ classdef pipeline2 < matlab.apps.AppBase
                                     choices = {'module_default','cpu','gpu'};
                                 end
                             end
+                        case 'resolution'
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'sam31')
+                                spec = sam31ExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'resolution')
+                                    choices = spec.choices.resolution;
+                                else
+                                    choices = {'280','1008'};
+                                end
+                            end
+                        case 'sam31runner'
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'sam31')
+                                spec = sam31ExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'sam31Runner')
+                                    choices = spec.choices.sam31Runner;
+                                else
+                                    choices = {'session','external'};
+                                end
+                            end
                     end
                 case 'roiextract'
                     switch keyLower
@@ -11343,6 +11429,9 @@ classdef pipeline2 < matlab.apps.AppBase
             elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
                     strcmp(pkg, 'cnn_lstm') && strcmpi(keyText, 'outputMode')
                 value = normalizeCnnLstmOutputModeForPipeline(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
+                    strcmp(pkg, 'sam31') && strcmpi(keyText, 'sam31Runner')
+                value = normalizeSam31RunnerForPipeline(app, value);
             elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
                     any(strcmp(pkg, {'cnn_lstm','deeplab_pixel_classification'})) && strcmpi(keyText, 'executionEnvironment')
                 value = normalizeExecutionEnvironmentForPipeline(app, value);
@@ -11676,6 +11765,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = spec.staticKeys;
                 case 'cellposesam'
                     spec = cellposeExecutionSpec(app);
+                    keys = spec.staticKeys;
+                case 'sam31'
+                    spec = sam31ExecutionSpec(app);
                     keys = spec.staticKeys;
                 case 'deeplab_pixel_classification'
                     spec = deeplabPixelExecutionSpec(app);
@@ -12073,6 +12165,17 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')
                 try
                     spec = cellposeExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
+                return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'sam31')
+                try
+                    spec = sam31ExecutionSpec(app);
                     if isfield(spec, 'tips') && isfield(spec.tips, key)
                         txt = spec.tips.(key);
                     end

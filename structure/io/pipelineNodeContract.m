@@ -742,6 +742,22 @@ function contract = enrichContractFromPackage(contract, node)
                 end
                 contract.resources.out = outs;
                 contract.summary = 'CellposeSAM-like classifier: outputs segmentation masks, probability channels, or both.';
+            case 'sam31'
+                contract.parameters.static = unique([contract.parameters.static sam31ExecutionStaticKeys()], 'stable');
+                contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
+                contract.capabilities.outputsMasks = true;
+                contract.capabilities.outputsChannels = false;
+                contract.capabilities.roiMasks = true;
+                contract.capabilities.roiChannels = false;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.binding.mode = 'singleChannel';
+                contract.binding.exactCount = 1;
+                contract.binding.resolveAt = 'design';
+                contract.out = portDef('roiList', 'roiList', true, 'edge');
+                contract.out(end+1) = portDef('masks', 'maskSet', true, 'edge');
+                contract.resources.out = resourceDef('mask', 'segmentation', 'segmentation', 'outputName', 'masks', 'outputName', false, 'roiMasks');
+                contract.summary = 'SAM3.1 classifier: outputs instance-tracking masks from ROI movies.';
             case 'deeplab_pixel_classification'
                 outputType = normalizeOutputMode(getNestedParam(node, {'outputType','outputMode'}, 'segmentation'), ...
                     {'segmentation','proba','probability','both'}, 'segmentation');
@@ -1635,6 +1651,18 @@ function keys = cellposeExecutionStaticKeys()
         keys = spec.staticKeys;
     catch
         keys = {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'};
+    end
+end
+
+function keys = sam31ExecutionStaticKeys()
+    try
+        spec = sam31.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'resolution','detectorCheckpointPath','trackerCheckpointPath', ...
+            'maxNumObjects','prompt','minScore','chunkSize','chunkOverlap', ...
+            'videoScoreThreshold','videoNewDetThreshold','videoDetNmsThreshold', ...
+            'videoAssocIouThreshold','sam31Runner'};
     end
 end
 

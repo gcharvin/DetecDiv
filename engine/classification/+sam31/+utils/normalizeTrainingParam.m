@@ -60,5 +60,13 @@ switch lower(key)
         else
             selected = 'instance + video memory';
         end
+    case 'sam31runner'
+        txt = strrep(txt, '_', ' ');
+        txt = strrep(txt, '-', ' ');
+        if any(strcmp(txt, {'external','process','subprocess'}))
+            selected = 'external';
+        else
+            selected = 'session';
+        end
 end
 end
