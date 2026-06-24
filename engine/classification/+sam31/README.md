@@ -19,7 +19,7 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 
 ## Important Parameters
 
-- `repoRoot`: path to `SAM31_zero_shot_ctc_benchmark`.
+- `repoRoot`: path to the independent `SAM31_yeast` Python distribution.
 - `sam3Repo`: path to the official SAM3.1 checkout, usually `<repoRoot>/artifacts/sam3_official`.
 - `backend`: `wsl` or `local`.
 - `pythonExecutable`: Python executable for the selected backend.
@@ -30,6 +30,21 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `detectorCheckpointPath`: instance detector checkpoint for inference.
 - `trackerCheckpointPath`: video memory/tracker checkpoint for inference.
 - `maxNumObjects`, `videoScoreThreshold`, `videoNewDetThreshold`, `videoDetNmsThreshold`, `videoAssocIouThreshold`: full-model inference controls.
+
+## Model And Artifact Ownership
+
+`SAM31_yeast` is the code distribution. DetecDiv classifier instances own the
+mutable training data, generated configs, outputs, and fine-tuned checkpoints.
+By default, `sam31.train` sends the generic Python CLI:
+
+```text
+--artifacts-root <classif.path>/sam31_artifacts
+```
+
+Therefore, new detector/tracker checkpoints produced by a DetecDiv training run
+stay inside the SAM31 classifier folder. Standalone Python runs are different:
+the caller chooses their model/output location with `--artifacts-root`; if it is
+not provided, the generic SAM31 CLI writes to `<repoRoot>/artifacts`.
 
 ## Data Contract
 
