@@ -1213,6 +1213,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmp(char(string(getField(app, node, 'type', ''))), nodeType) && strcmp(char(string(getField(app, node, 'pkg', ''))), pkg)
                 return;
             end
+            node = clearModuleDerivedFields(app, node);
             node.type = nodeType;
             node.pkg = pkg;
             node.func = defaultNodeFunction(app, nodeType, pkg);
@@ -1313,6 +1314,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmp(char(string(getField(app, node, 'type', ''))), nodeType) && strcmp(char(string(getField(app, node, 'pkg', ''))), pkg)
                 return;
             end
+            node = clearModuleDerivedFields(app, node);
             node.type = nodeType;
             node.pkg = pkg;
             node.func = defaultNodeFunction(app, nodeType, pkg);
@@ -1326,6 +1328,15 @@ classdef pipeline2 < matlab.apps.AppBase
             app.Data.nodes = pipelineNormalizeNodes(nodesAligned, 'persist');
             rebuildEdgesFromLayout(app);
             refreshAfterModelChange(app);
+        end
+
+        function node = clearModuleDerivedFields(app, node) %#ok<INUSD>
+            staleFields = {'paramRequired','requiredParams','contract','inputs','outputs'};
+            for i = 1:numel(staleFields)
+                if isfield(node, staleFields{i})
+                    node = rmfield(node, staleFields{i});
+                end
+            end
         end
 
         function addModuleFromCurrentSelection(app)
