@@ -621,6 +621,12 @@ function [missing, deferred] = missingParamsForNode(node, ctx, mode)
     for i = 1:numel(req)
         k = char(string(req{i}));
         scope = paramScopeForNode(node, k);
+        if strcmpi(k, 'path') && strcmpi(char(string(getField(node, 'type', ''))), 'classifier')
+            % Classifier nodes consume ROI/image data from the execution
+            % context. A stale dataloader "path" requirement can remain when
+            % a classifier is inserted in a raw-start slot.
+            continue;
+        end
         if isfield(p,k) && ~isempty(p.(k))
             continue;
         end

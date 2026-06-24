@@ -1895,6 +1895,9 @@ function [missing, deferred] = missingParamsForNode(node, ctx, mode)
     for i = 1:numel(req)
         k = char(string(req{i}));
         scope = paramScopeForNode(node, k);
+        if strcmpi(k, 'path') && strcmpi(char(string(getfielddefault(node, 'type', ''))), 'classifier')
+            continue;
+        end
         if isfield(p,k) && ~isempty(p.(k))
             continue;
         end
