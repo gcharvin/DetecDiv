@@ -30,11 +30,11 @@ if isempty(classif.trainingParam)
     classif.trainingParam = sam31.utils.defaultTrainingParam();
 end
 sam31.ensureClassMetadata(classif);
+tp = sam31.utils.defaultExecutionParam();
+tp = inheritClassifierExecutionDefaults(tp, classif);
 if isfield(ctx,'params') && isstruct(ctx.params)
-    classif.trainingParam = sam31.utils.applyParamOverrides(classif.trainingParam, ctx.params);
-    classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
+    tp = sam31.utils.applyParamOverrides(tp, ctx.params);
 end
-tp = classif.trainingParam;
 internal = sam31.utils.internalDefaults();
 
 if isempty(frames)
@@ -220,6 +220,22 @@ try
     end
 catch
     mode = 'session';
+end
+end
+
+function tp = inheritClassifierExecutionDefaults(tp, classif)
+try
+    if isprop(classif, 'trainingParam') && isstruct(classif.trainingParam) && ...
+            isfield(classif.trainingParam, 'resolution') && ~isempty(classif.trainingParam.resolution)
+        tp.resolution = classif.trainingParam.resolution;
+    end
+catch
+end
+try
+    if isprop(classif, 'executionParam') && isstruct(classif.executionParam)
+        tp = sam31.utils.applyParamOverrides(tp, classif.executionParam);
+    end
+catch
 end
 end
 

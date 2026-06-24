@@ -15,18 +15,6 @@ spec = {
     'clipStride',                    4,           'Stride, in frames, between exported training clips.'
     'maxTracksPerClip',              8,           'Maximum GT tracks per training clip.'
     'minVisibleFrames',              4,           'Minimum number of visible frames required to keep a track in a clip.'
-    'maxNumObjects',                 40,          'Maximum number of simultaneously tracked object slots during inference.'
-    'detectorCheckpointPath',        '',          'SAM3.1 detector checkpoint used for inference; empty uses package defaults.'
-    'trackerCheckpointPath',         '',          'SAM3.1 tracker/memory checkpoint used for inference; empty uses package defaults.'
-    'prompt',                        'cell',      'Text prompt used to initialize SAM3.1 tracking.'
-    'minScore',                      0,           'Minimum mask score kept in SAM3.1 inference output.'
-    'chunkSize',                     0,           'Frames per tracking chunk. 0 tracks the full ROI movie in one session.'
-    'chunkOverlap',                  0,           'Overlap, in frames, between chunks when chunkSize is enabled.'
-    'videoScoreThreshold',           0.40,        'Per-frame detection score threshold.'
-    'videoNewDetThreshold',          0.40,        'Threshold for accepting new detections.'
-    'videoDetNmsThreshold',          0.10,        'Detection NMS threshold.'
-    'videoAssocIouThreshold',        0.50,        'Temporal association IoU threshold.'
-    'sam31Runner',                   {'session','external','session'}, 'Runner mode for inference. session keeps the SAM31 predictor loaded across ROIs; external starts one Python process per ROI.'
     };
 
 tp = struct();

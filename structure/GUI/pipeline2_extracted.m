@@ -2076,6 +2076,8 @@ classdef pipeline2 < matlab.apps.AppBase
                             p = applyCnnLstmExecutionDefaults(app, p, struct(), 'missing');
                         case 'cellposesam'
                             p = applyCellposeExecutionDefaults(app, p, struct(), 'missing');
+                        case 'sam31'
+                            p = applySam31ExecutionDefaults(app, p, struct(), 'missing');
                         case 'deeplab_pixel_classification'
                             p = applyDeeplabPixelExecutionDefaults(app, p, struct(), 'missing');
                         otherwise
@@ -6849,6 +6851,10 @@ classdef pipeline2 < matlab.apps.AppBase
             params = applyCellposeExecutionDefaults(app, params, classiObj, 'missing');
         end
 
+        function params = copySam31StaticParamsFromClassi(app, params, classiObj)
+            params = applySam31ExecutionDefaults(app, params, classiObj, 'missing');
+        end
+
         function params = copyDeeplabPixelStaticParamsFromClassi(app, params, classiObj)
             params = applyDeeplabPixelExecutionDefaults(app, params, classiObj, 'missing');
         end
@@ -6869,9 +6875,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
                 end
                 pkg = classifierPackageName(app, classiObj);
-                if ~any(strcmpi(pkg, {'cellposesam','deeplab_pixel_classification','cnn_lstm'}))
+                if ~any(strcmpi(pkg, {'cellposesam','sam31','deeplab_pixel_classification','cnn_lstm'}))
                     error('pipeline2:UnsupportedClassifierDefaults', ...
-                        'Execution-default import is currently implemented for CellposeSAM, DeepLab pixel, and CNN/LSTM classifiers.');
+                        'Execution-default import is currently implemented for CellposeSAM, SAM31, DeepLab pixel, and CNN/LSTM classifiers.');
                 end
 
                 choice = uiconfirm(app.UIFigure, ...
@@ -6941,18 +6947,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 spec = sam31.executionSpec(classiObj);
             catch
                 spec = struct();
-                spec.staticKeys = {'resolution','detectorCheckpointPath','trackerCheckpointPath', ...
-                    'maxNumObjects','prompt','minScore','chunkSize','chunkOverlap', ...
-                    'videoScoreThreshold','videoNewDetThreshold','videoDetNmsThreshold', ...
-                    'videoAssocIouThreshold','sam31Runner'};
+                spec.staticKeys = {'resolution','maxNumObjects','videoScoreThreshold', ...
+                    'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner'};
                 spec.outputKeys = {};
                 spec.defaultImportKeys = spec.staticKeys;
                 spec.defaults = struct('resolution', {{'280','1008','280'}}, ...
-                    'detectorCheckpointPath','', 'trackerCheckpointPath','', ...
-                    'maxNumObjects',40, 'prompt','cell', 'minScore',0, ...
-                    'chunkSize',0, 'chunkOverlap',0, ...
+                    'maxNumObjects',40, ...
                     'videoScoreThreshold',0.4, 'videoNewDetThreshold',0.4, ...
-                    'videoDetNmsThreshold',0.1, 'videoAssocIouThreshold',0.5, ...
+                    'videoAssocIouThreshold',0.5, ...
                     'sam31Runner', {{'session','external','session'}});
                 spec.labels = struct();
                 spec.tips = struct();
