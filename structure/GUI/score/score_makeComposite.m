@@ -274,10 +274,15 @@ for ch = 1:numel(channel)
 
     % indices par défaut
     if isempty(indices) || (numel(indices)==1 && indices==-1)
+        maxLabel = max(L(:));
         if shouldHideIndexedBackgroundClass(defaultClass, currentIndx, paintChannel, thisName)
-            indices = 2:max(L(:));
+            if maxLabel <= 1
+                indices = 1:maxLabel;
+            else
+                indices = 2:maxLabel;
+            end
         else
-            indices = 1:max(L(:));
+            indices = 1:maxLabel;
         end
     end
 

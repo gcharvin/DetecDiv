@@ -831,7 +831,9 @@ function contract = enrichContractFromPackage(contract, node)
                 maxChannelSlots = 5;
                 channelSlotCount = combineMultipleChannelsSlotCount(node, maxChannelSlots);
                 channelSlotKeys = combineMultipleChannelsSlotKeys('Channel', channelSlotCount);
+                mode = combineMultipleChannelsMode(node);
                 rgbSlotKeys = combineMultipleChannelsSlotKeys('RGB_Channel', channelSlotCount);
+                offsetSlotKeys = combineMultipleChannelsSlotKeys('Offset_Channel', min(2, channelSlotCount));
                 contract.out = [ ...
                     portDef('roiList', 'roiList', true, 'edge'), ...
                     portDef('channels', 'channelSet', false, 'edge')];
@@ -848,10 +850,17 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.binding.outputChannelNameParam = 'outputChannelName';
                 contract.binding.transfer = 'roiChannelsToRoiChannel';
                 contract.parameters.run = {};
-                contract.parameters.static = [{'requiredChannelCount'}, rgbSlotKeys, {'debug'}];
+                contract.parameters.static = [{'mode'}, {'requiredChannelCount'}];
+                switch mode
+                    case 'additive'
+                        contract.parameters.static = [contract.parameters.static, rgbSlotKeys];
+                    case 'division'
+                        contract.parameters.static = [contract.parameters.static, offsetSlotKeys];
+                end
+                contract.parameters.static = [contract.parameters.static, {'debug'}];
                 contract.resources.in = combineMultipleChannelsInputResources(channelSlotCount);
                 contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
-                contract.summary = 'Combines selected ROI channels into one derived ROI image channel.';
+                contract.summary = 'Combines selected ROI channels into one derived ROI image channel, either as additive RGB or as arithmetic grayscale.';
             case 'computerls'
                 averageFluoByDivision = computeRLSAverageFluoByDivisionEnabled(node);
                 contract.in = [ ...
@@ -1241,6 +1250,11 @@ function n = combineMultipleChannelsSlotCount(node, maxSlots)
     if nargin < 2 || isempty(maxSlots)
         maxSlots = 5;
     end
+    mode = combineMultipleChannelsMode(node);
+    if any(strcmp(mode, {'subtraction','division'}))
+        n = 2;
+        return;
+    end
     n = maxSlots;
     params = getField(node, 'params', struct());
     if ~isstruct(params) || ~isfield(params, 'requiredChannelCount') || isempty(params.requiredChannelCount)
@@ -1255,6 +1269,30 @@ function n = combineMultipleChannelsSlotCount(node, maxSlots)
         return;
     end
     n = min(maxSlots, max(1, round(requested)));
+end
+
+function mode = combineMultipleChannelsMode(node)
+    mode = 'additive';
+    params = getField(node, 'params', struct());
+    if isstruct(params) && isfield(params, 'mode') && ~isempty(params.mode)
+        try
+            mode = lower(strtrim(char(string(params.mode))));
+        catch
+            mode = 'additive';
+        end
+    end
+    switch mode
+        case {'add','sum','rgb'}
+            mode = 'additive';
+        case {'subtract','difference'}
+            mode = 'subtraction';
+        case {'divide','ratio','quotient'}
+            mode = 'division';
+        case {'additive','subtraction','division'}
+            % keep
+        otherwise
+            mode = 'additive';
+    end
 end
 
 function keys = combineMultipleChannelsSlotKeys(prefix, n)

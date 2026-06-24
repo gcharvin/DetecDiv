@@ -112,12 +112,21 @@ function testDynamicCombineMultipleChannelsContract()
 node = makeNode('processor', 'combineMultipleChannels', struct( ...
     'pkg', 'combineMultipleChannels', ...
     'requiredChannelCount', 2, ...
+    'mode', 'additive', ...
     'Channel1', 'TL_z1', ...
     'Channel2', 'GFP', ...
     'outputChannelName', 'combo'));
 contract = pipelineNodeContract(node);
 assert(numel(contract.resources.in) == 2, 'combineMultipleChannels should expose exactly two input slots.');
 assert(numel(contract.binding.selectorKeys) == 2, 'combineMultipleChannels selectorKeys should match slot count.');
+assert(any(strcmp(contract.parameters.static, 'mode')), 'combineMultipleChannels should expose a mode parameter.');
+assert(any(strcmp(contract.parameters.static, 'RGB_Channel1')), 'combineMultipleChannels additive mode should expose RGB channel fields.');
+
+node.params.mode = 'division';
+contract = pipelineNodeContract(node);
+assert(numel(contract.resources.in) == 2, 'combineMultipleChannels division mode should still expose two input slots.');
+assert(any(strcmp(contract.parameters.static, 'Offset_Channel1')), 'combineMultipleChannels division mode should expose offset fields.');
+assert(~any(strcmp(contract.parameters.static, 'RGB_Channel1')), 'combineMultipleChannels division mode should hide RGB channel fields.');
 end
 
 function testDynamicComputeMetricsContract()

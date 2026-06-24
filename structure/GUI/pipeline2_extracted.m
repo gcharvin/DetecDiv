@@ -11114,9 +11114,14 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(getField(app, node, 'type', '')));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
             if strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
-                    strcmp(pkg, 'combinemultiplechannels') && strcmpi(char(string(key)), 'requiredChannelCount')
-                if isempty(value) || (ischar(value) && isempty(strtrim(value))) || (isstring(value) && strlength(strtrim(value)) == 0)
-                    value = 0;
+                    strcmp(pkg, 'combinemultiplechannels')
+                mode = combineMultipleChannelsModeForNode(app, node);
+                if strcmpi(char(string(key)), 'requiredChannelCount')
+                    if any(strcmp(mode, {'subtraction','division'}))
+                        value = 2;
+                    elseif isempty(value) || (ischar(value) && isempty(strtrim(value))) || (isstring(value) && strlength(strtrim(value)) == 0)
+                        value = 0;
+                    end
                 end
             end
             if strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier')
@@ -11202,16 +11207,24 @@ classdef pipeline2 < matlab.apps.AppBase
             if isnumeric(value) && isscalar(value)
                 ctrl = uieditfield(parent, 'numeric');
                 ctrl.Value = double(value);
+                ctrlEnableState = enableState;
                 if strcmpi(nodeType, 'processor') && strcmpi(char(string(getField(app, node, 'pkg', ''))), 'combinemultiplechannels') && ...
                         strcmp(keyLower, 'requiredchannelcount')
-                    ctrl.Limits = [0 5];
-                    try
-                        ctrl.RoundFractionalValues = 'on';
-                    catch
+                    mode = combineMultipleChannelsModeForNode(app, node);
+                    if any(strcmp(mode, {'subtraction','division'}))
+                        ctrl.Value = 2;
+                        ctrlEnableState = 'off';
+                        ctrl.Tooltip = 'Arithmetic combination modes are fixed to exactly 2 channels.';
+                    else
+                        ctrl.Limits = [0 5];
+                        try
+                            ctrl.RoundFractionalValues = 'on';
+                        catch
+                        end
+                        ctrl.Tooltip = 'Number of input channel bindings to expose. Use 0 for the legacy 5-slot mode.';
                     end
-                    ctrl.Tooltip = 'Number of input channel bindings to expose. Use 0 for the legacy 5-slot mode.';
                 end
-                ctrl.Enable = enableState;
+                ctrl.Enable = ctrlEnableState;
                 ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
                 return;
             end
@@ -11398,7 +11411,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 case 'processor'
                     pkg = lower(char(string(getField(app, node, 'pkg', ''))));
-                    if strcmp(pkg, 'computemetrics') && ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
+                    if strcmp(pkg, 'combinemultiplechannels') && strcmp(keyLower, 'mode')
+                        choices = {'additive','subtraction','division'};
+                    elseif strcmp(pkg, 'computemetrics') && ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
                         choices = {'auto','0','1'};
                     elseif strcmp(pkg, 'computerls') && strcmp(keyLower, 'statedecoder')
                         choices = {'off','viterbi','median'};
@@ -11489,6 +11504,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'requiredChannelCount')
                 value = normalizeCombineChannelCount(app, value);
             elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
+                    strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'mode')
+                value = normalizeCombineMultipleChannelsMode(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
                     strcmp(pkg, 'computemetrics') && any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))
                 if strcmpi(keyText, 'maskChannelCount')
                     value = normalizeCountValue(app, value, 1, 8);
@@ -11509,6 +11527,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params = struct();
                 end
                 app.Data.nodes(idx).params.(keyText) = value;
+                if strcmpi(nodeType, 'processor') && strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'mode')
+                    if any(strcmp(char(string(value)), {'subtraction','division'}))
+                        app.Data.nodes(idx).params.requiredChannelCount = 2;
+                    end
+                end
                 markPipelineDirty(app, true);
             end
             needsBindingRefresh = ~strcmpi(scope, 'runtime') && ...
@@ -11524,6 +11547,26 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function value = normalizeCombineChannelCount(app, value) %#ok<INUSD>
             value = normalizeCountValue(app, value, 0, 5);
+        end
+
+        function value = normalizeCombineMultipleChannelsMode(app, value) %#ok<INUSD>
+            try
+                value = lower(strtrim(char(string(value))));
+            catch
+                value = 'additive';
+            end
+            switch value
+                case {'add','sum','rgb'}
+                    value = 'additive';
+                case {'subtract','difference'}
+                    value = 'subtraction';
+                case {'divide','ratio','quotient'}
+                    value = 'division';
+                case {'additive','subtraction','division'}
+                    % keep
+                otherwise
+                    value = 'additive';
+            end
         end
 
         function value = normalizeCountValue(app, value, minValue, maxValue) %#ok<INUSD>
@@ -11544,7 +11587,7 @@ classdef pipeline2 < matlab.apps.AppBase
             keyText = char(string(key));
             tf = (strcmpi(nodeType, 'processor') && ...
                 strcmpi(pkg, 'combinemultiplechannels') && ...
-                strcmpi(keyText, 'requiredChannelCount')) || ...
+                any(strcmpi(keyText, {'requiredChannelCount','mode'}))) || ...
                 (strcmpi(nodeType, 'processor') && ...
                 strcmpi(pkg, 'computemetrics') && ...
                 any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))) || ...
@@ -11663,9 +11706,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ensureCustomPackagePathForNode(node);
             switch pkg
                 case 'combinemultiplechannels'
-                    slotCount = combineMultipleChannelsSlotCountForNode(app, node);
-                    rgbKeys = arrayfun(@(i)sprintf('RGB_Channel%d', i), 1:slotCount, 'UniformOutput', false);
-                    keys = [{'requiredChannelCount'}, rgbKeys, {'debug'}];
+                    keys = combineMultipleChannelsStaticKeysForNode(app, node);
                 case 'computemetrics'
                     keys = computeMetricsStaticKeysForNode(app, node);
                 case 'computerls'
@@ -11748,6 +11789,11 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function n = combineMultipleChannelsSlotCountForNode(app, node) %#ok<INUSD>
             maxSlots = 5;
+            mode = combineMultipleChannelsModeForNode(app, node);
+            if any(strcmp(mode, {'subtraction','division'}))
+                n = 2;
+                return;
+            end
             n = maxSlots;
             p = getField(app, node, 'params', struct());
             if ~isstruct(p) || ~isfield(p, 'requiredChannelCount') || isempty(p.requiredChannelCount)
@@ -11762,6 +11808,45 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             n = min(maxSlots, max(1, round(requested)));
+        end
+
+        function mode = combineMultipleChannelsModeForNode(app, node) %#ok<INUSD>
+            mode = 'additive';
+            p = getField(app, node, 'params', struct());
+            if isstruct(p) && isfield(p, 'mode') && ~isempty(p.mode)
+                try
+                    mode = lower(strtrim(char(string(p.mode))));
+                catch
+                    mode = 'additive';
+                end
+            end
+            switch mode
+                case {'add','sum','rgb'}
+                    mode = 'additive';
+                case {'subtract','difference'}
+                    mode = 'subtraction';
+                case {'divide','ratio','quotient'}
+                    mode = 'division';
+                case {'additive','subtraction','division'}
+                    % keep
+                otherwise
+                    mode = 'additive';
+            end
+        end
+
+        function keys = combineMultipleChannelsStaticKeysForNode(app, node)
+            slotCount = combineMultipleChannelsSlotCountForNode(app, node);
+            mode = combineMultipleChannelsModeForNode(app, node);
+            keys = {'mode', 'requiredChannelCount'};
+            switch mode
+                case 'additive'
+                    rgbKeys = arrayfun(@(i)sprintf('RGB_Channel%d', i), 1:slotCount, 'UniformOutput', false);
+                    keys = [keys, rgbKeys];
+                case 'division'
+                    offsetKeys = arrayfun(@(i)sprintf('Offset_Channel%d', i), 1:min(2, slotCount), 'UniformOutput', false);
+                    keys = [keys, offsetKeys];
+            end
+            keys = [keys, {'debug'}];
         end
 
         function keys = computeMetricsStaticKeysForNode(app, node)
@@ -12003,9 +12088,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         'driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
                 case 'processor'
                     if strcmp(pkg, 'combinemultiplechannels')
-                        slotCount = combineMultipleChannelsSlotCountForNode(app, node);
-                        rgbKeys = arrayfun(@(i)sprintf('RGB_Channel%d', i), 1:slotCount, 'UniformOutput', false);
-                        keys = [{'requiredChannelCount'}, rgbKeys];
+                        keys = combineMultipleChannelsStaticKeysForNode(app, node);
                     elseif strcmp(pkg, 'computemetrics')
                         keys = computeMetricsStaticKeysForNode(app, node);
                     elseif strcmp(pkg, 'computerls')
@@ -12143,7 +12226,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             switch keyLower
                 case 'mode'
-                    label = 'ROI layout';
+                    label = 'Mode';
+                case {'offset_channel1','offset_channel2','offset_channel3','offset_channel4','offset_channel5'}
+                    label = char(regexprep(keyText, '^Offset_Channel', 'Division offset channel '));
                 case 'gridcount'
                     label = 'Grid count';
                 case 'extend'
@@ -12210,6 +12295,24 @@ classdef pipeline2 < matlab.apps.AppBase
                 txt = ['Foreground index to measure. Use all, empty, or 0 to score every non-background label separately. ' ...
                     'Use a numeric label such as 2 to measure only that class; mask combinations are computed only when every mask in the pair has a numeric scored label.'];
                 return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'processor') && strcmp(pkg, 'combinemultiplechannels')
+                switch keyLower
+                    case 'mode'
+                        txt = 'Combination mode: additive RGB keeps the current color blending; subtraction and division produce a single grayscale channel.';
+                        return;
+                    case 'requiredchannelcount'
+                        mode = combineMultipleChannelsModeForNode(app, node);
+                        if any(strcmp(mode, {'subtraction','division'}))
+                            txt = 'Arithmetic combination modes are fixed to exactly two selected channels.';
+                        else
+                            txt = 'Number of input channel bindings to expose. Use 0 for the legacy 5-slot mode.';
+                        end
+                        return;
+                    case {'offset_channel1','offset_channel2','offset_channel3','offset_channel4','offset_channel5'}
+                        txt = 'Division offset applied before the denominator is formed. Use 0 to keep the raw channel values.';
+                        return;
+                end
             end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')
                 try

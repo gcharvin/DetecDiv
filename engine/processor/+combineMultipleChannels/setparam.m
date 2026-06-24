@@ -24,6 +24,9 @@ function paramout = setparam(ctx)
     paramout = struct();
     tip = {};
 
+    paramout.mode = 'additive';
+    tip{end+1} = 'Combination mode: additive RGB, subtraction grayscale, or division/ratio grayscale.'; %#ok<AGROW>
+
     % fixed max number of channels
     maxSlots = 5;
     defaultRGB = [ ...
@@ -45,6 +48,12 @@ function paramout = setparam(ctx)
         else
             paramout.(rgbKey) = [1 1 1]; %#ok<AGROW>
         end
+    end
+
+    for i = 1:maxSlots
+        offsetKey = sprintf('Offset_Channel%d', i);
+        tip{end+1} = sprintf('Division offset for slot %d. Used only in division/ratio mode; default is 0.', i); %#ok<AGROW>
+        paramout.(offsetKey) = 0;
     end
 
     paramout.requiredChannelCount = 0;

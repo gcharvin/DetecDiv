@@ -3163,6 +3163,26 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
 
+            mode = 'additive';
+            if isfield(params, 'mode') && ~isempty(params.mode)
+                try
+                    mode = lower(strtrim(char(string(params.mode))));
+                catch
+                    mode = 'additive';
+                end
+            end
+            if any(strcmp(mode, {'subtract','difference'}))
+                mode = 'subtraction';
+            elseif any(strcmp(mode, {'divide','ratio','quotient'}))
+                mode = 'division';
+            elseif any(strcmp(mode, {'add','sum','rgb'}))
+                mode = 'additive';
+            end
+            if any(strcmp(mode, {'subtraction','division'}))
+                qualifier = '2';
+                return;
+            end
+
             if isfield(params, 'requiredChannelCount') && ~isempty(params.requiredChannelCount)
                 n = double(params.requiredChannelCount);
                 if isfinite(n) && n > 0
