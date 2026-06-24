@@ -6951,11 +6951,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner'};
                 spec.outputKeys = {};
                 spec.defaultImportKeys = spec.staticKeys;
-                spec.defaults = struct('resolution', {{'280','1008','280'}}, ...
+                spec.defaults = struct('resolution', '280', ...
                     'maxNumObjects',40, ...
                     'videoScoreThreshold',0.4, 'videoNewDetThreshold',0.4, ...
                     'videoAssocIouThreshold',0.5, ...
-                    'sam31Runner', {{'session','external','session'}});
+                    'sam31Runner', 'session');
                 spec.labels = struct();
                 spec.tips = struct();
                 spec.choices = struct('resolution', {{'280','1008'}}, ...
@@ -6964,7 +6964,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function runner = normalizeSam31RunnerForPipeline(app, runner)
-            runner = lower(choiceScalarText(app, runner));
+            runner = lower(sam31ScalarChoice(app, runner));
             runner = strrep(runner, '-', '_');
             runner = strrep(runner, ' ', '_');
             if any(strcmp(runner, {'external','process','subprocess'}))
@@ -6972,6 +6972,53 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 runner = 'session';
             end
+        end
+
+        function txt = sam31ScalarChoice(app, value) %#ok<INUSD>
+            txt = '';
+            while iscell(value)
+                value = value(~cellfun(@isempty, value));
+                if isempty(value)
+                    return;
+                end
+                value = value{end};
+            end
+            if isstring(value)
+                vals = value(:);
+                try
+                    vals = vals(~ismissing(vals));
+                catch
+                end
+                if ~isempty(vals)
+                    txt = char(vals(end));
+                end
+            elseif ischar(value)
+                if ndims(value) > 2
+                    value = value(:);
+                end
+                if size(value, 1) > 1
+                    rows = cellstr(value);
+                    txt = rows{end};
+                else
+                    txt = value;
+                end
+            elseif isnumeric(value) || islogical(value) || iscategorical(value)
+                vals = string(value(:));
+                if ~isempty(vals)
+                    txt = char(vals(end));
+                end
+            else
+                try
+                    vals = string(value);
+                    vals = vals(:);
+                    if ~isempty(vals)
+                        txt = char(vals(end));
+                    end
+                catch
+                    txt = '';
+                end
+            end
+            txt = strtrim(txt);
         end
 
         function params = applyCnnLstmExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
