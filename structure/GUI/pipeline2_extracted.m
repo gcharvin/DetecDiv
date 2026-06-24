@@ -6963,8 +6963,8 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function runner = normalizeSam31RunnerForPipeline(app, runner) %#ok<INUSD>
-            runner = lower(strtrim(char(string(runner))));
+        function runner = normalizeSam31RunnerForPipeline(app, runner)
+            runner = lower(choiceScalarText(app, runner));
             runner = strrep(runner, '-', '_');
             runner = strrep(runner, ' ', '_');
             if any(strcmp(runner, {'external','process','subprocess'}))
