@@ -8,10 +8,14 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
 from scipy.io import loadmat, savemat
+
+PREDICTOR = None
+PREDICTOR_KEY = None
 
 
 def as_local_path(value: str | Path | None) -> Path | None:
@@ -440,12 +444,53 @@ def run_sam31_text_movie(
         )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="DetecDiv bridge for SAM31 ROI inference.")
-    parser.add_argument("--config", type=Path, required=True)
-    args = parser.parse_args()
+def predictor_cache_key(
+    detector_checkpoint_path: Path | None,
+    tracker_checkpoint_path: Path | None,
+    image_size: int,
+    video_kwargs: dict[str, Any],
+) -> tuple:
+    return (
+        str(detector_checkpoint_path.resolve()) if detector_checkpoint_path is not None else "",
+        str(tracker_checkpoint_path.resolve()) if tracker_checkpoint_path is not None else "",
+        int(image_size),
+        tuple(sorted((str(k), str(v)) for k, v in video_kwargs.items())),
+    )
 
-    cfg = json.loads(args.config.read_text(encoding="utf-8"))
+
+def get_predictor(
+    detector_checkpoint_path: Path | None,
+    tracker_checkpoint_path: Path | None,
+    image_size: int,
+    video_kwargs: dict[str, Any],
+):
+    global PREDICTOR, PREDICTOR_KEY
+
+    key = predictor_cache_key(
+        detector_checkpoint_path=detector_checkpoint_path,
+        tracker_checkpoint_path=tracker_checkpoint_path,
+        image_size=image_size,
+        video_kwargs=video_kwargs,
+    )
+    if PREDICTOR is not None and PREDICTOR_KEY == key:
+        print("[SAM31 classify] reusing cached SAM31 predictor", flush=True)
+        return PREDICTOR
+
+    from sam31_ctc_benchmark.sam31_runner import build_predictor  # noqa: WPS433
+
+    print("[SAM31 classify] loading SAM31 predictor", flush=True)
+    PREDICTOR = build_predictor(
+        detector_checkpoint_path=detector_checkpoint_path,
+        tracker_checkpoint_path=tracker_checkpoint_path,
+        image_size=image_size,
+        video_kwargs=video_kwargs,
+    )
+    PREDICTOR_KEY = key
+    return PREDICTOR
+
+
+def run(config_path: str | Path) -> None:
+    cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
     repo_root = as_local_path(cfg["repo_root"])
     sam3_repo = as_local_path(cfg["sam3_repo"])
     input_mat_path = as_local_path(cfg["input_mat_path"])
@@ -458,8 +503,6 @@ def main() -> None:
     sys.path.insert(0, str(repo_root))
     sys.path.insert(0, str(repo_root / "scripts"))
     sys.path.insert(0, str(sam3_repo))
-
-    from sam31_ctc_benchmark.sam31_runner import build_predictor  # noqa: WPS433
 
     raw, frames = load_raw_stack(input_mat_path)
     image_dir = output_dir / "sam31_images"
@@ -505,7 +548,7 @@ def main() -> None:
         image_size=image_size,
         kind="tracker",
     )
-    predictor = build_predictor(
+    predictor = get_predictor(
         detector_checkpoint_path=detector_checkpoint_path,
         tracker_checkpoint_path=tracker_checkpoint_path,
         image_size=image_size,
@@ -543,6 +586,13 @@ def main() -> None:
         json.dumps({"frames": len(labels_by_frame), "stats_by_frame": stats_by_frame}, indent=2, default=str),
         encoding="utf-8",
     )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DetecDiv bridge for SAM31 ROI inference.")
+    parser.add_argument("--config", type=Path, required=True)
+    args = parser.parse_args()
+    run(args.config)
 
 
 if __name__ == "__main__":

@@ -118,6 +118,7 @@ cfg.video_new_det_threshold = double(tp.videoNewDetThreshold);
 cfg.video_det_nms_threshold = double(tp.videoDetNmsThreshold);
 cfg.video_assoc_iou_threshold = double(tp.videoAssocIouThreshold);
 cfg.cancel_path = cancelTokenFileFromCtx(ctx);
+cfg.runner_mode = runnerModeFromCtx(ctx);
 
 configPath = fullfile(workDir, 'classify_sam31_config.json');
 writeJson(configPath, cfg);
@@ -196,6 +197,29 @@ if isstruct(internal) && isfield(internal, name)
 end
 if isstruct(tp) && isfield(tp, name) && ~isempty(tp.(name))
     value = sam31.utils.paramValue(tp, name, value);
+end
+end
+
+function mode = runnerModeFromCtx(ctx)
+mode = 'session';
+try
+    if ~(isstruct(ctx) && isfield(ctx,'exec') && isstruct(ctx.exec) && ...
+            isfield(ctx.exec,'python') && isstruct(ctx.exec.python))
+        return;
+    end
+    pyCfg = ctx.exec.python;
+    if isfield(pyCfg,'sam31Runner') && ~isempty(pyCfg.sam31Runner)
+        mode = char(string(pyCfg.sam31Runner));
+    elseif isfield(pyCfg,'modelCache') && ~isempty(pyCfg.modelCache)
+        cacheMode = lower(strtrim(char(string(pyCfg.modelCache))));
+        if any(strcmp(cacheMode, {'session','persistent','pyenv'}))
+            mode = 'session';
+        elseif any(strcmp(cacheMode, {'none','off','external'}))
+            mode = 'external';
+        end
+    end
+catch
+    mode = 'session';
 end
 end
 

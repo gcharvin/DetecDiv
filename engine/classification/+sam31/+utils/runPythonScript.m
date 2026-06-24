@@ -1,4 +1,4 @@
-function [status, cmdout, cmd] = runPythonScript(scriptPath, configPath, ~, workDir)
+function [status, cmdout, cmd] = runPythonScript(scriptPath, configPath, tp, workDir)
 % sam31.utils.runPythonScript
 % Run a SAM31 Python bridge through the SAM31 runtime, not the generic
 % DetecDiv Python environment.
@@ -13,16 +13,22 @@ end
 runtime = resolveSam31Runtime(configPath);
 cmd = buildCommand(runtime, scriptPath, configPath);
 cancelTokenFile = readCancelTokenFile(configPath);
+runnerMode = resolveRunnerMode(scriptPath, configPath, tp);
 
 disp(['[SAM31] ' cmd]);
 if ~isempty(cancelTokenFile)
     detecdiv_check_cancel(cancelTokenFile, 'SAM31 Python before launch');
 end
 
-if ~isempty(cancelTokenFile) && ~ispc
-    [status, cmdout] = runCommandWithCancel(cmd, workDir, cancelTokenFile);
+if strcmp(runnerMode, 'session')
+    try
+        [status, cmdout] = runSession(runtime, scriptPath, configPath, workDir);
+    catch ME
+        disp(['[WARN] SAM31 session runner failed; falling back to external process: ' ME.message]);
+        [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile);
+    end
 else
-    [status, cmdout] = system(cmd);
+    [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile);
 end
 
 try
@@ -36,6 +42,135 @@ end
 
 if status ~= 0
     error('sam31:PythonRunnerFailed', 'SAM31 Python runner failed (%d):\n%s', status, cmdout);
+end
+end
+
+function mode = resolveRunnerMode(scriptPath, configPath, tp)
+mode = 'external';
+try
+    [~, name, ~] = fileparts(scriptPath);
+    if strcmp(name, 'classify_sam31')
+        mode = 'session';
+    end
+catch
+end
+try
+    cfg = jsondecode(fileread(configPath));
+    if isstruct(cfg) && isfield(cfg, 'runner_mode') && ~isempty(cfg.runner_mode)
+        mode = lower(strtrim(char(string(cfg.runner_mode))));
+    end
+catch
+end
+try
+    if isstruct(tp) && isfield(tp, 'sam31Runner') && ~isempty(tp.sam31Runner)
+        mode = lower(strtrim(char(string(tp.sam31Runner))));
+    end
+catch
+end
+envMode = getenv('SAM31_RUNNER_MODE');
+if ~isempty(envMode)
+    mode = lower(strtrim(char(string(envMode))));
+end
+if any(strcmp(mode, {'persistent','pyenv','inprocess','in_process'}))
+    mode = 'session';
+elseif ~strcmp(mode, 'session')
+    mode = 'external';
+end
+end
+
+function [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile)
+if ~isempty(cancelTokenFile) && ~ispc
+    [status, cmdout] = runCommandWithCancel(cmd, workDir, cancelTokenFile);
+else
+    [status, cmdout] = system(cmd);
+end
+end
+
+function [status, cmdout] = runSession(runtime, scriptPath, configPath, workDir)
+stdoutPath = fullfile(workDir, 'sam31_runner_stdout.txt');
+deleteIfExists(stdoutPath);
+ensurePyenv(runtime.pythonExe);
+ensurePythonPath(runtime, scriptPath);
+
+persistent moduleCache modulePathCache
+[runnerDir, moduleName, ~] = fileparts(scriptPath);
+if isempty(moduleCache) || isempty(modulePathCache) || ~strcmp(modulePathCache, scriptPath)
+    py.importlib.invalidate_caches();
+    py.sys.path().insert(int32(0), runnerDir);
+    moduleCache = py.importlib.import_module(moduleName);
+    modulePathCache = scriptPath;
+end
+
+disp('[SAM31] session runner: reusing MATLAB Python interpreter');
+moduleCache.run(configPath);
+status = 0;
+cmdout = sprintf('[SAM31] session runner completed: %s\n', configPath);
+try
+    fid = fopen(stdoutPath, 'a');
+    if fid ~= -1
+        fwrite(fid, cmdout, 'char');
+        fclose(fid);
+    end
+catch
+end
+end
+
+function ensurePyenv(pythonExe)
+try
+    pe = pyenv;
+    status = char(string(pe.Status));
+    if strcmpi(status, 'NotLoaded')
+        pyenv('Version', pythonExe);
+        return;
+    end
+    loadedExe = char(string(pe.Executable));
+    if ~samePath(loadedExe, pythonExe)
+        error('sam31:PythonEnvAlreadyLoaded', ...
+            'MATLAB Python is already loaded from "%s"; SAM31 requires "%s". Restart MATLAB or use SAM31_RUNNER_MODE=external.', ...
+            loadedExe, pythonExe);
+    end
+catch ME
+    if strcmp(ME.identifier, 'sam31:PythonEnvAlreadyLoaded')
+        rethrow(ME);
+    end
+    error('sam31:PythonBootstrapFailed', ...
+        'Unable to load the SAM31 Python environment "%s":%s%s', ...
+        pythonExe, newline, ME.message);
+end
+end
+
+function ensurePythonPath(runtime, scriptPath)
+paths = buildPythonPathParts(runtime, scriptPath);
+py.importlib.import_module('sys');
+for i = numel(paths):-1:1
+    p = paths{i};
+    if isempty(p)
+        continue;
+    end
+    py.sys.path().insert(int32(0), p);
+end
+end
+
+function paths = buildPythonPathParts(runtime, scriptPath)
+runnerDir = fileparts(scriptPath);
+paths = { ...
+    runnerDir, ...
+    char(string(runtime.repoRoot)), ...
+    fullfile(char(string(runtime.repoRoot)), 'scripts'), ...
+    char(string(runtime.sam3Repo))};
+end
+
+function tf = samePath(a, b)
+try
+    a = char(string(a));
+    b = char(string(b));
+    if ispc
+        tf = strcmpi(strrep(a, '/', '\'), strrep(b, '/', '\'));
+    else
+        tf = strcmp(a, b);
+    end
+catch
+    tf = false;
 end
 end
 
@@ -265,10 +400,7 @@ end
 end
 
 function cmd = buildCommand(runtime, scriptPath, configPath)
-pythonPath = strjoin({ ...
-    char(string(runtime.repoRoot)), ...
-    fullfile(char(string(runtime.repoRoot)), 'scripts'), ...
-    char(string(runtime.sam3Repo))}, pathsep);
+pythonPath = strjoin(buildPythonPathParts(runtime, scriptPath), pathsep);
 
 if ispc
     cmd = sprintf('set "PYTHONPATH=%s;%s" && "%s" "%s" --config "%s"', ...
