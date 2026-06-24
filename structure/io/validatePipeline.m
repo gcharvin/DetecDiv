@@ -2298,7 +2298,18 @@ function [modulePath, status, targetLabel] = resolveClassifierModulePathForValid
             end
         end
     elseif isempty(modulePath)
-        modulePath = configuredPath;
+        pathText = char(string(configuredPath));
+        if ispc && startsWith(strrep(pathText, '\', '/'), '/')
+            [localPath, mapped] = mapHubServerPathToLocalPath(pathText, ctx);
+            if mapped
+                modulePath = localPath;
+                status = 'local_mirror';
+            else
+                modulePath = pathText;
+            end
+        else
+            modulePath = configuredPath;
+        end
     end
 
     if exist(modulePath, 'dir') ~= 7

@@ -3162,7 +3162,13 @@ if ~isstruct(refInfo) || ~isfield(refInfo,'modulePath') || isempty(refInfo.modul
     return;
 end
 modulePath = char(string(refInfo.modulePath));
-if ~ispc && looksLikeWindowsAbsPath(modulePath)
+if ispc && startsWith(strrep(modulePath, '\', '/'), '/')
+    [mappedPath, mapped] = mapModulePathToLocalPath(modulePath, ctx);
+    if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
+        refInfo.modulePath = mappedPath;
+        return;
+    end
+elseif ~ispc && looksLikeWindowsAbsPath(modulePath)
     [mappedPath, mapped] = mapModulePathToServerPath(modulePath, ctx);
     if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
         refInfo.modulePath = mappedPath;
@@ -3241,6 +3247,10 @@ end
 
 function [mappedPath, mapped] = mapModulePathToServerPath(pathIn, ctx)
     [mappedPath, mapped] = detecdiv_paths_map_module_path(pathIn, ctx, 'server');
+end
+
+function [mappedPath, mapped] = mapModulePathToLocalPath(pathIn, ctx)
+    [mappedPath, mapped] = detecdiv_paths_map_module_path(pathIn, ctx, 'local');
 end
 
 function mappings = modulePathMappings(ctx)
