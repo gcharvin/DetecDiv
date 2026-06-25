@@ -485,6 +485,12 @@ if isfield(d,'rgb') && ~isempty(d.rgb)
     row = d.rgb(ii,:);
     dispMeta.display_rgb = row;
 end
+if isfield(d,'colorMode') && ~isempty(d.colorMode) && numel(d.colorMode) >= ii
+    dispMeta.display_color_mode = char(string(d.colorMode{ii}));
+end
+if isfield(d,'colormapName') && ~isempty(d.colormapName) && numel(d.colormapName) >= ii
+    dispMeta.display_colormap_name = char(string(d.colormapName{ii}));
+end
 if isfield(d,'displaylim') && ~isempty(d.displaylim)
     if ival<= size(d.displaylim,2)
         row = d.displaylim(:,ival);

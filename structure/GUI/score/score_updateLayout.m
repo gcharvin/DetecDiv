@@ -93,9 +93,13 @@ if ~isempty(selCh)
 
     % Construire pour chaque channel le vecteur RGB
     colors = cell(1, numel(selCh));
+    colorMode = cell(1, numel(selCh));
+    colormapName = cell(1, numel(selCh));
     for i = 1:numel(selCh)
         idx = selCh(i);
         colors{i} = dsC.rgb(idx, :);
+        colorMode{i} = localDisplayCellValue(dsC, 'colorMode', idx, 'rgb');
+        colormapName{i} = localDisplayCellValue(dsC, 'colormapName', idx, '');
     end
 
     % Construire les poids pour chaque channel en tant que vecteur numérique
@@ -105,6 +109,8 @@ if ~isempty(selCh)
     layoutOptions.levels=levels;
     layoutOptions.displayLevels=displayLevels;
     layoutOptions.RGB=colors;
+    layoutOptions.colorMode=colorMode;
+    layoutOptions.colormapName=colormapName;
     layoutOptions.weights=weights;
     layoutOptions.scale=logical(dsC.scale(selCh));
     if isfield(dsC, 'log') && ~isempty(dsC.log)
@@ -178,6 +184,8 @@ nonIndexedNames = {};
 nonIndexedScale = [];
 nonIndexedLog = [];
 nonIndexedDisplayLevels = {};
+nonIndexedColorMode = {};
+nonIndexedColormapName = {};
 for j = 1:numel(layoutOptions.channel)
     if ~iscell(layoutOptions.levels{j})
         nChannel = nChannel + 1;
@@ -201,11 +209,23 @@ for j = 1:numel(layoutOptions.channel)
         else
             nonIndexedDisplayLevels{end+1} = layoutOptions.levels{j}; %#ok<AGROW>
         end
+        if isfield(layoutOptions, 'colorMode') && numel(layoutOptions.colorMode) >= j
+            nonIndexedColorMode{end+1} = layoutOptions.colorMode{j}; %#ok<AGROW>
+        else
+            nonIndexedColorMode{end+1} = 'rgb'; %#ok<AGROW>
+        end
+        if isfield(layoutOptions, 'colormapName') && numel(layoutOptions.colormapName) >= j
+            nonIndexedColormapName{end+1} = layoutOptions.colormapName{j}; %#ok<AGROW>
+        else
+            nonIndexedColormapName{end+1} = ''; %#ok<AGROW>
+        end
     end
 end
 layoutOptions.scale = logical(nonIndexedScale);
 layoutOptions.log = logical(nonIndexedLog);
 layoutOptions.displayLevels = nonIndexedDisplayLevels;
+layoutOptions.colorMode = nonIndexedColorMode;
+layoutOptions.colormapName = nonIndexedColormapName;
 
 %% layout parameters
 
@@ -263,6 +283,18 @@ try
 catch
     lowVal = 0;
     highVal = 65535;
+end
+end
+
+function value = localDisplayCellValue(dsC, fieldName, idx, defaultValue)
+value = defaultValue;
+if ~isfield(dsC, fieldName) || isempty(dsC.(fieldName)) || idx > numel(dsC.(fieldName))
+    return;
+end
+try
+    value = char(string(dsC.(fieldName){idx}));
+catch
+    value = defaultValue;
 end
 end
 

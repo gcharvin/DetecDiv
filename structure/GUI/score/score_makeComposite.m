@@ -35,6 +35,8 @@ levels       = param.levels;
 rgb          = param.RGB;
 paintChannel = param.paintChannel;
 defaultClass = param.defaultClass;
+if isfield(param, 'colorMode'), colorMode = param.colorMode; else, colorMode = repmat({'rgb'}, 1, numel(channel)); end
+if isfield(param, 'colormapName'), colormapName = param.colormapName; else, colormapName = repmat({''}, 1, numel(channel)); end
 
 if isfield(param,'weights'), weights = param.weights; else, weights = []; end
 if ~isfield(param,'mode') || isempty(param.mode), param.mode = "display"; end
@@ -54,6 +56,8 @@ if ~isequal(order, 1:nCh)
     channel = channel(order);
     levels  = levels(order);
     rgb     = rgb(order);
+    colorMode = colorMode(order);
+    colormapName = colormapName(order);
     if ~isempty(weights)
         weights = weights(order);
     end
@@ -63,6 +67,8 @@ end
 param.channel = channel;
 param.levels  = levels;
 param.RGB     = rgb;
+param.colorMode = colorMode;
+param.colormapName = colormapName;
 param.weights = weights;
 
 % -------------------------------------------------------------------------
@@ -109,30 +115,7 @@ for ch = 1:numel(channel)
     if isIndexed
         bgRGBu8 = [];
     else
-    % ---------------------------------------------------------------------
-    % 2a) Flag log-display (ROBUSTE)
-    %  - accepte roitmp.display.log scalaire OU vecteur
-    %  - IMPORTANT : indexation sur l'espace "image channel index" (currentCha)
-    % ---------------------------------------------------------------------
-    logdisplay = false;
-    if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'log') ...
-            && ~isempty(currentCha)
-
-        lf = roitmp.display.log;
-        chaIdx = currentCha(1); % index image (dimension 3)
-
-        if ~isempty(lf)
-            if isscalar(lf)
-                logdisplay = logical(lf);
-            else
-                if chaIdx >= 1 && chaIdx <= numel(lf)
-                    logdisplay = logical(lf(chaIdx));
-                else
-                    logdisplay = false;
-                end
-            end
-        end
-    end
+    logdisplay = localChannelFlag(param, 'log', ch, false);
 
     % ------------------------------------------------------------------
     % 2b) IMAGE DE FOND pour ce canal
@@ -170,32 +153,14 @@ for ch = 1:numel(channel)
     if ndims(bg) == 2
         gray = bg;
 
-        if logdisplay
-            n = 256;
-            cmap = parula2green(n);
-            idx = 1 + floor(gray*(n-1));
-            idx = min(max(idx,1), n);
-            bgRGB = ind2rgb(uint16(idx), cmap);
-        else
-            thisRGB = rgb{ch};
-            bgRGB = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
-        end
+        bgRGB = localColorizeGray(gray, rgb{ch}, colorMode, colormapName, ch);
 
     elseif ndims(bg) == 3
         if size(bg,3) == 3
             bgRGB = bg;
         else
             gray = mean(bg,3);
-            if logdisplay
-                n = 256;
-                cmap = parula2green(n);
-                idx = 1 + floor(gray*(n-1));
-                idx = min(max(idx,1), n);
-                bgRGB = ind2rgb(uint16(idx), cmap);
-            else
-                thisRGB = rgb{ch};
-                bgRGB = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
-            end
+            bgRGB = localColorizeGray(gray, rgb{ch}, colorMode, colormapName, ch);
         end
     else
         error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
@@ -400,6 +365,45 @@ end
 
 for k = 1:3
     img(:, :, k) = imadjust(img(:, :, k), lims);
+end
+end
+
+function value = localChannelFlag(param, fieldName, ch, defaultValue)
+value = defaultValue;
+if ~isfield(param, fieldName) || isempty(param.(fieldName))
+    return;
+end
+
+flags = param.(fieldName);
+try
+    if isscalar(flags)
+        value = logical(flags);
+    elseif ch >= 1 && ch <= numel(flags)
+        value = logical(flags(ch));
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function bgRGB = localColorizeGray(gray, rgb, colorMode, colormapName, ch)
+mode = 'rgb';
+if ch <= numel(colorMode) && ~isempty(colorMode{ch})
+    mode = lower(strtrim(char(string(colorMode{ch}))));
+end
+
+if strcmp(mode, 'colormap')
+    cmapName = 'parula';
+    if ch <= numel(colormapName) && strlength(string(colormapName{ch})) > 0
+        cmapName = char(string(colormapName{ch}));
+    end
+    cmap = score_colormapFromName(cmapName, 256);
+    idx = 1 + floor(min(max(gray, 0), 1) * (size(cmap, 1) - 1));
+    idx = min(max(idx, 1), size(cmap, 1));
+    bgRGB = ind2rgb(idx, cmap);
+else
+    thisRGB = min(max(double(rgb), 0), 1);
+    bgRGB = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
 end
 end
 

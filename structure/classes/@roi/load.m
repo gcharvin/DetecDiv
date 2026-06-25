@@ -460,11 +460,14 @@ for i = 1:N
     attrs(i).k         = k;
     attrs(i).intensity = readAttOrDefault(h5File,p,'display_intensity',[1 1 1]);
     attrs(i).rgb       = readAttOrDefault(h5File,p,'display_rgb',      [1 1 1]);
+    attrs(i).colorMode = readAttOrDefault(h5File,p,'display_color_mode','rgb');
+    attrs(i).colormapName = readAttOrDefault(h5File,p,'display_colormap_name','');
     attrs(i).displaylim       = readAttOrDefault(h5File,p,'display_displaylim',      [1 ; 1]);
     attrs(i).indexed   = readAttOrDefault(h5File,p,'display_indexed',  uint8(0));
     attrs(i).alpha     = readAttOrDefault(h5File,p,'display_alpha',    1);
     attrs(i).contour   = readAttOrDefault(h5File,p,'display_contour',  uint8(0));
     attrs(i).width     = readAttOrDefault(h5File,p,'display_contourwidth', 1);
+    attrs(i).log       = readAttOrDefault(h5File,p,'display_log', uint8(0));
     attrs(i).frame     = readAttOrDefault(h5File,p,'display_frame', 1);
     attrs(i).binning   = readAttOrDefault(h5File,p,'display_binning', 1);
     % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
@@ -771,11 +774,14 @@ end
 % --- Lire les attributs display pour ce canal
 att.intensity  = readAttOrDefault(h5File, pTarget, 'display_intensity',  [1 1 1]);
 att.rgb        = readAttOrDefault(h5File, pTarget, 'display_rgb',        [1 1 1]);
+att.colorMode  = readAttOrDefault(h5File, pTarget, 'display_color_mode', 'rgb');
+att.colormapName = readAttOrDefault(h5File, pTarget, 'display_colormap_name', '');
 att.displaylim = readAttOrDefault(h5File, pTarget, 'display_displaylim', [0; 1]);
 att.indexed    = readAttOrDefault(h5File, pTarget, 'display_indexed',    uint8(0));
 att.alpha      = readAttOrDefault(h5File, pTarget, 'display_alpha',      1);
 att.contour    = readAttOrDefault(h5File, pTarget, 'display_contour',    uint8(0));
 att.width      = readAttOrDefault(h5File, pTarget, 'display_contourwidth', 1);
+att.log        = readAttOrDefault(h5File, pTarget, 'display_log',         uint8(0));
 att.frame      = readAttOrDefault(h5File, pTarget, 'display_frame',      1);
 att.binning    = readAttOrDefault(h5File, pTarget, 'display_binning',    1);
 att.selectedchannel = readAttOrDefault(h5File, pTarget, 'display_selectedchannel', 1);
@@ -889,6 +895,7 @@ end
 if ~isfield(dispStruct,'log') || isempty(dispStruct.log)
     dispStruct.log = zeros(1, Nlog);
 end
+dispStruct.log(logicalId) = double(att.log(1) ~= 0);
 
 % displaylim par sous-canal (colonnes destIdx)
 dlimChan = double(att.displaylim);
@@ -910,6 +917,10 @@ if ~isfield(dispStruct,'rgb') || size(dispStruct.rgb,1) < Nlog
     dispStruct.rgb = [cur; repmat([1 1 1], Nlog - size(cur,1), 1)];
 end
 dispStruct.rgb(logicalId,:) = double(att.rgb(:).');
+dispStruct.colorMode = ensureStringCellArray(dispStruct, 'colorMode', Nlog, 'rgb');
+dispStruct.colormapName = ensureStringCellArray(dispStruct, 'colormapName', Nlog, '');
+dispStruct.colorMode{logicalId} = char(string(att.colorMode));
+dispStruct.colormapName{logicalId} = char(string(att.colormapName));
 dispStruct.valueTransform = ensureValueTransformArray(dispStruct, Nlog);
 dispStruct.valueTransform(logicalId) = att.valueTransform;
 
@@ -1069,6 +1080,31 @@ elseif numel(vt) > nLog
 end
 end
 
+function value = ensureStringCellArray(dispStruct, fieldName, nLog, defaultValue)
+if isfield(dispStruct, fieldName) && ~isempty(dispStruct.(fieldName))
+    rawValue = dispStruct.(fieldName);
+    if isstring(rawValue)
+        value = cellstr(rawValue(:).');
+    elseif ischar(rawValue)
+        value = {rawValue};
+    elseif iscell(rawValue)
+        value = cell(1, numel(rawValue));
+        for i = 1:numel(rawValue)
+            value{i} = char(string(rawValue{i}));
+        end
+    else
+        value = {};
+    end
+else
+    value = {};
+end
+if numel(value) < nLog
+    value(end+1:nLog) = {defaultValue};
+elseif numel(value) > nLog
+    value = value(1:nLog);
+end
+end
+
 function s = normalizeValueTransform(s)
 defaultValue = rawValueTransform();
 try
@@ -1109,6 +1145,9 @@ alpha     = ones(1,N);
 contour   = zeros(1,N);
 width     = ones(1,N);
 selectedchannel = ones(1,N);
+logFlag   = zeros(1,N);
+colorMode = repmat({'rgb'}, 1, N);
+colormapName = repmat({''}, 1, N);
 
 rgbSub    = zeros(N,3);
 %rgbSub    = zeros(C,3);
@@ -1122,6 +1161,15 @@ for i = 1:N
     alpha(i)       = double(attrs(i).alpha(1));
     contour(i)     = double(attrs(i).contour(1));
     width(i)       = double(attrs(i).width(1));
+    if isfield(attrs, 'log') && ~isempty(attrs(i).log)
+        logFlag(i) = double(attrs(i).log(1) ~= 0);
+    end
+    if isfield(attrs, 'colorMode') && ~isempty(attrs(i).colorMode)
+        colorMode{i} = char(string(attrs(i).colorMode));
+    end
+    if isfield(attrs, 'colormapName') && ~isempty(attrs(i).colormapName)
+        colormapName{i} = char(string(attrs(i).colormapName));
+    end
     if localShouldForceIndexedChannel(names{i})
         intensity(i,:) = [0 0 0];
         indexed(i) = 1;
@@ -1166,7 +1214,9 @@ dispStruct.indexed         = indexed;            % 1 x N
 dispStruct.alpha           = alpha;              % 1 x N
 dispStruct.contour         = contour;            % 1 x N
 dispStruct.width           = width;              % 1 x N
-dispStruct.log             = zeros(1,N);
+dispStruct.log             = logFlag;
+dispStruct.colorMode       = colorMode;
+dispStruct.colormapName    = colormapName;
 dispStruct.valueTransform  = repmat(rawValueTransform(), 1, N);
 for i = 1:N
     dispStruct.valueTransform(i) = attrs(i).valueTransform;

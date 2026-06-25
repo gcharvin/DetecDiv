@@ -57,14 +57,16 @@ yTop = min(yl) + 0.18 * imgH;
 yBottom = yTop + barH;
 
 n = 128;
-if isfield(layoutOptions, 'log') && ch <= numel(layoutOptions.log) && logical(layoutOptions.log(ch))
-    cmap = localParula2Green(n);
-    grad = reshape(cmap(end:-1:1, :), [n 1 3]);
+if localUsesColormap(layoutOptions, ch)
+    cmapName = localColormapName(layoutOptions, ch);
+    grad = reshape(score_colormapFromName(cmapName, n), [n 1 3]);
+    grad = grad(end:-1:1, :, :);
 else
     rgb = [1 1 1];
     if isfield(layoutOptions, 'RGB') && ch <= numel(layoutOptions.RGB) && numel(layoutOptions.RGB{ch}) == 3
         rgb = double(layoutOptions.RGB{ch});
     end
+    rgb = min(max(rgb(:).', 0), 1);
     vals = linspace(1, 0, n)';
     grad = cat(3, vals * rgb(1), vals * rgb(2), vals * rgb(3));
 end
@@ -85,7 +87,7 @@ tickLen = max(3, 0.018 * imgW);
 fontSize = max(6, floor(0.75 * layoutOptions.fontSize));
 
 for i = 1:numel(ticks)
-    t = (ticks(i) - tickLo) / (tickHi - tickLo);
+    t = localTickFraction(ticks(i), tickLo, tickHi, layoutOptions, ch);
     y = yBottom - t * barH;
     h(end+1) = line(ax, [xLeft - tickLen, xLeft], [y y], ...
         'Color', layoutOptions.textColor, ...
@@ -104,6 +106,43 @@ end
 
 if ~holdState
     hold(ax, 'off');
+end
+end
+
+function t = localTickFraction(value, lo, hi, layoutOptions, ch)
+if isfield(layoutOptions, 'log') && ch <= numel(layoutOptions.log) && logical(layoutOptions.log(ch)) && ...
+        lo > -1 && hi > lo
+    denom = log1p(hi) - log1p(lo);
+    if denom > 0
+        t = (log1p(value) - log1p(lo)) / denom;
+    else
+        t = (value - lo) / (hi - lo);
+    end
+else
+    t = (value - lo) / (hi - lo);
+end
+t = min(max(t, 0), 1);
+end
+
+function tf = localUsesColormap(layoutOptions, ch)
+tf = false;
+try
+    tf = isfield(layoutOptions, 'colorMode') && ch <= numel(layoutOptions.colorMode) && ...
+        strcmpi(strtrim(char(string(layoutOptions.colorMode{ch}))), 'colormap');
+catch
+    tf = false;
+end
+end
+
+function name = localColormapName(layoutOptions, ch)
+name = 'parula';
+try
+    if isfield(layoutOptions, 'colormapName') && ch <= numel(layoutOptions.colormapName) && ...
+            strlength(string(layoutOptions.colormapName{ch})) > 0
+        name = char(string(layoutOptions.colormapName{ch}));
+    end
+catch
+    name = 'parula';
 end
 end
 
@@ -147,11 +186,4 @@ elseif abs(v) >= 10
 else
     txt = sprintf('%.2g', v);
 end
-end
-
-function cmap = localParula2Green(n)
-colors = [0 0 1; 1 0 0; 0 1 0];
-x = linspace(0, 1, size(colors, 1));
-xi = linspace(0, 1, n);
-cmap = interp1(x, colors, xi, 'linear');
 end

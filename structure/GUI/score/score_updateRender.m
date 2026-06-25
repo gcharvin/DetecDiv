@@ -56,6 +56,7 @@ switch mode
                 %  tmp=graphicsHandles.imgHandles(tileIndex)
                 h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
                 set(h, 'CData', newImg);
+                localRefreshScaleBar(graphicsHandles, tileIndex, h.Parent, layoutOptions, ch);
 
 
                 set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
@@ -174,6 +175,7 @@ switch mode
                             h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
                             set(h, 'CData', displayImage(:,:,:,ch));
                             ax=h.Parent;
+                            localRefreshScaleBar(graphicsHandles, tileIndex, ax, layoutOptions, ch);
 
                             [htext, hvector]=score_displayVectorGraphics(ax, newframe, ch, vContours , layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -311,6 +313,26 @@ end
 if isempty(h) || ~isgraphics(h) || ~isa(h, 'matlab.graphics.primitive.Image')
     error('score_updateRender:InvalidImageHandle', ...
         'Stored image handle is not a matlab.graphics.primitive.Image.');
+end
+end
+
+function localRefreshScaleBar(graphicsHandles, tileIndex, ax, layoutOptions, ch)
+if isempty(graphicsHandles) || ~isfield(graphicsHandles, 'scaleBarHandles') || ...
+        isempty(graphicsHandles.scaleBarHandles) || isempty(ax) || ~isgraphics(ax)
+    return;
+end
+
+if isKey(graphicsHandles.scaleBarHandles, tileIndex)
+    oldHandles = graphicsHandles.scaleBarHandles(tileIndex);
+    if ~isempty(oldHandles)
+        delete(oldHandles(isgraphics(oldHandles)));
+    end
+    remove(graphicsHandles.scaleBarHandles, tileIndex);
+end
+
+newHandles = score_drawChannelScaleBar(ax, layoutOptions, ch);
+if ~isempty(newHandles)
+    graphicsHandles.scaleBarHandles(tileIndex) = newHandles;
 end
 end
 

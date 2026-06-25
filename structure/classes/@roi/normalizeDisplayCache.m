@@ -26,6 +26,8 @@ obj.display.alpha = localEnsureVector(obj.display, 'alpha', nLog, 1);
 obj.display.width = localEnsureVector(obj.display, 'width', nLog, 0);
 obj.display.selectedchannel = localEnsureVector(obj.display, 'selectedchannel', nLog, 1);
 obj.display.rgb = localEnsureRows(obj.display, 'rgb', nLog, [1 1 1]);
+obj.display.colorMode = localEnsureStringCell(obj.display, 'colorMode', nLog, 'rgb');
+obj.display.colormapName = localEnsureStringCell(obj.display, 'colormapName', nLog, '');
 obj.display.valueTransform = localEnsureValueTransform(obj.display, nLog);
 
 for i = 1:nLog
@@ -44,6 +46,31 @@ for i = 1:nLog
     if ~hadWidth || (obj.display.contour(i) ~= 0 && obj.display.width(i) <= 0)
         obj.display.width(i) = 1.5;
     end
+end
+end
+
+function value = localEnsureStringCell(display, fieldName, nLog, defaultValue)
+if isfield(display, fieldName) && ~isempty(display.(fieldName))
+    rawValue = display.(fieldName);
+    if isstring(rawValue)
+        value = cellstr(rawValue(:).');
+    elseif ischar(rawValue)
+        value = {rawValue};
+    elseif iscell(rawValue)
+        value = cell(1, numel(rawValue));
+        for i = 1:numel(rawValue)
+            value{i} = char(string(rawValue{i}));
+        end
+    else
+        value = {};
+    end
+else
+    value = {};
+end
+if numel(value) < nLog
+    value(end+1:nLog) = {defaultValue};
+elseif numel(value) > nLog
+    value = value(1:nLog);
 end
 end
 

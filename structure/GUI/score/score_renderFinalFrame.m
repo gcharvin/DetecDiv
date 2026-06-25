@@ -28,6 +28,7 @@ graphicsHandles.lineHandles    = containers.Map('KeyType','double','ValueType','
 graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.textHandles = containers.Map('KeyType','double','ValueType','any');
+graphicsHandles.scaleBarHandles = containers.Map('KeyType','double','ValueType','any');
 
 
 graphicsHandles.lineageHandles = containers.Map('KeyType','double','ValueType','any');
@@ -113,7 +114,10 @@ switch lower(displayHandles.mode)
                             hImg = imshow(displayImage(:,:,:,ch), []);
                             [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
                             if frame == numel(layoutOptions.frames)
-                                score_drawChannelScaleBar(ax, layoutOptions, ch);
+                                hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
+                                if ~isempty(hScale)
+                                    graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+                                end
                             end
                             drawSeparationLines(ax,layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -269,7 +273,10 @@ newPath = fullfile(folder, [name '.pdf']);
                 axarray=[axarray ax];
                 img = displayImage(:,:,:,ch);
                 hImg = imshow(img, []);
-                score_drawChannelScaleBar(ax, layoutOptions, ch);
+                hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
+                if ~isempty(hScale)
+                    graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+                end
                 %    title(sprintf('Ch:%d', ch));
                 graphicsHandles.imgHandles(tileIndex) = hImg;
                 % Ajout d'un axe overlay transparent sur chaque tuile.
@@ -379,7 +386,10 @@ end
                         [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
                         %  img = roiData.image(:,:,ch,1);
                         hImg = imshow(displayImage(:,:,:,ch), []);
-                        score_drawChannelScaleBar(ax, layoutOptions, ch);
+                        hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
+                        if ~isempty(hScale)
+                            graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+                        end
 
 if ch == 1
     titleStr = score_wrapDisplayLabel(localBuildMovieRoiTitle_(layoutOptions, roiData), 28);
