@@ -50,29 +50,11 @@ function pipeObj = pipelineNew(varargin)
 
     pipeObj = pipelineConstruct(path, name, id);
 
-    % Default template: dataloader only. ROI-producing and ROI-extraction
-    % modules are added on demand when the user chooses a concrete workflow.
-    n1 = struct();
-    n1.id = 'dataloader_1';
-    n1.name = 'dataloader_1';
-    n1.type = 'dataLoader';
-    n1.func = 'dataLoader.process';
-    n1.gui = 'dataLoader.ui';
-    n1.guiMode = 'replace';
-    n1.paramRequired = {'path'};
-    n1.pkg = '';
-    try
-        n1.params = dataLoader.setparam(struct());
-    catch
-        n1.params = struct();
-    end
-    n1.inputs = {};
-    n1.outputs = {'images'};
-    n1.enabled = true;
-    n1.status = '';
-    n1.layout = [10 10 20 10];
-
-    pipeObj.nodes = n1;
+    % New templates start empty; modules are added explicitly in the editor.
+    pipeObj.nodes = struct('id', {}, 'name', {}, 'type', {}, 'func', {}, ...
+        'gui', {}, 'guiMode', {}, 'paramRequired', {}, 'pkg', {}, ...
+        'params', {}, 'inputs', {}, 'outputs', {}, 'enabled', {}, ...
+        'status', {}, 'layout', {});
     pipeObj.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
 
     pipeObj.log('Pipeline creation', 'Creation');

@@ -127,7 +127,7 @@ function [bundlePath, manifest] = pipelineExport(pipeIn, bundlePath, varargin)
             'message', sprintf('Processing node %d/%d: %s', i, numel(exportedSpec.nodes), char(string(getFieldOrDefault(node, 'id', sprintf('node_%d', i)))))));
         [nodeSummary, exportedNode] = exportNodeBundle(node, opts, bundlePath, pipelineDir, assetsDir, templatePath);
         manifest.nodes = appendStruct(manifest.nodes, nodeSummary);
-        exportedSpec.nodes(i) = exportedNode;
+        exportedSpec.nodes = assignStructElement(exportedSpec.nodes, i, exportedNode);
     end
 
     pipelineJson = fullfile(pipelineDir, 'pipeline.json');
@@ -1283,7 +1283,43 @@ function S = appendStruct(S, row)
     if isempty(S)
         S = row;
     else
+        [S, row] = alignStructArrayAndRow(S, row);
         S(end+1) = row; %#ok<AGROW>
+    end
+end
+
+function S = assignStructElement(S, idx, row)
+    if isempty(S)
+        S = row;
+        return;
+    end
+    [S, row] = alignStructArrayAndRow(S, row);
+    S(idx) = row;
+end
+
+function [S, row] = alignStructArrayAndRow(S, row)
+    if ~isstruct(S) || ~isstruct(row)
+        return;
+    end
+
+    existingFields = fieldnames(S);
+    rowFields = fieldnames(row);
+    allFields = unique([existingFields; rowFields], 'stable');
+
+    for i = 1:numel(allFields)
+        fieldName = allFields{i};
+        if ~isfield(S, fieldName)
+            [S.(fieldName)] = deal([]);
+        end
+        if ~isfield(row, fieldName)
+            row.(fieldName) = [];
+        end
+    end
+
+    try
+        S = orderfields(S, allFields);
+        row = orderfields(row, allFields);
+    catch
     end
 end
 
