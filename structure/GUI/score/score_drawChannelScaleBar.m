@@ -22,13 +22,23 @@ if ~isfield(layoutOptions, 'levels') || ch > numel(layoutOptions.levels) || isce
 end
 
 lims = double(layoutOptions.levels{ch});
+tickLims = lims;
+if isfield(layoutOptions, 'displayLevels') && ch <= numel(layoutOptions.displayLevels) && ...
+        ~iscell(layoutOptions.displayLevels{ch}) && numel(layoutOptions.displayLevels{ch}) >= 2
+    tickLims = double(layoutOptions.displayLevels{ch});
+end
 if numel(lims) < 2 || any(~isfinite(lims(1:2)))
     return;
 end
 lo = lims(1);
 hi = lims(2);
+tickLo = tickLims(1);
+tickHi = tickLims(2);
 if hi <= lo
     hi = lo + 1;
+end
+if tickHi <= tickLo
+    tickHi = tickLo + eps(max(1, abs(tickLo)));
 end
 
 xl = xlim(ax);
@@ -70,12 +80,12 @@ h(end+1) = rectangle(ax, 'Position', [xLeft yTop barW barH], ...
     'FaceColor', 'none', ...
     'Clipping', 'on');
 
-ticks = localNiceTicks(lo, hi, 5);
+ticks = localNiceTicks(tickLo, tickHi, 5);
 tickLen = max(3, 0.018 * imgW);
 fontSize = max(6, floor(0.75 * layoutOptions.fontSize));
 
 for i = 1:numel(ticks)
-    t = (ticks(i) - lo) / (hi - lo);
+    t = (ticks(i) - tickLo) / (tickHi - tickLo);
     y = yBottom - t * barH;
     h(end+1) = line(ax, [xLeft - tickLen, xLeft], [y y], ...
         'Color', layoutOptions.textColor, ...

@@ -73,9 +73,9 @@ function score_updateEllipticalProfile(app, ellipseObj)
         baseName = selectedROI.display.channel{channelIdx};
         
         % Extraction des pixels dans la région définie par l'ellipse
-        if numel(selectedROI.findChannelID(selectedROI.display.channel{channelIdx})) == 3
+        pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
+        if numel(pix) == 3
             % Canal RGB : extraire les trois composantes et convertir en niveaux de gris
-            pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
             rawR = double(selectedROI.image(:, :, pix(1), currentFrame));
             rawG = double(selectedROI.image(:, :, pix(2), currentFrame));
             rawB = double(selectedROI.image(:, :, pix(3), currentFrame));
@@ -83,9 +83,10 @@ function score_updateEllipticalProfile(app, ellipseObj)
             pixelValues = grayImage(mask);
         else
             % Canal monochrome
-            rawImg = double(selectedROI.image(:, :, channelIdx, currentFrame));
+            rawImg = double(selectedROI.image(:, :, pix(1), currentFrame));
             pixelValues = rawImg(mask);
         end
+        pixelValues = score_decodeChannelValues(selectedROI, channelIdx, pixelValues);
         
         % Vérifier que pixelValues n'est pas vide
         if isempty(pixelValues)
@@ -120,7 +121,11 @@ function score_updateEllipticalProfile(app, ellipseObj)
         % Calcul de la médiane des pixels pour la légende
         medVal = median(pixelValues);
         stdVal = std(pixelValues);
-        channelNames{k} = sprintf('%s (Med=%.0f; Std=%.0f)', baseName, medVal, stdVal);
+        if strcmp(score_channelDisplayUnit(selectedROI, channelIdx), 'raw')
+            channelNames{k} = sprintf('%s (Med=%.0f; Std=%.0f)', baseName, medVal, stdVal);
+        else
+            channelNames{k} = sprintf('%s (Med=%.3g; Std=%.3g %s)', baseName, medVal, stdVal, score_channelDisplayUnit(selectedROI, channelIdx));
+        end
         
         % Déterminer la couleur d'affichage pour ce canal
         rgbColor = selectedROI.display.rgb(channelIdx, :);
@@ -142,7 +147,7 @@ function score_updateEllipticalProfile(app, ellipseObj)
         xlim(app.UIProfileAxes, [0, 65535]);
     end
     
-    xlabel(app.UIProfileAxes, 'Pixel Intensity');
+    xlabel(app.UIProfileAxes, 'Pixel Value');
     ylabel(app.UIProfileAxes, 'Pixel Count');
     legend(app.UIProfileAxes, channelNames, 'Interpreter', 'none');
     

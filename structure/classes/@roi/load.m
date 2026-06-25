@@ -469,6 +469,7 @@ for i = 1:N
     attrs(i).binning   = readAttOrDefault(h5File,p,'display_binning', 1);
     % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
     attrs(i).selectedchannel = readAttOrDefault(h5File,p,'display_selectedchannel',1);
+    attrs(i).valueTransform = readValueTransformOrDefault(h5File, p);
 end
 
 % --- Ordonner : d'abord ceux qui ont un premier index connu, puis les autres (stable) ---
@@ -778,6 +779,7 @@ att.width      = readAttOrDefault(h5File, pTarget, 'display_contourwidth', 1);
 att.frame      = readAttOrDefault(h5File, pTarget, 'display_frame',      1);
 att.binning    = readAttOrDefault(h5File, pTarget, 'display_binning',    1);
 att.selectedchannel = readAttOrDefault(h5File, pTarget, 'display_selectedchannel', 1);
+att.valueTransform = readValueTransformOrDefault(h5File, pTarget);
 
 
 % --- Mettre à jour uniquement ce qu'il faut dans le display
@@ -908,6 +910,8 @@ if ~isfield(dispStruct,'rgb') || size(dispStruct.rgb,1) < Nlog
     dispStruct.rgb = [cur; repmat([1 1 1], Nlog - size(cur,1), 1)];
 end
 dispStruct.rgb(logicalId,:) = double(att.rgb(:).');
+dispStruct.valueTransform = ensureValueTransformArray(dispStruct, Nlog);
+dispStruct.valueTransform(logicalId) = att.valueTransform;
 
 % stretchlim inchangé (si existant)
 % fin.
@@ -1005,6 +1009,92 @@ end
 % end
 % end
 
+function vt = readValueTransformOrDefault(h5File, h5Path)
+vt = rawValueTransform();
+try
+    mode = lower(strtrim(char(string(readAttOrDefault(h5File, h5Path, 'value_mode', 'raw')))));
+catch
+    mode = 'raw';
+end
+if ~strcmp(mode, 'physical')
+    return;
+end
+
+unit = 'physical';
+try
+    unit = char(string(readAttOrDefault(h5File, h5Path, 'physical_unit', unit)));
+catch
+end
+physicalMin = readAttOrDefault(h5File, h5Path, 'physical_min', NaN);
+physicalMax = readAttOrDefault(h5File, h5Path, 'physical_max', NaN);
+encodedMin = readAttOrDefault(h5File, h5Path, 'encoded_min', 0);
+encodedMax = readAttOrDefault(h5File, h5Path, 'encoded_max', 65535);
+transform = 'linear';
+try
+    transform = char(string(readAttOrDefault(h5File, h5Path, 'physical_transform', transform)));
+catch
+end
+
+physicalRange = double([physicalMin physicalMax]);
+encodedRange = double([encodedMin encodedMax]);
+if any(~isfinite(physicalRange)) || any(~isfinite(encodedRange)) || ...
+        physicalRange(2) <= physicalRange(1) || encodedRange(2) <= encodedRange(1)
+    vt = rawValueTransform();
+    return;
+end
+
+vt = struct( ...
+    'mode', 'physical', ...
+    'unit', unit, ...
+    'physicalRange', physicalRange, ...
+    'encodedRange', encodedRange, ...
+    'transform', transform);
+end
+
+function vt = ensureValueTransformArray(dispStruct, nLog)
+defaultValue = rawValueTransform();
+if isfield(dispStruct, 'valueTransform') && ~isempty(dispStruct.valueTransform) && isstruct(dispStruct.valueTransform)
+    oldValue = dispStruct.valueTransform(:).';
+else
+    oldValue = repmat(defaultValue, 1, 0);
+end
+vt = repmat(defaultValue, 1, numel(oldValue));
+for i = 1:numel(oldValue)
+    vt(i) = normalizeValueTransform(oldValue(i));
+end
+if numel(vt) < nLog
+    vt(end+1:nLog) = defaultValue;
+elseif numel(vt) > nLog
+    vt = vt(1:nLog);
+end
+end
+
+function s = normalizeValueTransform(s)
+defaultValue = rawValueTransform();
+try
+    if ~isfield(s, 'mode') || isempty(s.mode), s.mode = defaultValue.mode; end
+    if ~isfield(s, 'unit') || isempty(s.unit), s.unit = defaultValue.unit; end
+    if ~isfield(s, 'physicalRange') || isempty(s.physicalRange) || numel(s.physicalRange) ~= 2
+        s.physicalRange = defaultValue.physicalRange;
+    end
+    if ~isfield(s, 'encodedRange') || isempty(s.encodedRange) || numel(s.encodedRange) ~= 2
+        s.encodedRange = defaultValue.encodedRange;
+    end
+    if ~isfield(s, 'transform') || isempty(s.transform), s.transform = defaultValue.transform; end
+catch
+    s = defaultValue;
+end
+end
+
+function vt = rawValueTransform()
+vt = struct( ...
+    'mode', 'raw', ...
+    'unit', 'raw', ...
+    'physicalRange', [0 65535], ...
+    'encodedRange', [0 65535], ...
+    'transform', 'linear');
+end
+
 function dispStruct = rebuildDisplayFromAttrs(names, idxList, attrs, C)
 % names : {1xN} canaux logiques
 % idxList : {1xN} indices sous-channels pour chaque canal
@@ -1077,6 +1167,10 @@ dispStruct.alpha           = alpha;              % 1 x N
 dispStruct.contour         = contour;            % 1 x N
 dispStruct.width           = width;              % 1 x N
 dispStruct.log             = zeros(1,N);
+dispStruct.valueTransform  = repmat(rawValueTransform(), 1, N);
+for i = 1:N
+    dispStruct.valueTransform(i) = attrs(i).valueTransform;
+end
 
 end
 

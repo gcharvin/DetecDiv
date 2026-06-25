@@ -104,6 +104,7 @@ function display = localKeepDisplayEntries(display, names, keepDisp, keepSubchan
     display.width = localKeepVector(display, 'width', keepDisp, 0);
     display.scale = localKeepVector(display, 'scale', keepDisp, false);
     display.log = localKeepVector(display, 'log', keepDisp, false);
+    display.valueTransform = localKeepValueTransform(display, keepDisp);
 
     display = localKeepSubchannelField(display, 'displaylim', keepSubchannels, nSubchannels);
     display = localKeepSubchannelField(display, 'stretchlim', keepSubchannels, nSubchannels);
@@ -140,6 +141,50 @@ function value = localKeepVector(display, fieldName, keepRows, defaultValue)
         value(end+1:nOld) = defaultValue;
     end
     value = value(keepRows);
+end
+
+function value = localKeepValueTransform(display, keepRows)
+    defaultValue = localRawValueTransform();
+    nOld = max(keepRows);
+    if isfield(display, 'valueTransform') && ~isempty(display.valueTransform) && isstruct(display.valueTransform)
+        oldValue = display.valueTransform(:).';
+    else
+        oldValue = repmat(defaultValue, 1, 0);
+    end
+    value = repmat(defaultValue, 1, numel(oldValue));
+    for i = 1:numel(oldValue)
+        value(i) = localNormalizeValueTransform(oldValue(i));
+    end
+    if numel(value) < nOld
+        value(end+1:nOld) = defaultValue;
+    end
+    value = value(keepRows);
+end
+
+function s = localNormalizeValueTransform(s)
+    defaultValue = localRawValueTransform();
+    try
+        if ~isfield(s, 'mode') || isempty(s.mode), s.mode = defaultValue.mode; end
+        if ~isfield(s, 'unit') || isempty(s.unit), s.unit = defaultValue.unit; end
+        if ~isfield(s, 'physicalRange') || isempty(s.physicalRange) || numel(s.physicalRange) ~= 2
+            s.physicalRange = defaultValue.physicalRange;
+        end
+        if ~isfield(s, 'encodedRange') || isempty(s.encodedRange) || numel(s.encodedRange) ~= 2
+            s.encodedRange = defaultValue.encodedRange;
+        end
+        if ~isfield(s, 'transform') || isempty(s.transform), s.transform = defaultValue.transform; end
+    catch
+        s = defaultValue;
+    end
+end
+
+function s = localRawValueTransform()
+s = struct( ...
+    'mode', 'raw', ...
+    'unit', 'raw', ...
+    'physicalRange', [0 65535], ...
+    'encodedRange', [0 65535], ...
+    'transform', 'linear');
 end
 
 function display = localKeepSubchannelField(display, fieldName, keepSubchannels, nSubchannels)

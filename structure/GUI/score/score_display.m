@@ -75,7 +75,7 @@ end
  opts = score_collectDisplayOptions(arg{:});
  %cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI);
- syncChannelTableLevels(app, opts);
+ syncChannelTableLevels(app, opts, selectedROI);
 
  %opts.paintChannel = app.DisplaySettings.Movie.paintChannel;  % peut être 0, un rang, ou un nom
 
@@ -222,7 +222,7 @@ end
 %profile viewer
 end
 
-function syncChannelTableLevels(app, opts)
+function syncChannelTableLevels(app, opts, selectedROI)
 try
     if ~isprop(app, 'UIChannelTable') || isempty(app.UIChannelTable) || isempty(app.UIChannelTable.Data)
         return;
@@ -231,7 +231,7 @@ try
         return;
     end
     data = app.UIChannelTable.Data;
-    if size(data, 2) < 4
+    if size(data, 2) < 5
         return;
     end
     optNames = opts.channel;
@@ -248,9 +248,21 @@ try
         end
         lev = opts.levels{hit};
         if iscell(lev)
-            data{row, 4} = char(string(lev{1}));
+            data{row, 5} = char(string(lev{1}));
         elseif isnumeric(lev) && numel(lev) >= 2
-            data{row, 4} = sprintf('%g %g', lev(1), lev(2));
+            chIdx = find(strcmpi(selectedROI.display.channel, rowName), 1, 'first');
+            if isempty(chIdx)
+                displayLevels = lev(1:2);
+                unit = 'raw';
+            else
+                displayLevels = score_decodeChannelValues(selectedROI, chIdx, lev(1:2));
+                unit = score_channelDisplayUnit(selectedROI, chIdx);
+            end
+            if strcmp(unit, 'raw')
+                data{row, 5} = sprintf('%.0f %.0f', round(displayLevels(1)), round(displayLevels(2)));
+            else
+                data{row, 5} = sprintf('%.4g %.4g', displayLevels(1), displayLevels(2));
+            end
         end
     end
     app.UIChannelTable.Data = data;

@@ -85,8 +85,10 @@ function score_updateHistogram(app, mode)
                 if isempty(subIdx)
                     subIdx = channelIdx;
                 end
-                lowVal = selectedROI.display.displaylim(1, subIdx) * 65535;
-                highVal = selectedROI.display.displaylim(2, subIdx) * 65535;
+                encodedLimits = 65535 * [selectedROI.display.displaylim(1, subIdx) selectedROI.display.displaylim(2, subIdx)];
+                displayLimits = score_decodeChannelValues(selectedROI, channelIdx, encodedLimits);
+                lowVal = displayLimits(1);
+                highVal = displayLimits(2);
                 if ~isvalid(app.HistogramLimits(2*k-1)) || ~isvalid(app.HistogramLimits(2*k))
                     score_updateHistogram(app, 'slow');
                     return;
@@ -113,8 +115,8 @@ function score_updateHistogram(app, mode)
     hold(app.UIDisplayAxes, 'on');
 
     numBins = 200;
-    edges = logspace(0, log10(65535), numBins);
     histogramData = cell(1, length(displayedChannels));
+    histogramEdges = cell(1, length(displayedChannels));
     hLines = gobjects(1, length(displayedChannels));
     allPixelValues = [];
     medianValues = cell(1, length(displayedChannels));
@@ -137,18 +139,38 @@ function score_updateHistogram(app, mode)
             imgChannel = double(selectedROI.image(:, :, pix(1), frameIndex));
         end
         
-        % Calcul de l'histogramme sur les valeurs brutes
-        [counts, ~] = histcounts(imgChannel, edges);
+        imgChannel = score_decodeChannelValues(selectedROI, channelIdx, imgChannel);
+        vals = imgChannel(:);
+        vals = vals(isfinite(vals));
+        if isempty(vals)
+            continue;
+        end
+        minValForEdges = min(vals);
+        maxValForEdges = max(vals);
+        if maxValForEdges <= minValForEdges
+            maxValForEdges = minValForEdges + eps(max(1, abs(minValForEdges)));
+        end
+        if minValForEdges > 0
+            edges = logspace(log10(max(minValForEdges, realmin)), log10(maxValForEdges), numBins);
+        else
+            edges = linspace(minValForEdges, maxValForEdges, numBins);
+        end
+        [counts, ~] = histcounts(vals, edges);
         counts(counts == 0) = NaN;  % éviter des zéros sur une échelle logarithmique
         histogramData{k} = counts;
-        allPixelValues = [allPixelValues; imgChannel(:)];
+        histogramEdges{k} = edges;
+        allPixelValues = [allPixelValues; vals(:)];
         
         % Calculer la médiane des pixels pour ce canal
-        medianVal = median(imgChannel(:));
+        medianVal = median(vals(:));
         medianValues{k} = medianVal;
         
         % Préparer le nom du canal pour la légende, avec la médiane
-        channelNames{k} = sprintf('%s (Med=%.0f)', selectedROI.display.channel{channelIdx}, medianVal);
+        if strcmp(score_channelDisplayUnit(selectedROI, channelIdx), 'raw')
+            channelNames{k} = sprintf('%s (Med=%.0f)', selectedROI.display.channel{channelIdx}, medianVal);
+        else
+            channelNames{k} = sprintf('%s (Med=%.3g %s)', selectedROI.display.channel{channelIdx}, medianVal, score_channelDisplayUnit(selectedROI, channelIdx));
+        end
         
         % Définir la couleur d'affichage (forcer le noir si la couleur est blanche)
         rgbColor = selectedROI.display.rgb(channelIdx, :);
@@ -162,14 +184,24 @@ function score_updateHistogram(app, mode)
         hLines(k) = plot(app.UIDisplayAxes, edges(1:end-1), counts, 'Color', rgbColorPlot, 'LineWidth', 1.5);
     end
 
+    if isempty(allPixelValues)
+        cla(app.UIDisplayAxes);
+        return;
+    end
+
     % Ajuster les axes
-    minPixelValue = max(min(allPixelValues), 1);
-    maxPixelValue = max(min(max(allPixelValues), 65535),minPixelValue+1);
-    set(app.UIDisplayAxes, 'XScale', 'log', 'YScale', 'log');
+    minPixelValue = min(allPixelValues);
+    maxPixelValue = max(max(allPixelValues), minPixelValue+eps(max(1,abs(minPixelValue))));
+    if minPixelValue > 0
+        set(app.UIDisplayAxes, 'XScale', 'log', 'YScale', 'log');
+        minPixelValue = max(minPixelValue, realmin);
+    else
+        set(app.UIDisplayAxes, 'XScale', 'linear', 'YScale', 'log');
+    end
     xlim(app.UIDisplayAxes, [0.8 * minPixelValue, 1.2 * maxPixelValue]);
     ylim(app.UIDisplayAxes, [1, max(1.1,max(cellfun(@(x) max(x(:)), histogramData)) * 1.2)]);
     
-    xlabel(app.UIDisplayAxes, 'Pixel Intensity');
+    xlabel(app.UIDisplayAxes, 'Pixel Value');
     ylabel(app.UIDisplayAxes, 'Pixel Count');
     
     % Au lieu d'utiliser le titre pour afficher la médiane, on les place dans la légende
@@ -188,8 +220,10 @@ for k = 1:length(displayedChannels)
     if isempty(subIdx)
         subIdx = channelIdx;
     end
-    lowVal = selectedROI.display.displaylim(1, subIdx) * 65535;
-    highVal = selectedROI.display.displaylim(2, subIdx) * 65535;
+    encodedLimits = 65535 * [selectedROI.display.displaylim(1, subIdx) selectedROI.display.displaylim(2, subIdx)];
+    displayLimits = score_decodeChannelValues(selectedROI, channelIdx, encodedLimits);
+    lowVal = displayLimits(1);
+    highVal = displayLimits(2);
     rgbColor = selectedROI.display.rgb(channelIdx, :);
     if all(rgbColor >= 0.99)
         rgbColorPlot = [0, 0, 0];
@@ -206,7 +240,7 @@ app.HistogramLimits = hLimits;
 
     
     % Stocker les données et handles pour le mode refresh
-    app.HistogramEdges = edges;
+    app.HistogramEdges = histogramEdges;
     app.HistogramData = histogramData;
     app.HistogramChannels = displayedChannels;
     app.HistogramLines = hLines;

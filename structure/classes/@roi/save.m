@@ -552,6 +552,44 @@ end
 if isfield(d,'binning') && ~isempty(d.binning)
     dispMeta.display_binning=d.binning;
 end
+if isfield(d,'valueTransform') && ~isempty(d.valueTransform) && isstruct(d.valueTransform) && numel(d.valueTransform) >= ii
+    vt = d.valueTransform(ii);
+    try
+        mode = lower(strtrim(char(string(vt.mode))));
+    catch
+        mode = 'raw';
+    end
+    if strcmp(mode, 'physical')
+        dispMeta.value_mode = 'physical';
+        if isfield(vt, 'unit') && ~isempty(vt.unit)
+            dispMeta.physical_unit = char(string(vt.unit));
+        else
+            dispMeta.physical_unit = 'physical';
+        end
+        if isfield(vt, 'physicalRange') && numel(vt.physicalRange) == 2
+            dispMeta.physical_min = double(vt.physicalRange(1));
+            dispMeta.physical_max = double(vt.physicalRange(2));
+        end
+        if isfield(vt, 'encodedRange') && numel(vt.encodedRange) == 2
+            dispMeta.encoded_min = double(vt.encodedRange(1));
+            dispMeta.encoded_max = double(vt.encodedRange(2));
+        else
+            dispMeta.encoded_min = 0;
+            dispMeta.encoded_max = 65535;
+        end
+        if isfield(vt, 'transform') && ~isempty(vt.transform)
+            dispMeta.physical_transform = char(string(vt.transform));
+        else
+            dispMeta.physical_transform = 'linear';
+        end
+    else
+        dispMeta.value_mode = 'raw';
+        dispMeta.physical_unit = 'raw';
+    end
+else
+    dispMeta.value_mode = 'raw';
+    dispMeta.physical_unit = 'raw';
+end
 dispMeta.num_subchannels = k;
 end
 

@@ -14,6 +14,7 @@ name     = 'CombinedChannel';
 debug    = false;
 mode     = 'additive';
 offsets  = {};
+valueTransform = [];
 
 % ---------------- parse inputs ----------------
 for i = 1:numel(varargin)
@@ -163,19 +164,36 @@ if arithmeticMode
     finiteVals = result(isfinite(result));
     if isempty(finiteVals)
         matrix = zeros(H,W,1,T,'uint16');
+        physicalRange = [0 1];
     else
         lo = min(finiteVals(:));
         hi = max(finiteVals(:));
         fprintf('[combineChannels] arithmetic range = [%g %g]\n', lo, hi);
         if hi <= lo
             matrix = zeros(H,W,1,T,'uint16');
+            physicalRange = [lo lo + eps(max(1, abs(lo)))];
         else
             scaled = (result - lo) ./ (hi - lo);
             scaled(~isfinite(scaled)) = 0;
             scaled = min(max(scaled, 0), 1);
             matrix = uint16(round(65535 * scaled));
+            physicalRange = [lo hi];
         end
     end
+    switch mode
+        case 'division'
+            physicalUnit = 'ratio';
+        case 'subtraction'
+            physicalUnit = 'difference';
+        otherwise
+            physicalUnit = 'physical';
+    end
+    valueTransform = struct( ...
+        'mode', 'physical', ...
+        'unit', physicalUnit, ...
+        'physicalRange', double(physicalRange), ...
+        'encodedRange', [0 65535], ...
+        'transform', 'linear');
 else
     % ---------------- main loop ----------------
     for iCh = 1:nCh
@@ -363,6 +381,9 @@ if ~isempty(pix)
 end
 
 obj.addChannel(matrix, name, [1 1 1], outIntensity);
+if ~isempty(valueTransform)
+    obj = localSetValueTransform(obj, name, valueTransform);
+end
 % ensure display limits are refreshed for new channel
 try
     obj.computeDisplaylim;
@@ -372,6 +393,59 @@ obj.log(['Combined channels'], 'Processing');
 
 fprintf('[combineChannels] ---- DONE output="%s" ----\n', string(name));
 
+end
+
+function obj = localSetValueTransform(obj, channelName, valueTransform)
+try
+    if ~isfield(obj.display, 'channel') || isempty(obj.display.channel)
+        return;
+    end
+    idx = find(strcmp(obj.display.channel, channelName), 1, 'first');
+    if isempty(idx)
+        return;
+    end
+    nCh = numel(obj.display.channel);
+    if ~isfield(obj.display, 'valueTransform') || isempty(obj.display.valueTransform) || ~isstruct(obj.display.valueTransform)
+        obj.display.valueTransform = repmat(localRawValueTransform(), 1, nCh);
+    else
+        oldValue = obj.display.valueTransform(:).';
+        newValue = repmat(localRawValueTransform(), 1, max(nCh, numel(oldValue)));
+        for ii = 1:numel(oldValue)
+            newValue(ii) = localNormalizeValueTransform(oldValue(ii));
+        end
+        obj.display.valueTransform = newValue(1:nCh);
+    end
+    obj.display.valueTransform(idx) = valueTransform;
+catch ME
+    warning('combineChannels:ValueTransformFailed', ...
+        'Could not attach value transform to "%s": %s', string(channelName), ME.message);
+end
+end
+
+function s = localNormalizeValueTransform(s)
+defaultValue = localRawValueTransform();
+try
+    if ~isfield(s, 'mode') || isempty(s.mode), s.mode = defaultValue.mode; end
+    if ~isfield(s, 'unit') || isempty(s.unit), s.unit = defaultValue.unit; end
+    if ~isfield(s, 'physicalRange') || isempty(s.physicalRange) || numel(s.physicalRange) ~= 2
+        s.physicalRange = defaultValue.physicalRange;
+    end
+    if ~isfield(s, 'encodedRange') || isempty(s.encodedRange) || numel(s.encodedRange) ~= 2
+        s.encodedRange = defaultValue.encodedRange;
+    end
+    if ~isfield(s, 'transform') || isempty(s.transform), s.transform = defaultValue.transform; end
+catch
+    s = defaultValue;
+end
+end
+
+function s = localRawValueTransform()
+s = struct( ...
+    'mode', 'raw', ...
+    'unit', 'raw', ...
+    'physicalRange', [0 65535], ...
+    'encodedRange', [0 65535], ...
+    'transform', 'linear');
 end
 
 % ---- helper (no dependency) ----

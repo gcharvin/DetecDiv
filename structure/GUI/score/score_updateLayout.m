@@ -55,6 +55,7 @@ if ~isempty(selCh)
 
     % Pour chaque channel, construire un vecteur numérique [low high]
     levels = cell(1, numel(selCh));
+    displayLevels = cell(1, numel(selCh));
     for i = 1:numel(selCh)
         idx = selCh(i);
 
@@ -74,9 +75,11 @@ if ~isempty(selCh)
         end
 
         levels{i} = [lowVal, highVal];
+        displayLevels{i} = score_decodeChannelValues(roitmp, idx, [lowVal, highVal]);
 
         if dsC.indexed(idx)
             levels{i}={};
+            displayLevels{i}={};
             levels{i}{1}='-1';
             levels{i}{2}=cmap; 
             levels{i}{3}=dsC.alpha(idx);
@@ -84,6 +87,7 @@ if ~isempty(selCh)
             levels{i}{5}=dsC.width(idx);
         else
             levels{i} = [lowVal, highVal];
+            displayLevels{i} = score_decodeChannelValues(roitmp, idx, [lowVal, highVal]);
         end
     end
 
@@ -99,6 +103,7 @@ if ~isempty(selCh)
 
     layoutOptions.channel=channels;
     layoutOptions.levels=levels;
+    layoutOptions.displayLevels=displayLevels;
     layoutOptions.RGB=colors;
     layoutOptions.weights=weights;
     layoutOptions.scale=logical(dsC.scale(selCh));
@@ -172,6 +177,7 @@ nChannel = 0;
 nonIndexedNames = {};
 nonIndexedScale = [];
 nonIndexedLog = [];
+nonIndexedDisplayLevels = {};
 for j = 1:numel(layoutOptions.channel)
     if ~iscell(layoutOptions.levels{j})
         nChannel = nChannel + 1;
@@ -190,10 +196,16 @@ for j = 1:numel(layoutOptions.channel)
         else
             nonIndexedLog(end+1) = false; %#ok<AGROW>
         end
+        if isfield(layoutOptions, 'displayLevels') && numel(layoutOptions.displayLevels) >= j
+            nonIndexedDisplayLevels{end+1} = layoutOptions.displayLevels{j}; %#ok<AGROW>
+        else
+            nonIndexedDisplayLevels{end+1} = layoutOptions.levels{j}; %#ok<AGROW>
+        end
     end
 end
 layoutOptions.scale = logical(nonIndexedScale);
 layoutOptions.log = logical(nonIndexedLog);
+layoutOptions.displayLevels = nonIndexedDisplayLevels;
 
 %% layout parameters
 

@@ -73,9 +73,10 @@ function score_updateIntensityProfile(app, pos)
             profile = improfile(grayImage, xCoords, yCoords);
         else
             % Canal monochrome : extraire directement les intensités brutes
-            rawImg = double(selectedROI.image(:, :, channelIdx, currentFrame));
+            rawImg = double(selectedROI.image(:, :, pix(1), currentFrame));
             profile = improfile(rawImg, xCoords, yCoords);
         end
+        profile = score_decodeChannelValues(selectedROI, channelIdx, profile);
         profile = squeeze(profile);  % éliminer les dimensions unitaires
         profiles{k} = profile;
         
@@ -84,7 +85,11 @@ function score_updateIntensityProfile(app, pos)
         maxVal = max(profile(:));
         
         % Construire le nom du canal avec les valeurs min et max pour la légende
-        channelNames{k} = sprintf('%s (min=%.0f, max=%.0f)', baseName, minVal, maxVal);
+        if strcmp(score_channelDisplayUnit(selectedROI, channelIdx), 'raw')
+            channelNames{k} = sprintf('%s (min=%.0f, max=%.0f)', baseName, minVal, maxVal);
+        else
+            channelNames{k} = sprintf('%s (min=%.3g, max=%.3g %s)', baseName, minVal, maxVal, score_channelDisplayUnit(selectedROI, channelIdx));
+        end
         
         % Déterminer la couleur d'affichage à partir de selectedROI.display.rgb
         rgbColor = selectedROI.display.rgb(channelIdx, :);
@@ -106,7 +111,7 @@ function score_updateIntensityProfile(app, pos)
     xlim(app.UIProfileAxes, [1, nPoints]);
     
     xlabel(app.UIProfileAxes, 'Pixel Position along Line');
-    ylabel(app.UIProfileAxes, 'Raw Intensity');
+    ylabel(app.UIProfileAxes, 'Pixel Value');
     legend(app.UIProfileAxes, channelNames, 'Interpreter', 'none');
     
     hold(app.UIProfileAxes, 'off');

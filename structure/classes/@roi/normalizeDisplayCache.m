@@ -26,6 +26,7 @@ obj.display.alpha = localEnsureVector(obj.display, 'alpha', nLog, 1);
 obj.display.width = localEnsureVector(obj.display, 'width', nLog, 0);
 obj.display.selectedchannel = localEnsureVector(obj.display, 'selectedchannel', nLog, 1);
 obj.display.rgb = localEnsureRows(obj.display, 'rgb', nLog, [1 1 1]);
+obj.display.valueTransform = localEnsureValueTransform(obj.display, nLog);
 
 for i = 1:nLog
     isIndexed = localShouldForceIndexed(names{i}) || all(double(obj.display.intensity(i,:)) == 0);
@@ -44,6 +45,56 @@ for i = 1:nLog
         obj.display.width(i) = 1.5;
     end
 end
+end
+
+function value = localEnsureValueTransform(display, nLog)
+defaultValue = localRawValueTransform();
+if isfield(display, 'valueTransform') && ~isempty(display.valueTransform) && isstruct(display.valueTransform)
+    oldValue = display.valueTransform(:).';
+else
+    oldValue = repmat(defaultValue, 1, 0);
+end
+value = repmat(defaultValue, 1, numel(oldValue));
+for i = 1:numel(oldValue)
+    value(i) = localNormalizeValueTransform(oldValue(i));
+end
+if numel(value) < nLog
+    value(end+1:nLog) = defaultValue;
+elseif numel(value) > nLog
+    value = value(1:nLog);
+end
+end
+
+function s = localNormalizeValueTransform(s)
+defaultValue = localRawValueTransform();
+try
+    if ~isfield(s, 'mode') || isempty(s.mode)
+        s.mode = defaultValue.mode;
+    end
+    if ~isfield(s, 'unit') || isempty(s.unit)
+        s.unit = defaultValue.unit;
+    end
+    if ~isfield(s, 'physicalRange') || isempty(s.physicalRange) || numel(s.physicalRange) ~= 2
+        s.physicalRange = defaultValue.physicalRange;
+    end
+    if ~isfield(s, 'encodedRange') || isempty(s.encodedRange) || numel(s.encodedRange) ~= 2
+        s.encodedRange = defaultValue.encodedRange;
+    end
+    if ~isfield(s, 'transform') || isempty(s.transform)
+        s.transform = defaultValue.transform;
+    end
+catch
+    s = defaultValue;
+end
+end
+
+function s = localRawValueTransform()
+s = struct( ...
+    'mode', 'raw', ...
+    'unit', 'raw', ...
+    'physicalRange', [0 65535], ...
+    'encodedRange', [0 65535], ...
+    'transform', 'linear');
 end
 
 function value = localEnsureRows(display, fieldName, nLog, defaultRow)
