@@ -124,7 +124,7 @@ switch lower(displayHandles.mode)
                             %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
                             graphicsHandles.imgHandles(tileIndex) = hImg;
                             if frame == 1
-                                ylabel(ax, score_wrapDisplayLabel(layoutOptions.channel{ch}), 'FontName', 'Arial', ...
+                                ylabel(ax, score_wrapDisplayLabel(localChannelLabel_(layoutOptions, ch)), 'FontName', 'Arial', ...
                                     'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor,'Interpreter','none');
                             end
 
@@ -362,6 +362,7 @@ if strlength(titleStr) > 0
         'Interpreter','none', ...
         'Clipping','on');
 end
+score_drawMovieEventText(ax, layoutOptions, layoutOptions.frames(1));
 
 
 
@@ -403,10 +404,11 @@ if ch == 1
             'Interpreter','none', ...
             'Clipping','on');
     end
+    score_drawMovieEventText(ax, layoutOptions, layoutOptions.frames(1));
 end
 
                         %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
-                        ylabel(ax, score_wrapDisplayLabel(layoutOptions.channel{ch}), ...
+                        ylabel(ax, score_wrapDisplayLabel(localChannelLabel_(layoutOptions, ch)), ...
                             'FontName', 'Arial', ...
                             'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
                             'Color', textColor, ...
@@ -634,3 +636,14 @@ else
 end
 end
 
+function label = localChannelLabel_(layoutOptions, ch)
+label = layoutOptions.channel{ch};
+try
+    if isfield(layoutOptions, 'channelLabel') && numel(layoutOptions.channelLabel) >= ch && ...
+            strlength(string(layoutOptions.channelLabel{ch})) > 0
+        label = char(string(layoutOptions.channelLabel{ch}));
+    end
+catch
+    label = layoutOptions.channel{ch};
+end
+end

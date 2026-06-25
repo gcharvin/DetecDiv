@@ -94,6 +94,7 @@ function param = score_collectDisplayOptions(varargin)
     defaultColormap='lines';
     defaultDataColormap='lines';
     defaultLegend=true;
+    defaultEventMarkers = [];
     
     p = inputParser;
     
@@ -140,6 +141,7 @@ function param = score_collectDisplayOptions(varargin)
     addParameter(p, 'colormap', defaultColormap);
     addParameter(p, 'dataColormap', defaultDataColormap);
     addParameter(p, 'legend', defaultLegend);
+    addParameter(p, 'eventMarkers', defaultEventMarkers);
 
     parse(p, varargin{:});
     param = p.Results;

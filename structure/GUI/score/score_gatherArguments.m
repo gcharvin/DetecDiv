@@ -13,8 +13,8 @@ arg = [arg, {'frames', currentFrame}];
 arg = [arg, {'mode', 'Display'}];
 % 'Background' : couleur de fond (conversion de chaîne en vecteur numérique)
 arg = [arg, {'background', [0 0 0]}];
-% 'Text' : couleur du texte (conversion)
-arg = [arg, {'text', [1 1 1]}];
+% 'TextColor' : couleur du texte
+arg = [arg, {'textColor', [1 1 1]}];
 % 'FontSize' : taille de la police (conversion)
 arg = [arg, {'fontSize', 12}];
 

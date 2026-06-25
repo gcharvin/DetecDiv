@@ -49,7 +49,8 @@ end
 % --- Légendes (noms de colonnes) ---
 str = cell(1, size(ydata,2));
 for i = 1:size(ydata,2)
-    str{i} = score_wrapDisplayLabel(varname{i}, 32);
+    labelText = localPlotDisplayName(data, sourceIndex(i), varname{i});
+    str{i} = score_wrapDisplayLabel(labelText, 32);
 end
 
 if plottype=="Plot"
@@ -113,7 +114,8 @@ if plottype=="Plot"
     hold(ax, 'off');
 
     % --- Labels axes ---
-    ylabel(ax, score_wrapDisplayLabel(layoutOptions.plotidxgroup{groupIdx}), ...
+    yLabelText = layoutOptions.plotidxgroup{groupIdx};
+    ylabel(ax, score_wrapDisplayLabel(yLabelText), ...
         'FontSize', floor(layoutOptions.fontSize), ...
         'FontName', 'Arial', 'Color', layoutOptions.textColor, ...
         'Interpreter', 'none');
@@ -131,6 +133,7 @@ if plottype=="Plot"
     else
         legend(ax, 'off');
     end
+    score_drawMovieEventLines(ax, layoutOptions);
 
     % --- Style axes ---
     set(ax, 'XColor', layoutOptions.textColor, ...
@@ -240,7 +243,8 @@ else
     set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.background, 'Box', 'off');
     set(ax, 'Color', layoutOptions.background, 'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
-    ylabel(ax, score_wrapDisplayLabel(layoutOptions.plotidxgroup{groupIdx}), ...
+    yLabelText = layoutOptions.plotidxgroup{groupIdx};
+    ylabel(ax, score_wrapDisplayLabel(yLabelText), ...
         'FontName', 'Arial', 'Color', layoutOptions.textColor, ...
         'Interpreter', 'none', 'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
@@ -287,6 +291,7 @@ else
     if layoutOptions.legend
         addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions, str);
     end
+    score_drawMovieEventLines(ax, layoutOptions);
 
     hold(ax, 'off');
 end
@@ -297,6 +302,21 @@ end
 % =======================
 % ===== Subfunctions =====
 % =======================
+
+function label = localPlotDisplayName(data, sourceIdx, fallback)
+label = fallback;
+try
+    if isprop(data, 'plotProperties') && ~isempty(data.plotProperties) && ...
+            size(data.plotProperties, 2) >= 2 && sourceIdx <= size(data.plotProperties, 1)
+        candidate = data.plotProperties{sourceIdx, 2};
+        if strlength(string(candidate)) > 0
+            label = char(string(candidate));
+        end
+    end
+catch
+    label = fallback;
+end
+end
 
 function rgb = parseRGBstring(str)
 rgb = [];

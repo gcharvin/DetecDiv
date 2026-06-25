@@ -160,6 +160,7 @@ switch mode
 
                         [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
+                        score_drawMovieEventText(ax, layoutOptions, localMovieFrameValue(layoutOptions, newframe));
                     end
 
                 else
@@ -179,6 +180,9 @@ switch mode
 
                             [htext, hvector]=score_displayVectorGraphics(ax, newframe, ch, vContours , layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
+                            if ch == 1
+                                score_drawMovieEventText(ax, layoutOptions, localMovieFrameValue(layoutOptions, newframe));
+                            end
                         end
 
                     end
@@ -333,6 +337,18 @@ end
 newHandles = score_drawChannelScaleBar(ax, layoutOptions, ch);
 if ~isempty(newHandles)
     graphicsHandles.scaleBarHandles(tileIndex) = newHandles;
+end
+end
+
+function frameValue = localMovieFrameValue(layoutOptions, newframe)
+frameValue = newframe;
+try
+    if isfield(layoutOptions, 'frames') && ~isempty(layoutOptions.frames) && ...
+            newframe >= 1 && newframe <= numel(layoutOptions.frames)
+        frameValue = layoutOptions.frames(newframe);
+    end
+catch
+    frameValue = newframe;
 end
 end
 

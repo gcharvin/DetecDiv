@@ -52,6 +52,7 @@ end
 if ~isempty(selCh)
     % Récupérer le nom des channels (cell array de chaînes)
     channels = dsC.channel(selCh);
+    channelLabels = localChannelLabels(dsC, selCh);
 
     % Pour chaque channel, construire un vecteur numérique [low high]
     levels = cell(1, numel(selCh));
@@ -106,6 +107,7 @@ if ~isempty(selCh)
     weights = dsC.alpha(selCh);  % Extraction directe sous forme numérique
 
     layoutOptions.channel=channels;
+    layoutOptions.channelLabel=channelLabels;
     layoutOptions.levels=levels;
     layoutOptions.displayLevels=displayLevels;
     layoutOptions.RGB=colors;
@@ -189,7 +191,9 @@ nonIndexedColormapName = {};
 for j = 1:numel(layoutOptions.channel)
     if ~iscell(layoutOptions.levels{j})
         nChannel = nChannel + 1;
-        if iscell(layoutOptions.channel)
+        if isfield(layoutOptions, 'channelLabel') && numel(layoutOptions.channelLabel) >= j
+            nonIndexedNames{end+1} = layoutOptions.channelLabel{j};
+        elseif iscell(layoutOptions.channel)
             nonIndexedNames{end+1} = layoutOptions.channel{j};
         else
             nonIndexedNames{end+1} = layoutOptions.channel(j);
@@ -295,6 +299,23 @@ try
     value = char(string(dsC.(fieldName){idx}));
 catch
     value = defaultValue;
+end
+end
+
+function labels = localChannelLabels(dsC, selCh)
+labels = dsC.channel(selCh);
+if ~isfield(dsC, 'channelAlias') || isempty(dsC.channelAlias)
+    return;
+end
+try
+    for i = 1:numel(selCh)
+        idx = selCh(i);
+        if idx <= numel(dsC.channelAlias) && strlength(string(dsC.channelAlias{idx})) > 0
+            labels{i} = char(string(dsC.channelAlias{idx}));
+        end
+    end
+catch
+    labels = dsC.channel(selCh);
 end
 end
 
