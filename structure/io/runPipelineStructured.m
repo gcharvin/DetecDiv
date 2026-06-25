@@ -1277,9 +1277,9 @@ function p = getRuntimeNodeParams(ctx, node, paramField)
 p = getfielddefault(node, 'params', struct());
 try
     if isstruct(ctx) && isfield(ctx, paramField) && isstruct(ctx.(paramField))
-        p = ctx.(paramField);
+        p = mergeStruct(p, ctx.(paramField));
     elseif isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params)
-        p = ctx.params;
+        p = mergeStruct(p, ctx.params);
     end
 catch
     p = getfielddefault(node, 'params', struct());
