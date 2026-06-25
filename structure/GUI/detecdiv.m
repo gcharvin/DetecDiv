@@ -2301,7 +2301,11 @@ end
                     [runObj, msg] = pipelineRunLoad(runPath);
                     if isempty(runObj)
                         if ~isempty(msg)
-                            warning('detecdiv:PipelineRunLoadFailed', 'pipelineRunLoad failed for %s: %s', runPath, msg);
+                            runJson = fullfile(runPath, 'run.json');
+                            isPendingRunWrite = contains(char(string(msg)), 'Pipeline run JSON not found') && exist(runJson, 'file') ~= 2;
+                            if ~isPendingRunWrite
+                                warning('detecdiv:PipelineRunLoadFailed', 'pipelineRunLoad failed for %s: %s', runPath, msg);
+                            end
                         end
                         continue;
                     end
@@ -5554,9 +5558,9 @@ end
                 app.AdddataButton.Visible='on';
                 app.AdddataButton.Text='Open workflow...';
                 app.AdddataButton.Tooltip={'Open the workflow frontend for data loading, ROI definition and ROI extraction'};
-                app.AddclassifierButton.Visible='on';
+                app.AddclassifierButton.Visible='off';
                 %                app.CheckrawdatapathButton.Visible='on';
-                app.UpdaterawdatapathButton.Visible='on';
+                app.UpdaterawdatapathButton.Visible='off';
                 app.IdentifyROIsinpositionsButton.Visible='off';
                 app.ExtractROIhypervolumesButton.Visible='off';
 

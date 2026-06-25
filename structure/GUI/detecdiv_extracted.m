@@ -2520,7 +2520,11 @@ end
                     [runObj, msg] = pipelineRunLoad(runPath);
                     if isempty(runObj)
                         if ~isempty(msg)
-                            warning('detecdiv:PipelineRunLoadFailed', 'pipelineRunLoad failed for %s: %s', runPath, msg);
+                            runJson = fullfile(runPath, 'run.json');
+                            isPendingRunWrite = contains(char(string(msg)), 'Pipeline run JSON not found') && exist(runJson, 'file') ~= 2;
+                            if ~isPendingRunWrite
+                                warning('detecdiv:PipelineRunLoadFailed', 'pipelineRunLoad failed for %s: %s', runPath, msg);
+                            end
                         end
                         continue;
                     end
@@ -6555,18 +6559,8 @@ end
                 app.ProjectInformationLabel.Text=t;
 
                 app.AdddataButton.Visible='off';
-                if nRuns > 0
-                    app.AddclassifierButton.Visible='on';
-                    app.AddclassifierButton.Text='Open latest run...';
-                    app.AddclassifierButton.Tooltip={'Open the most recent pipeline run for this project in edit mode.'};
-                    app.AddclassifierButton.Position = [232 12 185 43];
-                else
-                    app.AddclassifierButton.Visible='off';
-                end
-                app.UpdaterawdatapathButton.Visible='on';
-                app.UpdaterawdatapathButton.Text='New pipeline template...';
-                app.UpdaterawdatapathButton.Tooltip={'Create a new pipeline template inside this project folder and open it with this project context.'};
-                app.UpdaterawdatapathButton.Position = [20 12 185 43];
+                app.AddclassifierButton.Visible='off';
+                app.UpdaterawdatapathButton.Visible='off';
                 app.IdentifyROIsinpositionsButton.Visible='off';
                 app.ExtractROIhypervolumesButton.Visible='off';
 
