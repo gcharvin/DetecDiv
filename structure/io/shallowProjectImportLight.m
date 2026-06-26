@@ -95,15 +95,15 @@ for i = 1:numel(items)
     f.number = localFieldValue(item, 'number', i);
     f.tag = localFieldText(item, 'tag', f.tag);
     f.comments = localFieldText(item, 'comments', '');
-    f.srcpath = localCellValue(localFieldValue(item, 'srcpath', {''}));
-    f.channel = localCellValue(localFieldValue(item, 'channel', {}));
-    f.frames = localFieldValue(item, 'frames', []);
-    f.interval = localFieldValue(item, 'interval', []);
-    f.binning = localFieldValue(item, 'binning', []);
+    f.srcpath = localRowCell(localCellValue(localFieldValue(item, 'srcpath', {''})));
+    f.channel = localRowCell(localCellValue(localFieldValue(item, 'channel', {})));
+    f.frames = localRowValue(localFieldValue(item, 'frames', []));
+    f.interval = localRowValue(localFieldValue(item, 'interval', []));
+    f.binning = localRowValue(localFieldValue(item, 'binning', []));
     f.orientation = localFieldValue(item, 'orientation', 0);
-    f.crop = localFieldValue(item, 'crop', []);
-    f.pattern = localFieldValue(item, 'pattern', []);
-    f.drift = localFieldValue(item, 'drift', []);
+    f.crop = localMatrixValue(localFieldValue(item, 'crop', []));
+    f.pattern = localMatrixValue(localFieldValue(item, 'pattern', []));
+    f.drift = localMatrixValue(localFieldValue(item, 'drift', []));
     if isfield(item, 'display') && isstruct(item.display)
         f.display = item.display;
     end
@@ -149,7 +149,8 @@ for i = 1:numel(items)
     r = roi(localFieldText(item, 'id', ''), localFieldValue(item, 'value', []));
     r.parent = fovObj;
     r.path = localResolveProjectPath(localFieldText(item, 'path', ''), projectDir);
-    r.channelid = localFieldValue(item, 'channelid', r.channelid);
+    r.value = localRowValue(r.value);
+    r.channelid = localRowValue(localFieldValue(item, 'channelid', r.channelid));
     if isfield(item, 'display') && isstruct(item.display)
         r.display = item.display;
     end
@@ -253,6 +254,35 @@ elseif iscell(value)
     return;
 elseif ischar(value) || isstring(value)
     value = cellstr(string(value));
+end
+end
+
+function value = localRowCell(value)
+if iscell(value)
+    value = reshape(value, 1, []);
+end
+end
+
+function value = localRowValue(value)
+if isnumeric(value) || islogical(value)
+    value = reshape(value, 1, []);
+elseif isstring(value)
+    value = reshape(value, 1, []);
+elseif iscell(value)
+    value = reshape(value, 1, []);
+end
+end
+
+function value = localMatrixValue(value)
+if isnumeric(value) || islogical(value)
+    if isempty(value)
+        return;
+    end
+    if isvector(value)
+        value = reshape(value, 1, []);
+    end
+elseif iscell(value)
+    value = reshape(value, 1, []);
 end
 end
 
