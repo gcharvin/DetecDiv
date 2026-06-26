@@ -73,7 +73,7 @@ end
 if isempty(channelsExtract)
     warnOnceLocal('computeMetrics:NoValidScoreChannel', ...
         ['score|' strjoin(cellstr(string(channelsName)), '|')], ...
-        'No valid score channel is available for ROI %s; channel_quantification will not be created.', roiIdText(roiobj));
+        'No valid score channel is available for ROI %s; %s will not be created.', roiIdText(roiobj), paramout.outputName);
     return;
 end
 
@@ -202,6 +202,10 @@ if ~isfield(paramout, 'computeMaskCombinations') || isempty(paramout.computeMask
     paramout.computeMaskCombinations = true;
 end
 paramout.computeMaskCombinations = logicalScalar(paramout.computeMaskCombinations, true);
+if ~isfield(paramout, 'outputName') || isempty(paramout.outputName)
+    paramout.outputName = 'channel_quantification';
+end
+paramout.outputName = selectedText(paramout.outputName, 'channel_quantification');
 end
 
 function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha, frames)
@@ -362,16 +366,16 @@ if isempty(varNames)
     warnOnceLocal('computeMetrics:NoValidQuantificationMask', ...
         ['mask|' strjoin(maskNames, '|')], ...
         ['No valid quantification mask is available for ROI %s. ' ...
-         'Requested masks: %s. channel_quantification will not be created.'], ...
-        roiIdText(roiobj), strjoin(maskNames, ', '));
+         'Requested masks: %s. %s will not be created.'], ...
+        roiIdText(roiobj), strjoin(maskNames, ', '), paramout.outputName);
     return;
 end
 
 tbl = table(columns{:}, 'VariableNames', varNames);
 temp = dataseries(tbl, varNames, ...
-    'groupid', 'channel_quantification', 'parentid', roiobj.id, 'plot', defplot, 'groups', plotgroup);
+    'groupid', paramout.outputName, 'parentid', roiobj.id, 'plot', defplot, 'groups', plotgroup);
 
-pixdata = find(arrayfun(@(x) strcmp(x.groupid, 'channel_quantification'), dataout));
+pixdata = find(arrayfun(@(x) strcmp(x.groupid, paramout.outputName), dataout));
 if ~isempty(pixdata)
     cc = pixdata(1);
 else

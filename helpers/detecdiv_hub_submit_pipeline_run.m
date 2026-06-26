@@ -577,6 +577,14 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
         catch
         end
     end
+    if isempty(pipelineRef.pipeline_json_path) || localLooksLikeLocalClientPath(pipelineRef.pipeline_json_path) || ~localLooksLikeServerPath(pipelineRef.pipeline_json_path)
+        bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj);
+        if ~isempty(localText(localGetField(bundleRef, 'pipeline_json_path', '')))
+            pipelineRef.pipeline_bundle_uri = localText(localGetField(bundleRef, 'pipeline_bundle_uri', ''));
+            pipelineRef.export_manifest_uri = localText(localGetField(bundleRef, 'export_manifest_uri', ''));
+            pipelineRef.pipeline_json_path = localText(localGetField(bundleRef, 'pipeline_json_path', ''));
+        end
+    end
     localAssertServerVisiblePipelineRef(pipelineRef);
     localAssertPipelineNodeLinksServerVisible(runObj, ref, hub);
     pipelineRef.link_mode = 'server_visible';

@@ -223,7 +223,7 @@ function contract = defaultContractForNode(node)
                 binding.selectorKeys = [maskNameKeys, scoreNameKeys];
                 binding.resolveAt = 'run';
                 resources.in = computeMetricsInputResources(maskSlotCount, scoreSlotCount);
-                resources.out = resourceDef('dataSeries', 'metrics', 'channel_quantification', '', 'dataSeries', '', false, 'roiDataSeries');
+                resources.out = resourceDef('dataSeries', 'metrics', 'channel_quantification', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
                 summary = 'Computes mask-linked fluorescence metrics from selected ROI image or mask channels.';
             elseif strcmp(p, 'singlecelloscillations') || contains(f, 'singlecelloscillations')
                 in = [ ...

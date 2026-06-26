@@ -184,8 +184,19 @@ function localHeartbeat(ref, lockId, hub, ttlSeconds)
     try
         detecdiv_hub_heartbeat_project_lease(ref, lockId, 'Hub', hub, 'TtlSeconds', ttlSeconds);
     catch ME
+        if localIsMissingLeaseError(ME)
+            detecdiv_hub_stop_lease_heartbeat(ref, lockId);
+        end
         warning('detecdiv_hub:heartbeat', 'Hub lease heartbeat failed: %s', ME.message);
     end
+end
+
+function tf = localIsMissingLeaseError(ME)
+    msg = lower(char(string(ME.message)));
+    id = lower(char(string(ME.identifier)));
+    tf = contains(msg, 'active project lease not found') || ...
+        contains(msg, 'lease not found') || ...
+        contains(id, 'http404');
 end
 
 function timers = localGetTimers()

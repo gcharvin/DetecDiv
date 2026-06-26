@@ -4250,7 +4250,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             candidates = {};
             for i = 1:numel(fovs)
-                candidates = [candidates fovSourcePathCandidates(app, fovs(i))]; %#ok<AGROW>
+                candidates = [candidates fovSourcePathCandidates(app, fovs(i), 1)]; %#ok<AGROW>
+                if ~isempty(candidates)
+                    break;
+                end
             end
             candidates = normalizeSourcePathCandidates(app, candidates);
             candidates = unique(candidates(~cellfun(@isempty, candidates)), 'stable');
@@ -4289,19 +4292,30 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function candidates = fovSourcePathCandidates(app, f)
+        function candidates = fovSourcePathCandidates(app, f, maxCandidates)
+            if nargin < 3 || isempty(maxCandidates)
+                maxCandidates = Inf;
+            end
             candidates = {};
             candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'omeZarrPath', false)]; %#ok<AGROW>
+            if numel(candidates) >= maxCandidates, return; end
             candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'ndtiffPath', false)]; %#ok<AGROW>
+            if numel(candidates) >= maxCandidates, return; end
             candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'srcpath', false)]; %#ok<AGROW>
+            if numel(candidates) >= maxCandidates, return; end
             candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'tiffSource', true)]; %#ok<AGROW>
+            if numel(candidates) >= maxCandidates, return; end
             try
                 if isprop(f, 'srclist') && iscell(f.srclist) && ~isempty(f.srclist)
                     for ch = 1:numel(f.srclist)
                         if isempty(f.srclist{ch})
                             continue;
                         end
-                        candidates = [candidates sourcePathCandidatesFromValue(app, f.srclist{ch}, true)]; %#ok<AGROW>
+                        remaining = maxCandidates - numel(candidates);
+                        candidates = [candidates sourcePathCandidatesFromValue(app, f.srclist{ch}, true, remaining)]; %#ok<AGROW>
+                        if numel(candidates) >= maxCandidates
+                            return;
+                        end
                     end
                 end
             catch
@@ -4320,14 +4334,21 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function candidates = sourcePathCandidatesFromValue(app, value, valueIsFile) %#ok<INUSD>
+        function candidates = sourcePathCandidatesFromValue(app, value, valueIsFile, maxCandidates) %#ok<INUSD>
+            if nargin < 4 || isempty(maxCandidates)
+                maxCandidates = Inf;
+            end
             candidates = {};
-            if isempty(value)
+            if isempty(value) || maxCandidates <= 0
                 return;
             end
             if iscell(value)
                 for i = 1:numel(value)
-                    candidates = [candidates sourcePathCandidatesFromValue(app, value{i}, valueIsFile)]; %#ok<AGROW>
+                    remaining = maxCandidates - numel(candidates);
+                    if remaining <= 0
+                        break;
+                    end
+                    candidates = [candidates sourcePathCandidatesFromValue(app, value{i}, valueIsFile, remaining)]; %#ok<AGROW>
                 end
                 return;
             end
@@ -4343,6 +4364,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         continue;
                     end
                     candidates{end+1} = normalizeSourcePathValue(app, item, valueIsFile); %#ok<AGROW>
+                    if numel(candidates) >= maxCandidates
+                        break;
+                    end
                 end
                 return;
             end
@@ -4354,6 +4378,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         continue;
                     end
                     candidates{end+1} = normalizeSourcePathValue(app, item, valueIsFile); %#ok<AGROW>
+                    if numel(candidates) >= maxCandidates
+                        break;
+                    end
                 end
                 return;
             end
@@ -4367,6 +4394,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         continue;
                     end
                     candidates{end+1} = normalizeSourcePathValue(app, item, true); %#ok<AGROW>
+                    if numel(candidates) >= maxCandidates
+                        break;
+                    end
                 end
                 return;
             end
@@ -4385,11 +4415,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             if valueIsFile
-                if exist(item, 'dir') == 7
+                if endsWith(item, filesep) || endsWith(item, '/') || endsWith(item, '\')
                     return;
                 end
-                [pth, ~, ~] = fileparts(item);
-                if ~isempty(pth)
+                [pth, ~, ext] = fileparts(item);
+                if ~isempty(pth) && ~isempty(ext)
                     item = pth;
                 end
             end
@@ -10554,9 +10584,25 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmp(role, 'roi_image')
                 name = '';
             else
-                name = char(string(getField(app, node, 'id', '')));
+                name = defaultConcreteOutputName(app, node, spec);
             end
             name = normalizeUiPhysicalResourceOutputName(app, node, spec, name);
+        end
+
+        function name = defaultConcreteOutputName(app, node, spec)
+            name = char(string(getField(app, spec, 'concreteName', '')));
+            if resourceOutputNameIsConcrete(app, spec, name)
+                return;
+            end
+            name = char(string(getField(app, spec, 'symbol', '')));
+            if ~isempty(name) && contains(name, '.')
+                parts = regexp(name, '\.', 'split');
+                name = parts{end};
+            end
+            if resourceOutputNameIsConcrete(app, spec, name)
+                return;
+            end
+            name = char(string(getField(app, node, 'id', '')));
         end
 
         function name = normalizeUiPhysicalResourceOutputName(app, node, spec, name)
@@ -10713,7 +10759,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(concreteName)
                 role = lower(char(string(getField(app, outSpec, 'role', ''))));
                 if ~strcmp(role, 'roi_image')
-                    concreteName = sourceNode;
+                    concreteName = defaultConcreteOutputName(app, srcNode, outSpec);
                 end
             end
             symbol = char(string(getField(app, outSpec, 'symbol', '')));
@@ -15533,18 +15579,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
             end
+            ctxForStorage = stripTransientRunContext(app, ctx);
             createNewRun = logical(forceNew) || app.CurrentRunIsSeed || isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun');
             if createNewRun
                 ref = buildPipelineRef(app);
                 target = buildTargetRef(app);
-                args = {'ctx', ctx, 'status', status, 'pipelineRef', ref, 'targetRef', target};
+                args = {'ctx', ctxForStorage, 'status', status, 'pipelineRef', ref, 'targetRef', target};
                 if ~isempty(strtrim(char(string(requestedRunId))))
                     args = [{'runId', char(string(requestedRunId))} args]; %#ok<AGROW>
                 end
                 if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                     runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, args{:});
                 else
-                    runObj = createClassifierScopedPipelineRun(app, ref, target, ctx, status, requestedRunId);
+                    runObj = createClassifierScopedPipelineRun(app, ref, target, ctxForStorage, status, requestedRunId);
                 end
                 if app.CurrentRunIsSeed && ~isempty(app.CurrentRunSourceId)
                     logRunEvent(app, runObj, ['New run created from existing run ' app.CurrentRunSourceId '.'], 'pipeline2');
@@ -15556,7 +15603,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.CurrentRunSourceId = '';
             else
                 runObj = app.CurrentRun;
-                runObj.ctx = attachRunArtifactPathsToContext(app, ctx, runObj);
+                runObj.ctx = attachRunArtifactPathsToContext(app, ctxForStorage, runObj);
                 runObj.status = status;
                 runObj.pipelineRef = buildPipelineRef(app);
                 runObj.targetRef = buildTargetRef(app);
@@ -15681,22 +15728,24 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             updateRunSaveProgress(app, progressDlg, message);
             pipelineRunSave(runObj);
-            attachCurrentRunToProject(app, runObj);
+            projectChanged = attachCurrentRunToProject(app, runObj);
             publishCurrentProjectForTreeRefresh(app, runObj);
             markRunDirty(app, false);
-            if logical(saveProject) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+            if logical(saveProject) && projectChanged && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 updateRunSaveProgress(app, progressDlg, 'Saving project state...');
                 shallowSave(app.CurrentProject, 'shallowObj');
             end
         end
 
-        function attachCurrentRunToProject(app, runObj)
+        function changed = attachCurrentRunToProject(app, runObj)
+            changed = false;
             if isempty(runObj) || ~isa(runObj, 'pipelineRun') || isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
                 return;
             end
             shallowObj = app.CurrentProject;
             if ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
                 shallowObj.processing.pipelineRun = pipelineRun.empty;
+                changed = true;
             end
             runId = char(string(runObj.runId));
             idx = [];
@@ -15716,15 +15765,57 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if isempty(idx)
                 shallowObj.processing.pipelineRun(end+1) = runObj;
+                changed = true;
             else
-                shallowObj.processing.pipelineRun(idx) = runObj;
+                changed = runAttachmentChanged(app, shallowObj.processing.pipelineRun(idx), runObj);
+                if changed
+                    shallowObj.processing.pipelineRun(idx) = runObj;
+                end
             end
-            app.CurrentProject = shallowObj;
-            if ~isempty(app.CurrentProjectVarName)
+            if changed
+                app.CurrentProject = shallowObj;
+            end
+            if changed && ~isempty(app.CurrentProjectVarName)
                 try
                     assignin('base', char(string(app.CurrentProjectVarName)), shallowObj);
                 catch
                 end
+            end
+        end
+
+        function changed = runAttachmentChanged(app, oldRun, newRun) %#ok<INUSD>
+            changed = true;
+            try
+                if isempty(oldRun) || ~isa(oldRun, 'pipelineRun') || isempty(newRun) || ~isa(newRun, 'pipelineRun')
+                    return;
+                end
+                keys = {'runId', 'path', 'status', 'updatedAt', 'templateId', 'templatePath', 'projectPath', 'projectName'};
+                for ii = 1:numel(keys)
+                    key = keys{ii};
+                    if ~strcmp(localRunPropText(app, oldRun, key), localRunPropText(app, newRun, key))
+                        return;
+                    end
+                end
+                if ~isequaln(oldRun.pipelineRef, newRun.pipelineRef)
+                    return;
+                end
+                if ~isequaln(oldRun.targetRef, newRun.targetRef)
+                    return;
+                end
+                changed = false;
+            catch
+                changed = true;
+            end
+        end
+
+        function value = localRunPropText(app, runObj, propName) %#ok<INUSD>
+            value = '';
+            try
+                if isprop(runObj, propName)
+                    value = char(string(runObj.(propName)));
+                end
+            catch
+                value = '';
             end
         end
 
@@ -16146,8 +16237,17 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isstruct(ctx)
                 return;
             end
-            if isfield(ctx, 'progressDlg')
-                ctx = rmfield(ctx, 'progressDlg');
+            heavyFields = {'shallow', 'shallowObj', 'project', 'projectObj', ...
+                'fovList', 'roiList', 'rois', 'classifierObj', 'classiObj', ...
+                'progressDlg', 'cancel'};
+            for iField = 1:numel(heavyFields)
+                name = heavyFields{iField};
+                try
+                    if isfield(ctx, name)
+                        ctx = rmfield(ctx, name);
+                    end
+                catch
+                end
             end
             try
                 if isfield(ctx,'progress') && isstruct(ctx.progress)
@@ -17887,7 +17987,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 [~, dryReport] = runPipeline(pipeObj, ctxDry);
                 runObj.outputs.dryRunReport = dryReport;
                 runObj.status = 'dry_run_ok';
-                runObj.ctx = ctxDry;
+                runObj.ctx = stripTransientRunContext(app, ctxDry);
                 logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
                 savePipelineRunAndProject(app, runObj, d, 'Saving dry-run state...', false);
                 appendRunReport(app, 'Dry-run: OK', dryReport);
@@ -17913,7 +18013,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx = ctx;
                     runObj.ctx.hub = hub;
                     runObj.ctx.hub.pathPreflight = pathReport;
-                    runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
+                    runObj.ctx = stripTransientRunContext(app, applyHubPathPreflightToContext(app, runObj.ctx, pathReport));
                     logRunEvent(app, runObj, 'Preparing Hub run submission.', 'pipeline2');
                     savePipelineRunAndProject(app, runObj, d, 'Saving local run state...', true);
                     if ~isempty(d)

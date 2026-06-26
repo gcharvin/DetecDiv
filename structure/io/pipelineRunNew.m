@@ -78,7 +78,7 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     runObj.projectName = runObj.targetRef.projectName;
 
     runObj.description = description;
-    runObj.ctx = ctx;
+    runObj.ctx = stripHeavyContextForRunStorage(ctx);
     runObj.status = status;
     runObj.ctx = attachRunPathsToContext(runObj.ctx, runObj);
 
@@ -92,6 +92,31 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     % attach to project
     shallowObj.processing.pipelineRun(end+1) = runObj;
     emitPipelineRunCreated(shallowObj, runObj);
+end
+
+function ctx = stripHeavyContextForRunStorage(ctx)
+    if ~isstruct(ctx)
+        ctx = struct();
+        return;
+    end
+    heavyFields = {'shallow', 'shallowObj', 'project', 'projectObj', ...
+        'fovList', 'roiList', 'rois', 'classifierObj', 'classiObj', ...
+        'progressDlg', 'cancel'};
+    for i = 1:numel(heavyFields)
+        name = heavyFields{i};
+        try
+            if isfield(ctx, name)
+                ctx = rmfield(ctx, name);
+            end
+        catch
+        end
+    end
+    try
+        if isfield(ctx, 'store') && isstruct(ctx.store) && isfield(ctx.store, 'classifierRuntime')
+            ctx.store = rmfield(ctx.store, 'classifierRuntime');
+        end
+    catch
+    end
 end
 
 function emitPipelineRunCreated(shallowObj, runObj)

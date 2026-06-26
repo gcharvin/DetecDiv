@@ -31,6 +31,7 @@ else
 end
 
 paramout = struct();
+paramout.outputName = 'channel_quantification';
 paramout.maskChannelCount = maskChannelCount;
 paramout.scoreChannelCount = scoreChannelCount;
 for i = 1:maskChannelCount
@@ -78,6 +79,7 @@ end
 
 function tip = buildTips(maskChannelCount, scoreChannelCount)
     tip = { ...
+        'Output dataseries groupid for channel metrics', ...
         'Number of mask channels used for measurements', ...
         'Number of image channels scored inside each selected mask' ...
         };
