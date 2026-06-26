@@ -2589,12 +2589,33 @@ classdef pipelineGUI < matlab.apps.AppBase
             nodes = struct([]);
             for ii = 1:numel(src)
                 nodei = normalizeLibraryNode(app, src(ii));
-                if isempty(nodes)
-                    nodes = nodei;
-                else
-                    nodes(end+1) = nodei; %#ok<AGROW>
+                nodes = appendNodeWithAlignedFields(app, nodes, nodei);
+            end
+        end
+
+        function nodes = appendNodeWithAlignedFields(~, nodes, node)
+            if isempty(nodes)
+                nodes = node;
+                return;
+            end
+
+            nodeFields = fieldnames(node);
+            nodesFields = fieldnames(nodes);
+
+            missingInNodes = setdiff(nodeFields, nodesFields);
+            for fi = 1:numel(missingInNodes)
+                for ni = 1:numel(nodes)
+                    nodes(ni).(missingInNodes{fi}) = [];
                 end
             end
+
+            missingInNode = setdiff(fieldnames(nodes), fieldnames(node));
+            for fi = 1:numel(missingInNode)
+                node.(missingInNode{fi}) = [];
+            end
+
+            node = orderfields(node, nodes);
+            nodes(end+1) = node; %#ok<AGROW>
         end
 
         function duplicateSelectedLibraryModule(app)
@@ -6658,11 +6679,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                     nodei.pkg = '';
                 end
                 nodei = normalizeLibraryNode(app, nodei);
-                if isempty(nodes)
-                    nodes = nodei;
-                else
-                    nodes(end+1) = nodei; %#ok<AGROW>
-                end
+                nodes = appendNodeWithAlignedFields(app, nodes, nodei);
             end
 
             % Normalize edges to id/port form
