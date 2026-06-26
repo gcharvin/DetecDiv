@@ -1,9 +1,16 @@
-function pipelineSave(pipe)
-% pipelineSave  Save pipeline to JSON in its folder and sync module artifacts.
+function pipelineSave(pipe, varargin)
+% pipelineSave  Save pipeline to JSON in its folder and sync module manifests.
+%
+%   pipelineSave(pipe) writes the pipeline template and lightweight node
+%   manifests only. Dependency audits can scan large linked model/training
+%   folders, so they are opt-in:
+%
+%       pipelineSave(pipe, 'Audit', true)
 
     if nargin < 1 || isempty(pipe)
         return;
     end
+    opts = parseSaveOptions(varargin{:});
 
     [path, ~] = pipe.getPath;
     if isempty(path)
@@ -31,21 +38,47 @@ function pipelineSave(pipe)
     fclose(fid);
 
     % Keep one folder per node with a lightweight manifest/params.
-    try
-        syncModuleArtifacts(path, S.nodes);
-    catch ME
-        warning('pipelineSave:Artifacts','Could not sync module artifacts: %s', ME.message);
+    if opts.Artifacts
+        try
+            syncModuleArtifacts(path, S.nodes);
+        catch ME
+            warning('pipelineSave:Artifacts','Could not sync module artifacts: %s', ME.message);
+        end
     end
 
-    try
-        audit = pipelineAuditDependencies(path, 'Mode', 'save');
-        writeJson(fullfile(path, 'dependency_audit.json'), audit);
-    catch ME
-        warning('pipelineSave:DependencyAudit', 'Could not write dependency audit: %s', ME.message);
+    if opts.Audit
+        try
+            audit = pipelineAuditDependencies(path, 'Mode', 'save');
+            writeJson(fullfile(path, 'dependency_audit.json'), audit);
+        catch ME
+            warning('pipelineSave:DependencyAudit', 'Could not write dependency audit: %s', ME.message);
+        end
     end
 
     pipe.log(['Pipeline saved to ' jsonFile], 'Save');
     fprintf('Pipeline saved: %s\n', jsonFile);
+end
+
+function opts = parseSaveOptions(varargin)
+    opts = struct('Audit', false, 'Artifacts', true);
+    if isempty(varargin)
+        return;
+    end
+    if mod(numel(varargin), 2) ~= 0
+        error('pipelineSave:Args', 'Options must be Name/Value pairs.');
+    end
+    for i = 1:2:numel(varargin)
+        name = lower(char(string(varargin{i})));
+        value = varargin{i + 1};
+        switch name
+            case 'audit'
+                opts.Audit = logical(value);
+            case {'artifacts', 'syncartifacts', 'moduleartifacts'}
+                opts.Artifacts = logical(value);
+            otherwise
+                error('pipelineSave:UnknownOption', 'Unknown option "%s".', name);
+        end
+    end
 end
 
 function S = pipelineToStruct(pipe)

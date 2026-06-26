@@ -7,14 +7,8 @@ function pipelineRunSave(runObj, opts)
     if nargin < 2 || isempty(opts)
         opts = struct();
     end
-    verbose = true;
-    try
-        if isstruct(opts) && isfield(opts, 'verbose') && ~isempty(opts.verbose)
-            verbose = logical(opts.verbose);
-        end
-    catch
-        verbose = true;
-    end
+    opts = normalizeSaveOptions(opts);
+    verbose = opts.verbose;
 
     [path, ~] = runObj.getPath;
     if isempty(path)
@@ -25,10 +19,10 @@ function pipelineRunSave(runObj, opts)
     end
 
     jsonFile = fullfile(path, 'run.json');
+    previousStatus = readPreviousRunStatus(jsonFile);
     runObj.ctx = attachRunPathsToContext(runObj.ctx, path, runObj.runId);
 
     runObj.updatedAt = char(datetime('now'));
-    runObj.log(['Pipeline run saved to ' jsonFile], 'Save');
     S = pipelineRunToStruct(runObj);
 
     try
@@ -44,13 +38,82 @@ function pipelineRunSave(runObj, opts)
     fwrite(fid, txt, 'char');
     fclose(fid);
 
-    writeRunSummaryFile(runObj, S, path);
-    writeRunParamsFile(S, path);
-    writeRunLogFile(runObj, S, path);
-    writeRunReviewFile(runObj, path);
+    if shouldWriteSidecars(opts, previousStatus, S, path)
+        writeRunSummaryFile(runObj, S, path);
+        writeRunParamsFile(S, path);
+        writeRunLogFile(runObj, S, path, opts);
+        if opts.review
+            writeRunReviewFile(runObj, path);
+        end
+    end
 
     if verbose
         fprintf('Pipeline run saved: %s\n', jsonFile);
+    end
+end
+
+function opts = normalizeSaveOptions(opts)
+    if nargin < 1 || isempty(opts)
+        opts = struct();
+    end
+    if ~isstruct(opts)
+        opts = struct();
+    end
+    if ~isfield(opts, 'verbose') || isempty(opts.verbose)
+        opts.verbose = true;
+    else
+        opts.verbose = logical(opts.verbose);
+    end
+    if ~isfield(opts, 'sidecars') || isempty(opts.sidecars)
+        opts.sidecars = 'auto';
+    end
+    if islogical(opts.sidecars) || isnumeric(opts.sidecars)
+        opts.sidecars = logical(opts.sidecars);
+    else
+        opts.sidecars = lower(strtrim(char(string(opts.sidecars))));
+    end
+    if ~isfield(opts, 'review') || isempty(opts.review)
+        opts.review = false;
+    else
+        opts.review = logical(opts.review);
+    end
+    if ~isfield(opts, 'includeRuntimeLogs') || isempty(opts.includeRuntimeLogs)
+        opts.includeRuntimeLogs = false;
+    else
+        opts.includeRuntimeLogs = logical(opts.includeRuntimeLogs);
+    end
+end
+
+function status = readPreviousRunStatus(jsonFile)
+    status = '';
+    if exist(jsonFile, 'file') ~= 2
+        return;
+    end
+    try
+        S = jsondecode(fileread(jsonFile));
+        if isstruct(S) && isfield(S, 'status') && ~isempty(S.status)
+            status = char(string(S.status));
+        end
+    catch
+        status = '';
+    end
+end
+
+function tf = shouldWriteSidecars(opts, previousStatus, S, runPath)
+    if islogical(opts.sidecars)
+        tf = opts.sidecars;
+        return;
+    end
+    switch lower(char(string(opts.sidecars)))
+        case {'true', 'on', 'yes', 'always'}
+            tf = true;
+        case {'false', 'off', 'no', 'never'}
+            tf = false;
+        otherwise
+            currentStatus = char(string(getFieldOrDefault(S, 'status', '')));
+            firstSave = exist(fullfile(runPath, 'run_summary.txt'), 'file') ~= 2;
+            statusChanged = ~strcmp(char(string(previousStatus)), currentStatus);
+            tf = firstSave || statusChanged;
     end
 end
 
@@ -186,7 +249,7 @@ function writeRunParamsFile(S, runPath)
     fclose(fid);
 end
 
-function writeRunLogFile(runObj, S, runPath)
+function writeRunLogFile(runObj, S, runPath, opts)
     txtFile = fullfile(runPath, 'run_log.txt');
     lines = {};
     lines{end+1} = sprintf('Run ID: %s', char(string(getFieldOrDefault(S, 'runId', '')))); %#ok<AGROW>
@@ -218,7 +281,9 @@ function writeRunLogFile(runObj, S, runPath)
             end
         end
     end
-    lines = appendRuntimeSidecarLogs(lines, runPath);
+    if nargin >= 4 && isstruct(opts) && isfield(opts, 'includeRuntimeLogs') && opts.includeRuntimeLogs
+        lines = appendRuntimeSidecarLogs(lines, runPath);
+    end
     txt = [strjoin(lines, newline) newline];
     fid = fopen(txtFile, 'w');
     if fid < 0
