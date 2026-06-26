@@ -1,15 +1,20 @@
 function [shallowObj, msg] = shallowLoad(filename, varargin)
 
 projectDirOverride = '';
+preferJson = true;
 if ~isempty(varargin)
     ip = inputParser;
     ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
+    ip.addParameter('PreferJson', true, @(x)islogical(x) || isnumeric(x));
     ip.parse(varargin{:});
     projectDirOverride = char(string(ip.Results.ProjectDir));
+    preferJson = logical(ip.Results.PreferJson);
 end
 
 if nargin == 0
-    [file, path] = uigetfile('*.mat', 'Select a shallow project', pwd);
+    [file, path] = uigetfile({'*.json;*.mat', 'DetecDiv project (*.json, *.mat)'; ...
+        '*.json', 'Light project JSON (*.json)'; '*.mat', 'Legacy shallow project (*.mat)'}, ...
+        'Select a shallow project', pwd);
     if isequal(file, 0)
         disp('User selected Cancel');
         msg = [];
@@ -23,9 +28,37 @@ end
 
 [pathstr, namestr, ext] = fileparts(filename);
 if isempty(ext)
-    ext = '.mat';
+    jsonCandidate = fullfile(pathstr, [namestr '.json']);
+    matCandidate = fullfile(pathstr, [namestr '.mat']);
+    if preferJson && isfile(jsonCandidate)
+        ext = '.json';
+        filename = jsonCandidate;
+    elseif isfile(matCandidate)
+        ext = '.mat';
+        filename = matCandidate;
+    elseif isfile(jsonCandidate)
+        ext = '.json';
+        filename = jsonCandidate;
+    else
+        ext = '.json';
+        filename = jsonCandidate;
+    end
+else
+    filename = fullfile(pathstr, [namestr ext]);
+    if preferJson && strcmpi(ext, '.mat')
+        jsonCandidate = fullfile(pathstr, [namestr '.json']);
+        if isfile(jsonCandidate)
+            ext = '.json';
+            filename = jsonCandidate;
+        end
+    elseif preferJson && strcmpi(ext, '.json') && ~isfile(filename)
+        matCandidate = fullfile(pathstr, [namestr '.mat']);
+        if isfile(matCandidate)
+            ext = '.mat';
+            filename = matCandidate;
+        end
+    end
 end
-filename = fullfile(pathstr, [namestr ext]);
 
 if ~isfile(filename)
     msg = ['Fichier introuvable : ' filename];
@@ -35,6 +68,10 @@ if ~isfile(filename)
 end
 file = namestr;
 path = pathstr;
+if strcmpi(ext, '.json')
+    [shallowObj, msg] = shallowProjectImportLight(filename, 'ProjectDir', projectDirOverride);
+    return;
+end
 if isempty(projectDirOverride)
     effectivePath = path;
     effectiveFile = file;

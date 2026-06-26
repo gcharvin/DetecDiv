@@ -5,6 +5,10 @@ function shallowSave(shallowObj, option, progress)
     if nargin < 3
         progress = [];
     end
+    optionText = '';
+    if ischar(option) || (isstring(option) && isscalar(option))
+        optionText = lower(strtrim(char(string(option))));
+    end
 % Sauvegarde le projet shallowObj et ses dépendances.
 % - Sauve ROIs, classifieurs, processors (sauf si option 'shallowObj')
 % - Écriture atomique du .mat avec vérification
@@ -12,12 +16,28 @@ function shallowSave(shallowObj, option, progress)
 
     % ====== Préparation des chemins ======
     [path, file] = shallowObj.getPath;
-    shallowObjOnly = nargin >= 2 && strcmp(option, 'shallowObj');
+    shallowObjOnly = strcmp(optionText, 'shallowobj');
+    legacyMatOnly = any(strcmp(optionText, {'mat', 'legacy', 'legacymat', 'matlegacy'}));
+    jsonOnly = ~legacyMatOnly && (isempty(optionText) || shallowObjOnly || ...
+        any(strcmp(optionText, {'json', 'light', 'projectjson'})));
+    writeJsonSidecar = any(strcmp(optionText, {'both', 'dual', 'json+mat', 'legacy+json'}));
 
     projectName   = file;
     projectTarget = fullfile(path, [file '.mat']);
     backupFile    = fullfile(path, [file '.bak']); % unique backup à la racine
     nFovTotal     = numel(shallowObj.fov);
+
+    if jsonOnly
+        localSetProgress(progress, 0.5, 'Writing lightweight project JSON...');
+        shallowProjectExportLight(shallowObj, fullfile(path, [file '.json']));
+        localSetProgress(progress, 1.0, 'Project JSON saved.');
+        return;
+    end
+
+    if writeJsonSidecar
+        localSetProgress(progress, 0.05, 'Writing lightweight project JSON...');
+        shallowProjectExportLight(shallowObj, fullfile(path, [file '.json']));
+    end
 
     % ====== HEADER ======
     fprintf('\n============================================\n');

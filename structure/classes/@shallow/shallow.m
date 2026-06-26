@@ -3,6 +3,7 @@ classdef shallow < handle
     properties
         % default properties with values
         io=struct('path','','file','');
+        projectId=''; % stable id used by lightweight project manifests
         parsedData;
         fov=fov();%fov({},1,'');
         processing=struct('roi',[],'classification',[],'processor',[],'pipelineRun',[]);
