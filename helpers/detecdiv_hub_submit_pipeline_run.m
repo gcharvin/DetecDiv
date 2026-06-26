@@ -846,10 +846,15 @@ function report = localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath
     pipelineDir = fileparts(pipelineJsonPath);
     for i = 1:numel(spec.nodes)
         [nodeOut, nodeReport] = localRepairHubBundleNodePaths(spec.nodes(i), bundlePath, pipelineDir, ref, hub);
+        [nodeOut, pluginReport] = localRepairHubBundlePluginLink(nodeOut, bundlePath, pipelineDir, ref, hub);
         spec.nodes(i) = nodeOut;
         if nodeReport.changed
             report.changed = true;
             report.rewrites = [report.rewrites nodeReport.rewrites]; %#ok<AGROW>
+        end
+        if pluginReport.changed
+            report.changed = true;
+            report.rewrites = [report.rewrites pluginReport.rewrites]; %#ok<AGROW>
         end
     end
 
@@ -857,6 +862,86 @@ function report = localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath
         localWriteJsonFile(pipelineJsonPath, spec);
         fprintf('[hub-submit] Rewrote %d bundle module path(s) relative to %s.\n', ...
             numel(report.rewrites), pipelineJsonPath);
+    end
+end
+
+function [node, report] = localRepairHubBundlePluginLink(node, bundlePath, pipelineDir, ref, hub)
+    report = struct('changed', false, 'rewrites', {{}});
+    if ~isstruct(node)
+        return;
+    end
+    nodeType = lower(localText(localGetField(node, 'type', '')));
+    if ~any(strcmp(nodeType, {'processor','classifier'}))
+        return;
+    end
+    customDir = localText(localGetField(node, 'customPackageDir', ''));
+    customRoot = localText(localGetField(node, 'customPackageRoot', ''));
+    params = localGetField(node, 'params', struct());
+    if isempty(customDir) && isstruct(params)
+        customDir = localText(localGetField(params, 'customPackageDir', ''));
+    end
+    if isempty(customRoot) && isstruct(params)
+        customRoot = localText(localGetField(params, 'customPackageRoot', ''));
+    end
+    if isempty(customDir) && isempty(customRoot)
+        return;
+    end
+    pkg = localText(localGetField(node, 'pkg', ''));
+    if isempty(pkg) && isstruct(params)
+        pkg = localText(localGetField(params, 'pkg', ''));
+    end
+    packagePath = customDir;
+    if isempty(packagePath) && ~isempty(customRoot) && ~isempty(pkg)
+        packagePath = fullfile(customRoot, ['+' pkg]);
+    end
+    if isempty(packagePath)
+        return;
+    end
+    resolved = localResolveJsonPathForBundle(packagePath, pipelineDir, ref, hub);
+    if ~isempty(resolved) && localPathInside(resolved, bundlePath) && exist(resolved, 'dir') == 7
+        return;
+    end
+
+    node = localRemoveCustomPackageFields(node);
+    report.changed = true;
+    report.rewrites{end+1} = struct( ...
+        'field', [localText(localGetField(node, 'id', 'node')) '.customPackageDir'], ...
+        'from', packagePath, ...
+        'to', '<server plugin registry>');
+end
+
+function node = localRemoveCustomPackageFields(node)
+    keys = {'customPackageRoot','customPackageDir','customPackageLoadedAt'};
+    for i = 1:numel(keys)
+        key = keys{i};
+        if isfield(node, key)
+            node = rmfield(node, key);
+        end
+    end
+    if isfield(node, 'params') && isstruct(node.params)
+        for i = 1:numel(keys)
+            key = keys{i};
+            if isfield(node.params, key)
+                node.params = rmfield(node.params, key);
+            end
+        end
+    end
+end
+
+function pathOut = localResolveJsonPathForBundle(pathText, pipelineDir, ref, hub)
+    pathOut = char(string(pathText));
+    if isempty(pathOut)
+        return;
+    end
+    if startsWith(pathOut, './') || startsWith(pathOut, '../')
+        pathOut = fullfile(pipelineDir, pathOut);
+    end
+    try
+        [mappedPath, mapped] = detecdiv_paths_map_module_path(pathOut, localPathMappingCtx(ref, hub), 'local');
+        if mapped
+            pathOut = mappedPath;
+        end
+    catch
     end
 end
 

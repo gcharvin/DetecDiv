@@ -206,6 +206,9 @@ if ~isfield(paramout, 'outputName') || isempty(paramout.outputName)
     paramout.outputName = 'channel_quantification';
 end
 paramout.outputName = selectedText(paramout.outputName, 'channel_quantification');
+if isLegacyAutoOutputName(paramout.outputName)
+    paramout.outputName = 'channel_quantification';
+end
 end
 
 function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha, frames)
@@ -939,6 +942,11 @@ try
 catch
     out = defaultValue;
 end
+end
+
+function tf = isLegacyAutoOutputName(value)
+txt = lower(strtrim(char(string(value))));
+tf = ~isempty(regexp(txt, '^processor_computemetrics(_\d+)?$', 'once'));
 end
 
 function out = numericScalar(value, defaultValue)
