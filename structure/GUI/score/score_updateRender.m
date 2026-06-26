@@ -56,11 +56,11 @@ switch mode
                 %  tmp=graphicsHandles.imgHandles(tileIndex)
                 h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
                 set(h, 'CData', newImg);
-                localRefreshScaleBar(graphicsHandles, tileIndex, h.Parent, layoutOptions, ch);
 
 
                 set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
                 set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+                localRefreshScaleBar(graphicsHandles, tileIndex, h.Parent, layoutOptions, ch);
             end
         end
 
@@ -308,6 +308,35 @@ end
 
 end
 
+function [xlims, doClip] = localMovieXLimits(layoutOptions)
+xlims = [];
+doClip = false;
+try
+    if ~isfield(layoutOptions, 'mode') || ~strcmpi(string(layoutOptions.mode), "movie") || ...
+            ~isfield(layoutOptions, 'frames') || isempty(layoutOptions.frames) || ...
+            ~isfield(layoutOptions, 'framerate') || isempty(layoutOptions.framerate)
+        return;
+    end
+    frames = double(layoutOptions.frames(:)');
+    framerate = double(layoutOptions.framerate);
+    if ~isfinite(framerate) || framerate <= 0 || isempty(frames)
+        return;
+    end
+    if isfield(layoutOptions, 'timeOffset') && layoutOptions.timeOffset
+        xlims = [0, (max(frames) - min(frames)) * framerate];
+    else
+        xlims = [min(frames), max(frames)] * framerate;
+    end
+    if xlims(2) <= xlims(1)
+        xlims(2) = xlims(1) + framerate;
+    end
+    doClip = all(isfinite(xlims));
+catch
+    xlims = [];
+    doClip = false;
+end
+end
+
 function h = localImageHandle(hIn)
 h = hIn;
 if numel(h) > 1
@@ -324,6 +353,14 @@ function localRefreshScaleBar(graphicsHandles, tileIndex, ax, layoutOptions, ch)
 if isempty(graphicsHandles) || ~isfield(graphicsHandles, 'scaleBarHandles') || ...
         isempty(graphicsHandles.scaleBarHandles) || isempty(ax) || ~isgraphics(ax)
     return;
+end
+
+if isfield(graphicsHandles, 'overlayHandles') && ~isempty(graphicsHandles.overlayHandles) && ...
+        isKey(graphicsHandles.overlayHandles, tileIndex)
+    overlayHandle = graphicsHandles.overlayHandles(tileIndex);
+    if ~isempty(overlayHandle) && isgraphics(overlayHandle)
+        ax = overlayHandle(1).Parent;
+    end
 end
 
 if isKey(graphicsHandles.scaleBarHandles, tileIndex)
@@ -469,6 +506,15 @@ else
     currentframe_rel = currentframe;
 end
 
+[movieXLim, clipToMovie] = localMovieXLimits(layoutOptions);
+if clipToMovie
+    keepMovie = xdata >= movieXLim(1) & xdata <= movieXLim(2);
+    if any(keepMovie)
+        xdata = xdata(keepMovie);
+        ydata = ydata(keepMovie, :);
+    end
+end
+
 % ------------------------------------------------------------
 % 1) Mettre à jour uniquement les "vraies" lignes (pas les markers)
 % ------------------------------------------------------------
@@ -499,11 +545,22 @@ if ~isempty(markerIdx) && ~isempty(layoutOptions.frames)
             fRel = fIdx;
         end
 
-        if fRel >= 1 && fRel <= size(ydata,1)
+        markerIdxInData = [];
+        if clipToMovie
+            [~, markerIdxInData] = min(abs(xdata - xMarker));
+            if isempty(markerIdxInData) || abs(xdata(markerIdxInData) - xMarker) > max(eps, 0.5 * layoutOptions.framerate)
+                markerIdxInData = [];
+            end
+        elseif fRel >= 1 && fRel <= size(ydata,1)
+            markerIdxInData = fRel;
+        end
+
+        if ~isempty(markerIdxInData)
             for j = 1:nLines
                 if cc <= numel(markerIdx)
                     hm = hLineAll(markerIdx(cc));
-                    set(hm, 'XData', xMarker, 'YData', ydata(fRel, j));
+                    set(hm, 'XData', xMarker, 'YData', ydata(markerIdxInData, j), ...
+                        'MarkerSize', max(4, floor(0.6 * layoutOptions.fontSize)));
                     cc = cc + 1;
                 end
             end
@@ -534,6 +591,15 @@ if isgraphics(hLineAll(1)) && isa(hLineAll(1), 'matlab.graphics.primitive.Image'
     Nframes = size(hLineAll(1).CData, 2);
     alphaVec = ones(1, Nframes);
 
+    if clipToMovie && ~isempty(xdata)
+        if layoutOptions.timeOffset
+            currentX = (currentframe - layoutOptions.frames(1)) * layoutOptions.framerate;
+        else
+            currentX = currentframe * layoutOptions.framerate;
+        end
+        [~, currentframe_rel] = min(abs(xdata - currentX));
+    end
+
     if currentframe_rel <= Nframes
         alphaVec(currentframe_rel:end) = 0.2;
     end
@@ -545,7 +611,10 @@ else
     % Mode courbes: tracking XLim
     framerate = layoutOptions.framerate;
 
-    if isfield(layoutOptions, 'track') && layoutOptions.track && ~strcmpi(layoutOptions.mode, 'sequence')
+    if clipToMovie
+        aMin = movieXLim(1);
+        aMax = movieXLim(2);
+    elseif isfield(layoutOptions, 'track') && layoutOptions.track && ~strcmpi(layoutOptions.mode, 'sequence')
         aMin = (currentframe_rel - layoutOptions.trackWindow) * framerate;
         aMax = (currentframe_rel + layoutOptions.trackWindow) * framerate;
     else

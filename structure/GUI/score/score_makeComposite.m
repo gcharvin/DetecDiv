@@ -46,6 +46,14 @@ mode = lower(string(param.mode));  % "display", "sequence", "movie"
 % 0) REORDONNER LES CANAUX : non indexés d'abord, indexés ensuite
 % -------------------------------------------------------------------------
 nCh = numel(channel);
+colorMode = localPadCell(colorMode, nCh, 'rgb');
+colormapName = localPadCell(colormapName, nCh, '');
+if numel(rgb) < nCh
+    rgb(end+1:nCh) = repmat({[1 1 1]}, 1, nCh - numel(rgb));
+end
+if ~isempty(weights) && numel(weights) < nCh
+    weights(end+1:nCh) = 1;
+end
 isIndexedReq = false(1, nCh);
 for k = 1:nCh
     isIndexedReq(k) = iscell(levels{k});
@@ -383,6 +391,23 @@ try
     end
 catch
     value = defaultValue;
+end
+end
+
+function values = localPadCell(values, n, defaultValue)
+if isempty(values)
+    values = repmat({defaultValue}, 1, n);
+elseif isstring(values)
+    values = cellstr(values(:).');
+elseif ischar(values)
+    values = {values};
+elseif ~iscell(values)
+    values = repmat({defaultValue}, 1, n);
+end
+if numel(values) < n
+    values(end+1:n) = {defaultValue};
+elseif numel(values) > n
+    values = values(1:n);
 end
 end
 

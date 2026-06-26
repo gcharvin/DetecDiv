@@ -27,11 +27,18 @@ data = roiobj.data(layoutOptions.dataidx{groupIdx});
 [ydata, varname, yTickInfo, sourceIndex] = score_extractYData(data.data, dataIndices);
 
 groupname = layoutOptions.plotidxgroup{groupIdx};
-pix = find(matches(data.groupProperties(:,1), groupname));
-plottype = data.groupProperties{pix,2};
-
+pix = [];
+if isprop(data, 'groupProperties') && ~isempty(data.groupProperties) && size(data.groupProperties, 2) >= 2
+    try
+        pix = find(matches(string(data.groupProperties(:,1)), string(groupname)), 1, 'first');
+    catch
+        pix = [];
+    end
+end
+plottype = "Plot";
 ybounds = []; xbounds = [];
-if numel(pix)
+if ~isempty(pix)
+    plottype = string(data.groupProperties{pix,2});
     ybounds = data.groupProperties{pix,4};
     xbounds = data.groupProperties{pix,3};
 end
@@ -44,6 +51,15 @@ if timeoffset
     ydata = ydata(keep, :);
 else
     xdata = (1:size(ydata,1)) * framerate;
+end
+
+[movieXLim, clipToMovie] = localMovieXLimits(layoutOptions);
+if clipToMovie
+    keepMovie = xdata >= movieXLim(1) & xdata <= movieXLim(2);
+    if any(keepMovie)
+        xdata = xdata(keepMovie);
+        ydata = ydata(keepMovie, :);
+    end
 end
 
 % --- Légendes (noms de colonnes) ---
@@ -84,7 +100,7 @@ if plottype=="Plot"
     % --- Marqueurs sur frames (corrige timeoffset) ---
     hLine2 = gobjects(0);
     cc = 1;
-    markerSize = 10;
+    markerSize = max(4, floor(0.6 * layoutOptions.fontSize));
 
     for k = 1:length(layoutOptions.frames)
         fIdx = layoutOptions.frames(k);
@@ -97,9 +113,19 @@ if plottype=="Plot"
             fRel = fIdx;
         end
 
-        if fRel >= 1 && fRel <= size(ydata,1)
+        markerIdxInData = [];
+        if clipToMovie
+            [~, markerIdxInData] = min(abs(xdata - xMarker));
+            if isempty(markerIdxInData) || abs(xdata(markerIdxInData) - xMarker) > max(eps, 0.5 * framerate)
+                markerIdxInData = [];
+            end
+        elseif fRel >= 1 && fRel <= size(ydata,1)
+            markerIdxInData = fRel;
+        end
+
+        if ~isempty(markerIdxInData)
             for j = 1:length(hLine)
-                yMarker = ydata(fRel, j);
+                yMarker = ydata(markerIdxInData, j);
                 hLine2(cc) = plot(ax, xMarker, yMarker, 'o', ...
                     'MarkerSize', markerSize, ...
                     'MarkerFaceColor', hLine(j).Color, ...
@@ -133,7 +159,6 @@ if plottype=="Plot"
     else
         legend(ax, 'off');
     end
-    score_drawMovieEventLines(ax, layoutOptions);
 
     % --- Style axes ---
     set(ax, 'XColor', layoutOptions.textColor, ...
@@ -150,7 +175,11 @@ if plottype=="Plot"
         end
     end
 
-    if track
+    if clipToMovie
+        amin = movieXLim(1);
+        amax = movieXLim(2);
+        ax.UserData.xlim = [amin amax];
+    elseif track
         amin = xMarker - layoutOptions.trackWindow * framerate;
         amax = xMarker + layoutOptions.trackWindow * framerate;
         ax.UserData.xlim = [amin amax];
@@ -210,17 +239,12 @@ if plottype=="Plot"
     end
 
     set(ax, 'box', 'off');
+    score_drawMovieEventLines(ax, layoutOptions);
 
 else
     % ===========================
     % ======= TRAJ MODE =========
     % ===========================
-
-    if timeoffset
-        keep = xdata >= 0;
-        ydata = ydata(keep,:);
-        xdata = xdata(keep);
-    end
 
     % Y bounds
     if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
@@ -237,7 +261,7 @@ else
 
     [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax, layoutOptions, data, sourceIndex);
 
-    hLine = imagesc(ax, rgbImage, 'AlphaData', alphaImage);
+    hLine = imagesc(ax, xdata, 1:size(rgbImage, 1), rgbImage, 'AlphaData', alphaImage);
     axis(ax, 'normal');
 
     set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.background, 'Box', 'off');
@@ -254,7 +278,11 @@ else
 
     ylim(ax, [-1, size(rgbImage,1) + 1]);
 
-    if isempty(xbounds) || xbounds=="auto"
+    if clipToMovie
+        amin = movieXLim(1);
+        amax = movieXLim(2);
+        ax.UserData.xlim = [amin amax];
+    elseif isempty(xbounds) || xbounds=="auto"
         amin = min(xdata);
         if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
@@ -268,11 +296,11 @@ else
         ax.UserData.xlim = [amin amax];
     end
 
-    xlim(ax, [amin amax] / layoutOptions.framerate);
+    xlim(ax, [amin amax]);
 
-    xlims = layoutOptions.framerate * get(ax, 'XLim');
+    xlims = get(ax, 'XLim');
     ticks = niceTicks(xlims(1), xlims(2), 5);
-    set(ax, 'XTick', ticks / layoutOptions.framerate);
+    set(ax, 'XTick', ticks);
 
     if groupIdx < layoutOptions.ngroup
         set(ax, 'XTickLabel', []);
@@ -315,6 +343,35 @@ try
     end
 catch
     label = fallback;
+end
+end
+
+function [xlims, doClip] = localMovieXLimits(layoutOptions)
+xlims = [];
+doClip = false;
+try
+    if ~isfield(layoutOptions, 'mode') || ~strcmpi(string(layoutOptions.mode), "movie") || ...
+            ~isfield(layoutOptions, 'frames') || isempty(layoutOptions.frames) || ...
+            ~isfield(layoutOptions, 'framerate') || isempty(layoutOptions.framerate)
+        return;
+    end
+    frames = double(layoutOptions.frames(:)');
+    framerate = double(layoutOptions.framerate);
+    if ~isfinite(framerate) || framerate <= 0 || isempty(frames)
+        return;
+    end
+    if isfield(layoutOptions, 'timeOffset') && layoutOptions.timeOffset
+        xlims = [0, (max(frames) - min(frames)) * framerate];
+    else
+        xlims = [min(frames), max(frames)] * framerate;
+    end
+    if xlims(2) <= xlims(1)
+        xlims(2) = xlims(1) + framerate;
+    end
+    doClip = all(isfinite(xlims));
+catch
+    xlims = [];
+    doClip = false;
 end
 end
 

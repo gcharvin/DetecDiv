@@ -259,7 +259,7 @@ newPath = fullfile(folder, [name '.pdf']);
             set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
             %             axImg.UserData.OverlayHandle = hOverlay;
             %  axOverlay.UserData.CDataHandle=
-            graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
+            graphicsHandles.overlayHandles(tileIndex) = hOverlay;
             axarray=[axarray axOverlay];
         else
             % Si overlay false, chaque canal est affiché.
@@ -273,10 +273,6 @@ newPath = fullfile(folder, [name '.pdf']);
                 axarray=[axarray ax];
                 img = displayImage(:,:,:,ch);
                 hImg = imshow(img, []);
-                hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
-                if ~isempty(hScale)
-                    graphicsHandles.scaleBarHandles(tileIndex) = hScale;
-                end
                 %    title(sprintf('Ch:%d', ch));
                 graphicsHandles.imgHandles(tileIndex) = hImg;
                 % Ajout d'un axe overlay transparent sur chaque tuile.
@@ -293,8 +289,14 @@ newPath = fullfile(folder, [name '.pdf']);
                 hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
                 hOverlay.Tag = 'IndexedOverlay';
                 set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+                axOverlay.XLim = ax.XLim;
+                axOverlay.YLim = ax.YLim;
+                hScale = score_drawChannelScaleBar(axOverlay, layoutOptions, ch);
+                if ~isempty(hScale)
+                    graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+                end
 
-                graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
+                graphicsHandles.overlayHandles(tileIndex) = hOverlay;
                 axarray=[axarray axOverlay];
             end
 
@@ -408,11 +410,12 @@ if ch == 1
 end
 
                         %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
-                        ylabel(ax, score_wrapDisplayLabel(localChannelLabel_(layoutOptions, ch)), ...
+                        title(ax, score_wrapDisplayLabel(localChannelLabel_(layoutOptions, ch), 24), ...
                             'FontName', 'Arial', ...
                             'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
                             'Color', textColor, ...
-                            'Interpreter','none');
+                            'Interpreter','none', ...
+                            'FontWeight', 'normal');
 
                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
 
@@ -437,6 +440,7 @@ end
                         end
 
                         ax = nexttile(masterTL, tileIndex, [1, wid]);
+                        localAddMovieImageDataGap(ax, layoutOptions, ds);
                         xtickformat(ax, '%.1f');
                         ytickformat(ax, '%.1f');
 
@@ -614,6 +618,22 @@ yCenter = mean(ylim_);
 wid=2*nbrick*scalingFactor;
 line(ax, [xRight xRight], ylim_, ...
     'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+end
+
+function localAddMovieImageDataGap(ax, layoutOptions, dataPanelIndex)
+try
+    if ~isfield(layoutOptions, 'mode') || ~strcmpi(string(layoutOptions.mode), "movie") || ...
+            ~isgraphics(ax) || dataPanelIndex ~= 1
+        return;
+    end
+    ax.Units = 'normalized';
+    pos = ax.Position;
+    gap = min(0.025, max(0.008, 0.12 * pos(4)));
+    pos(2) = pos(2) - gap;
+    pos(4) = max(0.001, pos(4) - gap);
+    ax.Position = pos;
+catch
+end
 end
 
 

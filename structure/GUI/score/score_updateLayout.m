@@ -186,8 +186,6 @@ nonIndexedNames = {};
 nonIndexedScale = [];
 nonIndexedLog = [];
 nonIndexedDisplayLevels = {};
-nonIndexedColorMode = {};
-nonIndexedColormapName = {};
 for j = 1:numel(layoutOptions.channel)
     if ~iscell(layoutOptions.levels{j})
         nChannel = nChannel + 1;
@@ -213,23 +211,11 @@ for j = 1:numel(layoutOptions.channel)
         else
             nonIndexedDisplayLevels{end+1} = layoutOptions.levels{j}; %#ok<AGROW>
         end
-        if isfield(layoutOptions, 'colorMode') && numel(layoutOptions.colorMode) >= j
-            nonIndexedColorMode{end+1} = layoutOptions.colorMode{j}; %#ok<AGROW>
-        else
-            nonIndexedColorMode{end+1} = 'rgb'; %#ok<AGROW>
-        end
-        if isfield(layoutOptions, 'colormapName') && numel(layoutOptions.colormapName) >= j
-            nonIndexedColormapName{end+1} = layoutOptions.colormapName{j}; %#ok<AGROW>
-        else
-            nonIndexedColormapName{end+1} = ''; %#ok<AGROW>
-        end
     end
 end
 layoutOptions.scale = logical(nonIndexedScale);
 layoutOptions.log = logical(nonIndexedLog);
 layoutOptions.displayLevels = nonIndexedDisplayLevels;
-layoutOptions.colorMode = nonIndexedColorMode;
-layoutOptions.colormapName = nonIndexedColormapName;
 
 %% layout parameters
 
