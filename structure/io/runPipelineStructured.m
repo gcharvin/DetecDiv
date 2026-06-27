@@ -2744,6 +2744,7 @@ function rois = selectRoisForNode(ctx, node)
             rois = rois([]);
         end
     end
+    rois = normalizeRoiPathsForExecution(rois, ctx);
 end
 
 function rois = collectRoisFromFovList(fovList)
@@ -2802,6 +2803,25 @@ function rois = filterValidRoiHandles(rois)
         end
     end
     rois = rois(keep);
+end
+
+function rois = normalizeRoiPathsForExecution(rois, ctx)
+if isempty(rois)
+    return;
+end
+for i = 1:numel(rois)
+    try
+        if ~isprop(rois(i), 'path') || isempty(rois(i).path)
+            continue;
+        end
+        currentPath = char(string(rois(i).path));
+        [mappedPath, mapped] = mapModulePathToServerPath(currentPath, ctx);
+        if mapped && ~isempty(mappedPath)
+            rois(i).path = mappedPath;
+        end
+    catch
+    end
+end
 end
 
 function pkgName = resolveNodePackage(node)
