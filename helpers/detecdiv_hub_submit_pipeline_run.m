@@ -915,7 +915,7 @@ function node = localRemoveCustomPackageFields(node)
     for i = 1:numel(keys)
         key = keys{i};
         if isfield(node, key)
-            node = rmfield(node, key);
+            node.(key) = '';
         end
     end
     if isfield(node, 'params') && isstruct(node.params)

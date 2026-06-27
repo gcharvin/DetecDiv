@@ -14696,12 +14696,6 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.useExistingProjectSources = useProjectSources;
             ctx.dataLoader = struct('path', rawDataPath, 'useExistingProjectSources', useProjectSources);
 
-            if strcmp(ctx.run.executionTarget, 'hub')
-                pathReport = hubPathPreflight(app, ctx.hub);
-                ctx.hub.pathPreflight = pathReport;
-                ctx = applyHubPathPreflightToContext(app, ctx, pathReport);
-            end
-
             ctx.pipelineSpec = buildPipelineStruct(app);
             ctx.pipelineRef = buildPipelineRef(app);
             ctx.targetRef = buildTargetRef(app);
@@ -18492,7 +18486,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = stripTransientRunContext(app, applyHubPathPreflightToContext(app, runObj.ctx, pathReport));
                     logRunEvent(app, runObj, 'Preparing Hub run submission.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving local run state...', true);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local run state...', false);
                     if ~isempty(d)
                         d.Message = 'Resolving Hub target and creating job request...';
                         drawnow limitrate nocallbacks;
