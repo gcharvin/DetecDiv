@@ -14578,7 +14578,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function ctx = buildRunContext(app)
+        function ctx = buildRunContext(app, progressDlg)
+            if nargin < 2
+                progressDlg = [];
+            end
             ctx = struct();
             ctx.allowGUI = false;
             ctx.interactive = false;
@@ -14590,7 +14593,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             ctx.run = struct();
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: collecting selected modules...', 0.10);
             ctx.run.selectedNodes = selectedRunNodeIds(app);
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: collecting node parameters...', 0.16);
             ctx.run.nodeParams = buildRunNodeParams(app);
             ctx.run.inputSourceMode = getRuntimeValue(app, 'inputSourceMode');
             intent = getRuntimeValue(app, 'intent');
@@ -14607,6 +14612,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             ctx.run.executionTarget = runtimeExecutionTarget(app);
             hubExecution = strcmpi(ctx.run.executionTarget, 'hub');
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: resolving input source...', 0.24);
             if hubExecution
                 ctx.run.inputSource = inferRuntimeInputSourceFast(app);
             else
@@ -14635,8 +14641,14 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: scanning available channels...', 0.36);
             sourceRuntimeChannels = runtimeSourceChannels(app);
-            roiRuntimeChannels = runtimeValidationRoiChannels(app);
+            if hubExecution
+                updateRunSaveProgress(app, progressDlg, 'Preparing run: deferring ROI inventory to Hub worker...', 0.40);
+                roiRuntimeChannels = {};
+            else
+                roiRuntimeChannels = runtimeValidationRoiChannels(app);
+            end
             availableRuntimeChannels = roiRuntimeChannels;
             if isempty(availableRuntimeChannels)
                 availableRuntimeChannels = sourceRuntimeChannels;
@@ -14651,11 +14663,13 @@ classdef pipeline2 < matlab.apps.AppBase
             if hubExecution
                 ctx.run.runtimeInventoryMode = 'server_resolved';
             else
+                updateRunSaveProgress(app, progressDlg, 'Preparing run: scanning runtime dataseries...', 0.48);
                 dataSeriesNames = runtimeDataSeriesNames(app);
                 if ~isempty(dataSeriesNames)
                     ctx.dataSeriesNames = dataSeriesNames;
                     ctx.dataSeries = dataSeriesNames;
                 end
+                updateRunSaveProgress(app, progressDlg, 'Preparing run: selecting ROI handles...', 0.58);
                 roiList = runtimeSelectedRois(app);
                 if isempty(roiList) && ~isempty(app.ExplicitRuntimeRoiList)
                     roiList = app.ExplicitRuntimeRoiList;
@@ -14680,6 +14694,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
 
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: resolving project and raw paths...', 0.68);
             rawDataPath = effectiveRuntimeRawDataPath(app);
             projectPath = getRuntimeValue(app, 'projectPath');
             if runtimeStartsFromClassifier(app)
@@ -14696,9 +14711,11 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.useExistingProjectSources = useProjectSources;
             ctx.dataLoader = struct('path', rawDataPath, 'useExistingProjectSources', useProjectSources);
 
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: building pipeline snapshot...', 0.80);
             ctx.pipelineSpec = buildPipelineStruct(app);
             ctx.pipelineRef = buildPipelineRef(app);
             ctx.targetRef = buildTargetRef(app);
+            updateRunSaveProgress(app, progressDlg, 'Preparing run: context ready.', 0.90);
         end
 
         function rawDataPath = effectiveRuntimeRawDataPath(app)
@@ -18383,10 +18400,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 dPrep = [];
             end
             try
-                ctxPreflight = buildRunContext(app);
+                prepTimer = tic;
+                updateRunSaveProgress(app, dPrep, 'Preparing run: building runtime context...', 0.05);
+                ctxTimer = tic;
+                ctxPreflight = buildRunContext(app, dPrep);
+                ctxSec = toc(ctxTimer);
+                updateRunSaveProgress(app, dPrep, 'Preparing run: creating run object...', 0.92);
+                createTimer = tic;
                 runObj = createOrUpdateCurrentRun(app, ctxPreflight, 'preflight');
+                createSec = toc(createTimer);
                 logRunEvent(app, runObj, 'Run requested from pipeline2.', 'pipeline2');
+                updateRunSaveProgress(app, dPrep, 'Preparing run: saving preflight JSON...', 0.96);
+                saveTimer = tic;
                 savePipelineRunAndProject(app, runObj, dPrep, 'Saving preflight run state...', false);
+                saveSec = toc(saveTimer);
+                logRunEvent(app, runObj, sprintf('Prepare timings: context %.3fs, run object %.3fs, save %.3fs, total %.3fs.', ...
+                    ctxSec, createSec, saveSec, toc(prepTimer)), 'timing');
             catch ME
                 printExceptionToConsole(app, 'Pipeline prepare failed', ME);
                 uialert(app.UIFigure, ME.message, 'Prepare run', 'Icon', 'error');
