@@ -1741,6 +1741,9 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.sel = getfielddefault(ctx, 'sel', struct());
     procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
     procCtx.io = getfielddefault(ctx, 'io', struct());
+    procCtx.io.requiredChannels = mergeChannelLists( ...
+        getfielddefault(procCtx.io, 'requiredChannels', {}), ...
+        requiredProcessorChannelsForNode(pkgName, p));
     procCtx.store = getfielddefault(ctx, 'store', struct());
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
     explicitProcessorOutputName = resolveExplicitNodeOutputName(node, p);
@@ -2921,6 +2924,79 @@ function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
                 pkgName = raw;
             end
     end
+end
+
+function channels = requiredProcessorChannelsForNode(pkgName, params)
+channels = {};
+if isempty(pkgName) || ~isstruct(params)
+    return;
+end
+switch lower(strtrim(char(string(pkgName))))
+    case 'computemetrics'
+        channels = collectIndexedChannelParams(params, 'channel', '_name', channels);
+        channels = collectIndexedChannelParams(params, 'mask', '_name', channels);
+end
+channels = mergeChannelLists({}, channels);
+end
+
+function channels = collectIndexedChannelParams(params, prefix, suffix, channels)
+if nargin < 4 || isempty(channels)
+    channels = {};
+end
+names = fieldnames(params);
+expr = ['^' regexptranslate('escape', prefix) '\d+' regexptranslate('escape', suffix) '$'];
+for i = 1:numel(names)
+    key = names{i};
+    if isempty(regexp(key, expr, 'once'))
+        continue;
+    end
+    channels = mergeChannelLists(channels, params.(key));
+end
+end
+
+function out = mergeChannelLists(varargin)
+out = {};
+for i = 1:nargin
+    out = [out normalizeChannelList(varargin{i})]; %#ok<AGROW>
+end
+if isempty(out)
+    return;
+end
+out = unique(out(~cellfun(@isempty, out)), 'stable');
+end
+
+function channels = normalizeChannelList(value)
+channels = {};
+if isempty(value)
+    return;
+end
+if iscell(value)
+    for i = 1:numel(value)
+        channels = [channels normalizeChannelList(value{i})]; %#ok<AGROW>
+    end
+    return;
+end
+if isstring(value)
+    value = cellstr(value(:));
+    channels = normalizeChannelList(value);
+    return;
+end
+if ischar(value)
+    parts = regexp(value, '[,;]', 'split');
+else
+    try
+        parts = cellstr(string(value(:)));
+    catch
+        parts = {};
+    end
+end
+for i = 1:numel(parts)
+    s = strtrim(char(string(parts{i})));
+    if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','na','<all>'}))
+        continue;
+    end
+    channels{end+1} = s; %#ok<AGROW>
+end
 end
 
 function vals = normalizeIndexVectorLocal(vals)
