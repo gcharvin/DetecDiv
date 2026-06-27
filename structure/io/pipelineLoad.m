@@ -272,9 +272,22 @@ end
 function tf = looksLikeBundlePathParam(name, value)
     key = lower(char(string(name)));
     value = char(string(value));
+    if isDataSeriesVariableBindingParam(key, value)
+        tf = false;
+        return;
+    end
     tf = contains(value, '/') || contains(value, '\') || ...
         contains(key, 'path') || contains(key, 'dir') || contains(key, 'folder') || contains(key, 'root') || ...
         any(strcmp(key, {'patchfile','patchpreviewfile'}));
+end
+
+function tf = isDataSeriesVariableBindingParam(key, value)
+    key = lower(char(string(key)));
+    value = strtrim(char(string(value)));
+    tf = any(strcmp(key, {'labelvariable','fluorescencevariable'})) && ...
+        contains(value, '/') && ...
+        ~isAbsolutePathLocal(value) && ...
+        isempty(regexp(value, '^[.]{0,2}[\\/]', 'once'));
 end
 
 function tf = shouldCreatePathForParam(name)

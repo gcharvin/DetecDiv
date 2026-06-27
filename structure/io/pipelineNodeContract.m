@@ -237,28 +237,27 @@ function contract = defaultContractForNode(node)
                 selectors.framesParam = 'frames';
                 parameters.run = {};
                 parameters.static = { ...
-                    'classification_data','fluorescence_data', ...
-                    'cellIndex','frameStart','frameEnd','framePeriod', ...
+                    'labelVariable','fluorescenceVariable', ...
+                    'cellIndex', ...
                     'baselineMethod','baselineWindow','baselineEndpoints', ...
                     'minCycleLength','normFrames', ...
                     'allowExtrapolation','writeArtifacts', ...
-                    'outputDir','workbookName'};
+                    };
                 requirements.roi.required = true;
                 requirements.roi.channelsMin = 0;
                 requirements.roi.dataSeries = true;
-                requirements.params.optional = [{'pkg'}, parameters.static];
+                requirements.params.optional = [{'pkg','classification_data','fluorescence_data'}, parameters.static];
                 capabilities.preservesRoiList = true;
                 capabilities.roiDataSeries = true;
                 capabilities.outputsDataSeries = true;
                 binding.scope = 'roi';
                 binding.outputScope = 'roi';
                 binding.mode = 'dataSeries';
-                binding.selectorKeys = {'classification_data','fluorescence_data','fluorescenceVariable'};
+                binding.selectorKeys = {'labelVariable','fluorescenceVariable'};
                 binding.resolveAt = 'run';
                 resources.in = [ ...
-                    resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, ''), ...
-                    resourceDef('dataSeries', 'metrics', 'fluorescence_data', 'fluorescence_data', 'dataSeries', 'fluorescence_data', true, ''), ...
-                    resourceDef('dataSeriesVariable', 'metric_variable', 'fluorescenceVariable', 'fluorescenceVariable', 'dataSeriesVariable', 'fluorescenceVariable', false, '') ...
+                    resourceDef('dataSeriesVariable', 'classification_label', 'labelVariable', 'labelVariable', 'dataSeriesVariable', 'labelVariable', true, ''), ...
+                    resourceDef('dataSeriesVariable', 'metric_variable', 'fluorescenceVariable', 'fluorescenceVariable', 'dataSeriesVariable', 'fluorescenceVariable', true, '') ...
                     ];
                 resources.out = [ ...
                     resourceDef('dataSeries', 'oscillation_trace', 'osc_detrended_trace', 'traceOutputName', 'dataSeries', 'traceOutputName', false, 'roiDataSeries'), ...
@@ -1325,11 +1324,7 @@ function n = dynamicSlotCount(node, names, defaultValue, minValue, maxValue)
         for i = 1:numel(names)
             key = char(string(names{i}));
             if isfield(params, key) && ~isempty(params.(key))
-                try
-                    requested = double(params.(key));
-                catch
-                    requested = NaN;
-                end
+                requested = numericScalarParamValue(params.(key));
                 if isscalar(requested) && isfinite(requested)
                     n = requested;
                     break;
@@ -1338,6 +1333,22 @@ function n = dynamicSlotCount(node, names, defaultValue, minValue, maxValue)
         end
     end
     n = min(maxValue, max(minValue, round(n)));
+end
+
+function value = numericScalarParamValue(raw)
+    value = NaN;
+    if isnumeric(raw) || islogical(raw)
+        candidate = double(raw);
+    elseif ischar(raw) || (isstring(raw) && isscalar(raw))
+        candidate = str2double(strtrim(char(string(raw))));
+    elseif iscell(raw) && numel(raw) == 1
+        candidate = numericScalarParamValue(raw{1});
+    else
+        candidate = NaN;
+    end
+    if isscalar(candidate) && isfinite(candidate)
+        value = candidate;
+    end
 end
 
 function keys = computeMetricsSlotKeys(prefix, suffix, n)

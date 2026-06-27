@@ -512,6 +512,12 @@ function producers = producerIdsForConcreteResource(value, spec, resources)
     if isempty(value)
         return;
     end
+    if strcmpi(char(string(getField(spec, 'type', ''))), 'dataSeriesVariable')
+        value = dataSeriesNameFromVariableBinding(value);
+        if isempty(value)
+            return;
+        end
+    end
     wantedType = lower(char(string(getField(spec, 'type', ''))));
     wantedRole = lower(char(string(getField(spec, 'role', ''))));
     for i = 1:numel(resources)
@@ -817,6 +823,9 @@ function state = initialSemanticState(ctx)
     state.hasFovList = (isfield(ctx,'fovList') && ~isempty(ctx.fovList));
     state.hasRoiList = (isfield(ctx,'roiList') && ~isempty(ctx.roiList)) || ...
                        (isfield(ctx,'rois') && ~isempty(ctx.rois));
+    if ~state.hasRoiList && validationStartsFromExistingProject(ctx)
+        state.hasRoiList = true;
+    end
     state.hasMasks = isfield(ctx,'masks') && ~isempty(ctx.masks);
     state.hasDataSeries = (isfield(ctx,'dataSeries') && ~isempty(ctx.dataSeries)) || ...
                           (isfield(ctx,'dataseries') && ~isempty(ctx.dataseries)) || ...
@@ -3481,6 +3490,7 @@ function name = normalizePhysicalResourceOutputName(node, spec, name)
     if isempty(name)
         return;
     end
+    name = strtrim(char(string(name)));
     nodeType = lower(char(string(getField(node, 'type', ''))));
     pkgName = lower(char(string(getField(node, 'pkg', ''))));
     if isempty(pkgName)
@@ -3491,7 +3501,11 @@ function name = normalizePhysicalResourceOutputName(node, spec, name)
     end
     resourceType = lower(char(string(getField(spec, 'type', ''))));
     role = lower(char(string(getField(spec, 'role', ''))));
-    if strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam') && ...
+    if strcmp(nodeType, 'processor') && strcmp(pkgName, 'computemetrics') && ...
+            strcmp(resourceType, 'dataseries') && strcmp(role, 'metrics') && ...
+            ~isempty(regexp(name, '^processor_computemetrics(_\d+)?$', 'once'))
+        name = 'channel_quantification';
+    elseif strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam') && ...
             strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
         name = cellposeSegmentationChannelNameLocal(node, name);
     elseif strcmp(nodeType, 'classifier') && strcmp(pkgName, 'deeplab_pixel_classification') && ...
@@ -3727,8 +3741,31 @@ function tf = resourceSpecCompatible(wantedType, wantedRole, availableType, avai
     if tf
         return;
     end
+    tf = strcmp(wantedType, 'dataseriesvariable') && strcmp(availableType, 'dataseries') && ...
+        dataSeriesVariableRoleCompatible(wantedRole, availableRole);
+    if tf
+        return;
+    end
     tf = strcmp(wantedType, 'channel') && strcmp(wantedRole, 'mask_roi_image') && ...
         strcmp(availableType, 'mask') && strcmp(availableRole, 'segmentation');
+end
+
+function tf = dataSeriesVariableRoleCompatible(wantedRole, availableRole)
+    wantedRole = lower(char(string(wantedRole)));
+    availableRole = lower(char(string(availableRole)));
+    tf = false;
+    if isempty(wantedRole) || isempty(availableRole)
+        tf = true;
+        return;
+    end
+    switch wantedRole
+        case {'metric_variable','metrics_variable'}
+            tf = strcmp(availableRole, 'metrics');
+        case {'classification_label','classification_variable'}
+            tf = strcmp(availableRole, 'classification');
+        otherwise
+            tf = strcmp(wantedRole, availableRole);
+    end
 end
 
 function tf = resourceRolesCompatible(wantedRole, availableRole)
@@ -3960,6 +3997,7 @@ function sourceNode = symbolicResourceSourceNode(symbolicValue)
         parts = strsplit(symbolicValue, ':');
         if numel(parts) >= 3
             sourceNode = strtrim(parts{3});
+            sourceNode = dataSeriesNameFromVariableBinding(sourceNode);
         end
         return;
     end
@@ -3974,6 +4012,16 @@ function sourceNode = symbolicResourceSourceNode(symbolicValue)
     tokens = regexp(symbolicValue, 'output\s+from\s+([^/\s>]+)', 'tokens', 'once');
     if ~isempty(tokens)
         sourceNode = strtrim(tokens{1});
+    end
+end
+
+function seriesName = dataSeriesNameFromVariableBinding(value)
+    seriesName = strtrim(char(string(value)));
+    if contains(seriesName, '/')
+        parts = regexp(seriesName, '\s*/\s*', 'split');
+        if ~isempty(parts)
+            seriesName = strtrim(parts{1});
+        end
     end
 end
 
@@ -4177,6 +4225,9 @@ function available = initialAvailablePorts(ctx)
     end
     if any(strcmp(available, 'roiChannels')) && ~any(strcmp(available, 'channels'))
         available{end+1} = 'channels'; %#ok<AGROW>
+    end
+    if validationStartsFromExistingProject(ctx) && ~any(strcmp(available, 'roiList'))
+        available{end+1} = 'roiList'; %#ok<AGROW>
     end
     available = unique(available(:));
 end

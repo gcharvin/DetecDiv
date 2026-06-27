@@ -91,6 +91,12 @@ for i = 1:numel(inputs)
     if isempty(value)
         continue;
     end
+    if strcmpi(char(string(getFieldLocal(item, 'type', ''))), 'dataSeriesVariable')
+        variableName = dataSeriesVariableNameLocal(node.params.(param));
+        if ~isempty(variableName)
+            value = [value ' / ' variableName];
+        end
+    end
     node.params.(param) = value;
     applied(end+1) = appliedRecordLocal(node, param, value, 'resource', item); %#ok<AGROW>
 end
@@ -179,6 +185,20 @@ if isfield(choice, 'concreteName') && ~isempty(choice(1).concreteName)
     value = char(string(choice(1).concreteName));
 elseif isfield(choice, 'symbol') && ~isempty(choice(1).symbol)
     value = char(string(choice(1).symbol));
+end
+end
+
+function variableName = dataSeriesVariableNameLocal(value)
+variableName = '';
+txt = valueToCharLocal(value);
+if isempty(txt)
+    return;
+end
+parts = regexp(txt, '\s*/\s*', 'split');
+if numel(parts) >= 2
+    variableName = strtrim(strjoin(parts(2:end), ' / '));
+elseif ~startsWith(strtrim(txt), '@')
+    variableName = strtrim(txt);
 end
 end
 

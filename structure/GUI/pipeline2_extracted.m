@@ -2460,21 +2460,56 @@ classdef pipeline2 < matlab.apps.AppBase
                     edgeWidth = 1.0;
                 end
                 lane = resourceBindingLaneForSource(app, edges, i);
-                y = y1 + graphBindingLaneOffset(app, lane, blockH);
-                headPad = min(max((x2 - x1) * 0.10, 0.12), 0.24);
-                hLine = plot(app.UIGraphAxes, [x1 x2 - headPad], [y y], '--', ...
-                    'Color', edgeColor, ...
-                    'LineWidth', edgeWidth, ...
-                    'HitTest', 'off');
-                hHead = quiver(app.UIGraphAxes, x2 - headPad, y, headPad, 0, 0, ...
-                    'Color', edgeColor, ...
-                    'LineWidth', edgeWidth, ...
-                    'MaxHeadSize', 0.65, ...
-                    'AutoScale', 'off', ...
-                    'HitTest', 'off');
+                [hLine, hHead] = drawResourceBindingEdgeRoute(app, x1, y1, x2, y2, blockW, blockH, lane, edgeColor, edgeWidth);
                 app.EdgeHandles(end+1) = hLine; %#ok<AGROW>
                 app.EdgeHandles(end+1) = hHead; %#ok<AGROW>
             end
+        end
+
+        function [hLine, hHead] = drawResourceBindingEdgeRoute(app, x1, y1, x2, y2, blockW, blockH, lane, edgeColor, edgeWidth)
+            laneOffset = graphBindingLaneOffset(app, lane, blockH);
+            y1 = y1 + laneOffset;
+            y2 = y2 + laneOffset;
+            headLen = 0.18;
+            sameOrBackwardsColumn = x2 <= x1 + 0.20;
+            if sameOrBackwardsColumn
+                targetRight = x2 + blockW;
+                routeX = max(x1, targetRight) + 0.26 + 0.06 * max(0, lane - 1);
+                headStartX = targetRight + headLen;
+                xs = [x1 routeX routeX headStartX];
+                ys = [y1 y1 y2 y2];
+                hLine = plot(app.UIGraphAxes, xs, ys, '--', ...
+                    'Color', edgeColor, ...
+                    'LineWidth', edgeWidth, ...
+                    'HitTest', 'off');
+                hHead = quiver(app.UIGraphAxes, headStartX, y2, -headLen, 0, 0, ...
+                    'Color', edgeColor, ...
+                    'LineWidth', edgeWidth, ...
+                    'MaxHeadSize', 0.70, ...
+                    'AutoScale', 'off', ...
+                    'HitTest', 'off');
+                return;
+            end
+
+            headLen = min(max((x2 - x1) * 0.10, 0.12), 0.24);
+            if abs(y2 - y1) < 1e-6
+                xs = [x1 x2 - headLen];
+                ys = [y1 y1];
+            else
+                midX = x1 + max(0.18, (x2 - x1) * 0.55);
+                xs = [x1 midX midX x2 - headLen];
+                ys = [y1 y1 y2 y2];
+            end
+            hLine = plot(app.UIGraphAxes, xs, ys, '--', ...
+                'Color', edgeColor, ...
+                'LineWidth', edgeWidth, ...
+                'HitTest', 'off');
+            hHead = quiver(app.UIGraphAxes, x2 - headLen, y2, headLen, 0, 0, ...
+                'Color', edgeColor, ...
+                'LineWidth', edgeWidth, ...
+                'MaxHeadSize', 0.65, ...
+                'AutoScale', 'off', ...
+                'HitTest', 'off');
         end
 
         function edges = resourceBindingEdgesForGraph(app)
@@ -5697,7 +5732,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isRoiExtractNode
                     rowHeights = [rowHeights {24, 210}]; %#ok<AGROW>
                 else
-                    rowHeights = [rowHeights {24, min(280, 36 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
+                    rowHeights = [rowHeights {24, min(360, bindingSectionPreferredHeight(app, bindingData))}]; %#ok<AGROW>
                 end
             end
             if showRuntime
@@ -5808,7 +5843,7 @@ classdef pipeline2 < matlab.apps.AppBase
             grid = uigridlayout(parentTab, [rowCount 1]);
             rowHeights = {};
             if showBindings
-                rowHeights = [rowHeights {24, min(150, 42 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
+                rowHeights = [rowHeights {24, min(220, bindingSectionPreferredHeight(app, bindingData))}]; %#ok<AGROW>
             end
             rowHeights = [rowHeights {24, '1x'}];
             grid.RowHeight = rowHeights;
@@ -9027,7 +9062,13 @@ classdef pipeline2 < matlab.apps.AppBase
         function grid = buildBindingSection(app, parent, data, node, editable)
             n = max(1, size(data, 1));
             grid = uigridlayout(parent, [n 3]);
-            grid.RowHeight = repmat({28}, 1, n);
+            rowHeights = repmat({28}, 1, n);
+            for r = 1:size(data, 1)
+                if strcmpi(char(string(data{r,1})), 'Input') && isDataSeriesVariableBindingParamForUi(app, data{r,3})
+                    rowHeights{r} = 54;
+                end
+            end
+            grid.RowHeight = rowHeights;
             grid.ColumnWidth = {96, 170, '1x'};
             grid.Padding = [0 0 0 0];
             grid.RowSpacing = 6;
@@ -9056,6 +9097,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctrl.Layout.Column = 3;
                 ctrl.Tooltip = tooltip;
             end
+        end
+
+        function h = bindingSectionPreferredHeight(app, data)
+            if isempty(data)
+                h = 34;
+                return;
+            end
+            rowHeights = zeros(1, size(data, 1));
+            for r = 1:size(data, 1)
+                if strcmpi(char(string(data{r,1})), 'Input') && isDataSeriesVariableBindingParamForUi(app, data{r,3})
+                    rowHeights(r) = 54;
+                else
+                    rowHeights(r) = 28;
+                end
+            end
+            h = sum(rowHeights) + max(0, numel(rowHeights) - 1) * 6 + 2;
         end
 
         function grid = buildRoiExtractBindingSection(app, parent, node)
@@ -9305,6 +9362,10 @@ classdef pipeline2 < matlab.apps.AppBase
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
             enableState = ternary(app, editable, 'on', 'off');
             isInput = strcmpi(char(string(direction)), 'Input');
+            if isInput && isDataSeriesVariableBindingParamForUi(app, param)
+                ctrl = createDataSeriesVariableBindingControl(app, parent, node, param, value, choices, direction, editable);
+                return;
+            end
             if isInput && strcmpi(char(string(param)), 'zStackChannelNames')
                 ctrl = uieditfield(parent, 'text');
                 zValue = normalizeZStackBindingValue(app, value);
@@ -9368,6 +9429,320 @@ classdef pipeline2 < matlab.apps.AppBase
             ctrl.Value = choiceScalarText(app, value);
             ctrl.Enable = enableState;
             ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+        end
+
+        function ctrl = createDataSeriesVariableBindingControl(app, parent, node, param, value, choices, direction, editable)
+            enableState = ternary(app, editable, 'on', 'off');
+            ctrl = uigridlayout(parent, [2 1]);
+            ctrl.RowHeight = {24, 24};
+            ctrl.ColumnWidth = {'1x'};
+            ctrl.Padding = [0 0 0 0];
+            ctrl.RowSpacing = 3;
+
+            [seriesName, variableName] = splitDataSeriesVariableBindingForUi(app, value);
+            if isempty(seriesName)
+                seriesName = '';
+            end
+            if isempty(variableName)
+                variableName = '<variable>';
+            end
+
+            seriesChoices = dataSeriesVariableSeriesChoicesForUi(app, choices, seriesName);
+            if isempty(seriesChoices)
+                seriesChoices = {seriesName};
+            end
+            seriesChoices = seriesChoices(~cellfun(@isempty, seriesChoices));
+            if isempty(seriesChoices)
+                seriesChoices = {'<dataseries>'};
+            end
+            seriesDrop = uidropdown(ctrl);
+            seriesDrop.Items = seriesChoices;
+            if any(strcmp(seriesChoices, seriesName))
+            seriesDrop.Value = seriesName;
+            else
+                seriesDrop.Value = seriesChoices{1};
+            end
+            seriesDrop.Enable = enableState;
+            seriesDrop.Tooltip = dataSeriesSeriesFieldTooltipForUi(app, seriesChoices);
+            seriesDrop.Layout.Row = 1;
+            seriesDrop.Layout.Column = 1;
+
+            variableChoices = dataSeriesVariableDropdownChoicesForUi(app, seriesDrop.Value, variableName);
+            varDrop = uidropdown(ctrl);
+            varDrop.Items = variableChoices;
+            if any(strcmp(variableChoices, variableName))
+                varDrop.Value = variableName;
+            else
+                varDrop.Value = variableChoices{1};
+            end
+            varDrop.Enable = enableState;
+            varDrop.Tooltip = 'Variable declared inside the selected dataseries. Choices are sampled from existing ROI dataseries when available.';
+            varDrop.Layout.Row = 2;
+            varDrop.Layout.Column = 1;
+
+            seriesDrop.ValueChangedFcn = @(src,~)dataSeriesVariableSeriesChanged(app, node, param, direction, src.Value, varDrop);
+            varDrop.ValueChangedFcn = @(src,~)dataSeriesVariableNameChanged(app, node, param, direction, seriesDrop.Value, src.Value);
+        end
+
+        function tf = isDataSeriesVariableBindingParamForUi(app, param) %#ok<INUSD>
+            tf = any(strcmpi(char(string(param)), {'labelVariable','fluorescenceVariable'}));
+        end
+
+        function [seriesName, variableName] = splitDataSeriesVariableBindingForUi(app, value) %#ok<INUSD>
+            seriesName = '';
+            variableName = '';
+            txt = strtrim(char(string(value)));
+            if isempty(txt) || any(strcmpi(txt, {'auto','<auto>','<unconfigured>','<unresolved>'}))
+                return;
+            end
+            if startsWith(txt, '<') && endsWith(txt, '>') && contains(txt, ' output from ')
+                inner = strtrim(txt(2:end-1));
+                tokens = regexp(inner, '^(.+?\s+output\s+from\s+[^/]+)(?:\s*/\s*(.+))?$', 'tokens', 'once');
+                if isempty(tokens) || isempty(tokens{1})
+                    seriesName = txt;
+                    return;
+                end
+                if numel(tokens) < 2 || isempty(tokens{2})
+                    seriesName = txt;
+                    return;
+                end
+                payload = strtrim(tokens{2});
+                parts = regexp(payload, '\s*/\s*', 'split');
+                seriesName = ['<' strtrim(tokens{1}) ' / ' strtrim(parts{1}) '>'];
+                if numel(parts) >= 2
+                    variableName = strtrim(strjoin(parts(2:end), ' / '));
+                end
+                return;
+            end
+            parts = regexp(txt, '\s*/\s*', 'split');
+            if numel(parts) >= 2
+                seriesName = strtrim(parts{1});
+                variableName = strtrim(strjoin(parts(2:end), ' / '));
+            else
+                seriesName = txt;
+            end
+        end
+
+        function choices = dataSeriesVariableSeriesChoicesForUi(app, choices, currentSeries)
+            raw = flattenChoiceList(app, choices);
+            out = {};
+            for i = 1:numel(raw)
+                txt = strtrim(char(string(raw{i})));
+                if startsWith(txt, '<resource:')
+                    continue;
+                end
+                if startsWith(txt, '<') && endsWith(txt, '>') && contains(txt, ' output from ')
+                    out{end+1} = stripDataSeriesVariableSuffixFromSymbolicLabel(app, txt); %#ok<AGROW>
+                else
+                    [seriesName, ~] = splitDataSeriesVariableBindingForUi(app, txt);
+                    if ~isempty(seriesName)
+                        out{end+1} = seriesName; %#ok<AGROW>
+                    end
+                end
+            end
+            if ~isempty(currentSeries)
+                out = [{currentSeries} out]; %#ok<AGROW>
+            end
+            choices = unique(out(~cellfun(@isempty, out)), 'stable');
+        end
+
+        function label = stripDataSeriesVariableSuffixFromSymbolicLabel(app, label) %#ok<INUSD>
+            label = strtrim(char(string(label)));
+            if ~(startsWith(label, '<') && endsWith(label, '>'))
+                return;
+            end
+            inner = strtrim(label(2:end-1));
+            tokens = regexp(inner, '^(.+?\s+output\s+from\s+[^/]+)(?:\s*/\s*(.+))?$', 'tokens', 'once');
+            if isempty(tokens) || numel(tokens) < 2 || isempty(tokens{2}) || ~contains(tokens{2}, '/')
+                return;
+            end
+            parts = regexp(strtrim(tokens{2}), '\s*/\s*', 'split');
+            label = ['<' strtrim(tokens{1}) ' / ' strtrim(parts{1}) '>'];
+        end
+
+        function choices = dataSeriesVariableDropdownChoicesForUi(app, seriesName, currentVariable)
+            choices = {};
+            concreteSeries = concreteDataSeriesNameForVariableChoices(app, seriesName);
+            if ~isempty(concreteSeries) && ~startsWith(concreteSeries, '@') && ...
+                    ~(startsWith(concreteSeries, '<') && endsWith(concreteSeries, '>'))
+                choices = runtimeDataSeriesVariableNames(app, concreteSeries);
+            end
+            if isempty(choices) && isSymbolicDataSeriesLabelForUi(app, seriesName)
+                choices = inferredDataSeriesVariablesForSymbolicSeries(app, seriesName);
+            end
+            if isempty(choices) && ~isempty(currentVariable) && ~strcmp(currentVariable, '<variable>')
+                choices = [{currentVariable} choices]; %#ok<AGROW>
+            end
+            if isempty(choices)
+                choices = {'<variable>'};
+            end
+            choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
+        function seriesName = concreteDataSeriesNameForVariableChoices(app, value)
+            seriesName = strtrim(char(string(value)));
+            if startsWith(seriesName, '<') && endsWith(seriesName, '>') && contains(seriesName, ' output from ')
+                inner = strtrim(seriesName(2:end-1));
+                tokens = regexp(inner, '^.+?\s+output\s+from\s+[^/]+(?:\s*/\s*(.+))?$', 'tokens', 'once');
+                if ~isempty(tokens) && ~isempty(tokens{1})
+                    seriesName = strtrim(tokens{1});
+                end
+            end
+            seriesName = dataSeriesNameFromVariableBindingForUi(app, seriesName);
+        end
+
+        function tf = isSymbolicDataSeriesLabelForUi(app, value) %#ok<INUSD>
+            value = strtrim(char(string(value)));
+            tf = startsWith(value, '<') && endsWith(value, '>') && contains(value, ' output from ');
+        end
+
+        function choices = inferredDataSeriesVariablesForSymbolicSeries(app, seriesName)
+            choices = {};
+            sourceNodeId = symbolicSeriesSourceNodeForUi(app, seriesName);
+            if isempty(sourceNodeId)
+                return;
+            end
+            try
+                ids = cellstr(string({app.Data.nodes.id}));
+                idx = find(strcmp(ids, sourceNodeId), 1);
+                if isempty(idx)
+                    return;
+                end
+                sourceNode = app.Data.nodes(idx);
+                pkg = lower(char(string(getField(app, sourceNode, 'pkg', ''))));
+                if strcmp(pkg, 'computemetrics')
+                    choices = inferComputeMetricsVariableChoicesForUi(app, sourceNode);
+                elseif strcmp(pkg, 'cnn_lstm')
+                    choices = {'id','labels'};
+                end
+            catch
+                choices = {};
+            end
+        end
+
+        function sourceNodeId = symbolicSeriesSourceNodeForUi(app, seriesName) %#ok<INUSD>
+            sourceNodeId = '';
+            txt = strtrim(char(string(seriesName)));
+            if startsWith(txt, '<') && endsWith(txt, '>')
+                inner = strtrim(txt(2:end-1));
+                tokens = regexp(inner, '^.+?\s+output\s+from\s+([^/\s]+)', 'tokens', 'once');
+                if ~isempty(tokens)
+                    sourceNodeId = strtrim(tokens{1});
+                end
+            elseif startsWith(txt, '@resource:')
+                parts = strsplit(txt, ':');
+                if numel(parts) >= 3
+                    sourceNodeId = strtrim(parts{3});
+                    sourceNodeId = dataSeriesNameFromVariableBindingForUi(app, sourceNodeId);
+                end
+            end
+        end
+
+        function choices = inferComputeMetricsVariableChoicesForUi(app, node)
+            p = getField(app, node, 'params', struct());
+            maskCount = computeMetricsMaskSlotCountForNode(app, node);
+            scoreCount = computeMetricsScoreSlotCountForNode(app, node);
+            channels = {};
+            for i = 1:scoreCount
+                key = sprintf('channel%d_name', i);
+                name = choiceScalarText(app, getField(app, p, key, ''));
+                if isempty(name) || any(strcmpi(name, {'N/A','none','<unconfigured>'}))
+                    continue;
+                end
+                channels{end+1} = name; %#ok<AGROW>
+            end
+
+            choices = {};
+            metricPrefixes = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
+            for m = 1:maskCount
+                maskName = choiceScalarText(app, getField(app, p, sprintf('mask%d_name', m), ''));
+                if isempty(maskName) || any(strcmpi(maskName, {'N/A','none','<unconfigured>'}))
+                    continue;
+                end
+                maskLabel = choiceScalarText(app, getField(app, p, sprintf('mask%d_label', m), sprintf('mask%d', m)));
+                if isempty(maskLabel)
+                    maskLabel = sprintf('mask%d', m);
+                end
+                choices{end+1} = ['MaskIdx_' safeMetricVariableTokenForUi(app, maskLabel)]; %#ok<AGROW>
+                for c = 1:numel(channels)
+                    for k = 1:numel(metricPrefixes)
+                        choices{end+1} = safeMetricVariableNameForUi(app, sprintf('%s_%s_%s', metricPrefixes{k}, channels{c}, maskLabel)); %#ok<AGROW>
+                    end
+                end
+                for a = 1:numel(channels)
+                    for b = a+1:numel(channels)
+                        choices{end+1} = safeMetricVariableNameForUi(app, sprintf('Ratio_Mean_NoBckg_%s_%s_%s', channels{a}, channels{b}, maskLabel)); %#ok<AGROW>
+                    end
+                end
+            end
+            choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
+        function token = safeMetricVariableTokenForUi(app, value) %#ok<INUSD>
+            token = char(string(value));
+            try
+                token = matlab.lang.makeValidName(token);
+            catch
+                token = regexprep(token, '[^A-Za-z0-9_]', '_');
+                if isempty(regexp(token, '^[A-Za-z]', 'once'))
+                    token = ['x' token];
+                end
+            end
+        end
+
+        function name = safeMetricVariableNameForUi(app, value)
+            name = safeMetricVariableTokenForUi(app, value);
+        end
+
+        function tip = dataSeriesSeriesFieldTooltipForUi(app, choices) %#ok<INUSD>
+            tip = 'Dataseries name or symbolic upstream source. Example: channel_quantification or @resource:metrics:processor_computemetrics_10.';
+            if ~isempty(choices)
+                sample = choices(1:min(numel(choices), 5));
+                tip = [tip newline 'Available sources: ' strjoin(sample, ', ')];
+            end
+        end
+
+        function dataSeriesVariableSeriesChanged(app, node, param, direction, seriesName, variableDrop)
+            currentVariable = '';
+            try
+                currentVariable = char(string(variableDrop.Value));
+            catch
+            end
+            variableChoices = dataSeriesVariableDropdownChoicesForUi(app, seriesName, currentVariable);
+            variableDrop.Items = variableChoices;
+            if any(strcmp(variableChoices, currentVariable))
+                variableName = currentVariable;
+            else
+                variableName = variableChoices{1};
+            end
+            variableDrop.Value = variableName;
+            seriesName = dataSeriesVariableSeriesStorageValueForUi(app, seriesName);
+            if isempty(variableName) || any(strcmpi(variableName, {'<variable>','auto','<auto>'}))
+                value = seriesName;
+            else
+                value = [seriesName ' / ' strtrim(char(string(variableName)))];
+            end
+            bindingControlChanged(app, node, param, direction, value);
+        end
+
+        function dataSeriesVariableNameChanged(app, node, param, direction, seriesName, variableName)
+            seriesName = dataSeriesVariableSeriesStorageValueForUi(app, seriesName);
+            variableName = strtrim(char(string(variableName)));
+            if isempty(seriesName)
+                value = variableName;
+            elseif isempty(variableName) || any(strcmpi(variableName, {'<variable>','auto','<auto>'}))
+                value = seriesName;
+            else
+                value = [seriesName ' / ' variableName];
+            end
+            bindingControlChanged(app, node, param, direction, value);
+        end
+
+        function value = dataSeriesVariableSeriesStorageValueForUi(app, seriesName)
+            value = strtrim(char(string(seriesName)));
+            if startsWith(value, '<') && endsWith(value, '>') && contains(value, ' output from ')
+                value = symbolicBindingValueFromLabel(app, value);
+            end
         end
 
         function tf = isZStackPlaceholderBinding(app, value) %#ok<INUSD>
@@ -9841,6 +10216,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function displayValue = bindingValueToDisplay(app, value, node, spec)
             displayValue = strtrim(char(string(value)));
+            variableSuffix = '';
+            if strcmpi(char(string(getField(app, spec, 'type', ''))), 'dataSeriesVariable')
+                variableSuffix = dataSeriesVariableNameFromBindingForUi(app, displayValue);
+            end
             if isAllChannelBindingSpec(app, spec) && isAllChannelSelectorText(app, displayValue)
                 displayValue = '<all>';
                 return;
@@ -9864,6 +10243,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                         label = resourceChoiceLabel(app, available(i), spec);
                         if ~isempty(label)
+                            if ~isempty(variableSuffix) && startsWith(label, '<') && endsWith(label, '>')
+                                label = [label(1:end-1) ' / ' variableSuffix '>'];
+                            end
                             displayValue = label;
                             return;
                         end
@@ -9871,6 +10253,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 inactiveLabel = inactiveSymbolicBindingLabel(app, displayValue, node, spec);
                 if ~isempty(inactiveLabel)
+                    if ~isempty(variableSuffix) && startsWith(inactiveLabel, '<') && endsWith(inactiveLabel, '>')
+                        inactiveLabel = [inactiveLabel(1:end-1) ' / ' variableSuffix '>'];
+                    end
                     displayValue = inactiveLabel;
                     return;
                 end
@@ -9982,6 +10367,48 @@ classdef pipeline2 < matlab.apps.AppBase
                 choices = {['<' role ' output>']};
             end
             choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
+        function choices = appendDataSeriesVariableSuffixToSymbolicChoices(app, choices, currentValue)
+            variableName = dataSeriesVariableNameFromBindingForUi(app, currentValue);
+            if isempty(variableName) || isempty(choices)
+                return;
+            end
+            for i = 1:numel(choices)
+                txt = strtrim(char(string(choices{i})));
+                if ~(startsWith(txt, '<') && endsWith(txt, '>') && contains(txt, ' output from '))
+                    continue;
+                end
+                inner = txt(2:end-1);
+                if contains(inner, [' / ' variableName])
+                    continue;
+                end
+                choices{i} = [txt(1:end-1) ' / ' variableName '>'];
+            end
+        end
+
+        function variableName = dataSeriesVariableNameFromBindingForUi(app, value) %#ok<INUSD>
+            variableName = '';
+            value = strtrim(char(string(value)));
+            if isempty(value)
+                return;
+            end
+            parts = regexp(value, '\s*/\s*', 'split');
+            if numel(parts) >= 2
+                variableName = strtrim(strjoin(parts(2:end), ' / '));
+            elseif ~startsWith(value, '@')
+                variableName = value;
+            end
+        end
+
+        function seriesName = dataSeriesNameFromVariableBindingForUi(app, value) %#ok<INUSD>
+            seriesName = strtrim(char(string(value)));
+            if contains(seriesName, '/')
+                parts = regexp(seriesName, '\s*/\s*', 'split');
+                if ~isempty(parts)
+                    seriesName = strtrim(parts{1});
+                end
+            end
         end
 
         function tf = isAllChannelBindingSpec(app, spec) %#ok<INUSD>
@@ -10620,7 +11047,11 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             resourceType = lower(char(string(getField(app, spec, 'type', ''))));
             role = lower(char(string(getField(app, spec, 'role', ''))));
-            if strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
+            if strcmp(nodeType, 'processor') && strcmp(pkgName, 'computemetrics') && ...
+                    strcmp(resourceType, 'dataseries') && strcmp(role, 'metrics') && ...
+                    ~isempty(regexp(name, '^processor_computemetrics(_\d+)?$', 'once'))
+                name = 'channel_quantification';
+            elseif strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
                     strcmp(resourceType, 'channel') && any(strcmp(role, {'lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'}))
                 if endsWith(name, '_cell', 'IgnoreCase', true) || endsWith(name, '_bud', 'IgnoreCase', true) || endsWith(name, '_conf', 'IgnoreCase', true)
                     return;
@@ -10704,8 +11135,31 @@ classdef pipeline2 < matlab.apps.AppBase
             if tf
                 return;
             end
+            tf = strcmp(wantedType, 'dataseriesvariable') && strcmp(availableType, 'dataseries') && ...
+                dataSeriesVariableRoleCompatibleForUi(app, wantedRole, availableRole);
+            if tf
+                return;
+            end
             tf = strcmp(wantedType, 'channel') && strcmp(wantedRole, 'mask_roi_image') && ...
                 strcmp(availableType, 'mask') && strcmp(availableRole, 'segmentation');
+        end
+
+        function tf = dataSeriesVariableRoleCompatibleForUi(app, wantedRole, availableRole) %#ok<INUSD>
+            wantedRole = lower(char(string(wantedRole)));
+            availableRole = lower(char(string(availableRole)));
+            tf = false;
+            if isempty(wantedRole) || isempty(availableRole)
+                tf = true;
+                return;
+            end
+            switch wantedRole
+                case {'metric_variable','metrics_variable'}
+                    tf = strcmp(availableRole, 'metrics');
+                case {'classification_label','classification_variable'}
+                    tf = strcmp(availableRole, 'classification');
+                otherwise
+                    tf = strcmp(wantedRole, availableRole);
+            end
         end
 
         function tf = resourceRolesCompatibleForUi(app, wantedRole, availableRole) %#ok<INUSD>
@@ -10886,6 +11340,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(concreteTokens)
                     concrete = strtrim(concreteTokens{1});
                 end
+                variableSuffix = '';
+                if contains(concrete, '/')
+                    parts = regexp(concrete, '\s*/\s*', 'split');
+                    if numel(parts) >= 2
+                        variableSuffix = strtrim(strjoin(parts(2:end), ' / '));
+                    end
+                end
                 if any(strcmp(role, {'lineage_cell_mask','lineage_mother_mask'}))
                     role = 'lineage_mother';
                 elseif any(strcmp(role, {'lineage_confidence','lineage_bud_mask'}))
@@ -10898,6 +11359,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 value = ['@resource:' role ':' sourceNode];
+                if ~isempty(variableSuffix)
+                    value = [value ' / ' variableSuffix];
+                end
             else
                 value = ['@' inner];
             end
@@ -10910,6 +11374,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 parts = strsplit(value, ':');
                 if numel(parts) >= 3
                     sourceNode = strtrim(parts{3});
+                    sourceNode = dataSeriesNameFromVariableBindingForUi(app, sourceNode);
                 end
                 return;
             end
@@ -11923,11 +12388,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 for i = 1:numel(names)
                     key = char(string(names{i}));
                     if isfield(p, key) && ~isempty(p.(key))
-                        try
-                            requested = double(p.(key));
-                        catch
-                            requested = NaN;
-                        end
+                        requested = numericScalarParamValueForUi(app, p.(key));
                         if isscalar(requested) && isfinite(requested)
                             n = requested;
                             break;
@@ -11936,6 +12397,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             n = min(maxValue, max(minValue, round(n)));
+        end
+
+        function value = numericScalarParamValueForUi(app, raw) %#ok<INUSD>
+            value = NaN;
+            if isnumeric(raw) || islogical(raw)
+                candidate = double(raw);
+            elseif ischar(raw) || (isstring(raw) && isscalar(raw))
+                candidate = str2double(strtrim(char(string(raw))));
+            elseif iscell(raw) && numel(raw) == 1
+                candidate = numericScalarParamValueForUi(app, raw{1});
+            else
+                candidate = NaN;
+            end
+            if isscalar(candidate) && isfinite(candidate)
+                value = candidate;
+            end
         end
 
         function keys = classifierStaticKeys(app, pkg)
