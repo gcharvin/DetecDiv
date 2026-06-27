@@ -16384,6 +16384,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(progressDlg) && isvalid(progressDlg)
                     progressDlg.Message = char(string(message));
                     if ~isempty(value)
+                        try
+                            progressDlg.Indeterminate = 'off';
+                        catch
+                        end
                         progressDlg.Value = double(value);
                     end
                     drawnow limitrate nocallbacks;
@@ -18475,30 +18479,49 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             try
+                launchTimer = tic;
                 ctx = ctxConfirmed;
+                updateRunSaveProgress(app, d, 'Launch: building executable pipeline...', 0.05);
+                buildExecTimer = tic;
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctx);
+                buildExecSec = toc(buildExecTimer);
+                updateRunSaveProgress(app, d, 'Launch: creating confirmed run object...', 0.12);
+                createConfirmedTimer = tic;
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
+                createConfirmedSec = toc(createConfirmedTimer);
                 logRunEvent(app, runObj, 'Preflight run context saved.', 'pipeline2');
+                updateRunSaveProgress(app, d, 'Launch: saving confirmed preflight JSON...', 0.18);
+                saveConfirmedTimer = tic;
                 savePipelineRunAndProject(app, runObj, d, 'Saving confirmed preflight run...', false);
+                saveConfirmedSec = toc(saveConfirmedTimer);
 
-                if ~isempty(d), d.Message = 'Dry-run validation...'; end
+                updateRunSaveProgress(app, d, 'Launch: dry-run validation...', 0.28);
+                dryRunTimer = tic;
                 ctxDry = ctx;
                 ctxDry.dryRun = true;
                 [~, dryReport] = runPipeline(pipeObj, ctxDry);
+                dryRunSec = toc(dryRunTimer);
                 runObj.outputs.dryRunReport = dryReport;
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = stripTransientRunContext(app, ctxDry);
                 logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
+                updateRunSaveProgress(app, d, 'Launch: saving dry-run report...', 0.38);
+                saveDryTimer = tic;
                 savePipelineRunAndProject(app, runObj, d, 'Saving dry-run state...', false);
+                saveDrySec = toc(saveDryTimer);
                 appendRunReport(app, 'Dry-run: OK', dryReport);
 
                 if strcmp(runtimeExecutionTarget(app), 'hub')
-                    if ~isempty(d), d.Message = 'Preparing local Hub run checks...'; end
+                    updateRunSaveProgress(app, d, 'Hub launch: reading settings...', 0.46);
                     hub = hubSettingsFromUi(app);
-                    if ~isempty(d), d.Message = 'Checking Hub session...'; drawnow limitrate nocallbacks; end
+                    updateRunSaveProgress(app, d, 'Hub launch: checking session token...', 0.50);
+                    hubSessionTimer = tic;
                     hub = ensureHubSessionFromUi(app, hub);
-                    if ~isempty(d), d.Message = 'Checking server-visible paths...'; drawnow limitrate nocallbacks; end
+                    hubSessionSec = toc(hubSessionTimer);
+                    updateRunSaveProgress(app, d, 'Hub launch: checking server-visible paths...', 0.58);
+                    pathPreflightTimer = tic;
                     pathReport = hubPathPreflight(app, hub);
+                    pathPreflightSec = toc(pathPreflightTimer);
                     if ~pathReport.ok
                         runObj.status = 'failed';
                         runObj.outputs.hubPathPreflight = pathReport;
@@ -18515,18 +18538,26 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = stripTransientRunContext(app, applyHubPathPreflightToContext(app, runObj.ctx, pathReport));
                     logRunEvent(app, runObj, 'Preparing Hub run submission.', 'pipeline2');
+                    updateRunSaveProgress(app, d, 'Hub launch: saving local run JSON...', 0.66);
+                    saveHubLocalTimer = tic;
                     savePipelineRunAndProject(app, runObj, d, 'Saving local run state...', false);
-                    if ~isempty(d)
-                        d.Message = 'Resolving Hub target and creating job request...';
-                        drawnow limitrate nocallbacks;
-                    end
+                    saveHubLocalSec = toc(saveHubLocalTimer);
+                    updateRunSaveProgress(app, d, 'Hub launch: exporting bundle and creating job...', 0.76);
+                    submitTimer = tic;
                     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
                         'SaveProject', false, ...
                         'ProjectResolveInitialWaitSec', 0, ...
                         'ProjectResolveAttempts', 1, ...
                         'ProjectResolveIntervalSec', 0.5);
+                    submitSec = toc(submitTimer);
                     runObj = annotateHubRunControl(app, runObj, job);
                     logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
+                    logRunEvent(app, runObj, sprintf(['Launch timings: build %.3fs, run object %.3fs, save preflight %.3fs, ' ...
+                        'dry-run %.3fs, save dry-run %.3fs, hub session %.3fs, path preflight %.3fs, ' ...
+                        'save local %.3fs, submit %.3fs, total %.3fs.'], ...
+                        buildExecSec, createConfirmedSec, saveConfirmedSec, dryRunSec, saveDrySec, ...
+                        hubSessionSec, pathPreflightSec, saveHubLocalSec, submitSec, toc(launchTimer)), 'timing');
+                    updateRunSaveProgress(app, d, 'Hub launch: saving submitted job state...', 0.94);
                     savePipelineRunAndProject(app, runObj, d, 'Saving Hub job state...', false);
                     clearRuntimeDataSeriesCache(app);
                     updateRuntimeResourceInventory(app);
