@@ -2622,6 +2622,43 @@ end
             end
         end
 
+        function ensureProjectPositionRoiTreeExpanded(app, positionNode, shallowObj, projIdx, posIdx)
+            if app.treeNodeHasChildTag(positionNode, 'Projectposrois')
+                try, expand(positionNode); catch, end
+                return;
+            end
+
+            roiLabels = buildRoiTreeLabels(app, shallowObj.fov(posIdx).roi);
+            if isempty(roiLabels)
+                return;
+            end
+
+            d = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please Wait...', ...
+                'Message', 'Generating ROI list...', ...
+                'Value', 0);
+            cleanupObj = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
+            drawnow limitrate;
+
+            [pth, ~, ~] = fileparts(which('detecdiv.mlapp'));
+            nRoi = numel(roiLabels);
+            for n = 1:nRoi
+                if n == 1 || n == nRoi || mod(n, 10) == 0
+                    d.Value = n ./ nRoi;
+                    d.Message = ['Generating ROI list... ' num2str(n) '/' num2str(nRoi)];
+                    drawnow limitrate;
+                end
+                uitreenode(positionNode, ...
+                    'Text', roiLabels{n}, ...
+                    'Tag', 'Projectposrois', ...
+                    'UserData', [projIdx, posIdx, n], ...
+                    'Icon', fullfile(pth, 'roi.png'));
+            end
+
+            try, expand(positionNode); catch, end
+            drawnow limitrate;
+        end
+
 
         function check = checkImagePath(app,proj)
 
@@ -6585,24 +6622,7 @@ end
                 shallowObj=evalin('base',proj);
                 position=shallowObj.fov(pos);
 
-                % display sub,odes
-
-                if numel(app.Tree.SelectedNodes.Children)==0
-                    roiLabels = buildRoiTreeLabels(app, position.roi);
-                    if ~isempty(roiLabels)
-
-                        for n=1:numel(roiLabels)
-
-                            % aa=app.Data.Projectclassirois{i}{k}{n}
-                            %   cm=uicontextmenu(app.DetecDivUIFigure);
-                            %  m = uimenu(cm,'Text','Open ROI...');
-                            %  m.MenuSelectedFcn={@contextMenuROIFcn,[i,k,n],'Projectposrois'};
-                            [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Projectposrois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
-                            % disabled because too heavy with large projects
-                        end
-                    end
-                end
+                app.ensureProjectPositionRoiTreeExpanded(app.Tree.SelectedNodes, shallowObj, cc(1), cc(2));
 
 
                 % display text
