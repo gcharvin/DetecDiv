@@ -1520,7 +1520,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             payload.requested_mode = runDraft.requestedMode;
             payload.priority = max(0, round(runDraft.priority));
             if isnan(payload.priority)
-                payload.priority = 100;
+                payload.priority = 10;
             end
             payload.requested_by = char(string(state.hubSettings.userKey));
             payload.requested_from_host = localHostName();
@@ -4488,7 +4488,7 @@ function draft = localPromptHubPipelineRun(pipelines, targets)
     lbl = uilabel(grid, 'Text', 'Priority', 'FontWeight', 'bold');
     lbl.Layout.Row = 3;
     lbl.Layout.Column = 3;
-    priorityEdit = uieditfield(grid, 'numeric', 'Value', 100, 'RoundFractionalValues', 'on');
+    priorityEdit = uieditfield(grid, 'numeric', 'Value', 10, 'RoundFractionalValues', 'on');
     priorityEdit.Layout.Row = 3;
     priorityEdit.Layout.Column = 4;
 
@@ -4571,7 +4571,7 @@ function draft = localPromptHubPipelineRun(pipelines, targets)
         targetDropDown.Value = '0';
         requestedModeDropDown.Value = 'auto';
         runIdEdit.Value = '';
-        priorityEdit.Value = 100;
+        priorityEdit.Value = 10;
         runPolicyDropDown.Value = 'resume';
         existingDropDown.Value = 'replace';
         cacheDropDown.Value = 'auto';
