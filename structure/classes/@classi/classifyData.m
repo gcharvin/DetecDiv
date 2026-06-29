@@ -620,20 +620,29 @@ function ROIpreprocessing(roiobj, classif, outputName)
 
     % --- Detect instance segmentation types
     isCPSAM = false;
+    isSAM31 = false;
 
     if isprop(classif,'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'cellposesam')
         isCPSAM = true;
+    elseif isprop(classif,'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'sam31')
+        isSAM31 = true;
     elseif isprop(classif,'classifyFun') && any(strcmpi(char(string(classif.classifyFun)), {'classifyCPSAMFun','cellposesam.classify'}))
         isCPSAM = true;
+    elseif isprop(classif,'classifyFun') && any(strcmpi(char(string(classif.classifyFun)), {'sam31.classify'}))
+        isSAM31 = true;
     elseif isprop(classif,'description') && ~isempty(classif.description)
-        isCPSAM = any(contains(lower(string(classif.description)), 'cellpose'));
+        desc = lower(string(classif.description));
+        isCPSAM = any(contains(desc, 'cellpose'));
+        isSAM31 = any(contains(desc, 'sam31')) || any(contains(desc, 'sam3'));
     end
 
     isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
                      strcmp(classif.description{1}, 'Cell-TRACKTR')               || ...
-                     isCPSAM);
+                     isCPSAM || isSAM31);
 
     if isInstanceSeg
+        localDropChannelIfPresent(roiobj, ['results_' char(outputName)]);
+
         for c = 1:numel(classif.classes)
             chname      = ['results_' char(outputName) '_' classif.classes{c}];
             rgb         = [1 1 1];

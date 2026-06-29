@@ -232,19 +232,6 @@ for ch = 1:numel(channel)
         listofindexedcha = [];
     end
 
-    % Filtre paintChannel
-    if ischar(paintChannel) || isstring(paintChannel)
-        if strlength(string(paintChannel)) > 0 && ~strcmpi(thisName, string(paintChannel))
-            continue;
-        end
-    else
-        if any(paintChannel ~= 0)
-            if isempty(currentIndx) || ~any(paintChannel == currentIndx)
-                continue;
-            end
-        end
-    end
-
     % indices par défaut
     if isempty(indices) || (numel(indices)==1 && indices==-1)
         maxLabel = max(L(:));
@@ -267,7 +254,14 @@ for ch = 1:numel(channel)
     end
 
     % couleurs
-    if isPaintThis
+    useLabelColors = isPaintThis;
+    if ~useLabelColors && isprop(roitmp,'display') && isstruct(roitmp.display) && ...
+            isfield(roitmp.display,'rgb') && dispIdx >= 1 && dispIdx <= size(roitmp.display.rgb,1)
+        channelRgb = double(roitmp.display.rgb(dispIdx,:));
+        useLabelColors = all(channelRgb >= 0.99);
+    end
+
+    if useLabelColors
         levmap = zeros(numel(indices), 3);
         for ii = 1:numel(indices)
             levmap(ii,:) = label2color(indices(ii));
