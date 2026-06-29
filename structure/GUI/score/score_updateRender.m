@@ -306,6 +306,10 @@ catch ME
    % warning('Lineage refresh failed: %s', ME.message);
 end
 
+if strcmp(mode, 'display')
+    score_syncOverlayAxes(graphicsHandles);
+end
+
 end
 
 function [xlims, doClip] = localMovieXLimits(layoutOptions)

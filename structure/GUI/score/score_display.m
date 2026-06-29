@@ -128,6 +128,12 @@ app.displayHandles=displayHandles;
  score_updateRender(app.graphicsHandles,selectedROI, opts, app.displayHandles,currentFrame)
    end
 
+score_syncOverlayAxes(app.graphicsHandles);
+try
+    app.ImageFigure.SizeChangedFcn = @(~, ~) score_syncOverlayAxes(app.graphicsHandles);
+catch
+end
+
 
    %% draw rectangle around selected cell 
 try

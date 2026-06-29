@@ -311,6 +311,7 @@ newPath = fullfile(folder, [name '.pdf']);
         end
 
         linkaxes(axarray,'xy');
+        score_syncOverlayAxes(graphicsHandles);
 
 
 
