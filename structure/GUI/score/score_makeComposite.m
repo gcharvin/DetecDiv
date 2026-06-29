@@ -285,7 +285,7 @@ for ch = 1:numel(channel)
     % paramètres overlay
     wid       = levCh{5};
     weiVal    = double(levCh{3});
-    fillAlpha = min(1, weiVal);
+    fillAlpha = min(1, max(0, weiVal));
 
     switch mode
         case {"sequence","movie"}
@@ -325,12 +325,8 @@ for ch = 1:numel(channel)
                 mask = (L == indices(iVal));
                 if ~any(mask(:)), continue; end
 
-                for c = 1:3
-                    tmp = indexedOverlay(:,:,c);
-                    tmp(mask) = levmap(iVal,c);
-                    indexedOverlay(:,:,c) = tmp;
-                end
-                alphaOverlay(mask) = fillAlpha;
+                [indexedOverlay, alphaOverlay] = compositeOverlayLayer( ...
+                    indexedOverlay, alphaOverlay, mask, levmap(iVal,:), fillAlpha);
             end
     end
 
@@ -358,6 +354,39 @@ if size(img, 3) == 1
 elseif size(img, 3) ~= 3
     img = max(img, [], 3);
 end
+end
+
+function [rgbOut, alphaOut] = compositeOverlayLayer(rgbIn, alphaIn, mask, color, alpha)
+% Composite one semi-transparent annotation layer onto an accumulated RGBA.
+% This preserves overlapping annotation channels instead of letting the
+% last channel overwrite the color/alpha of previous channels.
+
+rgbOut = rgbIn;
+alphaOut = alphaIn;
+
+alpha = min(1, max(0, double(alpha)));
+if alpha <= 0 || ~any(mask(:))
+    return;
+end
+
+color = double(color(:)');
+if numel(color) ~= 3
+    color = [1 1 1];
+end
+color = min(1, max(0, color));
+
+oldAlpha = alphaOut(mask);
+newAlpha = alpha + oldAlpha .* (1 - alpha);
+safeAlpha = max(newAlpha, eps);
+
+for c = 1:3
+    plane = rgbOut(:,:,c);
+    oldColor = plane(mask);
+    plane(mask) = (color(c) .* alpha + oldColor .* oldAlpha .* (1 - alpha)) ./ safeAlpha;
+    rgbOut(:,:,c) = plane;
+end
+
+alphaOut(mask) = newAlpha;
 end
 
 function img = adjustIntensityImage(img, lims)

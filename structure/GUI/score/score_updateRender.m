@@ -39,7 +39,9 @@ switch mode
             h = graphicsHandles.overlayHandles(tileIndex);
             if ~isequal(get(h, 'CData'), indexedOverlay)
                 set(h, 'CData', indexedOverlay);
-                 set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            end
+            if ~isequal(get(h, 'AlphaData'), alphaOverlay)
+                set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
             end
 
 
