@@ -554,16 +554,17 @@ for a = 1:numel(maskSpecs)
         for t = framePosition
             baseFrame = imageout(:,:,baseSpec.channel,t);
             otherFrame = imageout(:,:,otherSpec.channel,t);
-            baseForeground = foregroundMask(baseFrame, baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel);
             otherForeground = foregroundMask(otherFrame, otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel);
-            labelValue = uint16(str2double(char(string(baseSpec.scoreLabel))));
+            baseLabels = maskInstanceLabels(baseFrame, baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel);
 
             andFrame = zeros(size(baseFrame), 'uint16');
-            andFrame(baseForeground & otherForeground) = labelValue;
-            andData(:,:,1,t) = andFrame;
-
             notFrame = zeros(size(baseFrame), 'uint16');
-            notFrame(baseForeground & ~otherForeground) = labelValue;
+            for iLabel = 1:numel(baseLabels)
+                basePix = baseFrame == baseLabels(iLabel);
+                andFrame(basePix & otherForeground) = 1;
+                notFrame(basePix & ~otherForeground) = 1;
+            end
+            andData(:,:,1,t) = andFrame;
             notData(:,:,1,t) = notFrame;
         end
 
