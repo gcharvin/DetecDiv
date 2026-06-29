@@ -506,11 +506,9 @@ try
         return;
     end
 
-    name = lower(string(channelName));
-    looksLikeMask = startsWith(name, "results_") || contains(name, "mask") || ...
-        contains(name, "seg") || contains(name, "track") || contains(name, "lineage") || ...
-        endsWith(name, "_cell");
-    tf = logical(defaultClass) || looksLikeMask;
+    % Let the UI checkbox decide whether label 1 is background. Classifier
+    % result channels may legitimately use object id 1 for a real cell.
+    tf = logical(defaultClass);
 catch
     tf = logical(defaultClass);
 end
