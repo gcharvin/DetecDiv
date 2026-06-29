@@ -543,11 +543,11 @@ for a = 1:numel(maskSpecs)
         notData = zeros(size(imageout, 1), size(imageout, 2), 1, nFramesTotal, 'uint16');
 
         existingAnd = roiobj.findChannelID(andName, 'exact');
-        if ~isempty(existingAnd)
+        if ~isempty(existingAnd) && existingAnd(1) <= size(imageout, 3)
             andData(:,:,:,1:nFramesTotal) = uint16(imageout(:,:,existingAnd(1),:));
         end
         existingNot = roiobj.findChannelID(notName, 'exact');
-        if ~isempty(existingNot)
+        if ~isempty(existingNot) && existingNot(1) <= size(imageout, 3)
             notData(:,:,:,1:nFramesTotal) = uint16(imageout(:,:,existingNot(1),:));
         end
 
