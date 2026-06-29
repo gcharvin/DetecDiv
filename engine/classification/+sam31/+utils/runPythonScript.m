@@ -14,16 +14,20 @@ runtime = resolveSam31Runtime(configPath);
 cmd = buildCommand(runtime, scriptPath, configPath);
 cancelTokenFile = readCancelTokenFile(configPath);
 runnerMode = resolveRunnerMode(scriptPath, configPath, tp);
-if strcmp(runtime.backend, 'wsl')
-    runnerMode = 'external';
-end
 
 disp(['[SAM31] ' cmd]);
 if ~isempty(cancelTokenFile)
     detecdiv_check_cancel(cancelTokenFile, 'SAM31 Python before launch');
 end
 
-if strcmp(runnerMode, 'session')
+if strcmp(runnerMode, 'session') && strcmp(runtime.backend, 'wsl')
+    try
+        [status, cmdout] = runWslSession(runtime, scriptPath, configPath, workDir);
+    catch ME
+        disp(['[WARN] SAM31 WSL session runner failed; falling back to external WSL process: ' ME.message]);
+        [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile);
+    end
+elseif strcmp(runnerMode, 'session')
     try
         [status, cmdout] = runSession(runtime, scriptPath, configPath, workDir);
     catch ME
@@ -46,6 +50,133 @@ end
 if status ~= 0
     error('sam31:PythonRunnerFailed', 'SAM31 Python runner failed (%d):\n%s', status, cmdout);
 end
+end
+
+function [status, cmdout] = runWslSession(runtime, scriptPath, configPath, workDir)
+persistent serverKey serverReadyFile serverPort serverHost serverLogFile serverCleanup
+
+key = wslServerKey(runtime, scriptPath);
+if isempty(serverKey) || ~strcmp(serverKey, key) || isempty(serverPort) || ~isfinite(serverPort)
+    [serverReadyFile, serverLogFile, serverHost, serverPort] = startWslServer(runtime, scriptPath);
+    serverKey = key;
+    serverCleanup = makeWslServerCleanup(runtime, scriptPath, serverHost, serverPort);
+end
+
+clientCmd = buildWslClientCommand(runtime, scriptPath, configPath, serverHost, serverPort);
+disp(sprintf('[SAM31] WSL session runner: port=%d log=%s', round(serverPort), serverLogFile));
+[status, cmdout] = system(clientCmd);
+if status ~= 0
+    % One retry handles stale ports after WSL was restarted outside MATLAB.
+    [serverReadyFile, serverLogFile, serverHost, serverPort] = startWslServer(runtime, scriptPath);
+    serverKey = key;
+    serverCleanup = makeWslServerCleanup(runtime, scriptPath, serverHost, serverPort);
+    clientCmd = buildWslClientCommand(runtime, scriptPath, configPath, serverHost, serverPort);
+    [status, cmdout] = system(clientCmd);
+end
+try
+    fid = fopen(fullfile(workDir, 'sam31_wsl_server_ref.json'), 'w');
+    if fid ~= -1
+        fwrite(fid, jsonencode(struct('readyFile', serverReadyFile, ...
+            'logFile', serverLogFile, 'host', serverHost, 'port', serverPort)), 'char');
+        fclose(fid);
+    end
+catch
+end
+end
+
+function cleanupObj = makeWslServerCleanup(runtime, scriptPath, host, port)
+cleanupRuntime = runtime;
+cleanupScriptPath = scriptPath;
+cleanupHost = host;
+cleanupPort = port;
+cleanupObj = onCleanup(@() shutdownWslServer(cleanupRuntime, cleanupScriptPath, cleanupHost, cleanupPort));
+end
+
+function shutdownWslServer(runtime, scriptPath, host, port)
+try
+    cmd = buildWslShutdownCommand(runtime, scriptPath, host, port);
+    system(cmd);
+catch
+end
+end
+
+function key = wslServerKey(runtime, scriptPath)
+key = strjoin({ ...
+    char(string(runtime.repoRoot)), ...
+    char(string(runtime.sam3Repo)), ...
+    char(string(fileparts(scriptPath)))}, '|');
+end
+
+function [readyFile, logFile, host, port] = startWslServer(runtime, scriptPath)
+readyFile = fullfile(tempdir, ['detecdiv_sam31_wsl_server_' char(javaMethod('randomUUID', 'java.util.UUID')) '.json']);
+logFile = fullfile(tempdir, ['detecdiv_sam31_wsl_server_' datestr(now, 'yyyymmdd_HHMMSS_FFF') '.log']);
+launchScript = fullfile(tempdir, ['detecdiv_sam31_wsl_server_' datestr(now, 'yyyymmdd_HHMMSS_FFF') '.sh']);
+deleteIfExists(readyFile);
+deleteIfExists(launchScript);
+
+serverScript = fullfile(fileparts(scriptPath), 'sam31_wsl_server.py');
+wslDistro = getenvOrDefaultLocal('SAM31_WSL_DISTRO', 'Ubuntu-24.04');
+pythonExe = getenvOrDefaultLocal('SAM31_WSL_PYTHON_EXE', '/home/gilles/venvs/sam3/bin/python');
+pythonPath = wslPythonPath(runtime, scriptPath);
+readyWsl = toWslPath(readyFile);
+logWsl = toWslPath(logFile);
+serverWsl = toWslPath(serverScript);
+
+writeWslLaunchScript(launchScript, { ...
+    '#!/usr/bin/env bash', ...
+    'set -e', ...
+    ['exec > ' shellQuote(logWsl) ' 2>&1'], ...
+    wslMountPreludeLine(), ...
+    ['cd ' shellQuote(fileparts(serverWsl))], ...
+    sprintf('exec env PYTHONPATH=%s:%s %s %s --host 127.0.0.1 --port 0 --ready-file %s', ...
+        shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
+        shellQuote(pythonExe), shellQuote(serverWsl), shellQuote(readyWsl))});
+launchWsl = toWslPath(launchScript);
+cmd = buildPowershellStartWslCommand(wslDistro, ...
+    ['sed -i ''s/\r$//'' ' shellQuote(launchWsl) ' && bash ' shellQuote(launchWsl)]);
+disp(['[SAM31] starting WSL session server: ' cmd]);
+[status, out] = system(cmd);
+if status ~= 0
+    error('sam31:WslServerStartFailed', 'Unable to start WSL SAM31 server (%d):%s%s', status, newline, out);
+end
+
+deadline = tic;
+while exist(readyFile, 'file') ~= 2
+    if toc(deadline) > 45
+        logText = readTextFile(logFile);
+        error('sam31:WslServerStartTimeout', ...
+            'Timed out waiting for WSL SAM31 server ready file:%s%s', newline, logText);
+    end
+    pause(0.25);
+end
+ready = jsondecode(fileread(readyFile));
+host = char(string(ready.host));
+port = double(ready.port);
+if isempty(host) || ~isfinite(port) || port <= 0
+    error('sam31:WslServerBadReadyFile', 'Invalid WSL SAM31 ready file: %s', readyFile);
+end
+end
+
+function cmd = buildWslClientCommand(runtime, scriptPath, configPath, host, port)
+wslDistro = getenvOrDefaultLocal('SAM31_WSL_DISTRO', 'Ubuntu-24.04');
+pythonExe = getenvOrDefaultLocal('SAM31_WSL_PYTHON_EXE', '/home/gilles/venvs/sam3/bin/python');
+clientScript = fullfile(fileparts(scriptPath), 'sam31_wsl_client.py');
+bashCmd = sprintf('PYTHONPATH=%s:%s %s %s --host %s --port %d --config %s', ...
+    shellQuote(wslPythonPath(runtime, scriptPath)), shellQuote(getenv('PYTHONPATH')), ...
+    shellQuote(pythonExe), shellQuote(toWslPath(clientScript)), ...
+    shellQuote(host), round(port), shellQuote(toWslPath(configPath)));
+cmd = buildPowershellWslCommand(wslDistro, bashCmd);
+end
+
+function cmd = buildWslShutdownCommand(runtime, scriptPath, host, port)
+wslDistro = getenvOrDefaultLocal('SAM31_WSL_DISTRO', 'Ubuntu-24.04');
+pythonExe = getenvOrDefaultLocal('SAM31_WSL_PYTHON_EXE', '/home/gilles/venvs/sam3/bin/python');
+clientScript = fullfile(fileparts(scriptPath), 'sam31_wsl_client.py');
+bashCmd = sprintf('PYTHONPATH=%s:%s %s %s --host %s --port %d --shutdown --timeout 10', ...
+    shellQuote(wslPythonPath(runtime, scriptPath)), shellQuote(getenv('PYTHONPATH')), ...
+    shellQuote(pythonExe), shellQuote(toWslPath(clientScript)), ...
+    shellQuote(host), round(port));
+cmd = buildPowershellWslCommand(wslDistro, bashCmd);
 end
 
 function mode = resolveRunnerMode(scriptPath, configPath, tp)
@@ -444,27 +575,60 @@ end
 function cmd = buildWslCommand(runtime, scriptPath, configPath)
 wslDistro = getenvOrDefaultLocal('SAM31_WSL_DISTRO', 'Ubuntu-24.04');
 pythonExe = getenvOrDefaultLocal('SAM31_WSL_PYTHON_EXE', '/home/gilles/venvs/sam3/bin/python');
-repoRoot = toWslPath(runtime.repoRoot);
-sam3Repo = toWslPath(runtime.sam3Repo);
 scriptWsl = toWslPath(scriptPath);
 configWsl = toWslPath(configPath);
 workDirWsl = fileparts(configWsl);
-pythonPath = strjoin({fileparts(scriptWsl), repoRoot, [repoRoot '/scripts'], sam3Repo}, ':');
-
-prelude = '';
-if startsWith(configWsl, '/mnt/x/') || startsWith(workDirWsl, '/mnt/x/')
-    prelude = ['sudo mkdir -p /mnt/x && ' ...
-        'if ! mountpoint -q /mnt/x; then sudo mount -t drvfs ''//10.20.11.250/Data'' /mnt/x; fi && '];
-end
+pythonPath = wslPythonPath(runtime, scriptPath);
 
 bashCmd = sprintf('%scd %s && PYTHONPATH=%s:%s %s %s --config %s', ...
-    prelude, shellQuote(workDirWsl), shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
+    wslMountPrelude(), shellQuote(workDirWsl), shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
     shellQuote(pythonExe), shellQuote(scriptWsl), shellQuote(configWsl));
+cmd = buildPowershellWslCommand(wslDistro, bashCmd);
+end
+
+function pythonPath = wslPythonPath(runtime, scriptPath)
+repoRoot = toWslPath(runtime.repoRoot);
+sam3Repo = toWslPath(runtime.sam3Repo);
+scriptWsl = toWslPath(scriptPath);
+pythonPath = strjoin({fileparts(scriptWsl), repoRoot, [repoRoot '/scripts'], sam3Repo}, ':');
+end
+
+function prelude = wslMountPrelude()
+prelude = ['sudo mkdir -p /mnt/x && ' ...
+    'if ! mountpoint -q /mnt/x; then sudo mount -t drvfs ''//10.20.11.250/Data'' /mnt/x; fi && '];
+end
+
+function line = wslMountPreludeLine()
+line = 'sudo mkdir -p /mnt/x && if ! mountpoint -q /mnt/x; then sudo mount -t drvfs ''//10.20.11.250/Data'' /mnt/x; fi';
+end
+
+function writeWslLaunchScript(pathValue, lines)
+fid = fopen(pathValue, 'w');
+if fid == -1
+    error('sam31:WslLaunchScriptWriteFailed', 'Unable to write WSL launch script: %s', pathValue);
+end
+cleanup = onCleanup(@() fclose(fid));
+for i = 1:numel(lines)
+    fprintf(fid, '%s\n', char(string(lines{i})));
+end
+clear cleanup
+end
+
+function cmd = buildPowershellWslCommand(wslDistro, bashCmd)
 if ispc
     psCmd = sprintf('& wsl.exe -d %s -- bash -lc %s', powershellQuote(wslDistro), powershellQuote(bashCmd));
     cmd = sprintf('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command %s', windowsQuote(psCmd));
 else
     cmd = sprintf('wsl.exe -d %s -- bash -lc %s', shellQuote(wslDistro), shellQuote(bashCmd));
+end
+end
+
+function cmd = buildPowershellStartWslCommand(wslDistro, bashCmd)
+if ispc
+    cmd = sprintf('cmd.exe /c start "" /b wsl.exe -d %s -- bash -lc %s', ...
+        char(string(wslDistro)), windowsQuote(bashCmd));
+else
+    cmd = buildPowershellWslCommand(wslDistro, bashCmd);
 end
 end
 
