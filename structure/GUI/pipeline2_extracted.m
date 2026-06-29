@@ -4618,7 +4618,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 target = 'local';
             elseif any(strcmp(target, {'windows','local_windows','local_matlab','local/windowspython'}))
                 target = 'local';
-            elseif any(strcmp(target, {'wsl','localwsl','local_linux','local/wsl'}))
+            elseif any(strcmp(target, {'local_wsl','wsl','localwsl','local_linux','local/wsl'}))
                 target = 'local_wsl';
             end
             try
@@ -15040,7 +15040,7 @@ classdef pipeline2 < matlab.apps.AppBase
             target = lower(strtrim(char(string(target))));
             target = strrep(target, '-', '_');
             target = strrep(target, ' ', '_');
-            if any(strcmp(target, {'wsl','localwsl','local_linux','local/wsl'}))
+            if any(strcmp(target, {'local_wsl','wsl','localwsl','local_linux','local/wsl'}))
                 target = 'local_wsl';
             elseif strcmp(target, 'hub')
                 target = 'hub';
