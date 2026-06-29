@@ -105,20 +105,28 @@ cfg.repo_root = strrep(char(string(runtimeParam(tp, internal, 'repoRoot'))), '\'
 cfg.sam3_repo = strrep(char(string(runtimeParam(tp, internal, 'sam3Repo'))), '\', '/');
 cfg.detector_checkpoint_path = strrep(char(string(tp.detectorCheckpointPath)), '\', '/');
 cfg.tracker_checkpoint_path = strrep(char(string(tp.trackerCheckpointPath)), '\', '/');
+cfg.backend = char(string(runtimeParam(tp, internal, 'backend')));
+cfg.python_executable = char(string(runtimeParam(tp, internal, 'pythonExecutable')));
 cfg.smoke_only = logical(runtimeParam(tp, internal, 'smokeOnly'));
-cfg.image_size = double(str2double(string(sam31.utils.paramValue(tp, 'resolution', 280))));
-cfg.max_num_objects = double(tp.maxNumObjects);
-cfg.chunk_size = double(runtimeParam(tp, internal, 'chunkSize'));
-cfg.chunk_overlap = double(runtimeParam(tp, internal, 'chunkOverlap'));
+cfg.image_size = sam31ScalarNumber(sam31.utils.paramValue(tp, 'resolution', 280), 280, 'resolution', true, 1);
+cfg.max_num_objects = sam31ScalarNumber(tp.maxNumObjects, 40, 'maxNumObjects', true, 1);
+cfg.chunk_size = sam31ScalarNumber(runtimeParam(tp, internal, 'chunkSize'), 0, 'chunkSize', true, 0);
+cfg.chunk_overlap = sam31ScalarNumber(runtimeParam(tp, internal, 'chunkOverlap'), 0, 'chunkOverlap', true, 0);
 cfg.prompt = char(string(runtimeParam(tp, internal, 'prompt')));
 cfg.prompt_mode = char(string(runtimeParam(tp, internal, 'promptMode')));
-cfg.min_score = double(runtimeParam(tp, internal, 'minScore'));
-cfg.video_score_threshold = double(tp.videoScoreThreshold);
-cfg.video_new_det_threshold = double(tp.videoNewDetThreshold);
-cfg.video_det_nms_threshold = double(tp.videoDetNmsThreshold);
-cfg.video_assoc_iou_threshold = double(tp.videoAssocIouThreshold);
+cfg.min_score = sam31ScalarNumber(runtimeParam(tp, internal, 'minScore'), 0, 'minScore', false, 0);
+cfg.video_score_threshold = sam31ScalarNumber(tp.videoScoreThreshold, 0.40, 'videoScoreThreshold', false, 0);
+cfg.video_new_det_threshold = sam31ScalarNumber(tp.videoNewDetThreshold, 0.40, 'videoNewDetThreshold', false, 0);
+cfg.video_det_nms_threshold = sam31ScalarNumber(tp.videoDetNmsThreshold, 0.10, 'videoDetNmsThreshold', false, 0);
+cfg.video_assoc_iou_threshold = sam31ScalarNumber(tp.videoAssocIouThreshold, 0.50, 'videoAssocIouThreshold', false, 0);
 cfg.cancel_path = cancelTokenFileFromCtx(ctx);
 cfg.runner_mode = runnerModeFromCtx(ctx);
+
+fprintf('[SAM31 classify] effective params: backend=%s image_size=%g max_num_objects=%g score=%.3g new_det=%.3g det_nms=%.3g assoc_iou=%.3g runner=%s\n', ...
+    cfg.backend, ...
+    cfg.image_size, cfg.max_num_objects, cfg.video_score_threshold, ...
+    cfg.video_new_det_threshold, cfg.video_det_nms_threshold, ...
+    cfg.video_assoc_iou_threshold, cfg.runner_mode);
 
 configPath = fullfile(workDir, 'classify_sam31_config.json');
 writeJson(configPath, cfg);
@@ -197,6 +205,52 @@ if isstruct(internal) && isfield(internal, name)
 end
 if isstruct(tp) && isfield(tp, name) && ~isempty(tp.(name))
     value = sam31.utils.paramValue(tp, name, value);
+end
+end
+
+function value = sam31ScalarNumber(raw, defaultValue, name, makeInteger, minValue)
+if nargin < 4 || isempty(makeInteger)
+    makeInteger = false;
+end
+if nargin < 5 || isempty(minValue)
+    minValue = -Inf;
+end
+
+value = defaultValue;
+try
+    if iscell(raw) && ~isempty(raw)
+        raw = raw{end};
+    end
+    if ischar(raw) || (isstring(raw) && isscalar(raw))
+        txt = strtrim(char(string(raw)));
+        parsed = str2double(txt);
+        if isnan(parsed) && contains(txt, ',') && ~contains(txt, '.')
+            parsed = str2double(strrep(txt, ',', '.'));
+        end
+        raw = parsed;
+    end
+    candidate = double(raw);
+    candidate = candidate(isfinite(candidate));
+    if isempty(candidate)
+        candidate = double(defaultValue);
+    elseif ~isscalar(candidate)
+        warning('sam31:VectorScalarParam', ...
+            'SAM31 parameter %s must be scalar; using first value %.6g from [%s].', ...
+            char(string(name)), candidate(1), strtrim(sprintf(' %.6g', candidate)));
+        candidate = candidate(1);
+    end
+    value = candidate;
+catch
+    value = double(defaultValue);
+end
+
+if makeInteger
+    value = round(value);
+end
+if ~isfinite(value) || value < minValue
+    error('sam31:InvalidScalarParam', ...
+        'SAM31 parameter %s must be a finite scalar >= %.6g.', ...
+        char(string(name)), double(minValue));
 end
 end
 

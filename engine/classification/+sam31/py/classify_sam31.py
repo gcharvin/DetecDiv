@@ -48,6 +48,23 @@ def classifier_root_from_output_dir(output_dir: Path) -> Path | None:
     return None
 
 
+def resolve_importable_repo_root(repo_root: Path) -> Path:
+    if (repo_root / "sam31_ctc_benchmark").is_dir():
+        return repo_root
+    candidates = [
+        Path("/mnt/c/Users/Gilles/Documents/MATLAB/SAM31_yeast"),
+        Path("/mnt/c/Users/Gilles/Documents/MATLAB/SAM31_zero_shot_ctc_benchmark"),
+        Path("/home/gilles/repos/SAM31_zero_shot_ctc_benchmark"),
+        Path("/home/charvin-admin/repos/SAM31_zero_shot_ctc_benchmark"),
+        Path("/data/Gilles/SAM31_zero_shot_ctc_benchmark"),
+    ]
+    for candidate in candidates:
+        if (candidate / "sam31_ctc_benchmark").is_dir():
+            print(f"[SAM31 classify] using importable repo_root: {candidate}", flush=True)
+            return candidate
+    return repo_root
+
+
 def newest_existing(paths: list[Path]) -> Path | None:
     existing = [path for path in paths if path.exists()]
     if not existing:
@@ -88,6 +105,37 @@ def resolve_checkpoint(value: str | None, output_dir: Path, image_size: int, kin
     if resolved is not None:
         print(f"[SAM31 classify] using auto {kind} checkpoint: {resolved}", flush=True)
     return resolved
+
+
+def scalar_number(value: Any, default: float, name: str, *, integer: bool = False, minimum: float | None = None) -> int | float:
+    if value is None:
+        out = float(default)
+    elif isinstance(value, (list, tuple)):
+        if not value:
+            out = float(default)
+        else:
+            print(
+                f"[SAM31 classify] warning: {name} must be scalar; using first value {value[0]!r} from {value!r}",
+                flush=True,
+            )
+            out = scalar_number(value[0], default, name, integer=False, minimum=None)
+    else:
+        text = str(value).strip()
+        try:
+            out = float(text)
+        except ValueError:
+            if "," in text and "." not in text:
+                out = float(text.replace(",", "."))
+            else:
+                raise ValueError(f"{name} must be numeric, got {value!r}") from None
+
+    if not np.isfinite(out):
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    if minimum is not None and out < minimum:
+        raise ValueError(f"{name} must be >= {minimum}, got {out!r}")
+    if integer:
+        return int(round(out))
+    return float(out)
 
 
 def is_cancel_requested(cancel_path: Path | None) -> bool:
@@ -498,6 +546,11 @@ def run(config_path: str | Path) -> None:
     cancel_path = as_local_path(cfg.get("cancel_path"))
     if repo_root is None or sam3_repo is None or input_mat_path is None or output_dir is None:
         raise SystemExit("Missing repo_root, sam3_repo, input_mat_path, or output_dir")
+    repo_root = resolve_importable_repo_root(repo_root)
+    if not sam3_repo.exists():
+        candidate = repo_root / "artifacts" / "sam3_official"
+        if candidate.exists():
+            sam3_repo = candidate
     check_cancel(cancel_path, "startup")
 
     sys.path.insert(0, str(repo_root))
@@ -528,14 +581,14 @@ def run(config_path: str | Path) -> None:
         return
 
     video_kwargs = {
-        "score_threshold_detection": cfg.get("video_score_threshold"),
-        "new_det_thresh": cfg.get("video_new_det_threshold"),
-        "det_nms_thresh": cfg.get("video_det_nms_threshold"),
-        "assoc_iou_thresh": cfg.get("video_assoc_iou_threshold"),
-        "max_num_objects": cfg.get("max_num_objects"),
+        "score_threshold_detection": scalar_number(cfg.get("video_score_threshold"), 0.40, "video_score_threshold", minimum=0.0),
+        "new_det_thresh": scalar_number(cfg.get("video_new_det_threshold"), 0.40, "video_new_det_threshold", minimum=0.0),
+        "det_nms_thresh": scalar_number(cfg.get("video_det_nms_threshold"), 0.10, "video_det_nms_threshold", minimum=0.0),
+        "assoc_iou_thresh": scalar_number(cfg.get("video_assoc_iou_threshold"), 0.50, "video_assoc_iou_threshold", minimum=0.0),
+        "max_num_objects": scalar_number(cfg.get("max_num_objects"), 40, "max_num_objects", integer=True, minimum=1.0),
     }
     video_kwargs = {k: v for k, v in video_kwargs.items() if v is not None}
-    image_size = int(cfg.get("image_size", 280))
+    image_size = scalar_number(cfg.get("image_size"), 280, "image_size", integer=True, minimum=1.0)
     detector_checkpoint_path = resolve_checkpoint(
         cfg.get("detector_checkpoint_path"),
         output_dir=output_dir,
@@ -559,10 +612,10 @@ def run(config_path: str | Path) -> None:
         image_dir=image_dir,
         num_frames=raw.shape[3],
         prompt=str(cfg.get("prompt", "cell")),
-        min_score=float(cfg.get("min_score", 0.0)),
+        min_score=scalar_number(cfg.get("min_score"), 0.0, "min_score", minimum=0.0),
         fallback_shape=(raw.shape[0], raw.shape[1]),
-        chunk_size=int(cfg.get("chunk_size", 0)),
-        chunk_overlap=int(cfg.get("chunk_overlap", 0)),
+        chunk_size=scalar_number(cfg.get("chunk_size"), 0, "chunk_size", integer=True, minimum=0.0),
+        chunk_overlap=scalar_number(cfg.get("chunk_overlap"), 0, "chunk_overlap", integer=True, minimum=0.0),
         cancel_path=cancel_path,
     )
 

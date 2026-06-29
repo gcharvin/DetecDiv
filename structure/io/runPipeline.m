@@ -2574,6 +2574,7 @@ function ctx = executeClassifierNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getRuntimeNodeParams(ctx, node, 'classifier');
+    p = applyLocalPythonBackendToClassifierParams(p, pkgName, ctx);
     intent = classifierRunIntent(ctx, p);
     refClassi = resolveClassifierReference(node, p, ctx);
     clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);
@@ -2709,6 +2710,8 @@ function ctx = executeClassifierNode(node, ctx)
         ch = {};
     end
     classCtx = ctx;
+    classCtx.params = p;
+    classCtx.classifier = p;
     if ~isfield(classCtx, 'io') || ~isstruct(classCtx.io)
         classCtx.io = struct();
     end
@@ -2855,6 +2858,46 @@ try
         frames = ctx.sel.frames;
     end
 catch
+end
+end
+
+function p = applyLocalPythonBackendToClassifierParams(p, pkgName, ctx)
+try
+    pkg = lower(strtrim(char(string(pkgName))));
+catch
+    pkg = '';
+end
+if ~strcmp(pkg, 'sam31')
+    return;
+end
+
+target = '';
+try
+    if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) ...
+            && isfield(ctx.run, 'executionTarget') && ~isempty(ctx.run.executionTarget)
+        target = lower(strtrim(char(string(ctx.run.executionTarget))));
+    end
+catch
+    target = '';
+end
+if isempty(target)
+    try
+        if isstruct(ctx) && isfield(ctx, 'exec') && isstruct(ctx.exec) ...
+                && isfield(ctx.exec, 'python') && isstruct(ctx.exec.python) ...
+                && isfield(ctx.exec.python, 'backend') && ~isempty(ctx.exec.python.backend)
+            target = lower(strtrim(char(string(ctx.exec.python.backend))));
+        end
+    catch
+        target = '';
+    end
+end
+target = strrep(target, '-', '_');
+target = strrep(target, ' ', '_');
+
+if any(strcmp(target, {'local_wsl','wsl','localwsl','local_linux'}))
+    p.backend = 'wsl';
+elseif any(strcmp(target, {'local','windows','local_windows','local_matlab'}))
+    p.backend = 'local';
 end
 end
 

@@ -3365,8 +3365,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.HubFieldHandles = struct();
 
             if ~isempty(app.RunTargetDropDown) && isvalid(app.RunTargetDropDown)
-                app.RunTargetDropDown.Items = {'Local MATLAB','DetecDiv Hub'};
-                app.RunTargetDropDown.ItemsData = {'local','hub'};
+                app.RunTargetDropDown.Items = {'Local / Windows','Local / WSL','DetecDiv Hub'};
+                app.RunTargetDropDown.ItemsData = {'local','local_wsl','hub'};
                 app.RunTargetDropDown.Value = 'local';
                 target = app.RunTargetDropDown;
                 app.HubFieldHandles.executionTargetLabel = app.RunTargetDropDownLabel;
@@ -3374,8 +3374,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.HubFieldHandles.executionTargetLabel = uilabel(app.RuntimeTab, ...
                     'Text', 'Run target', 'HorizontalAlignment', 'right', 'Position', [374 330 78 22]);
                 target = uidropdown(app.RuntimeTab, ...
-                    'Items', {'Local MATLAB','Hub'}, ...
-                    'ItemsData', {'local','hub'}, ...
+                    'Items', {'Local / Windows','Local / WSL','Hub'}, ...
+                    'ItemsData', {'local','local_wsl','hub'}, ...
                     'Value', 'local', ...
                     'Position', [462 330 170 22]);
             end
@@ -4612,8 +4612,14 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function setRuntimeExecutionTarget(app, target)
             target = lower(strtrim(char(string(target))));
+            target = strrep(target, '-', '_');
+            target = strrep(target, ' ', '_');
             if isempty(target)
                 target = 'local';
+            elseif any(strcmp(target, {'windows','local_windows','local_matlab','local/windowspython'}))
+                target = 'local';
+            elseif any(strcmp(target, {'wsl','localwsl','local_linux','local/wsl'}))
+                target = 'local_wsl';
             end
             try
                 if isstruct(app.HubFieldHandles) && isfield(app.HubFieldHandles, 'executionTarget') && ...
@@ -7002,6 +7008,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if isfield(params, 'sam31Runner')
                 params.sam31Runner = normalizeSam31RunnerForPipeline(app, params.sam31Runner);
             end
+            if isfield(params, 'backend')
+                params.backend = normalizeSam31BackendForPipeline(app, params.backend);
+            end
         end
 
         function spec = sam31ExecutionSpec(app, classiObj) %#ok<INUSD>
@@ -7012,19 +7021,29 @@ classdef pipeline2 < matlab.apps.AppBase
                 spec = sam31.executionSpec(classiObj);
             catch
                 spec = struct();
-                spec.staticKeys = {'resolution','maxNumObjects','videoScoreThreshold', ...
+                spec.staticKeys = {'backend','resolution','maxNumObjects','videoScoreThreshold', ...
                     'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner'};
                 spec.outputKeys = {};
                 spec.defaultImportKeys = spec.staticKeys;
-                spec.defaults = struct('resolution', '280', ...
+                spec.defaults = struct('backend', 'local', 'resolution', '280', ...
                     'maxNumObjects',40, ...
                     'videoScoreThreshold',0.4, 'videoNewDetThreshold',0.4, ...
                     'videoAssocIouThreshold',0.5, ...
                     'sam31Runner', 'session');
                 spec.labels = struct();
                 spec.tips = struct();
-                spec.choices = struct('resolution', {{'280','1008'}}, ...
+                spec.choices = struct('backend', {{'local','wsl'}}, ...
+                    'resolution', {{'280','1008'}}, ...
                     'sam31Runner', {{'session','external'}});
+            end
+        end
+
+        function backend = normalizeSam31BackendForPipeline(app, backend) %#ok<INUSD>
+            backend = lower(strtrim(char(string(backend))));
+            if any(strcmp(backend, {'wsl','linux'}))
+                backend = 'wsl';
+            else
+                backend = 'local';
             end
         end
 
@@ -13648,10 +13667,13 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function label = runTargetLabel(app)
-            if strcmp(runtimeExecutionTarget(app), 'hub')
-                label = 'Hub';
-            else
-                label = 'Local MATLAB';
+            switch runtimeExecutionTarget(app)
+                case 'hub'
+                    label = 'Hub';
+                case 'local_wsl'
+                    label = 'Local / WSL';
+                otherwise
+                    label = 'Local / Windows';
             end
         end
 
@@ -14612,6 +14634,11 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             ctx.run.executionTarget = runtimeExecutionTarget(app);
             hubExecution = strcmpi(ctx.run.executionTarget, 'hub');
+            if strcmpi(ctx.run.executionTarget, 'local_wsl')
+                ctx.exec = struct('python', struct('backend', 'wsl'));
+            elseif strcmpi(ctx.run.executionTarget, 'local')
+                ctx.exec = struct('python', struct('backend', 'local'));
+            end
             updateRunSaveProgress(app, progressDlg, 'Preparing run: resolving input source...', 0.24);
             if hubExecution
                 ctx.run.inputSource = inferRuntimeInputSourceFast(app);
@@ -14831,9 +14858,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     control.cancelMode = 'hub_job_cancel';
                     control.cancelEndpoint = '/pipeline-runs/{job_id}/cancel';
                     control.statusEndpoint = '/pipeline-runs/{job_id}';
+                case 'local_wsl'
+                    control.cancelMode = 'file_token';
+                    control.cancelTokenFile = '';
+                    control.pythonBackend = 'wsl';
                 otherwise
                     control.cancelMode = 'file_token';
                     control.cancelTokenFile = '';
+                    control.pythonBackend = 'local';
             end
         end
 
@@ -15003,6 +15035,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 target = 'local';
             end
             if isempty(target)
+                target = 'local';
+            end
+            target = lower(strtrim(char(string(target))));
+            target = strrep(target, '-', '_');
+            target = strrep(target, ' ', '_');
+            if any(strcmp(target, {'wsl','localwsl','local_linux','local/wsl'}))
+                target = 'local_wsl';
+            elseif strcmp(target, 'hub')
+                target = 'hub';
+            else
                 target = 'local';
             end
         end
@@ -18190,8 +18232,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             ctxSmoke.run.runPolicy = 'restart';
             ctxSmoke.run.resume = false;
-            ctxSmoke.run.executionTarget = 'local';
-            ctxSmoke.run.control = buildRunControlPolicy(app, 'local');
+            ctxSmoke.run.executionTarget = runtimeExecutionTarget(app);
+            if strcmpi(ctxSmoke.run.executionTarget, 'hub')
+                ctxSmoke.run.executionTarget = 'local';
+            end
+            if strcmpi(ctxSmoke.run.executionTarget, 'local_wsl')
+                ctxSmoke.exec = struct('python', struct('backend', 'wsl'));
+            elseif strcmpi(ctxSmoke.run.executionTarget, 'local')
+                ctxSmoke.exec = struct('python', struct('backend', 'local'));
+            end
+            ctxSmoke.run.control = buildRunControlPolicy(app, ctxSmoke.run.executionTarget);
             ctxSmoke.run.control.resumePolicy = 'restart';
             ctxSmoke.run.smokeTest = smokeInfo;
             ctxSmoke.run.rois = smokeInfo.roiIndex;
@@ -19262,8 +19312,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create RunTargetDropDown
             app.RunTargetDropDown = uidropdown(app.RuntimeTab);
-            app.RunTargetDropDown.Items = {'Local MATLAB', 'DetecDiv Hub'};
-            app.RunTargetDropDown.ItemsData = {'local', 'hub'};
+            app.RunTargetDropDown.Items = {'Local / Windows', 'Local / WSL', 'DetecDiv Hub'};
+            app.RunTargetDropDown.ItemsData = {'local', 'local_wsl', 'hub'};
             app.RunTargetDropDown.Position = [462 330 170 22];
             app.RunTargetDropDown.Value = 'local';
 

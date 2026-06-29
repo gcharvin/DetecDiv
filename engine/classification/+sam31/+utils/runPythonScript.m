@@ -14,6 +14,9 @@ runtime = resolveSam31Runtime(configPath);
 cmd = buildCommand(runtime, scriptPath, configPath);
 cancelTokenFile = readCancelTokenFile(configPath);
 runnerMode = resolveRunnerMode(scriptPath, configPath, tp);
+if strcmp(runtime.backend, 'wsl')
+    runnerMode = 'external';
+end
 
 disp(['[SAM31] ' cmd]);
 if ~isempty(cancelTokenFile)
@@ -79,7 +82,9 @@ end
 end
 
 function [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile)
-if ~isempty(cancelTokenFile) && ~ispc
+if startsWith(cmd, 'wsl.exe ')
+    [status, cmdout] = system(cmd);
+elseif ~isempty(cancelTokenFile) && ~ispc
     [status, cmdout] = runCommandWithCancel(cmd, workDir, cancelTokenFile);
 else
     [status, cmdout] = system(cmd);
@@ -356,9 +361,26 @@ if isempty(pythonExe)
 end
 
 runtime = struct();
+runtime.backend = resolveBackend(cfg);
 runtime.pythonExe = pythonExe;
 runtime.repoRoot = repoRoot;
 runtime.sam3Repo = sam3Repo;
+end
+
+function backend = resolveBackend(cfg)
+backend = getenv('SAM31_BACKEND');
+try
+    if isempty(backend) && isstruct(cfg) && isfield(cfg, 'backend') && ~isempty(cfg.backend)
+        backend = char(string(cfg.backend));
+    end
+catch
+end
+backend = lower(strtrim(char(string(backend))));
+if any(strcmp(backend, {'wsl','linux'}))
+    backend = 'wsl';
+else
+    backend = 'local';
+end
 end
 
 function pathValue = readConfigPath(cfg, fieldName, defaultValue)
@@ -380,6 +402,8 @@ if hasSam31Package(repoRoot)
 end
 candidates = { ...
     char(string(defaultRepoRoot)), ...
+    fullfile(getenv('USERPROFILE'), 'Documents', 'MATLAB', 'SAM31_yeast'), ...
+    '/mnt/c/Users/Gilles/Documents/MATLAB/SAM31_yeast', ...
     '/home/charvin-admin/repos/SAM31_zero_shot_ctc_benchmark', ...
     '/data/Gilles/SAM31_zero_shot_ctc_benchmark'};
 for i = 1:numel(candidates)
@@ -402,6 +426,11 @@ end
 function cmd = buildCommand(runtime, scriptPath, configPath)
 pythonPath = strjoin(buildPythonPathParts(runtime, scriptPath), pathsep);
 
+if isstruct(runtime) && isfield(runtime, 'backend') && strcmp(runtime.backend, 'wsl')
+    cmd = buildWslCommand(runtime, scriptPath, configPath);
+    return;
+end
+
 if ispc
     cmd = sprintf('set "PYTHONPATH=%s;%s" && "%s" "%s" --config "%s"', ...
         pythonPath, getenv('PYTHONPATH'), runtime.pythonExe, scriptPath, configPath);
@@ -409,6 +438,74 @@ else
     cmd = sprintf('PYTHONPATH=%s:%s "%s" "%s" --config "%s"', ...
         shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
         runtime.pythonExe, scriptPath, configPath);
+end
+end
+
+function cmd = buildWslCommand(runtime, scriptPath, configPath)
+wslDistro = getenvOrDefaultLocal('SAM31_WSL_DISTRO', 'Ubuntu-24.04');
+pythonExe = getenvOrDefaultLocal('SAM31_WSL_PYTHON_EXE', '/home/gilles/venvs/sam3/bin/python');
+repoRoot = toWslPath(runtime.repoRoot);
+sam3Repo = toWslPath(runtime.sam3Repo);
+scriptWsl = toWslPath(scriptPath);
+configWsl = toWslPath(configPath);
+workDirWsl = fileparts(configWsl);
+pythonPath = strjoin({fileparts(scriptWsl), repoRoot, [repoRoot '/scripts'], sam3Repo}, ':');
+
+prelude = '';
+if startsWith(configWsl, '/mnt/x/') || startsWith(workDirWsl, '/mnt/x/')
+    prelude = ['sudo mkdir -p /mnt/x && ' ...
+        'if ! mountpoint -q /mnt/x; then sudo mount -t drvfs ''//10.20.11.250/Data'' /mnt/x; fi && '];
+end
+
+bashCmd = sprintf('%scd %s && PYTHONPATH=%s:%s %s %s --config %s', ...
+    prelude, shellQuote(workDirWsl), shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
+    shellQuote(pythonExe), shellQuote(scriptWsl), shellQuote(configWsl));
+if ispc
+    psCmd = sprintf('& wsl.exe -d %s -- bash -lc %s', powershellQuote(wslDistro), powershellQuote(bashCmd));
+    cmd = sprintf('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command %s', windowsQuote(psCmd));
+else
+    cmd = sprintf('wsl.exe -d %s -- bash -lc %s', shellQuote(wslDistro), shellQuote(bashCmd));
+end
+end
+
+function out = powershellQuote(value)
+value = char(string(value));
+value = strrep(value, '''', '''''');
+out = ['''' value ''''];
+end
+
+function out = windowsQuote(value)
+value = char(string(value));
+value = strrep(value, '"', '\"');
+out = ['"' value '"'];
+end
+
+function pathOut = toWslPath(pathIn)
+pathText = char(string(pathIn));
+pathText = strrep(pathText, '\', '/');
+if numel(pathText) >= 2 && pathText(2) == ':'
+    drive = lower(pathText(1));
+    rest = pathText(3:end);
+    if startsWith(rest, '/')
+        rest = rest(2:end);
+    end
+    pathOut = ['/mnt/' drive '/' rest];
+elseif startsWith(pathText, '//10.20.11.250/Data', 'IgnoreCase', true)
+    suffix = char(extractAfter(pathText, strlength('//10.20.11.250/Data')));
+    pathOut = ['/mnt/x' suffix];
+elseif startsWith(pathText, '\\10.20.11.250\Data', 'IgnoreCase', true)
+    pathText = strrep(pathText, '\', '/');
+    suffix = char(extractAfter(pathText, strlength('//10.20.11.250/Data')));
+    pathOut = ['/mnt/x' suffix];
+else
+    pathOut = pathText;
+end
+end
+
+function value = getenvOrDefaultLocal(name, defaultValue)
+value = getenv(name);
+if isempty(value)
+    value = defaultValue;
 end
 end
 
