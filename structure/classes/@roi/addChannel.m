@@ -13,8 +13,16 @@ function addChannel(obj, matrix, str, rgb, intensity)
         intensity = [0 0 0];
     end
 
+    % MATLAB drops trailing singleton dimensions, so [H W 1 1] often
+    % arrives as a 2-D array. Normalize it back to the ROI channel shape.
+    if ismatrix(matrix)
+        matrix = reshape(matrix, size(matrix,1), size(matrix,2), 1, 1);
+    elseif ndims(matrix) == 3
+        matrix = reshape(matrix, size(matrix,1), size(matrix,2), size(matrix,3), 1);
+    end
+
     % Validation basique du 3e dim (nb sous-canaux)
-    if ndims(matrix) < 4
+    if ndims(matrix) < 4 && size(matrix,4) ~= 1
         error('addChannel:BadSize', 'matrix must be [H W k T].');
     end
     k = size(matrix,3);
