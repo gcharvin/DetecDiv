@@ -113,6 +113,7 @@ if strcmp(mode, 'slow')
  refresh=true;
 end
 
+figureState = captureScoreFigureState(app);
 
 %tmp=app.graphicsHandles.imgHandles
    if refresh
@@ -124,6 +125,7 @@ displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
 %return;
 app.graphicsHandles=score_renderFinalFrame(displayHandles , selectedROI, opts);
 app.displayHandles=displayHandles;
+restoreScoreFigureState(app, figureState);
    else
  score_updateRender(app.graphicsHandles,selectedROI, opts, app.displayHandles,currentFrame)
    end
@@ -226,6 +228,50 @@ end
 
 
 %profile viewer
+end
+
+function state = captureScoreFigureState(app)
+state = [];
+try
+    if ~isprop(app, 'ImageFigure') || isempty(app.ImageFigure) || ...
+            ~ishandle(app.ImageFigure) || ~isvalid(app.ImageFigure)
+        return;
+    end
+
+    fig = app.ImageFigure;
+    state.Units = fig.Units;
+    fig.Units = 'pixels';
+    state.Position = fig.Position;
+    state.WindowState = fig.WindowState;
+    fig.Units = state.Units;
+catch
+    state = [];
+end
+end
+
+function restoreScoreFigureState(app, state)
+try
+    if isempty(state) || ~isprop(app, 'ImageFigure') || isempty(app.ImageFigure) || ...
+            ~ishandle(app.ImageFigure) || ~isvalid(app.ImageFigure)
+        return;
+    end
+
+    fig = app.ImageFigure;
+    oldUnits = fig.Units;
+    fig.Units = 'pixels';
+    if isfield(state, 'Position') && numel(state.Position) == 4 && all(isfinite(state.Position))
+        fig.Position = state.Position;
+    end
+    if isfield(state, 'WindowState') && strlength(string(state.WindowState)) > 0
+        fig.WindowState = state.WindowState;
+    end
+    fig.Units = oldUnits;
+catch
+    try
+        app.ImageFigure.Units = state.Units;
+    catch
+    end
+end
 end
 
 function syncChannelTableLevels(app, opts, selectedROI)

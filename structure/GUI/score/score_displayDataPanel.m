@@ -42,6 +42,8 @@ if ~isempty(pix)
     ybounds = data.groupProperties{pix,4};
     xbounds = data.groupProperties{pix,3};
 end
+[xBounds, xBoundsAuto] = localParseAxisBounds(xbounds);
+[yBounds, yBoundsAuto] = localParseAxisBounds(ybounds);
 
 % --- Axe X (minutes) ---
 if timeoffset
@@ -184,7 +186,7 @@ if plottype=="Plot"
         amax = xMarker + layoutOptions.trackWindow * framerate;
         ax.UserData.xlim = [amin amax];
     else
-        if isempty(xbounds) || xbounds=="auto"
+        if xBoundsAuto
             amin = min(xdata);
             if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
@@ -193,8 +195,7 @@ if plottype=="Plot"
 
             ax.UserData.xlim = 'auto';
         else
-            xb = str2num(xbounds); %#ok<ST2NM>
-            amin = xb(1); amax = xb(2);
+            amin = xBounds(1); amax = xBounds(2);
             ax.UserData.xlim = [amin amax];
         end
     end
@@ -210,11 +211,10 @@ if plottype=="Plot"
         ax.UserData.ylim = 'labels';
     else
         % --- YLim normal (numérique) ---
-        if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
+        if yBoundsAuto
             ax.UserData.ylim = 'auto';
         else
-            yb = str2num(ybounds); %#ok<ST2NM>
-            amin = yb(1); amax = yb(2);
+            amin = yBounds(1); amax = yBounds(2);
             ylim(ax, [amin amax]);
             ax.UserData.ylim = [amin amax];
         end
@@ -247,13 +247,12 @@ else
     % ===========================
 
     % Y bounds
-    if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
+    if yBoundsAuto
         ax.UserData.ylim = 'auto';
         amin = min(ydata(:));
         amax = max(ydata(:));
     else
-        yb = str2num(ybounds); %#ok<ST2NM>
-        amin = yb(1); amax = yb(2);
+        amin = yBounds(1); amax = yBounds(2);
         ax.UserData.ylim = [amin amax];
     end
 
@@ -282,7 +281,7 @@ else
         amin = movieXLim(1);
         amax = movieXLim(2);
         ax.UserData.xlim = [amin amax];
-    elseif isempty(xbounds) || xbounds=="auto"
+    elseif xBoundsAuto
         amin = min(xdata);
         if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
@@ -291,8 +290,7 @@ else
 
         ax.UserData.xlim = 'auto';
     else
-        xb = str2num(xbounds); %#ok<ST2NM>
-        amin = xb(1); amax = xb(2);
+        amin = xBounds(1); amax = xBounds(2);
         ax.UserData.xlim = [amin amax];
     end
 
@@ -343,6 +341,34 @@ try
     end
 catch
     label = fallback;
+end
+end
+
+function [bounds, isAuto] = localParseAxisBounds(rawBounds)
+bounds = [];
+isAuto = true;
+try
+    if isempty(rawBounds)
+        return;
+    end
+
+    if isnumeric(rawBounds)
+        vals = double(rawBounds(:)');
+    else
+        txt = strtrim(char(string(rawBounds)));
+        if isempty(txt) || strcmpi(txt, 'auto')
+            return;
+        end
+        vals = str2num(strrep(txt, ',', ' ')); %#ok<ST2NM>
+    end
+
+    if isnumeric(vals) && numel(vals) >= 2 && all(isfinite(vals(1:2))) && vals(2) > vals(1)
+        bounds = vals(1:2);
+        isAuto = false;
+    end
+catch
+    bounds = [];
+    isAuto = true;
 end
 end
 

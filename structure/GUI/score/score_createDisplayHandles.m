@@ -72,7 +72,7 @@ set(fig, 'Color', background);
             set(fig, 'Color', background);
             localResizeScoreFigure(fig, figWidth, figHeight);
     
-            clf;
+            clf(fig);
             else
             fig= figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
     'Position', [100, 100, figWidth, figHeight]);
@@ -89,7 +89,7 @@ set(fig, 'Color', background);
         case 'movie'
             % Pour movie, plusieurs ROI sont affichées, mais le layout interne de chaque ROI
             % est identique à celui du mode display.
-               if layoutOptions.overlay
+            if layoutOptions.overlay
                 ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nbrick;
             else
@@ -100,7 +100,7 @@ set(fig, 'Color', background);
             MasterRows = layoutOptions.Nrow * ROI_rows;
             MasterCols = layoutOptions.Ncol * ROI_cols;
 
-              figWidth = MasterCols * layoutOptions.tileW + (MasterCols+1)*margin;
+            figWidth = MasterCols * layoutOptions.tileW + (MasterCols+1)*margin;
             figHeight = MasterRows * layoutOptions.tileH + (MasterRows+1)*margin + extraMargin;
 
             fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
