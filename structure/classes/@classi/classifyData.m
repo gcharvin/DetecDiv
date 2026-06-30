@@ -383,7 +383,7 @@ for i = 1:numel(roiobj)
                 catch
                     disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
                 end
-                applyAndPersistClassifierPatch(roiobj(i), out.patch, ctx, outputName, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode);
+                applyAndPersistClassifierPatch(roiobj(i), out.patch, ctx, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode);
             else
                 if exist('roiApplyPatch','file') ~= 2
                     warning('roiApplyPatch not found on path; falling back to ROIManagement.');
@@ -396,7 +396,7 @@ for i = 1:numel(roiobj)
                 catch
                     disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
                 end
-                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode);
+                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode, ctx);
                 end
             end
             disp(['Classified (pipeline) ' num2str(roiobj(i).id)]);
@@ -442,7 +442,7 @@ if para
                 catch
                     disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
                 end
-                applyAndPersistClassifierPatch(roiobj(idx), out.patch, ctx, outputName, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode);
+                applyAndPersistClassifierPatch(roiobj(idx), out.patch, ctx, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode);
             else
                 if exist('roiApplyPatch','file') ~= 2
                     warning('roiApplyPatch not found on path; falling back to ROIManagement.');
@@ -455,7 +455,7 @@ if para
                     catch
                         disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
                     end
-                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode);
+                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode, ctx);
                 end
             end
         else
@@ -789,7 +789,7 @@ end
 % ROI management + saving
 %   NEW: apply outputName to dataseries.groupid (NO HEURISTICS)
 % ========================================================================
-function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode)
+function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode, ctx)
 
     % --- Only re-group classification outputs that belong to this classifier ---
     if nargin >= 5 && ~isempty(outputName) && isa(data,'dataseries')
@@ -801,12 +801,17 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     if nargin < 7, hadImageBefore = false; end
     if nargin < 8, hadDataBefore = false; end
     if nargin < 9 || isempty(saveMode), saveMode = 'immediate'; end
+    if nargin < 10 || isempty(ctx), ctx = struct(); end
 
     imageCache = image;
     dataCache = data;
     roiobj.data  = data;
     roiobj.image = image;
     localNormalizeIndexedResultChannels(roiobj);
+    lineageDataChanged = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx);
+    if lineageDataChanged
+        dataCache = roiobj.data;
+    end
 
     if shouldDeferSaveLocal(saveMode)
         imageSaveChannels = {};
@@ -831,6 +836,9 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
             catch
             end
             roiobj.save(imageSaveChannels);
+            if lineageDataChanged
+                roiobj.save('data');
+            end
         else
             roiobj.save;   % sauvegarde tout
         end
@@ -858,23 +866,25 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     end
 end
 
-function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode)
-    if nargin < 5 || isempty(cachePolicyLocal)
+function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode)
+    if nargin < 6 || isempty(cachePolicyLocal)
         cachePolicyLocal = 'auto';
     end
-    if nargin < 6, hadImageBefore = false; end
-    if nargin < 7, hadDataBefore = false; end
-    if nargin < 8 || isempty(saveMode), saveMode = 'immediate'; end
+    if nargin < 7, hadImageBefore = false; end
+    if nargin < 8, hadDataBefore = false; end
+    if nargin < 9 || isempty(saveMode), saveMode = 'immediate'; end
 
     imageCache = roiobj.image;
     dataCacheBefore = roiobj.data;
     roiApplyPatch(roiobj, patch, ctx);
+    lineageDataChanged = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx);
 
-    hasDataPatch = patchHasDataseries(patch);
+    patchDataChanged = patchHasDataseries(patch);
+    hasDataPatch = patchDataChanged || lineageDataChanged;
     hasImagePatch = patchHasImageWrite(patch);
     expectedOutput = char(string(outputName));
 
-    if hasDataPatch && ~roiHasDataseries(roiobj, expectedOutput)
+    if patchDataChanged && ~roiHasDataseries(roiobj, expectedOutput)
         error('classifyData:MissingPatchOutput', ...
             'Classifier patch did not create expected dataseries "%s" for ROI "%s".', ...
             expectedOutput, safeRoiIdLocal(roiobj));
@@ -899,6 +909,9 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, cachePol
         channelsToSave = patchImageChannels(patch);
         if ~isempty(channelsToSave) && localRoiH5Exists(roiobj)
             roiobj.save(channelsToSave);
+            if lineageDataChanged
+                roiobj.save('data');
+            end
         else
             roiobj.save;
         end
@@ -928,6 +941,116 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, cachePol
                 roiobj.data = dataCacheBefore;
             end
         end
+    end
+end
+
+function changed = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx)
+    changed = false;
+    if ~localIsSam31Classifier(classiobj)
+        return;
+    end
+    if ~localClassifierBoolParam(classiobj, ctx, {'inferBudPairing','runBudPairing','enableBudPairing'}, true)
+        return;
+    end
+    try
+        report = sam31.applyBudPairing(roiobj, classiobj, 'OutputName', outputName, 'Ctx', ctx);
+        if isstruct(report) && isfield(report, 'changed')
+            changed = logical(report.changed);
+        end
+        if isstruct(report) && isfield(report, 'reason') && ~strcmp(char(string(report.reason)), 'disabled')
+            try
+                fprintf('[SAM31 bud pairing] ROI %s: %s, events=%d, assigned=%d\n', ...
+                    safeRoiIdLocal(roiobj), char(string(report.reason)), ...
+                    localStructNumber(report, 'nEvents', 0), ...
+                    localStructNumber(report, 'nAssignedToMotherOf', 0));
+            catch
+            end
+        end
+    catch ME
+        warning('classifyData:SAM31BudPairingFailed', ...
+            'SAM31 bud-mother pairing failed for ROI "%s": %s', ...
+            safeRoiIdLocal(roiobj), ME.message);
+    end
+end
+
+function tf = localIsSam31Classifier(classiobj)
+    tf = false;
+    try
+        if isprop(classiobj, 'classifierPkg') && strcmpi(char(string(classiobj.classifierPkg)), 'sam31')
+            tf = true;
+            return;
+        end
+    catch
+    end
+    try
+        if isprop(classiobj, 'classifyFun')
+            fun = char(string(classiobj.classifyFun));
+            tf = contains(lower(fun), 'sam31.classify');
+        end
+    catch
+        tf = false;
+    end
+end
+
+function value = localStructNumber(s, fieldName, fallback)
+    value = fallback;
+    try
+        if isstruct(s) && isfield(s, fieldName)
+            value = double(s.(fieldName));
+        end
+    catch
+        value = fallback;
+    end
+end
+
+function tf = localClassifierBoolParam(classiobj, ctx, names, defaultValue)
+    tf = defaultValue;
+    sources = {};
+    try
+        if isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params)
+            sources{end+1} = ctx.params; %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if isprop(classiobj, 'runProfiles') && isstruct(classiobj.runProfiles) && ...
+                isfield(classiobj.runProfiles, 'classify') && ...
+                isfield(classiobj.runProfiles.classify, 'params') && ...
+                isstruct(classiobj.runProfiles.classify.params)
+            sources{end+1} = classiobj.runProfiles.classify.params; %#ok<AGROW>
+        end
+    catch
+    end
+    for s = 1:numel(sources)
+        src = sources{s};
+        fields = fieldnames(src);
+        for n = 1:numel(names)
+            hit = find(strcmpi(fields, names{n}), 1, 'first');
+            if ~isempty(hit)
+                tf = localValueToBool(src.(fields{hit}), defaultValue);
+                return;
+            end
+        end
+    end
+end
+
+function tf = localValueToBool(value, defaultValue)
+    tf = defaultValue;
+    try
+        if islogical(value)
+            tf = logical(value(1));
+        elseif isnumeric(value)
+            tf = value(1) ~= 0;
+        elseif ischar(value) || (isstring(value) && isscalar(value))
+            txt = lower(strtrim(char(string(value))));
+            if any(strcmp(txt, {'1','true','yes','on','oui'}))
+                tf = true;
+            elseif any(strcmp(txt, {'0','false','no','off','non'}))
+                tf = false;
+            end
+        end
+    catch
+        tf = defaultValue;
     end
 end
 

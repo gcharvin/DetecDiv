@@ -18,4 +18,10 @@ p.videoNewDetThreshold = 0.40;
 p.videoDetNmsThreshold = 0.10;
 p.videoAssocIouThreshold = 0.50;
 p.sam31Runner = 'session';
+p.inferBudPairing = true;
+p.budPairingSourceKey = '';
+p.budPairingShowSource = true;
+p.budPairingActivateSource = true;
+p.budPairingWriteCanonical = true;
+p.budPairingOverwriteMotherOf = false;
 end

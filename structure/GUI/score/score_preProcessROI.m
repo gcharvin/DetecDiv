@@ -32,7 +32,15 @@ dataidx={};
 for j = 1:numel(layout.dataSelectedIdx)
     idx = layout.dataSelectedIdx(j);
     data = roitmp.data(idx);
-    subDataIdx = find(cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)));
+    lineageRows = false(size(data.plotProperties, 1), 1);
+    try
+        if size(data.plotProperties, 2) >= 3
+            lineageRows = strcmp(string(data.plotProperties(:,3)), "lineageSource");
+        end
+    catch
+        lineageRows = false(size(data.plotProperties, 1), 1);
+    end
+    subDataIdx = find(cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows);
     layout.subData(j) = {subDataIdx};
     ndata = ndata + numel(subDataIdx);
     
@@ -40,7 +48,7 @@ for j = 1:numel(layout.dataSelectedIdx)
     groups = data.plotGroup{6};
     for i = 1:numel(groups)
         pix = contains(data.plotProperties(:, end), string(groups{i}));
-        pix2 = cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1));
+        pix2 = cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows;
         pix = find(pix & pix2);  % indices des plots à afficher
         if ~isempty(pix)
             n = n + 1;

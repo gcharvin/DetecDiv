@@ -160,6 +160,11 @@ ensureCellInformationDataseries(roiObj);
         end
         app=appFigure.RunningAppInstance;
     else
+        try
+            clear score
+            rehash
+        catch
+        end
         if strlength(string(options)) > 0
             app=score(roiObj,options);
         else

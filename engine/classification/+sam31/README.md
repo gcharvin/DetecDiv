@@ -15,6 +15,7 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `sam31.format`: export DetecDiv annotations to `classif.path/trainingdataset/<split>/_annotations.*.json` plus `<classifier>_sam31_framebank.h5`; legacy CTC writing is disabled by default.
 - `sam31.train`: call the generic SAM31 CLI to prepare datasets and train selected modules.
 - `sam31.classify`: run SAM3.1 full-model inference on one ROI.
+- `sam31.applyBudPairing`: infer bud-mother links from SAM31 tracked labels and store them in `cell_information.userData.lineageSources`.
 - `sam31.executionSpec`: expose inference parameters to pipeline nodes.
 
 ## Important Parameters
@@ -30,6 +31,12 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `detectorCheckpointPath`: instance detector checkpoint for inference.
 - `trackerCheckpointPath`: video memory/tracker checkpoint for inference.
 - `maxNumObjects`, `videoScoreThreshold`, `videoNewDetThreshold`, `videoDetNmsThreshold`, `videoAssocIouThreshold`: full-model inference controls.
+- `inferBudPairing`: after inference, write inferred bud-mother links; enabled by default.
+- `budPairingSourceKey`: optional source key under `cell_information.userData.lineageSources`; empty uses the output name.
+- `budPairingShowSource`: initial visibility flag for score lineage display.
+- `budPairingActivateSource`: make this source the active lineage source after inference.
+- `budPairingWriteCanonical`: update the legacy `cell_information.userData.motherOf` alias when it is empty.
+- `budPairingOverwriteMotherOf`: replace an existing legacy `userData.motherOf` map; disabled by default to preserve manual annotations.
 
 ## Model And Artifact Ownership
 
@@ -50,4 +57,16 @@ not provided, the generic SAM31 CLI writes to `<repoRoot>/artifacts`.
 
 The preferred training export keeps formatted raw images in one HDF5 framebank and stores instance masks as COCO RLE in JSON.
 Video JSON records keep object IDs across frames through `track_id` and preserve parentage through `parent_id` / `parent_track_id`.
-This is the bridge to future mother-bud assignment work: SAM3.1 handles segmentation/tracking, while parentage can be trained later from the same lineage metadata.
+SAM31 inference writes inferred parentage into the same `cell_information`
+dataseries used by manual annotations, but keeps each label-channel reference in
+a separate source:
+
+```text
+cell_information.userData.lineageSources.<sourceKey>.motherOf
+cell_information.userData.lineageSources.<sourceKey>.channelName
+cell_information.userData.activeLineageSource
+```
+
+The legacy `userData.motherOf` map remains as a compatibility alias for older
+score code and manual GT workflows. It is updated only when empty unless
+`budPairingOverwriteMotherOf=true`.

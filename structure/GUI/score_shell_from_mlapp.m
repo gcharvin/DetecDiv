@@ -291,6 +291,24 @@ classdef score < matlab.apps.AppBase
 
         end
 
+        function roiobj = refreshROIDataFromDisk(app, roiobj) %#ok<INUSL>
+            if ~isa(roiobj, 'roi') || isempty(roiobj.path) || isempty(roiobj.id)
+                return;
+            end
+
+            dataFile = fullfile(roiobj.path, sprintf('data_%s.mat', roiobj.id));
+            if ~isfile(dataFile)
+                return;
+            end
+
+            try
+                roiobj.load('data', 'Silent');
+            catch ME
+                warning('Score:RefreshROIData', ...
+                    'Could not refresh data for ROI %s from disk: %s', roiobj.id, ME.message);
+            end
+        end
+
         function handleROITableEdit(app, event)
       %   profile on
             % Callback pour s'assurer qu'une seule ROI est sélectionnée
@@ -1236,6 +1254,7 @@ end
                 if numel(roiobj.image)==0
                     roiobj.load;
                 end
+                roiobj = app.refreshROIDataFromDisk(roiobj);
 
                 if numel(roiobj.image)==0
                     errordlg('ROI image is empty;  Maybe it has not been extracted.... Quitting!');
@@ -1554,6 +1573,26 @@ end
                   end
            end
 
+            if isempty(app.UIDataTable.Selection) || app.UIDataTable.Selection(1) > nData
+                selectedDataIndex = [];
+                try
+                    shown = find(cell2mat(t(:,1)), 1, 'first');
+                    if ~isempty(shown)
+                        selectedDataIndex = shown;
+                    end
+                catch
+                end
+                if isempty(selectedDataIndex)
+                    selectedDataIndex = find(strcmp(t(:,2), 'cell_information'), 1, 'first');
+                end
+                if isempty(selectedDataIndex) && nData > 0
+                    selectedDataIndex = 1;
+                end
+                if ~isempty(selectedDataIndex)
+                    app.UIDataTable.Selection = [selectedDataIndex 1];
+                end
+            end
+
             displaySubData(app);
 
 
@@ -1736,6 +1775,13 @@ end
         end
     end
 
+    [t, selectedData, groupChoices, columnformat] = app.addLineageSourceRowsToSubDataTable(selectedData, t, groupChoices, columnformat);
+    try
+        if isprop(selectedData, 'groupProperties') && ~isempty(selectedData.groupProperties)
+            app.UIGroupTable.Data = selectedData.groupProperties;
+        end
+    catch
+    end
 
 
     % --- SANITIZE ColumnFormat : jamais de [] ---
@@ -1859,6 +1905,77 @@ end
         end
     end
 end
+
+        function [t, selectedData, groupChoices, columnformat] = addLineageSourceRowsToSubDataTable(app, selectedData, t, groupChoices, columnformat) %#ok<INUSL>
+            try
+                if ~isprop(selectedData, 'groupid') || ~strcmp(char(string(selectedData.groupid)), 'cell_information')
+                    return;
+                end
+                if ~isprop(selectedData, 'userData') || ~isstruct(selectedData.userData) || ...
+                        ~isfield(selectedData.userData, 'lineageSources') || ~isstruct(selectedData.userData.lineageSources)
+                    return;
+                end
+
+                if ~iscell(t)
+                    if istable(t)
+                        t = table2cell(t);
+                    else
+                        t = num2cell(t);
+                    end
+                end
+                if size(t, 2) < 6
+                    t(:, end+1:6) = {''};
+                end
+
+                isLineageRow = false(size(t,1), 1);
+                if size(t,2) >= 3
+                    isLineageRow = strcmp(string(t(:,3)), "lineageSource");
+                end
+                t(isLineageRow, :) = [];
+
+                if ~any(strcmp(string(groupChoices), "lineage"))
+                    groupChoices{end+1} = 'lineage';
+                end
+                if numel(columnformat) < 6
+                    columnformat(end+1:6) = {'char'};
+                end
+                columnformat{6} = groupChoices;
+
+                if ~isprop(selectedData, 'groupProperties') || isempty(selectedData.groupProperties)
+                    selectedData.groupProperties = {'lineage', 'Traj', 'auto', 'auto'};
+                else
+                    gp = selectedData.groupProperties;
+                    hasLineage = false;
+                    try
+                        hasLineage = any(strcmp(string(gp(:,1)), "lineage"));
+                    catch
+                    end
+                    if ~hasLineage
+                        selectedData.groupProperties = [gp; {'lineage', 'Traj', 'auto', 'auto'}];
+                    end
+                end
+
+                sourceKeys = fieldnames(selectedData.userData.lineageSources);
+                activeKey = '';
+                try
+                    activeKey = char(string(selectedData.userData.activeLineageSource));
+                catch
+                end
+                for k = 1:numel(sourceKeys)
+                    key = sourceKeys{k};
+                    src = selectedData.userData.lineageSources.(key);
+                    show = false;
+                    try, show = logical(src.show); catch, end
+                    t(end+1, :) = {show, ['lineage:' key], 'lineageSource', 'auto', 2, 'lineage'}; %#ok<AGROW>
+                end
+
+                selectedData.plotProperties = t;
+                selectedData.plotGroup = columnformat;
+            catch ME
+                warning('score:LineageSourceRowsFailed', ...
+                    'Could not expose lineage sources in score table: %s', ME.message);
+            end
+        end
 
 
 
@@ -2072,17 +2189,30 @@ end
         % ---- set dropdown VALUE (catégorie courante) ----
         % Convertir val en string "propre"
         if iscategorical(val)
-            if isscalar(val)
+            if any(isundefined(val))
+                v = '';
+            elseif isscalar(val)
                 v = char(val);                 % ex: 'classA'
             else
                 v = char(val(1));              % fallback si jamais non-scalar
             end
         elseif isstring(val)
-            v = char(val);
+            if any(ismissing(val))
+                v = '';
+            else
+                v = char(val);
+            end
         elseif ischar(val)
             v = val;
+        elseif isa(val, 'missing')
+            v = '';
         else
-            v = char(string(val));             % dernier recours
+            s = string(val);
+            if any(ismissing(s))
+                v = '';
+            else
+                v = char(s);                   % dernier recours
+            end
         end
 
         % Si la valeur n'est pas dans Items, on la rajoute (optionnel mais robuste)
@@ -2892,6 +3022,7 @@ end
             if numel(roiobj.image)==0
                 roiobj.load;
             end
+            roiobj = app.refreshROIDataFromDisk(roiobj);
 
             if numel(roiobj.image)==0
                 errordlg('ROI image is empty;  Maybe it has not been extracted.... Quitting!');
@@ -4387,6 +4518,7 @@ end
 
             % Mettre à jour les plotProperties dans le dataset correspondant
             roi.data(dsIndex).plotProperties = app.UISubDataTable.Data;
+            roi.data(dsIndex) = app.syncLineageSourcesFromSubDataTable(roi.data(dsIndex));
 
             % Optionnel : actualiser le plot si une méthode plot est définie
             %   if isprop(roi.data(dsIndex), 'plot') && ~isempty(roi.data(dsIndex).plot)
@@ -4396,6 +4528,44 @@ end
          
             displayData(app);
 
+        end
+
+        function selectedData = syncLineageSourcesFromSubDataTable(app, selectedData) %#ok<INUSL>
+            try
+                if ~isprop(selectedData, 'groupid') || ~strcmp(char(string(selectedData.groupid)), 'cell_information')
+                    return;
+                end
+                if ~isprop(selectedData, 'userData') || ~isstruct(selectedData.userData) || ...
+                        ~isfield(selectedData.userData, 'lineageSources') || ~isstruct(selectedData.userData.lineageSources)
+                    return;
+                end
+                t = selectedData.plotProperties;
+                if istable(t), t = table2cell(t); end
+                if ~iscell(t) || size(t,2) < 3
+                    return;
+                end
+                for r = 1:size(t,1)
+                    if ~strcmp(char(string(t{r,3})), 'lineageSource')
+                        continue;
+                    end
+                    name = char(string(t{r,2}));
+                    if ~startsWith(name, 'lineage:')
+                        continue;
+                    end
+                    key = char(extractAfter(string(name), strlength("lineage:")));
+                    if isempty(key) || ~isfield(selectedData.userData.lineageSources, key)
+                        continue;
+                    end
+                    show = logical(t{r,1});
+                    selectedData.userData.lineageSources.(key).show = show;
+                    if show
+                        selectedData.userData.activeLineageSource = key;
+                    end
+                end
+            catch ME
+                warning('score:LineageSourceSyncFailed', ...
+                    'Could not sync lineage source visibility: %s', ME.message);
+            end
         end
 
         % Selection changed function: UISubDataTable

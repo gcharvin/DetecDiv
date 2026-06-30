@@ -5669,6 +5669,8 @@ classdef workflow2 < matlab.apps.AppBase
 
             try
 
+                clear score
+                rehash
                 score(roiObj);
 
             catch ME

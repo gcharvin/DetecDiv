@@ -7304,7 +7304,7 @@ end
                 end
 
                 try
-                    clear score_display score_updateHistogram score_updateIntensityProfile score_updateEllipticalProfile
+                    clear score score_display score_updateHistogram score_updateIntensityProfile score_updateEllipticalProfile
                     rehash
                 catch
                 end
@@ -7314,6 +7314,11 @@ end
                 if isprop(appFigure,'RunningAppInstance')
                     appFigure.RunningAppInstance.addROI(roiObj);
                 else
+                    try
+                        clear score
+                        rehash
+                    catch
+                    end
                     score(roiObj);
                 end
 

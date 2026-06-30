@@ -1709,7 +1709,9 @@ function keys = sam31ExecutionStaticKeys()
         keys = spec.staticKeys;
     catch
         keys = {'resolution','maxNumObjects','videoScoreThreshold', ...
-            'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner'};
+            'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner', ...
+            'inferBudPairing','budPairingSourceKey','budPairingShowSource', ...
+            'budPairingActivateSource','budPairingWriteCanonical','budPairingOverwriteMotherOf'};
     end
 end
 

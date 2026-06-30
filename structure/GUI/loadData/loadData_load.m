@@ -922,6 +922,11 @@ for k = 1:numel(roiToDisplay)
   if isprop(appFigure,'RunningAppInstance')
         appFigure.RunningAppInstance.addROI(roiObj);
   else
+        try
+            clear score
+            rehash
+        catch
+        end
         score(roiObj);
   end
 

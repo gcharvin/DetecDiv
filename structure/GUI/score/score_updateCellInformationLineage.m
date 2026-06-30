@@ -58,8 +58,10 @@ if isempty(idx)
     ds.groupProperties = {'lineage','Plot','auto','auto'};
 
     ds.userData.motherOf = containers.Map('KeyType','int32','ValueType','double');
+    ds.userData.lineageSources = struct();
+    ds.userData.activeLineageSource = 'manual';
     ds.userData.version  = 1;
-    ds.userData.note     = "lineage stored in userData.motherOf (Option A)";
+    ds.userData.note     = "lineage stored in userData.motherOf and userData.lineageSources";
 
 else
     % Réparer l'existant
@@ -84,8 +86,14 @@ else
     if ~isfield(ds,'userData') || ~isfield(ds.userData,'motherOf') || isempty(ds.userData.motherOf)
         ds.userData.motherOf = containers.Map('KeyType','int32','ValueType','double');
     end
+    if ~isfield(ds.userData,'lineageSources') || ~isstruct(ds.userData.lineageSources)
+        ds.userData.lineageSources = struct();
+    end
+    if ~isfield(ds.userData,'activeLineageSource') || isempty(ds.userData.activeLineageSource)
+        ds.userData.activeLineageSource = 'manual';
+    end
     if ~isfield(ds.userData,'version'), ds.userData.version = 1; end
-    if ~isfield(ds.userData,'note'),    ds.userData.note    = "lineage stored in userData.motherOf (Option A)"; end
+    if ~isfield(ds.userData,'note'),    ds.userData.note    = "lineage stored in userData.motherOf and userData.lineageSources"; end
 
     if isempty(ds.plotGroup) || numel(ds.plotGroup) < 6
         ds.plotGroup = {[] [] [] [] [] {'lineage'}};
