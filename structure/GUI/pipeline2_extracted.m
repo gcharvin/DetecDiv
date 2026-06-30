@@ -7023,8 +7023,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 spec = struct();
                 spec.staticKeys = {'backend','resolution','maxNumObjects','videoScoreThreshold', ...
                     'videoNewDetThreshold','videoAssocIouThreshold','sam31Runner', ...
-                    'inferBudPairing','budPairingSourceKey','budPairingShowSource', ...
-                    'budPairingActivateSource','budPairingWriteCanonical','budPairingOverwriteMotherOf'};
+                    'inferInstanceSegmentation','inferCellTracking', ...
+                    'inferBudPairing','budPairingSourceKey'};
                 spec.outputKeys = {};
                 spec.defaultImportKeys = spec.staticKeys;
                 spec.defaults = struct('backend', 'local', 'resolution', '280', ...
@@ -7032,22 +7032,18 @@ classdef pipeline2 < matlab.apps.AppBase
                     'videoScoreThreshold',0.4, 'videoNewDetThreshold',0.4, ...
                     'videoAssocIouThreshold',0.5, ...
                     'sam31Runner', 'session', ...
+                    'inferInstanceSegmentation', true, ...
+                    'inferCellTracking', true, ...
                     'inferBudPairing', true, ...
-                    'budPairingSourceKey', '', ...
-                    'budPairingShowSource', true, ...
-                    'budPairingActivateSource', true, ...
-                    'budPairingWriteCanonical', true, ...
-                    'budPairingOverwriteMotherOf', false);
+                    'budPairingSourceKey', '');
                 spec.labels = struct();
                 spec.tips = struct();
                 spec.choices = struct('backend', {{'local','wsl'}}, ...
                     'resolution', {{'280','1008'}}, ...
                     'sam31Runner', {{'session','external'}}, ...
-                    'inferBudPairing', {{true,false}}, ...
-                    'budPairingShowSource', {{true,false}}, ...
-                    'budPairingActivateSource', {{true,false}}, ...
-                    'budPairingWriteCanonical', {{true,false}}, ...
-                    'budPairingOverwriteMotherOf', {{false,true}});
+                    'inferInstanceSegmentation', {{true,false}}, ...
+                    'inferCellTracking', {{true,false}}, ...
+                    'inferBudPairing', {{true,false}});
             end
         end
 
@@ -11716,6 +11712,21 @@ classdef pipeline2 < matlab.apps.AppBase
             keyLower = lower(char(string(key)));
             enableState = ternary(app, editable, 'on', 'off');
 
+            valueText = safeScalarText(app, value);
+            if islogical(value) || any(strcmpi(valueText, {'true','false'})) || isBooleanParamKey(app, node, key)
+                ctrl = uicheckbox(parent, 'Text', '');
+                if islogical(value)
+                    ctrl.Value = logical(value);
+                elseif any(strcmpi(valueText, {'true','false'}))
+                    ctrl.Value = strcmpi(valueText, 'true');
+                else
+                    ctrl.Value = false;
+                end
+                ctrl.Enable = enableState;
+                ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+                return;
+            end
+
             choices = paramDropdownChoices(app, node, key);
             listChoices = valueListChoices(app, value);
             if isempty(choices) && ~isempty(listChoices)
@@ -11729,19 +11740,6 @@ classdef pipeline2 < matlab.apps.AppBase
                     displayValue = choices{1};
                 end
                 ctrl.Value = displayValue;
-                ctrl.Enable = enableState;
-                ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
-                return;
-            end
-
-            valueText = safeScalarText(app, value);
-            if islogical(value) || any(strcmpi(valueText, {'true','false'}))
-                ctrl = uicheckbox(parent, 'Text', '');
-                if islogical(value)
-                    ctrl.Value = logical(value);
-                else
-                    ctrl.Value = strcmpi(valueText, 'true');
-                end
                 ctrl.Enable = enableState;
                 ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
                 return;
@@ -11824,6 +11822,42 @@ classdef pipeline2 < matlab.apps.AppBase
             if tf && isnumeric(value)
                 tf = false;
             end
+        end
+
+        function tf = isBooleanParamKey(app, node, key)
+            tf = false;
+            keyText = char(string(key));
+            try
+                choices = paramDropdownChoices(app, node, keyText);
+                if isBooleanChoiceList(app, choices)
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+
+            keyLower = lower(keyText);
+            tf = startsWith(keyLower, {'infer','enable','disable','use','show','activate','overwrite','write','correct','crop','force','resume'}) || ...
+                startsWith(keyLower, 'is') || startsWith(keyLower, 'has') || ...
+                endsWith(keyLower, {'enabled','active','checkbox'});
+        end
+
+        function tf = isBooleanChoiceList(app, choices) %#ok<INUSD>
+            tf = false;
+            if isempty(choices)
+                return;
+            end
+            try
+                flat = string([choices{:}]);
+            catch
+                try
+                    flat = string(choices(:)');
+                catch
+                    return;
+                end
+            end
+            flat = lower(strtrim(flat(~ismissing(flat))));
+            tf = numel(flat) == 2 && all(ismember(flat, ["true","false"]));
         end
 
         function browseParamFolder(app, node, key, editField, scope)

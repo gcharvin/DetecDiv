@@ -14,7 +14,7 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `sam31.setparam`: initialize training/inference parameters.
 - `sam31.format`: export DetecDiv annotations to `classif.path/trainingdataset/<split>/_annotations.*.json` plus `<classifier>_sam31_framebank.h5`; legacy CTC writing is disabled by default.
 - `sam31.train`: call the generic SAM31 CLI to prepare datasets and train selected modules.
-- `sam31.classify`: run SAM3.1 full-model inference on one ROI.
+- `sam31.classify`: run SAM3.1 inference on one ROI, with independent switches for instance segmentation, cell tracking, and bud-mother pairing.
 - `sam31.applyBudPairing`: infer bud-mother links from SAM31 tracked labels and store them in `cell_information.userData.lineageSources`.
 - `sam31.executionSpec`: expose inference parameters to pipeline nodes.
 
@@ -31,12 +31,10 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `detectorCheckpointPath`: instance detector checkpoint for inference.
 - `trackerCheckpointPath`: video memory/tracker checkpoint for inference.
 - `maxNumObjects`, `videoScoreThreshold`, `videoNewDetThreshold`, `videoDetNmsThreshold`, `videoAssocIouThreshold`: full-model inference controls.
+- `inferInstanceSegmentation`: run the instance segmentation stage and write/update the result label channel.
+- `inferCellTracking`: keep object IDs coherent over time. This requires `inferInstanceSegmentation=true`; when disabled, output labels are frame-local instance masks.
 - `inferBudPairing`: after inference, write inferred bud-mother links; enabled by default.
 - `budPairingSourceKey`: optional source key under `cell_information.userData.lineageSources`; empty uses the output name.
-- `budPairingShowSource`: initial visibility flag for score lineage display.
-- `budPairingActivateSource`: make this source the active lineage source after inference.
-- `budPairingWriteCanonical`: update the legacy `cell_information.userData.motherOf` alias when it is empty.
-- `budPairingOverwriteMotherOf`: replace an existing legacy `userData.motherOf` map; disabled by default to preserve manual annotations.
 
 ## Model And Artifact Ownership
 
@@ -68,5 +66,16 @@ cell_information.userData.activeLineageSource
 ```
 
 The legacy `userData.motherOf` map remains as a compatibility alias for older
-score code and manual GT workflows. It is updated only when empty unless
-`budPairingOverwriteMotherOf=true`.
+score code and manual GT workflows. It is updated only when empty; replacement
+of existing outputs is handled by the surrounding pipeline/run output policy.
+
+Inference dependencies are enforced at runtime:
+
+```text
+bud pairing -> cell tracking -> instance segmentation
+```
+
+For example, enabling `inferBudPairing` automatically enables `inferCellTracking`
+and `inferInstanceSegmentation`. Disabling `inferCellTracking` while keeping
+`inferInstanceSegmentation` enabled produces instance labels without temporal ID
+continuity.

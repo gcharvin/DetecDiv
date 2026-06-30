@@ -138,6 +138,21 @@ def scalar_number(value: Any, default: float, name: str, *, integer: bool = Fals
     return float(out)
 
 
+def bool_value(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "oui"}:
+        return True
+    if text in {"0", "false", "no", "off", "non"}:
+        return False
+    return bool(default)
+
+
 def is_cancel_requested(cancel_path: Path | None) -> bool:
     return cancel_path is not None and cancel_path.exists()
 
@@ -298,6 +313,18 @@ def stitch_chunk_ids(
             remapped[local_frame == local_id] = global_id
         global_labels[abs_idx] = remapped
     return global_labels, next_global_id
+
+
+def frame_local_instance_labels(labels_by_frame: list[np.ndarray]) -> list[np.ndarray]:
+    """Drop temporal identity and keep frame-local instance labels."""
+    remapped_frames: list[np.ndarray] = []
+    for frame in labels_by_frame:
+        out = np.zeros_like(frame, dtype=np.uint16)
+        labels = [int(label) for label in np.unique(frame) if label != 0]
+        for new_id, old_id in enumerate(labels, start=1):
+            out[frame == old_id] = new_id
+        remapped_frames.append(out)
+    return remapped_frames
 
 
 def no_points_error(exc: Exception) -> bool:
@@ -562,6 +589,14 @@ def run(config_path: str | Path) -> None:
     write_image_sequence(raw, image_dir, cancel_path=cancel_path)
     check_cancel(cancel_path, "after image export")
 
+    infer_instance_segmentation = bool_value(cfg.get("infer_instance_segmentation"), True)
+    infer_cell_tracking = bool_value(cfg.get("infer_cell_tracking"), True)
+    if infer_cell_tracking and not infer_instance_segmentation:
+        print("[SAM31 classify] cell tracking requires instance segmentation; enabling instance segmentation", flush=True)
+        infer_instance_segmentation = True
+    if not infer_instance_segmentation:
+        infer_cell_tracking = False
+
     if bool(cfg.get("smoke_only", False)):
         height, width = raw.shape[0], raw.shape[1]
         masks = np.zeros((height, width, 1, raw.shape[3]), dtype=np.uint16)
@@ -618,6 +653,10 @@ def run(config_path: str | Path) -> None:
         chunk_overlap=scalar_number(cfg.get("chunk_overlap"), 0, "chunk_overlap", integer=True, minimum=0.0),
         cancel_path=cancel_path,
     )
+    if not infer_cell_tracking:
+        labels_by_frame = frame_local_instance_labels(labels_by_frame)
+        for row in stats_by_frame:
+            row["frame_local_instances"] = True
 
     height, width = raw.shape[0], raw.shape[1]
     masks = np.zeros((height, width, 1, len(labels_by_frame)), dtype=np.uint16)
