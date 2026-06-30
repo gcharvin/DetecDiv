@@ -835,10 +835,12 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
                 disp(['[DEBUG] ROIManagement: saving classifier output channels only: ' strjoin(imageSaveChannels, ', ')]);
             catch
             end
-            roiobj.save(imageSaveChannels);
             if lineageDataChanged
+                roiobj.data = dataCache;
                 roiobj.save('data');
+                roiobj.image = imageCache;
             end
+            roiobj.save(imageSaveChannels);
         else
             roiobj.save;   % sauvegarde tout
         end
@@ -878,6 +880,7 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
     dataCacheBefore = roiobj.data;
     roiApplyPatch(roiobj, patch, ctx);
     lineageDataChanged = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx);
+    dataCacheAfter = roiobj.data;
 
     patchDataChanged = patchHasDataseries(patch);
     hasDataPatch = patchDataChanged || lineageDataChanged;
@@ -908,10 +911,12 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
     if hasImagePatch
         channelsToSave = patchImageChannels(patch);
         if ~isempty(channelsToSave) && localRoiH5Exists(roiobj)
-            roiobj.save(channelsToSave);
             if lineageDataChanged
+                roiobj.data = dataCacheAfter;
                 roiobj.save('data');
+                roiobj.image = imageCache;
             end
+            roiobj.save(channelsToSave);
         else
             roiobj.save;
         end
@@ -938,7 +943,7 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
             try
                 roiobj.load('data','Silent');
             catch
-                roiobj.data = dataCacheBefore;
+                roiobj.data = dataCacheAfter;
             end
         end
     end

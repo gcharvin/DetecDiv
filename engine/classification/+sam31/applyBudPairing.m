@@ -479,6 +479,13 @@ try
     idx = find(arrayfun(@(x) isprop(x, 'groupid') && strcmp(char(string(x.groupid)), char(string(groupid))), roiobj.data), 1, 'first');
 catch
 end
+if isempty(idx)
+    try
+        idx = find(arrayfun(@localLooksLikeCellInformation, roiobj.data), 1, 'first');
+    catch
+        idx = [];
+    end
+end
 
 if isempty(idx)
     if isempty(roiobj.data) || (numel(roiobj.data) == 1 && localTableHeight(roiobj.data(1).data) == 0)
@@ -523,6 +530,79 @@ else
     if ~isfield(ds.userData, 'note')
         ds.userData.note = "lineage stored in userData.motherOf and userData.lineageSources";
     end
+end
+ds = localNormalizeCellInformationMetadata(ds, nFrames, groupid, roiobj);
+end
+
+function tf = localLooksLikeCellInformation(ds)
+tf = false;
+try
+    if isprop(ds, 'groupid') && strcmp(char(string(ds.groupid)), 'cell_information')
+        tf = true;
+        return;
+    end
+    if ~isprop(ds, 'userData') || ~isstruct(ds.userData)
+        return;
+    end
+    ud = ds.userData;
+    tf = isfield(ud, 'lineageSources') || isfield(ud, 'activeLineageSource') || ...
+        isfield(ud, 'motherOf') || isfield(ud, 'birthOf') || ...
+        isfield(ud, 'motherOfSourceKey');
+catch
+    tf = false;
+end
+end
+
+function ds = localNormalizeCellInformationMetadata(ds, nFrames, groupid, roiobj)
+try
+    ds.groupid = char(string(groupid));
+catch
+end
+try
+    ds.type = "temporal";
+catch
+end
+try
+    if ~isprop(ds, 'class') || isempty(ds.class)
+        ds.class = "other";
+    end
+catch
+end
+try
+    if ~isprop(ds, 'parentid') || isempty(ds.parentid)
+        ds.parentid = roiobj.id;
+    end
+catch
+end
+try
+    if isempty(ds.data) || ~istable(ds.data)
+        ds.data = table(cell(nFrames, 1), 'VariableNames', {'lineage'});
+        ds.data.lineage(:) = {nan};
+    elseif ~ismember('lineage', ds.data.Properties.VariableNames)
+        ds.data.lineage = repmat({nan}, height(ds.data), 1);
+    end
+catch
+end
+try
+    if isempty(ds.plotGroup)
+        ds.plotGroup = {[] [] [] [] [] {'lineage'}};
+    end
+catch
+end
+try
+    if isempty(ds.groupProperties)
+        ds.groupProperties = {'lineage','Plot','auto','auto'};
+    end
+catch
+end
+if ~isstruct(ds.userData)
+    ds.userData = struct();
+end
+if ~isfield(ds.userData, 'version')
+    ds.userData.version = 1;
+end
+if ~isfield(ds.userData, 'note')
+    ds.userData.note = "lineage stored in userData.motherOf and userData.lineageSources";
 end
 end
 
