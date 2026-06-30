@@ -11,6 +11,22 @@ function [ydata, varNames, yTickInfo, sourceIndex] = score_extractYData(T, dataI
 %   - ticks: numeric tick positions corresponding to labels
 %   - labels: cellstr of labels
 
+if istable(T)
+    nTotalVars = width(T);
+    dataIndices = dataIndices(dataIndices >= 1 & dataIndices <= nTotalVars);
+    if isempty(dataIndices)
+        nRow = height(T);
+        ydata = nan(nRow, 0);
+        varNames = {};
+        sourceIndex = [];
+        yTickInfo = struct();
+        yTickInfo.isLabel = false(1, 0);
+        yTickInfo.ticks   = [];
+        yTickInfo.labels  = {};
+        return;
+    end
+end
+
 Tsel = T(:, dataIndices);
 sourceVarNames = Tsel.Properties.VariableNames;
 

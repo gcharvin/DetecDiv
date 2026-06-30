@@ -73,7 +73,7 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
     if isCtrl
         % s'assurer que le dataseries existe
         ensureCellInformationDataseries(roi);
-        setLineageChannel(roi, fullChannelName, pix);     % <<< NOUVEAU
+        setLineageChannel(roi, fullChannelName, pix, annotationPart);
 
         daughterID = int32(app.SelectedObjectLabelCell);
         labAt      = currentMask(yinit,xinit);
@@ -1023,7 +1023,14 @@ idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_informati
 ds  = roi.data(idx);
 end
 
-function setLineageChannel(roi, channelName, pix)
+function setLineageChannel(roi, channelName, pix, sourceHint)
+if nargin < 4 || isempty(sourceHint)
+    sourceHint = channelName;
+end
+activateLineageSourceForChannel(roi, channelName, pix, ...
+    'sourceHint', sourceHint, ...
+    'exclusive', false);
+return;
 % Enregistre le canal servant aux labels de lineage
 ds = getCellInfoDataseries(roi);
 if ~isprop(ds,'userData') || isempty(ds.userData) || ~isstruct(ds.userData)

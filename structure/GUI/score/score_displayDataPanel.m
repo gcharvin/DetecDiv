@@ -25,6 +25,13 @@ data = roiobj.data(layoutOptions.dataidx{groupIdx});
 % --- Extraction robuste de ydata.
 % Une variable cellulaire numerique/vectorielle est etendue en une courbe par element.
 [ydata, varname, yTickInfo, sourceIndex] = score_extractYData(data.data, dataIndices);
+if isempty(sourceIndex) || size(ydata, 2) == 0
+    cla(ax);
+    hLine = gobjects(0);
+    ax.UserData.xlim = 'auto';
+    ax.UserData.ylim = 'auto';
+    return;
+end
 
 groupname = layoutOptions.plotidxgroup{groupIdx};
 pix = [];

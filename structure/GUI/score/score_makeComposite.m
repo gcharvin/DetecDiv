@@ -255,11 +255,6 @@ for ch = 1:numel(channel)
 
     % couleurs
     useLabelColors = isPaintThis;
-    if ~useLabelColors && isprop(roitmp,'display') && isstruct(roitmp.display) && ...
-            isfield(roitmp.display,'rgb') && dispIdx >= 1 && dispIdx <= size(roitmp.display.rgb,1)
-        channelRgb = double(roitmp.display.rgb(dispIdx,:));
-        useLabelColors = all(channelRgb >= 0.99);
-    end
 
     if useLabelColors
         levmap = zeros(numel(indices), 3);

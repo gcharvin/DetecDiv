@@ -1,12 +1,17 @@
 function refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles,currentFrames)
 
+if ~hasAnyVisibleLineageSource(roiobj)
+    clearLineageAllTiles(graphicsHandles);
+    return;
+end
+
 if ~isempty(roiobj)
-    [~, chName] = getStoredLineageChannel(roiobj(1));
-    if ~isempty(chName) && (~isfield(layoutOptions,'channel') || isempty(layoutOptions.channel) ...
-            || ~any(strcmp(layoutOptions.channel, char(chName))))
+    chNames = getVisibleLineageChannelNames(roiobj(1));
+    if ~isempty(chNames) && isfield(layoutOptions,'channel') && ~isempty(layoutOptions.channel) ...
+            && ~any(ismember(cellstr(chNames), cellstr(string(layoutOptions.channel))))
         clearLineageAllTiles(graphicsHandles);
         if isfield(layoutOptions,'debug') && layoutOptions.debug
-            warning('Lineage: channel "%s" non présent dans layoutOptions.channel -> overlay désactivé.', char(chName));
+            warning('Lineage: no visible lineage channel is present in layoutOptions.channel -> overlay disabled.');
         end
         return;
     end
@@ -81,8 +86,8 @@ if isfield(graphicsHandles,'lineageHandles') && isa(graphicsHandles.lineageHandl
             k2 = L.map.keys;
             for u=1:numel(k2)
                 h = L.map(k2{u});
-                if isfield(h,'line')  && isgraphics(h.line),  delete(h.line);  end
-                if isfield(h,'arrow') && isgraphics(h.arrow), delete(h.arrow); end
+                if isfield(h,'line')  && ~isempty(h.line)  && isgraphics(h.line),  delete(h.line);  end
+                if isfield(h,'arrow') && ~isempty(h.arrow) && isgraphics(h.arrow), delete(h.arrow); end
             end
         end
     end
@@ -286,10 +291,7 @@ end
 
 
 function drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm,col)
-M = roi.image(:,:,pix,frm);
-if isempty(M), return; end
-
-pairs = getLineagePairsForFrame_ROI(roi, M);  % Nx2 [daughter,mother]
+geoms = getLineageGeometriesForFrame_ROI(roi, pix, frm, col);
 
 % conteneur de cette tuile
 if isKey(graphicsHandles.lineageHandles, tileIndex)
@@ -317,24 +319,25 @@ set(ax,'XLimMode','manual','YLimMode','manual','NextPlot','add');
 
 alive = int32([]);
 
-for i=1:size(pairs,1)
-    d = int32(pairs(i,1));
-    m = double(pairs(i,2));
-    [xd, yd] = fastCentroidSingle(M, double(d));
-    [xm, ym] = fastCentroidSingle(M, double(m));
-    if isnan(xd) || isnan(yd) || isnan(xm) || isnan(ym), continue; end
+for i=1:numel(geoms)
+    d = int32(geoms(i).mapKey);
+    m = double(geoms(i).motherID);
+    xd = geoms(i).xd;
+    yd = geoms(i).yd;
+    xm = geoms(i).xm;
+    ym = geoms(i).ym;
+    lineColor = geoms(i).color;
 
     alive(end+1) = d; %#ok<AGROW>
-   % col = [1 1 1]; % ou label2color(m)
 
     if isKey(L.map, d)
         h = L.map(d);
         if isgraphics(h.line)
-            set(h.line, 'XData',[xm xd], 'YData',[ym yd], 'Visible','on', 'Color',col, 'LineWidth',1.5);
+            set(h.line, 'XData',[xm xd], 'YData',[ym yd], 'Visible','on', 'Color',lineColor, 'LineWidth',1.5);
         end
         if isgraphics(h.arrow)
             set(h.arrow,'XData',xm,'YData',ym,'UData',(xd-xm)*0.9,'VData',(yd-ym)*0.9, ...
-                'Visible','on','Color',col,'LineWidth',1.0,'MaxHeadSize',0.5,'AutoScale','off');
+                'Visible','on','Color',lineColor,'LineWidth',1.0,'MaxHeadSize',0.5,'AutoScale','off');
         end
 
         try
@@ -344,14 +347,17 @@ catch
 end
 
         h.motherID = m;
+        h.daughterID = geoms(i).daughterID;
+        h.sourceKey = geoms(i).sourceKey;
         L.map(d) = h;
     else
-        hLine  = line(ax, [xm xd], [ym yd], 'Color', col, 'LineWidth', 1.5, ...
+        hLine  = line(ax, [xm xd], [ym yd], 'Color', lineColor, 'LineWidth', 1.5, ...
                       'HitTest','off','PickableParts','none');
         hArrow = quiver(ax, xm, ym, (xd-xm)*0.9, (yd-ym)*0.9, 0, ...
-                        'LineWidth',1.0,'MaxHeadSize',0.5,'Color',col, ...
+                        'LineWidth',1.0,'MaxHeadSize',0.5,'Color',lineColor, ...
                         'HitTest','off','PickableParts','none','AutoScale','off');
-        L.map(d) = struct('line',hLine,'arrow',hArrow,'motherID',m);
+        L.map(d) = struct('line',hLine,'arrow',hArrow,'motherID',m, ...
+            'daughterID',geoms(i).daughterID,'sourceKey',geoms(i).sourceKey);
 
         try
     uistack(hLine,  'top');
@@ -391,8 +397,123 @@ if ~isa(map,'containers.Map'), return; end
 ks = map.keys;
 for i=1:numel(ks)
     h = map(ks{i});
-    if isfield(h,'line')  && isgraphics(h.line),  delete(h.line);  end
-    if isfield(h,'arrow') && isgraphics(h.arrow), delete(h.arrow); end
+    if isfield(h,'line')  && ~isempty(h.line)  && isgraphics(h.line),  delete(h.line);  end
+    if isfield(h,'arrow') && ~isempty(h.arrow) && isgraphics(h.arrow), delete(h.arrow); end
+end
+end
+
+function geoms = getLineageGeometriesForFrame_ROI(roi, fallbackPix, frm, fallbackColor)
+geoms = struct('mapKey',{},'daughterID',{},'motherID',{},'xd',{},'yd',{},'xm',{},'ym',{},'color',{},'sourceKey',{});
+idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
+if isempty(idx), return; end
+ds = roi.data(idx);
+if ~isprop(ds,'userData') || ~isstruct(ds.userData), return; end
+
+sources = getVisibleLineageSources(ds);
+if isempty(sources)
+    return;
+end
+
+for s = 1:numel(sources)
+    pix = fallbackPix;
+    if strlength(sources(s).channelName) > 0
+        pixForSource = resolvePixForChannelName(roi, sources(s).channelName);
+        if ~isempty(pixForSource)
+            pix = pixForSource;
+        end
+    end
+    if isempty(pix) || pix < 1 || pix > size(roi.image,3) || frm < 1 || frm > size(roi.image,4)
+        continue;
+    end
+    M = roi.image(:,:,pix,frm);
+    if isempty(M), continue; end
+
+    present = unique(M(:));
+    present(present==0) = [];
+    present = int32(present(:)');
+
+    keysD = sources(s).motherOf.keys;
+    for k = 1:numel(keysD)
+        daughterID = int32(keysD{k});
+        if ~ismember(daughterID, present)
+            continue;
+        end
+        motherID = double(sources(s).motherOf(daughterID));
+        if ~isfinite(motherID) || motherID <= 0 || ~ismember(int32(motherID), present)
+            continue;
+        end
+        [xd, yd] = fastCentroidSingle(M, double(daughterID));
+        [xm, ym] = fastCentroidSingle(M, double(motherID));
+        if isnan(xd) || isnan(yd) || isnan(xm) || isnan(ym)
+            continue;
+        end
+        geoms(end+1) = struct( ... %#ok<AGROW>
+            'mapKey', lineageMapKey(s, daughterID), ...
+            'daughterID', daughterID, ...
+            'motherID', motherID, ...
+            'xd', xd, 'yd', yd, 'xm', xm, 'ym', ym, ...
+            'color', fallbackColor, ...
+            'sourceKey', char(sources(s).key));
+    end
+end
+end
+
+function pix = resolvePixForChannelName(roi, channelName)
+pix = [];
+try
+    if isprop(roi,'display') && isfield(roi.display,'channel') && ~isempty(roi.display.channel)
+        idx = find(strcmp(cellstr(string(roi.display.channel)), char(channelName)), 1, 'first');
+        if ~isempty(idx)
+            pix = roi.findChannelID(roi.display.channel{idx});
+            if isempty(pix) && idx <= size(roi.image,3)
+                pix = idx;
+            end
+        end
+    end
+catch
+    pix = [];
+end
+end
+
+function mapKey = lineageMapKey(sourceIndex, daughterID)
+mapKey = int32(sourceIndex * 1000000 + double(daughterID));
+end
+
+function sources = getVisibleLineageSources(ds)
+sources = struct('key',{},'motherOf',{},'channelName',{});
+if isfield(ds.userData,'lineageSources') && isstruct(ds.userData.lineageSources) && ...
+        ~isempty(fieldnames(ds.userData.lineageSources))
+    sourceKeys = fieldnames(ds.userData.lineageSources);
+    for i = 1:numel(sourceKeys)
+        src = ds.userData.lineageSources.(sourceKeys{i});
+        show = false;
+        try
+            if isfield(src, 'show')
+                show = logical(src.show);
+            end
+        catch
+            show = false;
+        end
+        if ~show || ~isfield(src, 'motherOf') || ~isa(src.motherOf, 'containers.Map') || src.motherOf.Count == 0
+            continue;
+        end
+        channelName = "";
+        if isfield(src,'channelName') && ~isempty(src.channelName)
+            channelName = string(src.channelName);
+        end
+        sources(end+1) = struct('key',string(sourceKeys{i}), ...
+            'motherOf',src.motherOf, ...
+            'channelName',channelName); %#ok<AGROW>
+    end
+    return;
+end
+
+if isfield(ds.userData,'motherOf') && isa(ds.userData.motherOf,'containers.Map') && ds.userData.motherOf.Count > 0
+    channelName = "";
+    if isfield(ds.userData,'lineageChannelName') && ~isempty(ds.userData.lineageChannelName)
+        channelName = string(ds.userData.lineageChannelName);
+    end
+    sources = struct('key',"legacy",'motherOf',ds.userData.motherOf,'channelName',channelName);
 end
 end
 
@@ -401,22 +522,56 @@ pairs = [];
 idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
 if isempty(idx), return; end
 ds = roi.data(idx);
-if ~isprop(ds,'userData') || ~isstruct(ds.userData) || ~isfield(ds.userData,'motherOf'), return; end
-Mmap = ds.userData.motherOf;
-if ~isa(Mmap,'containers.Map') || Mmap.Count==0, return; end
+if ~isprop(ds,'userData') || ~isstruct(ds.userData), return; end
 
 present = unique(maskFrame(:)); present(present==0) = [];
 present = int32(present(:)');
 
-keysD = Mmap.keys;
-for k=1:numel(keysD)
-    d = int32(keysD{k});
-    if ismember(d, present)
-        m = Mmap(d);
-        if isfinite(m) && m>0
-            pairs(end+1,:) = [double(d), double(m)]; %#ok<AGROW>
+maps = getVisibleLineageMaps(ds);
+for s = 1:numel(maps)
+    Mmap = maps{s};
+    keysD = Mmap.keys;
+    for k=1:numel(keysD)
+        d = int32(keysD{k});
+        if ismember(d, present)
+            m = Mmap(d);
+            if isfinite(m) && m>0
+                pairs(end+1,:) = [double(d), double(m)]; %#ok<AGROW>
+            end
         end
     end
+end
+end
+
+function maps = getVisibleLineageMaps(ds)
+maps = {};
+if ~isprop(ds,'userData') || ~isstruct(ds.userData)
+    return;
+end
+
+if isfield(ds.userData,'lineageSources') && isstruct(ds.userData.lineageSources) && ...
+        ~isempty(fieldnames(ds.userData.lineageSources))
+    sourceKeys = fieldnames(ds.userData.lineageSources);
+    for i = 1:numel(sourceKeys)
+        src = ds.userData.lineageSources.(sourceKeys{i});
+        show = false;
+        try
+            if isfield(src, 'show')
+                show = logical(src.show);
+            end
+        catch
+            show = false;
+        end
+        if ~show || ~isfield(src, 'motherOf') || ~isa(src.motherOf, 'containers.Map') || src.motherOf.Count == 0
+            continue;
+        end
+        maps{end+1} = src.motherOf; %#ok<AGROW>
+    end
+    return;
+end
+
+if isfield(ds.userData,'motherOf') && isa(ds.userData.motherOf,'containers.Map') && ds.userData.motherOf.Count > 0
+    maps = {ds.userData.motherOf};
 end
 end
 
@@ -439,6 +594,17 @@ if isempty(idx), return; end
 ds = roi.data(idx);
 if ~isprop(ds,'userData') || ~isstruct(ds.userData), return; end
 
+visibleNames = getVisibleLineageChannelNames(roi);
+if ~isempty(visibleNames)
+    name = string(visibleNames(1));
+    return;
+end
+
+if isfield(ds.userData,'lineageSources') && isstruct(ds.userData.lineageSources) && ...
+        ~isempty(fieldnames(ds.userData.lineageSources))
+    return;
+end
+
 if isfield(ds.userData,'lineageChannelName') && ~isempty(ds.userData.lineageChannelName)
     name = string(ds.userData.lineageChannelName);
 end
@@ -447,6 +613,59 @@ if isfield(ds.userData,'lineageChannelPix') && ~isempty(ds.userData.lineageChann
 end
 end
 
+
+function tf = hasAnyVisibleLineageSource(roiobj)
+tf = false;
+for r = 1:numel(roiobj)
+    try
+        idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiobj(r).data),1,'first');
+        if isempty(idx), continue; end
+        if ~isempty(getVisibleLineageMaps(roiobj(r).data(idx)))
+            tf = true;
+            return;
+        end
+    catch
+    end
+end
+end
+
+function names = getVisibleLineageChannelNames(roi)
+names = strings(1,0);
+idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
+if isempty(idx), return; end
+ds = roi.data(idx);
+if ~isprop(ds,'userData') || ~isstruct(ds.userData)
+    return;
+end
+
+if isfield(ds.userData,'lineageSources') && isstruct(ds.userData.lineageSources) && ...
+        ~isempty(fieldnames(ds.userData.lineageSources))
+    sourceKeys = fieldnames(ds.userData.lineageSources);
+    for i = 1:numel(sourceKeys)
+        src = ds.userData.lineageSources.(sourceKeys{i});
+        show = false;
+        try
+            if isfield(src, 'show')
+                show = logical(src.show);
+            end
+        catch
+            show = false;
+        end
+        if ~show || ~isfield(src, 'motherOf') || ~isa(src.motherOf, 'containers.Map') || src.motherOf.Count == 0
+            continue;
+        end
+        if isfield(src, 'channelName') && ~isempty(src.channelName)
+            names(end+1) = string(src.channelName); %#ok<AGROW>
+        end
+    end
+    names = unique(names, 'stable');
+    return;
+end
+
+if isfield(ds.userData,'lineageChannelName') && ~isempty(ds.userData.lineageChannelName)
+    names = string(ds.userData.lineageChannelName);
+end
+end
 function col = resolveLineageColor(roi, layoutOptions)
 % Retourne la couleur complémentaire (1 - baseRGB) du channel utilisé pour le lineage.
 % baseRGB est pris dans layoutOptions.RGB{idx} où idx est l'index du channel dans layoutOptions.channel.

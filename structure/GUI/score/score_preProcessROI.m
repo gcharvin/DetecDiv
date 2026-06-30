@@ -32,6 +32,7 @@ dataidx={};
 for j = 1:numel(layout.dataSelectedIdx)
     idx = layout.dataSelectedIdx(j);
     data = roitmp.data(idx);
+    nDataVars = localDataVariableCount(data);
     lineageRows = false(size(data.plotProperties, 1), 1);
     try
         if size(data.plotProperties, 2) >= 3
@@ -40,7 +41,8 @@ for j = 1:numel(layout.dataSelectedIdx)
     catch
         lineageRows = false(size(data.plotProperties, 1), 1);
     end
-    subDataIdx = find(cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows);
+    validRows = (1:size(data.plotProperties, 1))' <= nDataVars;
+    subDataIdx = find(cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows & validRows);
     layout.subData(j) = {subDataIdx};
     ndata = ndata + numel(subDataIdx);
     
@@ -48,7 +50,7 @@ for j = 1:numel(layout.dataSelectedIdx)
     groups = data.plotGroup{6};
     for i = 1:numel(groups)
         pix = contains(data.plotProperties(:, end), string(groups{i}));
-        pix2 = cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows;
+        pix2 = cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)) & ~lineageRows & validRows;
         pix = find(pix & pix2);  % indices des plots à afficher
         if ~isempty(pix)
             n = n + 1;
@@ -156,4 +158,24 @@ end
 layout.globalCols = globalCols;
 layout.globalRows = globalRows;
 layout.nonIndexedNames = nonIndexedNames;
+end
+
+function n = localDataVariableCount(data)
+n = 0;
+try
+    if ~isprop(data, 'data') || isempty(data.data)
+        return;
+    end
+    if istable(data.data)
+        n = width(data.data);
+    elseif isstruct(data.data)
+        n = numel(fieldnames(data.data));
+    elseif iscell(data.data)
+        n = size(data.data, 2);
+    else
+        n = size(data.data, 2);
+    end
+catch
+    n = 0;
+end
 end

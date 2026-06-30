@@ -127,7 +127,18 @@ app.graphicsHandles=score_renderFinalFrame(displayHandles , selectedROI, opts);
 app.displayHandles=displayHandles;
 restoreScoreFigureState(app, figureState);
    else
- score_updateRender(app.graphicsHandles,selectedROI, opts, app.displayHandles,currentFrame)
+ try
+     score_updateRender(app.graphicsHandles,selectedROI, opts, app.displayHandles,currentFrame)
+ catch ME
+     if strcmp(ME.identifier, 'score_updateRender:InvalidImageHandle')
+         displayHandles = score_createDisplayHandles(opts,app.ImageFigure);
+         app.graphicsHandles = score_renderFinalFrame(displayHandles , selectedROI, opts);
+         app.displayHandles = displayHandles;
+         restoreScoreFigureState(app, figureState);
+     else
+         rethrow(ME);
+     end
+ end
    end
 
 score_syncOverlayAxes(app.graphicsHandles);
@@ -174,6 +185,21 @@ app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.
 % --- Overlay lineage (fille→mère)
 try
     ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
+    if isprop(app,'PaintButton') && app.PaintButton.Value && ~isempty(app.UIAnnotationTable.Selection)
+        sel = app.UIAnnotationTable.Selection;
+        ann = app.UIAnnotationTable.Data{sel(1),2};
+        cls = app.UIAnnotationTable.Data{sel(1),3};
+        lineageChannelName = [ann '_' cls];
+        lineageChannelIdx = find(strcmp(selectedROI.display.channel, lineageChannelName), 1);
+        if ~isempty(lineageChannelIdx)
+            lineagePix = selectedROI.findChannelID(selectedROI.display.channel{lineageChannelIdx});
+            if ~isempty(lineagePix) && lineagePix >= 1
+                activateLineageSourceForChannel(selectedROI, lineageChannelName, lineagePix, ...
+                    'sourceHint', ann, ...
+                    'exclusive', false);
+            end
+        end
+    end
 %    score_refreshLineageOverlay(app, selectedROI, opts);
 catch ME
     warning("Lineage overlay failed: %s", ME.message);
