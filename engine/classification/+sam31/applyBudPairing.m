@@ -91,13 +91,15 @@ params.budPairingShowSource = true;
 params.budPairingActivateSource = true;
 params.budPairingWriteCanonical = true;
 params.budPairingOverwriteMotherOf = false;
-params.budPairingMaxBirthArea = 350;
-params.budPairingMinParentArea = 80;
-params.budPairingMaxParentDistance = 35;
-params.budPairingMaxParentCentroidDistance = 35;
+params.budPairingTypicalCellSize = 0;
+params.budPairingMaxBirthAreaFraction = 1.25;
+params.budPairingMinParentAreaReferenceFraction = 0.7;
+params.budPairingMaxParentDistanceFraction = 0.5;
+params.budPairingMaxParentCentroidDistanceFraction = 1.0;
 params.budPairingFutureWindow = 6;
 params.budPairingMinParentAgeFrames = 6;
-params.budPairingMaxFutureDistance = 45;
+params.budPairingMaxFutureDistanceReferenceFraction = 1.0;
+params.budPairingMaxFutureCentroidDistanceReferenceFraction = 1.0;
 params.budPairingAngleWeight = 1;
 params.budPairingCentroidWeight = 1;
 params.budPairingFutureWeight = 0.6;
@@ -298,13 +300,15 @@ if isempty(ids) || nFrames < 2
     return;
 end
 
-maxBirthArea = localParamNumber(params.budPairingMaxBirthArea, 350);
-minParentArea = localParamNumber(params.budPairingMinParentArea, 80);
-maxParentDistance = localParamNumber(params.budPairingMaxParentDistance, 35);
-maxParentCentroidDistance = localParamNumber(params.budPairingMaxParentCentroidDistance, 35);
+configuredTypicalCellSize = localParamNumber(params.budPairingTypicalCellSize, 0);
+maxBirthAreaFraction = localParamNumber(params.budPairingMaxBirthAreaFraction, 0.5);
+minParentAreaReferenceFraction = localParamNumber(params.budPairingMinParentAreaReferenceFraction, 0.7);
+maxParentDistanceFraction = localParamNumber(params.budPairingMaxParentDistanceFraction, 0.5);
+maxParentCentroidDistanceFraction = localParamNumber(params.budPairingMaxParentCentroidDistanceFraction, 1.0);
 futureWindow = max(0, round(localParamNumber(params.budPairingFutureWindow, 6)));
 minParentAge = max(0, round(localParamNumber(params.budPairingMinParentAgeFrames, 6)));
-maxFutureDistance = localParamNumber(params.budPairingMaxFutureDistance, 45);
+maxFutureDistanceReferenceFraction = localParamNumber(params.budPairingMaxFutureDistanceReferenceFraction, 1.0);
+maxFutureCentroidDistanceReferenceFraction = localParamNumber(params.budPairingMaxFutureCentroidDistanceReferenceFraction, 1.0);
 
 areas = zeros(numel(ids), nFrames);
 for t = 1:nFrames
@@ -327,6 +331,20 @@ for i = 1:numel(ids)
         continue;
     end
     birthArea = areas(i, startFrame);
+    frame = labels(:, :, startFrame);
+    typicalCellSize = localTypicalCellSize(frame, ids, i, configuredTypicalCellSize);
+    if ~isfinite(typicalCellSize) || typicalCellSize <= 0
+        continue;
+    end
+    typicalCellArea = pi * (typicalCellSize / 2) ^ 2;
+    typicalCellDiameter = typicalCellSize;
+    maxBirthArea = maxBirthAreaFraction * typicalCellArea;
+    minParentArea = minParentAreaReferenceFraction * typicalCellArea;
+    maxParentDistance = maxParentDistanceFraction * typicalCellDiameter;
+    maxParentCentroidDistance = maxParentCentroidDistanceFraction * typicalCellDiameter;
+    maxFutureDistance = maxFutureDistanceReferenceFraction * typicalCellDiameter;
+    maxFutureCentroidDistance = maxFutureCentroidDistanceReferenceFraction * typicalCellDiameter;
+
     if birthArea <= 0 || birthArea > maxBirthArea
         continue;
     end
@@ -350,6 +368,7 @@ for i = 1:numel(ids)
 
         motherMask = labels(:, :, startFrame) == motherId;
         d0 = localMaskDistance(childMask, motherMask);
+        motherArea = areas(j, startFrame);
         if d0 > maxParentDistance
             continue;
         end
@@ -361,7 +380,7 @@ for i = 1:numel(ids)
         [futureDistance, futureSupport] = localFutureDistance(labels, childId, motherId, ...
             startFrame, futureWindow, maxFutureDistance);
         futureCentroidDistance = localFutureCentroidDistance(labels, childId, motherId, ...
-            startFrame, futureWindow, maxParentCentroidDistance);
+            startFrame, futureWindow, maxFutureCentroidDistance);
         angleDeg = localAxisAngle(childMask, motherMask);
         angleWeight = localParamNumber(params.budPairingAngleWeight, 8);
         centroidWeight = localParamNumber(params.budPairingCentroidWeight, 1);
@@ -382,7 +401,7 @@ for i = 1:numel(ids)
                 'distance', d0, 'futureDistance', futureDistance, ...
                 'centroidDistance', centroidDistance, ...
                 'futureCentroidDistance', futureCentroidDistance, ...
-                'angleDeg', angleDeg, 'motherArea', areas(j, startFrame));
+                'angleDeg', angleDeg, 'motherArea', motherArea);
         end
     end
 
@@ -408,6 +427,51 @@ events = struct('childId', {}, 'motherId', {}, 'startFrame', {}, ...
     'cost', {}, 'distance', {}, 'futureDistance', {}, ...
     'centroidDistance', {}, 'futureCentroidDistance', {}, 'axisAngleDeg', {}, ...
     'areaAtBirth', {}, 'motherAreaAtBirth', {});
+end
+
+function typicalSize = localTypicalCellSize(frame, ids, excludedIndex, configuredSize)
+if isfinite(configuredSize) && configuredSize > 0
+    typicalSize = configuredSize;
+    return;
+end
+sizes = [];
+for i = 1:numel(ids)
+    if i == excludedIndex
+        continue;
+    end
+    mask = frame == ids(i);
+    if ~any(mask(:))
+        continue;
+    end
+    try
+        stats = regionprops(mask, 'MajorAxisLength');
+        if ~isempty(stats) && isfinite(stats(1).MajorAxisLength) && stats(1).MajorAxisLength > 0
+            sizes(end + 1) = stats(1).MajorAxisLength; %#ok<AGROW>
+        end
+    catch
+        area = nnz(mask);
+        if area > 0
+            sizes(end + 1) = localEquivalentDiameter(area); %#ok<AGROW>
+        end
+    end
+end
+if isempty(sizes)
+    typicalSize = NaN;
+else
+    typicalSize = median(sizes);
+end
+end
+
+function r = localEquivalentRadius(area)
+if ~isfinite(area) || area <= 0
+    r = 0;
+else
+    r = sqrt(double(area) / pi);
+end
+end
+
+function d = localEquivalentDiameter(area)
+d = 2 * localEquivalentRadius(area);
 end
 
 function d = localMaskDistance(maskA, maskB)
