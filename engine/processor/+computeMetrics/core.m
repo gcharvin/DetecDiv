@@ -629,10 +629,12 @@ for t = 1:nFrames
     baseFrame = im(:,:,baseMaskChannel,t);
     otherFrame = im(:,:,otherMaskChannel,t);
     labels = maskInstanceLabels(baseFrame, baseBackgroundLabel, baseMaskName, baseScoreLabel);
-    baseForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName, baseScoreLabel);
     otherForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName, otherScoreLabel);
-    compositeFrame = compositeRegion(baseForeground, otherForeground, relation);
-    backgroundPix = ~compositeFrame;
+    % Background must not depend on the specific scored label; otherwise
+    % non-target cells leak into Mean_Bckg when scoreLabel tracks one cell.
+    baseAllForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName, 'all');
+    otherAllForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName, 'all');
+    backgroundPix = ~(baseAllForeground | otherAllForeground);
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
 
@@ -720,7 +722,9 @@ end
 for t = 1:nFrames
     maskFrame = im(:,:,maskChannel,t);
     labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName, scoreLabel);
-    foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName, scoreLabel);
+    % Background must exclude every segmented object, not only the scored
+    % label, or disappearing neighboring cells create artificial jumps.
+    foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName, 'all');
     backgroundPix = ~foregroundPix;
     backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
     backgroundMean = mean(backgroundValues(:), 'omitnan');
