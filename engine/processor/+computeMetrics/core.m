@@ -1039,7 +1039,11 @@ try
     if iscell(value)
         value = value{end};
     end
-    out = double(value);
+    if ischar(value) || (isstring(value) && isscalar(value))
+        out = str2double(strtrim(char(string(value))));
+    else
+        out = double(value);
+    end
 catch
     out = defaultValue;
 end

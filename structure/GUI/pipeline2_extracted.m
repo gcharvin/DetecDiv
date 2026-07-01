@@ -12651,6 +12651,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = lower(char(string(getField(app, node, 'pkg', ''))));
                     if strcmp(pkg, 'combinemultiplechannels') && strcmp(keyLower, 'mode')
                         choices = {'additive','subtraction','division'};
+                    elseif strcmp(pkg, 'computemetrics') && strcmp(keyLower, 'backgroundmethod')
+                        choices = {'mean','median','percentile'};
                     elseif strcmp(pkg, 'computemetrics') && ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
                         choices = {'auto','0','1'};
                     elseif strcmp(pkg, 'computerls') && strcmp(keyLower, 'statedecoder')
