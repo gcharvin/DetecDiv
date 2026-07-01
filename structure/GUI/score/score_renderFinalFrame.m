@@ -25,6 +25,7 @@ masterTL = displayHandles.masterTiledLayout;
 % Initialisation des containers pour stocker les handles
 graphicsHandles.imgHandles     = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.lineHandles    = containers.Map('KeyType','double','ValueType','any');
+graphicsHandles.dataAxes       = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.textHandles = containers.Map('KeyType','double','ValueType','any');
@@ -150,6 +151,7 @@ switch lower(displayHandles.mode)
 
                         % title(sprintf('ROI(%d) Data:%d', roiIndex, ds));
                         graphicsHandles.lineHandles(tileIndex) = hLine;
+                        graphicsHandles.dataAxes(tileIndex) = ax;
                     end
                 end
                 if layoutOptions.debug
@@ -227,6 +229,7 @@ newPath = fullfile(folder, [name '.pdf']);
                 %  hLine = plot(roiData.data(ds, :));
                 %   title(sprintf('Data:%d', ds));
                 graphicsHandles.lineHandles(tileIndex) = hLine;
+                graphicsHandles.dataAxes(tileIndex) = ax;
             end
         end
 
@@ -455,6 +458,7 @@ end
                         %  hLine = plot(roiData.data(ds, :));
                         %   title(sprintf('Data:%d', ds));
                         graphicsHandles.lineHandles(tileIndex) = hLine;
+                        graphicsHandles.dataAxes(tileIndex) = ax;
 
                         %   hLine = plot(roiData.data(ds, :));
                         %   title(sprintf('Data:%d', ds));

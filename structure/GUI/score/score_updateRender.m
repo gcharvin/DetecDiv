@@ -68,7 +68,7 @@ switch mode
                     wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                 end
 
-                ax = nexttile(masterTL, tileIndex, [1, wid]);
+                ax = localDataAxis(graphicsHandles, masterTL, tileIndex, [1, wid]);
 
                 % if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
                 %     set(ax,'XTickLabel',[]);
@@ -189,7 +189,7 @@ switch mode
                             wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                         end
 
-                        ax = nexttile(masterTL, tileIndex, [1, wid]);
+                        ax = localDataAxis(graphicsHandles, masterTL, tileIndex, [1, wid]);
 
                         % if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
                         % %     set(ax,'XTickLabel',[]);
@@ -335,6 +335,30 @@ end
 if isempty(h) || ~isgraphics(h) || ~isa(h, 'matlab.graphics.primitive.Image')
     error('score_updateRender:InvalidImageHandle', ...
         'Stored image handle is not a matlab.graphics.primitive.Image.');
+end
+end
+
+function ax = localDataAxis(graphicsHandles, masterTL, tileIndex, tileSpan)
+ax = [];
+try
+    if isfield(graphicsHandles, 'dataAxes') && ~isempty(graphicsHandles.dataAxes) && ...
+            isKey(graphicsHandles.dataAxes, tileIndex)
+        candidate = graphicsHandles.dataAxes(tileIndex);
+        if ~isempty(candidate) && isgraphics(candidate)
+            ax = candidate;
+            return;
+        end
+    end
+catch
+    ax = [];
+end
+
+ax = nexttile(masterTL, tileIndex, tileSpan);
+try
+    if isfield(graphicsHandles, 'dataAxes') && ~isempty(graphicsHandles.dataAxes)
+        graphicsHandles.dataAxes(tileIndex) = ax;
+    end
+catch
 end
 end
 
