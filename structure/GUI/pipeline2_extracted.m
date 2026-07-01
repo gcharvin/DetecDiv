@@ -5534,6 +5534,297 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function issues = classifierAttachedRoiChannelIssues(app)
+            issues = {};
+            if ~runtimeStartsFromClassifier(app) || isempty(app.ExplicitRuntimeRoiList)
+                return;
+            end
+            classifierIds = selectedRunNodeIdsByType(app, 'classifier');
+            if isempty(classifierIds)
+                return;
+            end
+            [roiList, roiIndices] = selectedClassifierRoisForValidation(app);
+            if isempty(roiList)
+                return;
+            end
+            for ci = 1:numel(classifierIds)
+                nodeIdx = find(strcmp({app.Data.nodes.id}, classifierIds{ci}), 1);
+                if isempty(nodeIdx)
+                    continue;
+                end
+                node = app.Data.nodes(nodeIdx);
+                classiObj = [];
+                try
+                    classiObj = linkedClassifierObject(app, node);
+                catch ME
+                    issues{end+1} = sprintf('Cannot inspect classifier ROI channels for node %s: %s', ...
+                        char(string(classifierIds{ci})), ME.message); %#ok<AGROW>
+                    continue;
+                end
+                requiredChannels = classifierNodeInputChannels(app, node, classiObj);
+                if isempty(requiredChannels)
+                    continue;
+                end
+                presentIdx = [];
+                missingIdx = [];
+                missingFirstChannels = {};
+                for ri = 1:numel(roiList)
+                    roiObj = roiList(ri);
+                    if roiHasRequiredChannels(app, roiObj, requiredChannels)
+                        presentIdx(end+1) = roiIndices(ri); %#ok<AGROW>
+                    else
+                        missingIdx(end+1) = roiIndices(ri); %#ok<AGROW>
+                        firstChannel = roiFirstDisplayChannel(app, roiObj);
+                        if ~isempty(firstChannel)
+                            missingFirstChannels{end+1} = firstChannel; %#ok<AGROW>
+                        end
+                    end
+                end
+                if isempty(missingIdx)
+                    continue;
+                end
+                nodeName = char(string(getField(app, node, 'name', classifierIds{ci})));
+                issues{end+1} = formatClassifierRoiChannelIssue(app, nodeName, requiredChannels, ...
+                    presentIdx, missingIdx, missingFirstChannels); %#ok<AGROW>
+            end
+        end
+
+        function [roiList, roiIndices] = selectedClassifierRoisForValidation(app)
+            roiList = [];
+            roiIndices = [];
+            allRois = app.ExplicitRuntimeRoiList;
+            if isempty(allRois)
+                return;
+            end
+            roiSel = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
+            if isempty(roiSel)
+                roiIndices = 1:numel(allRois);
+            elseif isnumeric(roiSel)
+                roiIndices = round(double(roiSel(:)'));
+                roiIndices = roiIndices(isfinite(roiIndices) & roiIndices >= 1 & roiIndices <= numel(allRois));
+            else
+                wanted = cellstr(string(roiSel(:)));
+                labels = cell(1, numel(allRois));
+                for i = 1:numel(allRois)
+                    labels{i} = safeRoiLabel(app, allRois(i), i);
+                end
+                for i = 1:numel(wanted)
+                    match = find(strcmp(labels, wanted{i}), 1);
+                    if ~isempty(match)
+                        roiIndices(end+1) = match; %#ok<AGROW>
+                    end
+                end
+            end
+            roiIndices = unique(roiIndices, 'stable');
+            if isempty(roiIndices)
+                return;
+            end
+            roiList = allRois(roiIndices);
+        end
+
+        function channels = classifierNodeInputChannels(app, node, classiObj)
+            channels = {};
+            p = getField(app, node, 'params', struct());
+            if isstruct(p)
+                if isfield(p, 'channel') && ~isempty(p.channel)
+                    channels = normalizeChannelCellText(app, p.channel);
+                elseif isfield(p, 'channels') && ~isempty(p.channels)
+                    channels = normalizeChannelCellText(app, p.channels);
+                elseif isfield(p, 'channelName') && ~isempty(p.channelName)
+                    channels = normalizeChannelCellText(app, p.channelName);
+                end
+            end
+            if isempty(channels) && ~isempty(classiObj) && isa(classiObj, 'classi')
+                try
+                    if isprop(classiObj, 'channelName') && ~isempty(classiObj.channelName)
+                        channels = normalizeChannelCellText(app, classiObj.channelName);
+                    end
+                catch
+                end
+            end
+            if isempty(channels)
+                return;
+            end
+            skip = strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto') | ...
+                startsWith(lower(string(channels)), '<');
+            channels = channels(~skip);
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function channels = normalizeChannelCellText(app, value) %#ok<INUSD>
+            channels = {};
+            if isempty(value)
+                return;
+            end
+            try
+                if iscell(value)
+                    channels = cellstr(string(value(:)'));
+                else
+                    channels = cellstr(string(value(:)'));
+                end
+                channels = cellfun(@(x) strtrim(char(string(x))), channels, 'UniformOutput', false);
+                channels = channels(~cellfun(@isempty, channels));
+            catch
+                channels = {};
+            end
+        end
+
+        function tf = roiHasRequiredChannels(app, roiObj, channels) %#ok<INUSD>
+            tf = false;
+            if isempty(channels)
+                return;
+            end
+            try
+                for i = 1:numel(channels)
+                    pix = roiObj.findChannelID(channels{i});
+                    if iscell(pix)
+                        if isempty(pix) || isempty(pix{1})
+                            return;
+                        end
+                    elseif isempty(pix)
+                        return;
+                    end
+                end
+                tf = true;
+            catch
+                tf = false;
+            end
+        end
+
+        function name = roiFirstDisplayChannel(app, roiObj) %#ok<INUSD>
+            name = '';
+            try
+                if isprop(roiObj, 'display') && isstruct(roiObj.display) && ...
+                        isfield(roiObj.display, 'channel') && ~isempty(roiObj.display.channel)
+                    vals = cellstr(string(roiObj.display.channel(:)'));
+                    vals = vals(~cellfun(@isempty, vals));
+                    if ~isempty(vals)
+                        name = vals{1};
+                    end
+                end
+            catch
+                name = '';
+            end
+        end
+
+        function message = formatClassifierRoiChannelIssue(app, nodeName, requiredChannels, presentIdx, missingIdx, missingFirstChannels)
+            lines = {};
+            lines{end+1} = sprintf('Channel mismatch in selected classifier ROIs for node %s.', char(string(nodeName)));
+            lines{end+1} = ['Classifier expects input channel(s): ' strjoin(requiredChannels, ', ')];
+            lines{end+1} = sprintf('%d ROI(s) contain the required channel(s): %s', ...
+                numel(presentIdx), compactNumericSelectionText(app, presentIdx));
+            lines{end+1} = sprintf('%d ROI(s) are missing at least one required channel: %s', ...
+                numel(missingIdx), compactNumericSelectionText(app, missingIdx));
+            summary = summarizeChannelNamesWithCounts(app, missingFirstChannels, 4);
+            if ~isempty(summary)
+                lines{end+1} = ['Missing ROI first channel(s): ' summary];
+            end
+            lines{end+1} = 'Fix channel names or select compatible ROIs before launching on Hub.';
+            message = strjoin(lines, newline);
+        end
+
+        function txt = summarizeChannelNamesWithCounts(app, names, maxNames) %#ok<INUSD>
+            txt = '';
+            if nargin < 3 || isempty(maxNames)
+                maxNames = 4;
+            end
+            if isempty(names)
+                return;
+            end
+            names = cellstr(string(names(:)'));
+            names = names(~cellfun(@isempty, names));
+            if isempty(names)
+                return;
+            end
+            u = unique(names, 'stable');
+            parts = {};
+            nShow = min(numel(u), maxNames);
+            for i = 1:nShow
+                parts{end+1} = sprintf('%s (%d)', u{i}, sum(strcmp(names, u{i}))); %#ok<AGROW>
+            end
+            if numel(u) > nShow
+                parts{end+1} = sprintf('... (+%d)', numel(u) - nShow); %#ok<AGROW>
+            end
+            txt = strjoin(parts, ', ');
+        end
+
+        function tf = dryRunReportHasBlockingIssues(app, report) %#ok<INUSD>
+            tf = false;
+            if ~isstruct(report)
+                return;
+            end
+            try
+                if isfield(report, 'okStrict') && ~isempty(report.okStrict) && ~logical(report.okStrict)
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            if isfield(report, 'errors') && ~isempty(report.errors)
+                tf = true;
+                return;
+            end
+            try
+                if isfield(report, 'solver') && isstruct(report.solver) && ...
+                        isfield(report.solver, 'hasBlocking') && logical(report.solver.hasBlocking)
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            try
+                if isfield(report, 'solver') && isstruct(report.solver) && ...
+                        isfield(report.solver, 'issues') && ~isempty(report.solver.issues)
+                    severities = lower(string({report.solver.issues.severity}));
+                    if any(severities == "error")
+                        tf = true;
+                    end
+                end
+            catch
+            end
+        end
+
+        function message = formatDryRunBlockingMessage(app, report)
+            lines = {'Dry-run validation found blocking issue(s). The run was not submitted to Hub.'};
+            if isstruct(report)
+                if isfield(report, 'errors') && ~isempty(report.errors)
+                    errs = cellstr(string(report.errors));
+                    lines{end+1} = ''; %#ok<AGROW>
+                    lines{end+1} = 'Errors:'; %#ok<AGROW>
+                    for i = 1:min(numel(errs), 8)
+                        lines{end+1} = ['- ' errs{i}]; %#ok<AGROW>
+                    end
+                end
+                try
+                    if isfield(report, 'solver') && isstruct(report.solver) && ...
+                            isfield(report.solver, 'issues') && ~isempty(report.solver.issues)
+                        solverLines = {};
+                        for i = 1:numel(report.solver.issues)
+                            issue = report.solver.issues(i);
+                            severity = lower(char(string(getField(app, issue, 'severity', ''))));
+                            if strcmp(severity, 'info')
+                                continue;
+                            end
+                            msg = char(string(getField(app, issue, 'message', '')));
+                            if ~isempty(msg)
+                                solverLines{end+1} = ['- ' msg]; %#ok<AGROW>
+                            end
+                            if numel(solverLines) >= 8
+                                break;
+                            end
+                        end
+                        if ~isempty(solverLines)
+                            lines{end+1} = ''; %#ok<AGROW>
+                            lines{end+1} = 'Solver issues:'; %#ok<AGROW>
+                            lines = [lines solverLines]; %#ok<AGROW>
+                        end
+                    end
+                catch
+                end
+            end
+            message = strjoin(lines, newline);
+        end
+
         function tf = selectedRunNeedsChannels(app)
             tf = selectedRunHasNodeType(app, 'roiExtract') || ...
                 selectedRunHasNodeType(app, 'classifier') || ...
@@ -13201,6 +13492,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(app.ExplicitRuntimeRoiList)
                     issues{end+1} = 'Classifier-attached ROI mode requires ROI objects attached to the classifier run.'; %#ok<AGROW>
                     markRuntimeField(app, 'rois', 'missing', 'Classifier mode uses classifier.roi as runtime input.');
+                else
+                    channelIssues = classifierAttachedRoiChannelIssues(app);
+                    for ci = 1:numel(channelIssues)
+                        issues{end+1} = channelIssues{ci}; %#ok<AGROW>
+                    end
+                    if ~isempty(channelIssues)
+                        markRuntimeField(app, 'rois', 'blocked', 'Selected classifier ROIs do not expose the configured classifier input channel.');
+                    end
                 end
             elseif ~selectedRunHasNodeType(app, 'dataLoader')
                 issues{end+1} = ['Input mode is "Parse raw images into project", but the selected run does not include a dataloader node. ' ...
@@ -18599,6 +18898,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 [~, dryReport] = runPipeline(pipeObj, ctxDry);
                 dryRunSec = toc(dryRunTimer);
                 runObj.outputs.dryRunReport = dryReport;
+                if dryRunReportHasBlockingIssues(app, dryReport)
+                    dryMessage = formatDryRunBlockingMessage(app, dryReport);
+                    runObj.status = 'failed';
+                    runObj.ctx = stripTransientRunContext(app, ctxDry);
+                    logRunEvent(app, runObj, ['Run blocked by dry-run validation: ' strrep(dryMessage, newline, ' | ')], 'pipeline2');
+                    updateRunSaveProgress(app, d, 'Launch: saving dry-run failure...', 0.38);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving dry-run failure state...', false);
+                    appendRunReport(app, 'Dry-run: failed', dryReport);
+                    setRuntimeStatus(app, 'Run blocked by dry-run validation.');
+                    stopActiveRunControl(app, 'Run !');
+                    try, close(d); catch, end
+                    d = [];
+                    uialert(app.UIFigure, dryMessage, 'Dry-run validation failed', 'Icon', 'error');
+                    return;
+                end
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = stripTransientRunContext(app, ctxDry);
                 logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
