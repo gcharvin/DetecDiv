@@ -112,6 +112,7 @@ classdef pipeline2 < matlab.apps.AppBase
         CurrentPipeline = []
         CurrentPipelinePath char = ''
         CurrentPipelineWorkspaceVar char = ''
+        CurrentPipelineIsRunSnapshot logical = false
         IsPipelineDirty logical = false
         CurrentRun = []
         CurrentRunPath char = ''
@@ -590,12 +591,21 @@ classdef pipeline2 < matlab.apps.AppBase
             candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) runSnapshotPaths]; %#ok<AGROW>
             candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths);
             [pipeObj, loadMsg] = loadBestPipelineTemplateCandidate(app, candidatePaths, runObj);
+            historicalPipe = widestProjectRunPipelineSpecForUi(app, runObj);
             if ~isempty(pipeObj)
+                if shouldPreferHistoricalRunPipelineSpec(app, pipeObj, historicalPipe, runObj)
+                    pipeObj = historicalPipe;
+                end
                 msg = '';
                 return;
             end
             if ~isempty(loadMsg)
                 msg = loadMsg;
+            end
+            if ~isempty(historicalPipe)
+                pipeObj = historicalPipe;
+                msg = '';
+                return;
             end
 
             try
@@ -613,6 +623,129 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
             catch
+            end
+        end
+
+        function pipeObj = widestProjectRunPipelineSpecForUi(app, runObj)
+            pipeObj = [];
+            shallowObj = app.CurrentProject;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ...
+                    ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                return;
+            end
+            templateId = runTemplateIdForUi(app, runObj);
+            bestSpec = [];
+            bestCount = 0;
+            bestName = templateId;
+            bestPath = '';
+            try
+                runs = shallowObj.processing.pipelineRun;
+                for iRun = 1:numel(runs)
+                    r = runs(iRun);
+                    if isempty(r) || ~isa(r, 'pipelineRun') || ~sameRunTemplateForUi(app, r, templateId)
+                        continue;
+                    end
+                    if ~isstruct(r.ctx) || ~isfield(r.ctx, 'pipelineSpec') || ~isstruct(r.ctx.pipelineSpec) || ...
+                            ~isfield(r.ctx.pipelineSpec, 'nodes') || isempty(r.ctx.pipelineSpec.nodes)
+                        continue;
+                    end
+                    nNodes = numel(r.ctx.pipelineSpec.nodes);
+                    if nNodes <= bestCount
+                        continue;
+                    end
+                    bestSpec = r.ctx.pipelineSpec;
+                    bestCount = nNodes;
+                    try
+                        if isfield(r.ctx.pipelineSpec, 'name') && ~isempty(r.ctx.pipelineSpec.name)
+                            bestName = char(string(r.ctx.pipelineSpec.name));
+                        end
+                    catch
+                    end
+                    try
+                        if isstruct(r.pipelineRef) && isfield(r.pipelineRef, 'path') && ~isempty(r.pipelineRef.path) && ...
+                                ~isRunSnapshotPipelinePath(app, r.pipelineRef.path)
+                            bestPath = char(string(r.pipelineRef.path));
+                        end
+                    catch
+                    end
+                end
+            catch
+                bestSpec = [];
+            end
+            if isempty(bestSpec)
+                return;
+            end
+            if isempty(strtrim(bestName))
+                bestName = defaultPipelineTemplateName(app);
+            end
+            pipeObj = pipeline('', bestName, 1);
+            if ~isempty(strtrim(bestPath))
+                pipeObj.setPath(bestPath, bestName);
+            end
+            pipeObj.nodes = bestSpec.nodes;
+            if isfield(bestSpec, 'edges')
+                pipeObj.edges = bestSpec.edges;
+            end
+            if isfield(bestSpec, 'branches')
+                pipeObj.branches = bestSpec.branches;
+            end
+            pipeObj.description = 'Recovered from the widest pipelineSpec stored in project runs.';
+        end
+
+        function tf = shouldPreferHistoricalRunPipelineSpec(app, candidatePipe, historicalPipe, runObj)
+            tf = false;
+            if isempty(candidatePipe) || isempty(historicalPipe)
+                return;
+            end
+            try
+                if numel(historicalPipe.nodes) <= numel(candidatePipe.nodes)
+                    return;
+                end
+                selectedIds = selectedNodeIdsFromRunObject(app, runObj);
+                if isempty(selectedIds)
+                    return;
+                end
+                candidateIds = cellstr(string({candidatePipe.nodes.id}));
+                tf = numel(candidateIds) <= numel(selectedIds) && all(ismember(candidateIds, selectedIds));
+            catch
+                tf = false;
+            end
+        end
+
+        function ids = selectedNodeIdsFromRunObject(app, runObj) %#ok<INUSD>
+            ids = {};
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx, 'run') && isstruct(runObj.ctx.run) && ...
+                        isfield(runObj.ctx.run, 'selectedNodes') && ~isempty(runObj.ctx.run.selectedNodes)
+                    ids = cellstr(string(runObj.ctx.run.selectedNodes));
+                end
+            catch
+                ids = {};
+            end
+        end
+
+        function tf = sameRunTemplateForUi(app, runObj, templateId)
+            tf = false;
+            otherId = runTemplateIdForUi(app, runObj);
+            if isempty(strtrim(templateId)) || isempty(strtrim(otherId))
+                return;
+            end
+            tf = strcmpi(templateId, otherId);
+        end
+
+        function templateId = runTemplateIdForUi(app, runObj) %#ok<INUSD>
+            templateId = '';
+            try
+                if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'id') && ~isempty(runObj.pipelineRef.id)
+                    templateId = char(string(runObj.pipelineRef.id));
+                elseif isprop(runObj, 'templateId') && ~isempty(runObj.templateId)
+                    templateId = char(string(runObj.templateId));
+                elseif isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineRef') && isstruct(runObj.ctx.pipelineRef) && ...
+                        isfield(runObj.ctx.pipelineRef, 'id') && ~isempty(runObj.ctx.pipelineRef.id)
+                    templateId = char(string(runObj.ctx.pipelineRef.id));
+                end
+            catch
+                templateId = '';
             end
         end
 
@@ -14663,6 +14796,18 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             targetPath = app.CurrentPipelinePath;
             targetName = currentPipelineName(app);
+            if ~forceAs && (app.CurrentPipelineIsRunSnapshot || isRunSnapshotPipelinePath(app, targetPath))
+                choice = uiconfirm(app.UIFigure, ...
+                    ['This pipeline was loaded from a run snapshot.' newline ...
+                     'Use Save as... to create a normal editable template.'], ...
+                    'Run snapshot pipeline', 'Options', {'Save as...','Cancel'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2);
+                if strcmp(choice, 'Cancel')
+                    return;
+                end
+                forceAs = true;
+                targetPath = '';
+            end
             if forceAs || isempty(targetPath)
                 [file, pth] = uiputfile('*.json', 'Save pipeline template', defaultSavePipelineDialogPath(app));
                 if isequal(file, 0)
@@ -14709,6 +14854,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 app.CurrentPipeline = pipeObj;
                 app.CurrentPipelinePath = pipeObj.path;
+                app.CurrentPipelineIsRunSnapshot = false;
                 assignCurrentPipelineToWorkspace(app, pipeObj, oldWorkspaceVar);
                 addRecentPipelinePath(app, fullfile(pipeObj.path, 'pipeline.json'));
                 markPipelineDirty(app, false);
@@ -15032,6 +15178,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             app.CurrentPipeline = pipeObj;
             app.CurrentPipelinePath = pipeObj.path;
+            app.CurrentPipelineIsRunSnapshot = isRunSnapshotPipelinePath(app, pipeObj.path);
             assignCurrentPipelineToWorkspace(app, pipeObj);
             app.CurrentRun = [];
             app.CurrentRunPath = '';
@@ -16639,7 +16786,27 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 ok = savePipelineInteractive(app, true);
             else
-                ok = savePipelineInteractive(app, false);
+                if app.CurrentPipelineIsRunSnapshot || isRunSnapshotPipelinePath(app, app.CurrentPipelinePath)
+                    if app.IsPipelineDirty
+                        choice = uiconfirm(app.UIFigure, ...
+                            ['This window was opened from a run snapshot, not from the editable pipeline template.' newline ...
+                             'Save these pipeline edits as a new template before launching?'], ...
+                            'Run snapshot pipeline', 'Options', {'Save as...','Run without template save','Cancel'}, ...
+                            'DefaultOption', 2, 'CancelOption', 3);
+                        switch choice
+                            case 'Save as...'
+                                ok = savePipelineInteractive(app, true);
+                            case 'Run without template save'
+                                ok = true;
+                            otherwise
+                                ok = false;
+                        end
+                    end
+                    return;
+                end
+                if app.IsPipelineDirty
+                    ok = savePipelineInteractive(app, false);
+                end
             end
         end
 
@@ -18396,6 +18563,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeNodeParams = struct();
             app.CurrentPipeline = [];
             app.CurrentPipelinePath = '';
+            app.CurrentPipelineIsRunSnapshot = false;
             app.CurrentPipelineWorkspaceVar = '';
             app.CurrentRun = [];
             app.CurrentRunPath = '';
