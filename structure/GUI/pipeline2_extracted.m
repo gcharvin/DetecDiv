@@ -587,6 +587,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            candidatePaths = [candidatePaths projectPipelineTemplatePathsForRun(app, runObj)]; %#ok<AGROW>
             candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths);
             for i = 1:numel(candidatePaths)
                 [pipeObj, loadMsg] = pipelineLoad(candidatePaths{i});
@@ -635,6 +636,59 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             candidatePaths = unique(out(~cellfun(@isempty, out)), 'stable');
+        end
+
+        function paths = projectPipelineTemplatePathsForRun(app, runObj) %#ok<INUSD>
+            paths = {};
+            shallowObj = app.CurrentProject;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            configuredPath = '';
+            try
+                if isprop(shallowObj, 'runProfiles') && isfield(shallowObj.runProfiles, 'pipeline') && ...
+                        isstruct(shallowObj.runProfiles.pipeline) && isfield(shallowObj.runProfiles.pipeline, 'defaultTemplatePath')
+                    configuredPath = char(string(shallowObj.runProfiles.pipeline.defaultTemplatePath));
+                end
+            catch
+                configuredPath = '';
+            end
+            if ~isempty(strtrim(configuredPath))
+                paths{end+1} = configuredPath; %#ok<AGROW>
+            end
+
+            projectRoot = '';
+            try
+                if ~isempty(shallowObj.io.path) && ~isempty(shallowObj.io.file)
+                    projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+                end
+            catch
+                projectRoot = '';
+            end
+            if isempty(projectRoot) || exist(projectRoot, 'dir') ~= 7
+                return;
+            end
+
+            templateId = '';
+            try
+                if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'id') && ~isempty(runObj.pipelineRef.id)
+                    templateId = char(string(runObj.pipelineRef.id));
+                elseif isprop(runObj, 'templateId') && ~isempty(runObj.templateId)
+                    templateId = char(string(runObj.templateId));
+                end
+            catch
+                templateId = '';
+            end
+            if ~isempty(strtrim(templateId))
+                paths{end+1} = fullfile(projectRoot, templateId, 'pipeline.json'); %#ok<AGROW>
+            end
+
+            paths{end+1} = fullfile(projectRoot, 'pipeline.json'); %#ok<AGROW>
+            d = dir(fullfile(projectRoot, '*', 'pipeline.json'));
+            for i = 1:numel(d)
+                paths{end+1} = fullfile(d(i).folder, d(i).name); %#ok<AGROW>
+            end
         end
 
         function localPath = hubRemotePathToLocalPath(app, remotePath)
@@ -5748,9 +5802,12 @@ classdef pipeline2 < matlab.apps.AppBase
             txt = strjoin(parts, ', ');
         end
 
-        function tf = dryRunReportHasBlockingIssues(app, report) %#ok<INUSD>
+        function tf = dryRunReportHasBlockingIssues(app, report, ctx)
             tf = false;
             if ~isstruct(report)
+                return;
+            end
+            if nargin >= 3 && dryRunReportOnlyHasClassifierRoiDeferral(app, report, ctx)
                 return;
             end
             try
@@ -5779,6 +5836,139 @@ classdef pipeline2 < matlab.apps.AppBase
                     if any(severities == "error")
                         tf = true;
                     end
+                end
+            catch
+            end
+        end
+
+        function tf = dryRunReportOnlyHasClassifierRoiDeferral(app, report, ctx)
+            tf = false;
+            if ~isstruct(report) || ~isstruct(ctx)
+                return;
+            end
+            if ~dryRunContextIsHubClassifierRois(app, ctx)
+                return;
+            end
+            messages = dryRunBlockingMessages(app, report);
+            if isempty(messages)
+                return;
+            end
+            for i = 1:numel(messages)
+                if ~isClassifierRoiDeferralMessage(app, messages{i})
+                    return;
+                end
+            end
+            tf = true;
+        end
+
+        function tf = dryRunContextIsHubClassifierRois(app, ctx)
+            tf = false;
+            try
+                target = char(string(getNestedFieldLocal(app, ctx, {'run','executionTarget'}, runtimeExecutionTarget(app))));
+                if ~strcmpi(target, 'hub')
+                    return;
+                end
+                mode = char(string(getNestedFieldLocal(app, ctx, {'run','inputSourceMode'}, getRuntimeValue(app, 'inputSourceMode'))));
+                source = char(string(getNestedFieldLocal(app, ctx, {'run','inputSource'}, '')));
+                isClassifierInput = strcmpi(mode, 'classifier_rois') || contains(lower(source), 'classifier');
+                if ~isClassifierInput
+                    return;
+                end
+                if isempty(app.ExplicitRuntimeRoiList)
+                    return;
+                end
+                tf = selectedRunHasNodeType(app, 'classifier');
+            catch
+                tf = false;
+            end
+        end
+
+        function messages = dryRunBlockingMessages(app, report)
+            messages = {};
+            if ~isstruct(report)
+                return;
+            end
+            if isfield(report, 'errors') && ~isempty(report.errors)
+                messages = [messages cellstr(string(report.errors))]; %#ok<AGROW>
+            end
+            try
+                if isfield(report, 'solver') && isstruct(report.solver) && ...
+                        isfield(report.solver, 'issues') && ~isempty(report.solver.issues)
+                    for i = 1:numel(report.solver.issues)
+                        issue = report.solver.issues(i);
+                        severity = lower(char(string(getField(app, issue, 'severity', ''))));
+                        if strcmp(severity, 'info')
+                            continue;
+                        end
+                        msg = strtrim(char(string(getField(app, issue, 'message', ''))));
+                        if ~isempty(msg)
+                            messages{end+1} = msg; %#ok<AGROW>
+                        end
+                    end
+                end
+            catch
+            end
+            messages = unique(messages(~cellfun(@isempty, messages)), 'stable');
+        end
+
+        function tf = isClassifierRoiDeferralMessage(app, message) %#ok<INUSD>
+            msg = lower(strtrim(char(string(message))));
+            tf = contains(msg, 'missing inputs for node') && contains(msg, 'roilist');
+            tf = tf || contains(msg, 'requires roi content') && ...
+                contains(msg, 'not available in the current graph state');
+        end
+
+        function report = annotateDryRunClassifierRoiDeferral(app, report)
+            if ~isstruct(report)
+                return;
+            end
+            originalErrors = {};
+            originalOkStrict = [];
+            originalSolver = struct();
+            try
+                if isfield(report, 'errors')
+                    originalErrors = report.errors;
+                    report.errors = {};
+                end
+            catch
+            end
+            try
+                if isfield(report, 'okStrict')
+                    originalOkStrict = report.okStrict;
+                    report.okStrict = true;
+                end
+            catch
+            end
+            try
+                if isfield(report, 'ok')
+                    report.ok = true;
+                end
+            catch
+            end
+            try
+                if isfield(report, 'solver') && isstruct(report.solver)
+                    originalSolver = report.solver;
+                    if isfield(report.solver, 'hasBlocking')
+                        report.solver.hasBlocking = false;
+                    end
+                    if isfield(report.solver, 'summary') && isstruct(report.solver.summary)
+                        report.solver.summary.errors = 0;
+                    end
+                end
+            catch
+            end
+            report.classifierRoiDeferred = true;
+            report.deferredClassifierRoiBinding = struct( ...
+                'reason', 'Classifier-attached ROI handles are resolved on the Hub worker.', ...
+                'originalErrors', {originalErrors}, ...
+                'originalOkStrict', originalOkStrict, ...
+                'originalSolver', originalSolver);
+            try
+                warningText = 'Classifier ROI binding is deferred to the Hub worker; attached classifier ROIs were checked before launch.';
+                if isfield(report, 'warnings') && ~isempty(report.warnings)
+                    report.warnings = [cellstr(string(report.warnings)) {warningText}];
+                else
+                    report.warnings = {warningText};
                 end
             catch
             end
@@ -18897,8 +19087,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctxDry.dryRun = true;
                 [~, dryReport] = runPipeline(pipeObj, ctxDry);
                 dryRunSec = toc(dryRunTimer);
+                classifierRoiDryRunDeferred = dryRunReportOnlyHasClassifierRoiDeferral(app, dryReport, ctxDry);
+                if classifierRoiDryRunDeferred
+                    dryReport = annotateDryRunClassifierRoiDeferral(app, dryReport);
+                end
                 runObj.outputs.dryRunReport = dryReport;
-                if dryRunReportHasBlockingIssues(app, dryReport)
+                if dryRunReportHasBlockingIssues(app, dryReport, ctxDry)
                     dryMessage = formatDryRunBlockingMessage(app, dryReport);
                     runObj.status = 'failed';
                     runObj.ctx = stripTransientRunContext(app, ctxDry);
@@ -18915,12 +19109,20 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = stripTransientRunContext(app, ctxDry);
-                logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
+                if classifierRoiDryRunDeferred
+                    logRunEvent(app, runObj, 'Dry-run validation completed with classifier ROI binding deferred to Hub worker.', 'pipeline2');
+                else
+                    logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
+                end
                 updateRunSaveProgress(app, d, 'Launch: saving dry-run report...', 0.38);
                 saveDryTimer = tic;
                 savePipelineRunAndProject(app, runObj, d, 'Saving dry-run state...', false);
                 saveDrySec = toc(saveDryTimer);
-                appendRunReport(app, 'Dry-run: OK', dryReport);
+                if classifierRoiDryRunDeferred
+                    appendRunReport(app, 'Dry-run: classifier ROI binding deferred to Hub', dryReport);
+                else
+                    appendRunReport(app, 'Dry-run: OK', dryReport);
+                end
 
                 if strcmp(runtimeExecutionTarget(app), 'hub')
                     updateRunSaveProgress(app, d, 'Hub launch: reading settings...', 0.46);
