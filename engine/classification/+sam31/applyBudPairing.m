@@ -324,12 +324,14 @@ for i = 1:numel(ids)
     firstFrame(i) = f;
 end
 
-for i = 1:numel(ids)
+birthOrder = find(firstFrame > 1);
+[~, sortIdx] = sort(firstFrame(birthOrder));
+birthOrder = birthOrder(sortIdx);
+
+for ii = 1:numel(birthOrder)
+    i = birthOrder(ii);
     childId = ids(i);
     startFrame = firstFrame(i);
-    if startFrame <= 1
-        continue;
-    end
     birthArea = areas(i, startFrame);
     frame = labels(:, :, startFrame);
     typicalCellSize = localTypicalCellSize(frame, ids, i, configuredTypicalCellSize);
@@ -362,7 +364,12 @@ for i = 1:numel(ids)
         if areas(j, startFrame) < minParentArea
             continue;
         end
-        if firstFrame(j) > 1 && (startFrame - firstFrame(j)) < minParentAge
+        hasBuddedBefore = localHasBuddedBefore(events, motherId, startFrame);
+        requiredParentAge = minParentAge;
+        if firstFrame(j) > 1 && ~hasBuddedBefore
+            requiredParentAge = ceil(1.5 * minParentAge);
+        end
+        if firstFrame(j) > 1 && (startFrame - firstFrame(j)) < requiredParentAge
             continue;
         end
 
@@ -394,7 +401,11 @@ for i = 1:numel(ids)
         centroidCost = centroidWeight * centroidDistance;
         futureCentroidCost = futureCentroidWeight * futureCentroidDistance;
         supportBonus = -4 * futureSupport;
-        cost = d0 + centroidCost + futureCost + futureCentroidCost + angleCost + supportBonus;
+        daughterPenalty = 0;
+        if firstFrame(j) > 1 && ~hasBuddedBefore
+            daughterPenalty = 6;
+        end
+        cost = d0 + centroidCost + futureCost + futureCentroidCost + angleCost + daughterPenalty + supportBonus;
 
         if cost < best.cost
             best = struct('motherId', double(motherId), 'cost', cost, ...
@@ -427,6 +438,16 @@ events = struct('childId', {}, 'motherId', {}, 'startFrame', {}, ...
     'cost', {}, 'distance', {}, 'futureDistance', {}, ...
     'centroidDistance', {}, 'futureCentroidDistance', {}, 'axisAngleDeg', {}, ...
     'areaAtBirth', {}, 'motherAreaAtBirth', {});
+end
+
+function tf = localHasBuddedBefore(events, motherId, startFrame)
+tf = false;
+for i = 1:numel(events)
+    if events(i).motherId == double(motherId) && events(i).startFrame < startFrame
+        tf = true;
+        return;
+    end
+end
 end
 
 function typicalSize = localTypicalCellSize(frame, ids, excludedIndex, configuredSize)
