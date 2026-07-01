@@ -227,4 +227,7 @@ end
 if isfield(res,'refs') && isstruct(res.refs) && isfield(res.refs,'trainingParam')
     classif.trainingParam = res.refs.trainingParam;
 end
+if isfield(res,'refs') && isstruct(res.refs) && isfield(res.refs,'executionParam') && isprop(classif, 'executionParam')
+    classif.executionParam = res.refs.executionParam;
+end
 end

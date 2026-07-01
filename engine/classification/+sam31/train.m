@@ -13,8 +13,10 @@ end
 
 if strcmpi(mode,"init") || strcmpi(mode,"setparam") || strcmpi(mode,"param")
     classif.trainingParam = sam31.utils.defaultTrainingParam();
+    classif.executionParam = sam31.utils.defaultExecutionParam();
     sam31.ensureClassMetadata(classif);
     out.refs.trainingParam = classif.trainingParam;
+    out.refs.executionParam = classif.executionParam;
     out.status = "OK";
     return;
 end

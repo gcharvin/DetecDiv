@@ -5,6 +5,7 @@ classdef classi < handle
         typeid=1; % default category for classification found the classilist.mat file in the classification folde
         trainingset=[]; % % list of ROI ids used for training
         trainingParam=[];
+        executionParam=[]; % inference/runtime parameters for package classifiers
         output=0; % type of output : 'one' , or 'sequence' for lstm classification
         path='' %  path where
         strid=''; % string id of the classi object
