@@ -5668,15 +5668,34 @@ end
                 if numel(app.Tree.SelectedNodes.Children)==0
                     if numel(app.Data.Projectclassirois{cc(1)})
                         [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-                        for n=1:numel(app.Data.Projectclassirois{cc(1)}{cc(2)})
+                        roiLabels = app.Data.Projectclassirois{cc(1)}{cc(2)};
+                        nRoi = numel(roiLabels);
+                        roiProgressDialog = [];
+                        roiProgressCleanup = [];
+                        if nRoi >= 25
+                            roiProgressDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                                'Title', 'Please Wait...', ...
+                                'Message', 'Generating classifier ROI list...', ...
+                                'Value', 0);
+                            roiProgressCleanup = onCleanup(@() app.safeCloseProgressDialog(roiProgressDialog)); %#ok<NASGU>
+                            drawnow limitrate;
+                        end
+                        for n=1:nRoi
+                            if ~isempty(roiProgressDialog) && isvalid(roiProgressDialog) && ...
+                                    (n == 1 || n == nRoi || mod(n, 10) == 0)
+                                roiProgressDialog.Value = n ./ nRoi;
+                                roiProgressDialog.Message = ['Generating classifier ROI list... ' num2str(n) '/' num2str(nRoi)];
+                                drawnow limitrate;
+                            end
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
                             m.MenuSelectedFcn={@contextMenuROIFcn,[cc(1),cc(2),n],'Projectclassirois'};
                             %  ''ContextMenu',cm'
-                            uitreenode(app.Tree.SelectedNodes,'Text',app.Data.Projectclassirois{cc(1)}{cc(2)}{n},'Tag','Projectclassirois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
+                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Projectclassirois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
                             % disabled because too heavy with large projects
                         end
+                        clear roiProgressCleanup
                     end
                 end
 
@@ -5798,8 +5817,25 @@ end
 
                 if isempty(app.Tree.SelectedNodes.Children) || ~any(arrayfun(@(child) strcmp(child.Tag,'Classifierrois'), app.Tree.SelectedNodes.Children))
                     if numel(app.Data.Classifierrois{cc})
-
-                        for n=1:numel(app.Data.Classifierrois{cc})
+                        roiLabels = app.Data.Classifierrois{cc};
+                        nRoi = numel(roiLabels);
+                        roiProgressDialog = [];
+                        roiProgressCleanup = [];
+                        if nRoi >= 25
+                            roiProgressDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                                'Title', 'Please Wait...', ...
+                                'Message', 'Generating classifier ROI list...', ...
+                                'Value', 0);
+                            roiProgressCleanup = onCleanup(@() app.safeCloseProgressDialog(roiProgressDialog)); %#ok<NASGU>
+                            drawnow limitrate;
+                        end
+                        for n=1:nRoi
+                            if ~isempty(roiProgressDialog) && isvalid(roiProgressDialog) && ...
+                                    (n == 1 || n == nRoi || mod(n, 10) == 0)
+                                roiProgressDialog.Value = n ./ nRoi;
+                                roiProgressDialog.Message = ['Generating classifier ROI list... ' num2str(n) '/' num2str(nRoi)];
+                                drawnow limitrate;
+                            end
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
@@ -5807,9 +5843,10 @@ end
                             %  'ContextMenu',cm
                             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
-                            uitreenode(app.Tree.SelectedNodes,'Text',app.Data.Classifierrois{cc}{n},'Tag','Classifierrois','UserData',[cc,n],'Icon',fullfile(pth,'roi.png'));
+                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Classifierrois','UserData',[cc,n],'Icon',fullfile(pth,'roi.png'));
                             % disabled because too heavy with large projects
                         end
+                        clear roiProgressCleanup
                     end
                 end
 
@@ -6130,11 +6167,28 @@ end
                         roiObj.parent=clas;
                 end
 
-                figures=findall(0,'Type','figure');
-                appFigure=findobj(figures,'Name','ScoreApp');
-                if isprop(appFigure,'RunningAppInstance')
-                    appFigure.RunningAppInstance.addROI(roiObj);
-                else
+                openedInExistingScore = false;
+                try
+                    figures=findall(0,'Type','figure');
+                    appFigure=findobj(figures,'Name','ScoreApp');
+                    if ~isempty(appFigure) && isprop(appFigure(1),'RunningAppInstance')
+                        scoreApp = appFigure(1).RunningAppInstance;
+                        if ~isempty(scoreApp) && isvalid(scoreApp)
+                            scoreApp.addROI(roiObj);
+                            try
+                                figure(scoreApp.ScoreAppUIFigure);
+                            catch
+                            end
+                            openedInExistingScore = true;
+                        end
+                    end
+                catch ME
+                    warning('DetecDiv:OpenScore:AddROI', ...
+                        'Could not add ROI to existing Score instance: %s', ME.message);
+                    openedInExistingScore = false;
+                end
+
+                if ~openedInExistingScore
                     try
                         clear score
                         rehash

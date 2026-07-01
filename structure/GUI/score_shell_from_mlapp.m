@@ -200,6 +200,10 @@ classdef score < matlab.apps.AppBase
 
             % Préparer les colonnes : Display, Name, Size
             numROIs = numel(app.content.ROIList);
+            previousROIIndex = app.getDisplayedROIIndexExcept(numROIs);
+            if ~isempty(previousROIIndex) && previousROIIndex <= numROIs
+                app.copyVisibleROIPreset(app.content.ROIList{previousROIIndex}, app.content.ROIList{numROIs});
+            end
             tableData = cell(numROIs, 3);
 
             for i = 1:numROIs
@@ -318,6 +322,10 @@ classdef score < matlab.apps.AppBase
               
                  % Optionnel : effectuer des actions basées sur la sélection
                 selectedROI = app.content.ROIList{event.Indices(1)};
+                previousROIIndex = app.getDisplayedROIIndexExcept(event.Indices(1));
+                if ~isempty(previousROIIndex)
+                    app.copyVisibleROIPreset(app.content.ROIList{previousROIIndex}, selectedROI);
+                end
 
              %   if  app.UIROITable.Data{ event.Indices(1), 1} == false  % just refresh the display
                     
@@ -360,6 +368,175 @@ classdef score < matlab.apps.AppBase
         %       profile viewer
             end
 
+        end
+
+
+        function idx = getDisplayedROIIndexExcept(app, excludedIdx)
+            idx = [];
+            try
+                if isempty(app.UIROITable.Data)
+                    return;
+                end
+                selected = find(cell2mat(app.UIROITable.Data(:, 1)));
+                selected = selected(selected ~= excludedIdx);
+                if ~isempty(selected)
+                    idx = selected(1);
+                end
+            catch
+                idx = [];
+            end
+        end
+
+        function copyVisibleROIPreset(app, sourceROI, targetROI)
+            if isempty(sourceROI) || isempty(targetROI) || isequal(sourceROI, targetROI)
+                return;
+            end
+
+            app.copyROIChannelPreset(sourceROI, targetROI);
+            app.copyROIDataPreset(sourceROI, targetROI);
+        end
+
+        function copyROIChannelPreset(app, sourceROI, targetROI)
+            try
+                if ~isprop(sourceROI, 'display') || ~isstruct(sourceROI.display) || ...
+                        ~isprop(targetROI, 'display') || ~isstruct(targetROI.display) || ...
+                        ~isfield(sourceROI.display, 'channel') || ~isfield(targetROI.display, 'channel')
+                    return;
+                end
+
+                sourceNames = cellstr(string(sourceROI.display.channel(:)));
+                targetNames = cellstr(string(targetROI.display.channel(:)));
+                matchedTarget = false(1, numel(targetNames));
+                fields = {'intensity', 'rgb', 'displaylim', 'selectedchannel', 'indexed', ...
+                    'alpha', 'contour', 'log', 'scale', 'width', 'colorMode', 'colormapName'};
+
+                for i = 1:numel(sourceNames)
+                    idx = find(strcmp(targetNames, sourceNames{i}), 1, 'first');
+                    if isempty(idx)
+                        continue;
+                    end
+                    matchedTarget(idx) = true;
+                    for f = 1:numel(fields)
+                        fieldName = fields{f};
+                        if ~isfield(sourceROI.display, fieldName) || ~isfield(targetROI.display, fieldName)
+                            continue;
+                        end
+                        targetROI.display = app.copyDisplayFieldValue( ...
+                            sourceROI.display, targetROI.display, fieldName, i, idx);
+                    end
+                end
+
+                if any(matchedTarget) && isfield(targetROI.display, 'selectedchannel')
+                    sel = false(1, numel(targetNames));
+                    for i = 1:numel(sourceNames)
+                        idx = find(strcmp(targetNames, sourceNames{i}), 1, 'first');
+                        if ~isempty(idx) && isfield(sourceROI.display, 'selectedchannel') && ...
+                                numel(sourceROI.display.selectedchannel) >= i
+                            sel(idx) = logical(sourceROI.display.selectedchannel(i));
+                        end
+                    end
+                    targetROI.display.selectedchannel = sel;
+                end
+            catch ME
+                warning('Score:CopyROIPreset:Channels', ...
+                    'Could not copy ROI channel display preset: %s', ME.message);
+            end
+        end
+
+        function targetDisplay = copyDisplayFieldValue(app, sourceDisplay, targetDisplay, fieldName, sourceIdx, targetIdx) %#ok<INUSL>
+            value = sourceDisplay.(fieldName);
+            if isempty(value)
+                return;
+            end
+
+            if isnumeric(value) || islogical(value)
+                if ismatrix(value) && size(value, 2) >= sourceIdx && size(targetDisplay.(fieldName), 2) >= targetIdx
+                    targetDisplay.(fieldName)(:, targetIdx) = value(:, sourceIdx);
+                elseif numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
+                    targetDisplay.(fieldName)(targetIdx) = value(sourceIdx);
+                end
+            elseif iscell(value)
+                if numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
+                    targetDisplay.(fieldName){targetIdx} = value{sourceIdx};
+                end
+            elseif isstring(value)
+                if numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
+                    targetDisplay.(fieldName)(targetIdx) = value(sourceIdx);
+                end
+            end
+        end
+
+        function copyROIDataPreset(app, sourceROI, targetROI)
+            try
+                if ~isprop(sourceROI, 'data') || isempty(sourceROI.data) || ...
+                        ~isprop(targetROI, 'data') || isempty(targetROI.data)
+                    return;
+                end
+
+                for s = 1:numel(sourceROI.data)
+                    sourceData = sourceROI.data(s);
+                    targetIdx = app.findMatchingDataseries(targetROI.data, sourceData);
+                    if isempty(targetIdx)
+                        continue;
+                    end
+
+                    targetData = targetROI.data(targetIdx);
+                    if isprop(sourceData, 'show') && isprop(targetData, 'show')
+                        targetData.show = logical(sourceData.show);
+                    end
+                    targetData = app.copyDataseriesPlotPreset(sourceData, targetData);
+                    targetROI.data(targetIdx) = targetData;
+                end
+            catch ME
+                warning('Score:CopyROIPreset:Data', ...
+                    'Could not copy ROI data display preset: %s', ME.message);
+            end
+        end
+
+        function idx = findMatchingDataseries(app, dataList, sourceData) %#ok<INUSL>
+            idx = [];
+            try
+                if isprop(sourceData, 'groupid')
+                    sourceId = char(string(sourceData.groupid));
+                    ids = arrayfun(@(d) char(string(d.groupid)), dataList, 'UniformOutput', false);
+                    idx = find(strcmp(ids, sourceId), 1, 'first');
+                end
+            catch
+                idx = [];
+            end
+        end
+
+        function targetData = copyDataseriesPlotPreset(app, sourceData, targetData)
+            if isprop(sourceData, 'groupProperties') && isprop(targetData, 'groupProperties') && ...
+                    ~isempty(sourceData.groupProperties) && ~isempty(targetData.groupProperties)
+                targetData.groupProperties = app.copyRowsByName(sourceData.groupProperties, targetData.groupProperties, 1);
+            end
+
+            if isprop(sourceData, 'plotGroup') && isprop(targetData, 'plotGroup') && ~isempty(sourceData.plotGroup)
+                targetData.plotGroup = sourceData.plotGroup;
+            end
+
+            if isprop(sourceData, 'plotProperties') && isprop(targetData, 'plotProperties') && ...
+                    ~isempty(sourceData.plotProperties) && ~isempty(targetData.plotProperties)
+                targetData.plotProperties = app.copyRowsByName(sourceData.plotProperties, targetData.plotProperties, 2);
+            end
+        end
+
+        function targetRows = copyRowsByName(app, sourceRows, targetRows, nameColumn) %#ok<INUSL>
+            if ~iscell(sourceRows) || ~iscell(targetRows) || ...
+                    size(sourceRows, 2) < nameColumn || size(targetRows, 2) < nameColumn
+                return;
+            end
+
+            nCols = min(size(sourceRows, 2), size(targetRows, 2));
+            targetNames = cellstr(string(targetRows(:, nameColumn)));
+            for i = 1:size(sourceRows, 1)
+                sourceName = char(string(sourceRows{i, nameColumn}));
+                idx = find(strcmp(targetNames, sourceName), 1, 'first');
+                if ~isempty(idx)
+                    targetRows(idx, 1:nCols) = sourceRows(i, 1:nCols);
+                end
+            end
         end
 
         function displayROIChannels(app)
