@@ -1359,7 +1359,7 @@ function keys = computeMetricsSlotKeys(prefix, suffix, n)
 end
 
 function keys = computeMetricsMaskStaticKeys(n)
-    keys = {};
+    keys = {'backgroundMethod','backgroundPercentile','backgroundDilatePx'};
     for i = 1:n
         keys = [keys, { ...
             sprintf('mask%d_label', i), ...

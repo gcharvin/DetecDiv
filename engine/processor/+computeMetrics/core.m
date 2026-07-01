@@ -198,6 +198,18 @@ if ~isfield(paramout, 'BrightestPixels') || isempty(paramout.BrightestPixels)
     paramout.BrightestPixels = 20;
 end
 paramout.BrightestPixels = max(1, round(numericScalar(paramout.BrightestPixels, 20)));
+if ~isfield(paramout, 'backgroundMethod') || isempty(paramout.backgroundMethod)
+    paramout.backgroundMethod = 'mean';
+end
+paramout.backgroundMethod = normalizeBackgroundMethod(paramout.backgroundMethod);
+if ~isfield(paramout, 'backgroundPercentile') || isempty(paramout.backgroundPercentile)
+    paramout.backgroundPercentile = 20;
+end
+paramout.backgroundPercentile = min(100, max(0, numericScalar(paramout.backgroundPercentile, 20)));
+if ~isfield(paramout, 'backgroundDilatePx') || isempty(paramout.backgroundDilatePx)
+    paramout.backgroundDilatePx = 0;
+end
+paramout.backgroundDilatePx = max(0, round(numericScalar(paramout.backgroundDilatePx, 0)));
 if ~isfield(paramout, 'computeMaskCombinations') || isempty(paramout.computeMaskCombinations)
     paramout.computeMaskCombinations = true;
 end
@@ -284,6 +296,7 @@ im = roiobj.image(:,:,:,frames);
 nFrames = size(im, 4);
 maskCount = paramout.maskChannelCount;
 N = paramout.BrightestPixels;
+backgroundOpt = backgroundOptionsFromParams(paramout);
 
 varNames = {};
 columns = {};
@@ -316,7 +329,7 @@ for m = 1:maskCount
 
     metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
-        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName, scoreLabel);
+        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName, scoreLabel, backgroundOpt);
         channelName = channelsName{i};
         metricSpecs = { ...
             'Mean', 'Mean', false; ...
@@ -357,7 +370,7 @@ if logical(paramout.computeMaskCombinations)
     maskSpecs = validQuantificationMasks(roiobj, paramout);
     if numel(maskSpecs) > 1
         [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
-            varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N);
+            varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt);
     end
 end
 
@@ -394,6 +407,7 @@ dataout(cc).class = "processing";
 if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
+dataout(cc).userData.background = backgroundOpt;
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per foreground mask index listed in the corresponding MaskIdx_* cell.';
 dataout(cc).userData.composite_mask_semantics = ['For *_AND_* and *_NOT_* variables, each table cell contains one value per ' ...
     'selected foreground mask index listed in the corresponding MaskIdx_* composite variable. Foreground excludes each mask background label ' ...
@@ -428,7 +442,7 @@ end
 end
 
 function [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
-    varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N)
+    varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt)
 
 nFrames = size(im, 4);
 for a = 1:numel(maskSpecs)
@@ -470,7 +484,7 @@ for a = 1:numel(maskSpecs)
                 metricByChannel{i} = fluorescenceForCompositeMask( ...
                     im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N, ...
                     baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel, ...
-                    otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel);
+                    otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel, backgroundOpt);
                 channelName = channelsName{i};
                 metricSpecs = { ...
                     'Mean', 'Mean', false; ...
@@ -618,7 +632,7 @@ token = lower(makeSafeVariableName(label));
 end
 
 function metrics = fluorescenceForCompositeMask(im, baseMaskChannel, otherMaskChannel, relation, scoreChannels, N, ...
-    baseBackgroundLabel, baseMaskName, baseScoreLabel, otherBackgroundLabel, otherMaskName, otherScoreLabel)
+    baseBackgroundLabel, baseMaskName, baseScoreLabel, otherBackgroundLabel, otherMaskName, otherScoreLabel, backgroundOpt)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -634,9 +648,8 @@ for t = 1:nFrames
     % non-target cells leak into Mean_Bckg when scoreLabel tracks one cell.
     baseAllForeground = foregroundMask(baseFrame, baseBackgroundLabel, baseMaskName, 'all');
     otherAllForeground = foregroundMask(otherFrame, otherBackgroundLabel, otherMaskName, 'all');
-    backgroundPix = ~(baseAllForeground | otherAllForeground);
-    backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
-    backgroundMean = mean(backgroundValues(:), 'omitnan');
+    backgroundMean = backgroundMeanForPixels(im, scoreChannels, t, ...
+        baseAllForeground | otherAllForeground, backgroundOpt);
 
     validLabels = labelsWithNonEmptyCompositeRegion(baseFrame, otherFrame, labels, relation, otherBackgroundLabel, otherMaskName, otherScoreLabel);
     meanVals = NaN(1, numel(validLabels));
@@ -712,7 +725,7 @@ warned(mapKey) = true;
 warning(id, varargin{:});
 end
 
-function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N, backgroundLabel, maskName, scoreLabel)
+function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N, backgroundLabel, maskName, scoreLabel, backgroundOpt)
 nFrames = size(im, 4);
 fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
 for f = 1:numel(fields)
@@ -725,9 +738,7 @@ for t = 1:nFrames
     % Background must exclude every segmented object, not only the scored
     % label, or disappearing neighboring cells create artificial jumps.
     foregroundPix = foregroundMask(maskFrame, backgroundLabel, maskName, 'all');
-    backgroundPix = ~foregroundPix;
-    backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
-    backgroundMean = mean(backgroundValues(:), 'omitnan');
+    backgroundMean = backgroundMeanForPixels(im, scoreChannels, t, foregroundPix, backgroundOpt);
 
     meanVals = NaN(1, numel(labels));
     totalVals = NaN(1, numel(labels));
@@ -763,6 +774,74 @@ for c = 1:numel(scoreChannels)
     values = [values; frame(pix)]; %#ok<AGROW>
 end
 values = double(values);
+end
+
+function opt = backgroundOptionsFromParams(paramout)
+opt = struct( ...
+    'method', normalizeBackgroundMethod(paramout.backgroundMethod), ...
+    'percentile', min(100, max(0, numericScalar(paramout.backgroundPercentile, 20))), ...
+    'dilatePx', max(0, round(numericScalar(paramout.backgroundDilatePx, 0))));
+end
+
+function method = normalizeBackgroundMethod(value)
+method = lower(strtrim(selectedText(value, 'mean')));
+switch method
+    case {'mean','median','percentile'}
+        return;
+    otherwise
+        method = 'mean';
+end
+end
+
+function value = backgroundMeanForPixels(im, scoreChannels, t, excludedPix, opt)
+if opt.dilatePx > 0
+    excludedPix = dilateBinaryMask(excludedPix, opt.dilatePx);
+end
+backgroundPix = ~excludedPix;
+values = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
+values = values(:);
+if isempty(values) || all(isnan(values))
+    value = NaN;
+    return;
+end
+switch opt.method
+    case 'median'
+        value = median(values, 'omitnan');
+    case 'percentile'
+        value = percentileNoNaN(values, opt.percentile);
+    otherwise
+        value = mean(values, 'omitnan');
+end
+end
+
+function pix = dilateBinaryMask(pix, radiusPx)
+radiusPx = max(0, round(radiusPx));
+if radiusPx == 0 || ~any(pix(:))
+    return;
+end
+kernel = true(2 * radiusPx + 1);
+pix = conv2(double(pix), double(kernel), 'same') > 0;
+end
+
+function value = percentileNoNaN(values, pct)
+values = sort(values(~isnan(values)));
+if isempty(values)
+    value = NaN;
+    return;
+end
+if numel(values) == 1
+    value = values(1);
+    return;
+end
+pct = min(100, max(0, pct));
+pos = 1 + (numel(values) - 1) * pct / 100;
+lo = floor(pos);
+hi = ceil(pos);
+if lo == hi
+    value = values(lo);
+else
+    value = values(lo) + (pos - lo) * (values(hi) - values(lo));
+end
 end
 
 function labels = maskInstanceLabels(maskFrame, backgroundLabel, maskName, scoreLabel)

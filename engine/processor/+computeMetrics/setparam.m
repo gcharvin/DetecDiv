@@ -45,6 +45,9 @@ for i = 1:scoreChannelCount
     paramout.(sprintf('channel%d_name', i)) = [listChannels listChannels{1}];
 end
 paramout.BrightestPixels = 20;
+paramout.backgroundMethod = {'mean','median','percentile','mean'};
+paramout.backgroundPercentile = 20;
+paramout.backgroundDilatePx = 0;
 paramout.computeMaskCombinations = true;
 paramout.tip = buildTips(maskChannelCount, scoreChannelCount);
 end
@@ -96,6 +99,9 @@ function tip = buildTips(maskChannelCount, scoreChannelCount)
         tip{end+1} = sprintf('Channel name #%d to score', i); %#ok<AGROW>
     end
     tip{end+1} = 'Number of brightest pixels used for top-pixel intensity metrics';
+    tip{end+1} = 'Background reducer for pixels outside all segmented objects: mean, median, or percentile';
+    tip{end+1} = 'Percentile used when backgroundMethod is percentile';
+    tip{end+1} = 'Dilate all segmented objects by this many pixels before selecting background pixels';
     tip{end+1} = 'When multiple masks are selected, compute pairwise AND and NOT composite-mask fluorescence metrics';
 end
 
