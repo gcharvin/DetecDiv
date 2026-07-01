@@ -567,37 +567,35 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            candidatePaths = {};
+            runSnapshotPaths = {};
             try
                 if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
-                    candidatePaths{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
+                    runSnapshotPaths{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
                 end
             catch
             end
             try
                 if ~isempty(runObj.templatePath)
-                    candidatePaths{end+1} = char(string(runObj.templatePath)); %#ok<AGROW>
+                    runSnapshotPaths{end+1} = char(string(runObj.templatePath)); %#ok<AGROW>
                 end
             catch
             end
             try
                 if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineRef') && isstruct(runObj.ctx.pipelineRef) && ...
                         isfield(runObj.ctx.pipelineRef, 'path') && ~isempty(runObj.ctx.pipelineRef.path)
-                    candidatePaths{end+1} = char(string(runObj.ctx.pipelineRef.path)); %#ok<AGROW>
+                    runSnapshotPaths{end+1} = char(string(runObj.ctx.pipelineRef.path)); %#ok<AGROW>
                 end
             catch
             end
-            candidatePaths = [candidatePaths projectPipelineTemplatePathsForRun(app, runObj)]; %#ok<AGROW>
+            candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) runSnapshotPaths]; %#ok<AGROW>
             candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths);
-            for i = 1:numel(candidatePaths)
-                [pipeObj, loadMsg] = pipelineLoad(candidatePaths{i});
-                if ~isempty(pipeObj)
-                    msg = '';
-                    return;
-                end
-                if ~isempty(loadMsg)
-                    msg = loadMsg;
-                end
+            [pipeObj, loadMsg] = loadBestPipelineTemplateCandidate(app, candidatePaths, runObj);
+            if ~isempty(pipeObj)
+                msg = '';
+                return;
+            end
+            if ~isempty(loadMsg)
+                msg = loadMsg;
             end
 
             try
@@ -636,6 +634,55 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             candidatePaths = unique(out(~cellfun(@isempty, out)), 'stable');
+        end
+
+        function [bestPipe, msg] = loadBestPipelineTemplateCandidate(app, candidatePaths, runObj)
+            bestPipe = [];
+            msg = '';
+            bestScore = -Inf;
+            templateId = '';
+            try
+                if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'id') && ~isempty(runObj.pipelineRef.id)
+                    templateId = char(string(runObj.pipelineRef.id));
+                elseif isprop(runObj, 'templateId') && ~isempty(runObj.templateId)
+                    templateId = char(string(runObj.templateId));
+                end
+            catch
+                templateId = '';
+            end
+
+            for i = 1:numel(candidatePaths)
+                candidate = char(string(candidatePaths{i}));
+                [pipe, loadMsg] = pipelineLoad(candidate);
+                if isempty(pipe)
+                    if ~isempty(loadMsg)
+                        msg = loadMsg;
+                    end
+                    continue;
+                end
+
+                score = numel(pipe.nodes);
+                if ~isRunSnapshotPipelinePath(app, candidate)
+                    score = score + 10000;
+                end
+                try
+                    if ~isempty(templateId) && strcmpi(char(string(pipe.strid)), templateId)
+                        score = score + 1000;
+                    end
+                catch
+                end
+                if score > bestScore
+                    bestScore = score;
+                    bestPipe = pipe;
+                end
+            end
+        end
+
+        function tf = isRunSnapshotPipelinePath(app, pathValue) %#ok<INUSD>
+            txt = lower(strrep(char(string(pathValue)), '\', '/'));
+            tf = contains(txt, '/pipeline_runs/') || ...
+                contains(txt, '/hub_pipeline_bundle/') || ...
+                contains(txt, '/pipeline_run_');
         end
 
         function paths = projectPipelineTemplatePathsForRun(app, runObj) %#ok<INUSD>
