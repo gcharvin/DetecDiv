@@ -82,7 +82,7 @@ param.weights = weights;
 % -------------------------------------------------------------------------
 % 1) Prétraitement global (crop, resize, flip, frames)
 % -------------------------------------------------------------------------
-imtmp = preProcessROI(roitmp, param);   % [H W C F] sur frames=param.frames
+[imtmp, fr] = preProcessROI(roitmp, param, fr);   % [H W C 1], fr is local after preprocessing
 [H, W, ~, ~] = size(imtmp);
 
 % Allocation des sorties
@@ -507,7 +507,7 @@ end
 
 
 
-function imtmp=preProcessROI(roitmp,param)
+function [imtmp, localFrameIdx]=preProcessROI(roitmp,param,requestedFrameIdx)
 
 channel=param.channel;
 frames=param.frames;
@@ -515,6 +515,7 @@ crop=param.crop;
 scalingFactor=param.scalingFactor;
 imageSize=param.imageSize;
 flip=param.flip;
+localFrameIdx = 1;
 
 if isempty(roitmp.image)
     score_loadChannelsForDisplay(roitmp, channel);
@@ -526,20 +527,16 @@ end
 
 %disp(['ROI ' roitmp.id ' is loaded']);
 
-% Recalculer les indices de canaux pour cette ROI
-currentCha = cell(1, numel(channel));
-for j = 1:numel(channel)
-    if iscell(channel)
-        currentCha{j} = roitmp.findChannelID(channel{j});
-    else
-        pix = find(roitmp.channelid == channel(j));
-        currentCha{j} = pix;
-    end
+% preprocess only the requested displayed frame; levels/histograms are
+% computed upstream and do not require copying the full stack here.
+if isempty(frames)
+    frames = 1:size(roitmp.image, 4);
 end
+requestedFrameIdx = max(1, min(numel(frames), requestedFrameIdx));
+frameToRender = frames(requestedFrameIdx);
+frameToRender = max(1, min(size(roitmp.image, 4), frameToRender));
 
-% preprocess images
-
-imtmp = roitmp.image(:,:,:,frames);
+imtmp = roitmp.image(:,:,:,frameToRender);
 if ~isempty(crop)
     for c = 1:size(imtmp,3)
         for f = 1:size(imtmp,4)

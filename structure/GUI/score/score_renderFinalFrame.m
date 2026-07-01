@@ -97,11 +97,10 @@ switch lower(displayHandles.mode)
                 else
                     % Chaque canal séparé : layout classique.
                     for frame = 1:numel(layoutOptions.frames)
+                        [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
                         for ch = 1:layoutOptions.Nchannel
 
                             curframe=layoutOptions.frames(frame);
-
-                            [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
 
                             local_row = (ch-1)*layoutOptions.Nbrick + 1;
                             local_col = (frame-1)*layoutOptions.Nbrick + 1;
@@ -380,6 +379,7 @@ score_drawMovieEventText(ax, layoutOptions, layoutOptions.frames(1));
                     graphicsHandles.imgHandles(tileIndex) = hImg;
                 else
                     % Affichage de chaque canal séparément.
+                    [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
                     for ch = 1:layoutOptions.Nchannel
                         local_row = 1;
                         local_col = (ch-1)*layoutOptions.Nbrick + 1;
@@ -387,7 +387,6 @@ score_drawMovieEventText(ax, layoutOptions, layoutOptions.frames(1));
                         global_col = ROI_col_offset + local_col;
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
-                        [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
                         %  img = roiData.image(:,:,ch,1);
                         hImg = imshow(displayImage(:,:,:,ch), []);
                         hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);

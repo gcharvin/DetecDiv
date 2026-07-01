@@ -29,25 +29,13 @@ switch mode
 
         if layoutOptions.overlay
             tileIndex = 1;
-          %  set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
 
             h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
-            if ~isequal(get(h, 'CData'), displayImage)
-                set(h, 'CData', displayImage);
-            end
+            set(h, 'CData', displayImage);
 
             h = graphicsHandles.overlayHandles(tileIndex);
-            if ~isequal(get(h, 'CData'), indexedOverlay)
-                set(h, 'CData', indexedOverlay);
-            end
-            if ~isequal(get(h, 'AlphaData'), alphaOverlay)
-                set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-            end
-
-
-
-            %set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
-            %set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            set(h, 'CData', indexedOverlay);
+            set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
         else
             for ch = 1:layoutOptions.Nchannel
                 local_row = 1;
@@ -153,11 +141,6 @@ switch mode
                     if isKey(graphicsHandles.imgHandles, tileIndex)
                         h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
                         set(h, 'CData', displayImage);
-                    end
-
-                    if isKey(graphicsHandles.imgHandles, tileIndex)
-                        h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
-                        set(h, 'CData', displayImage(:,:,:,1));
                         ax=h.Parent;
 
                         [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
