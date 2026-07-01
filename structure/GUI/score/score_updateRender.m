@@ -208,7 +208,7 @@ switch mode
                         
                         updateDataPanels(ax,ds, layoutOptions,newframe,hLineAll,roiData);
                        % newframe
-                        fra=newframe+layoutOptions.frames(1)-1;
+                        fra=localMovieFrameValue(layoutOptions, newframe);
                         updateMarkers(hLineAll, fra , layoutOptions);
 
                         %   title(sprintf('Data:%d', ds));
@@ -433,8 +433,17 @@ for j = 1:numel(hMarkers)
     if isempty(linkedLine) || ~isgraphics(linkedLine)
         newY{j} = NaN;
     else
+        xLine = linkedLine.XData;
         yLine = linkedLine.YData;
-        if fIdx <= numel(yLine)
+        if numel(xLine) == numel(yLine) && ~isempty(xLine)
+            [~, idx] = min(abs(double(xLine) - xMarker));
+            tol = max(eps, 0.5 * max(eps, double(layoutOptions.framerate)));
+            if ~isempty(idx) && abs(double(xLine(idx)) - xMarker) <= tol
+                newY{j} = yLine(idx);
+            else
+                newY{j} = NaN;
+            end
+        elseif fIdx <= numel(yLine)
             newY{j} = yLine(fIdx);
         else
             newY{j} = NaN;
@@ -592,53 +601,7 @@ if lineDataChanged
     localSetAxesUserDataField(ax, 'scoreDataSignature', dataSignature);
 end
 
-% ------------------------------------------------------------
-% 2) Mettre à jour les marqueurs (leurs positions), si présents
-% ------------------------------------------------------------
-markerIdx = find(arrayfun(@(h) isgraphics(h) && isa(h, 'matlab.graphics.chart.primitive.Line') && ...
-    ~isempty(h.Marker) && h.Marker ~= "none", hLineAll));
-
-if ~isempty(markerIdx) && ~isempty(layoutOptions.frames)
-    cc = 1;
-    for k = 1:length(layoutOptions.frames)
-        if cc > numel(markerIdx)
-            break;
-        end
-        fIdx = layoutOptions.frames(k);
-
-        if layoutOptions.timeOffset
-            xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
-            fRel = fIdx - layoutOptions.frames(1) + 1;
-        else
-            xMarker = fIdx * layoutOptions.framerate;
-            fRel = fIdx;
-        end
-
-        markerIdxInData = [];
-        if clipToMovie
-            [~, markerIdxInData] = min(abs(xdata - xMarker));
-            if isempty(markerIdxInData) || abs(xdata(markerIdxInData) - xMarker) > max(eps, 0.5 * layoutOptions.framerate)
-                markerIdxInData = [];
-            end
-        elseif fRel >= 1 && fRel <= size(ydata,1)
-            markerIdxInData = fRel;
-        end
-
-        if ~isempty(markerIdxInData)
-            for j = 1:nLines
-                if cc <= numel(markerIdx)
-                    hm = hLineAll(markerIdx(cc));
-                    set(hm, 'XData', xMarker, 'YData', ydata(markerIdxInData, j), ...
-                        'MarkerSize', max(4, floor(0.6 * layoutOptions.fontSize)));
-                    cc = cc + 1;
-                end
-            end
-        end
-    end
-end
-
-% ------------------------------------------------------------
-% 3) Si c'est un panel categorical, forcer Y ticks/labels stables
+% 2) Si c'est un panel categorical, forcer Y ticks/labels stables
 %    (on prend la 1ère colonne comme référence)
 % ------------------------------------------------------------
 if ~isempty(yTickInfo) && ~isempty(yTickInfo.isLabel) && any(yTickInfo.isLabel)
@@ -653,7 +616,7 @@ if ~isempty(yTickInfo) && ~isempty(yTickInfo.isLabel) && any(yTickInfo.isLabel)
 end
 
 % ------------------------------------------------------------
-% 4) Opacité mode trajectoire / ou tracking XLim
+% 3) Opacité mode trajectoire / ou tracking XLim
 % ------------------------------------------------------------
 if isgraphics(hLineAll(1)) && isa(hLineAll(1), 'matlab.graphics.primitive.Image')
     % Mode trajectoire
