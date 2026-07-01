@@ -111,8 +111,13 @@ if plottype=="Plot"
     cc = 1;
     markerSize = max(4, floor(0.6 * layoutOptions.fontSize));
 
-    for k = 1:length(layoutOptions.frames)
-        fIdx = layoutOptions.frames(k);
+    markerFrames = layoutOptions.frames;
+    if isfield(layoutOptions, 'mode') && ~strcmpi(string(layoutOptions.mode), "sequence") && ~isempty(markerFrames)
+        markerFrames = markerFrames(1);
+    end
+
+    for k = 1:length(markerFrames)
+        fIdx = markerFrames(k);
 
         if timeoffset
             xMarker = (fIdx - layoutOptions.frames(1)) * framerate;

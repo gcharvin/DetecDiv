@@ -453,6 +453,52 @@ else
 end
 end
 
+function signature = localPanelDataSignature(xdata, ydata)
+try
+    y = double(ydata(:));
+    x = double(xdata(:));
+    yFinite = y(isfinite(y));
+    xFinite = x(isfinite(x));
+    if isempty(yFinite)
+        yStats = [NaN NaN NaN NaN];
+    else
+        yStats = [sum(yFinite), sum(abs(yFinite)), yFinite(1), yFinite(end)];
+    end
+    if isempty(xFinite)
+        xStats = [NaN NaN NaN NaN];
+    else
+        xStats = [sum(xFinite), sum(abs(xFinite)), xFinite(1), xFinite(end)];
+    end
+    signature = [size(ydata,1), size(ydata,2), numel(xdata), xStats, yStats];
+catch
+    signature = [];
+end
+end
+
+function value = localAxesUserDataField(ax, fieldName, defaultValue)
+value = defaultValue;
+try
+    ud = ax.UserData;
+    if isstruct(ud) && isfield(ud, fieldName)
+        value = ud.(fieldName);
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function localSetAxesUserDataField(ax, fieldName, value)
+try
+    ud = ax.UserData;
+    if ~isstruct(ud)
+        ud = struct();
+    end
+    ud.(fieldName) = value;
+    ax.UserData = ud;
+catch
+end
+end
+
 
 % function updateMarkers(hLineAll, fIdx, layoutOptions)
 % % Met à jour la position des marqueurs en fonction de fIdx
@@ -534,9 +580,16 @@ end
 lineIdx = find(arrayfun(@(h) isgraphics(h) && isa(h, 'matlab.graphics.chart.primitive.Line'), hLineAll));
 nLines = min(numel(lineIdx), size(ydata,2));
 
-for i = 1:nLines
-    h = hLineAll(lineIdx(i));
-    set(h, 'XData', xdata, 'YData', ydata(:, i));
+dataSignature = localPanelDataSignature(xdata, ydata);
+cachedSignature = localAxesUserDataField(ax, 'scoreDataSignature', []);
+lineDataChanged = isempty(cachedSignature) || ~isequaln(cachedSignature, dataSignature) || nLines < size(ydata, 2);
+
+if lineDataChanged
+    for i = 1:nLines
+        h = hLineAll(lineIdx(i));
+        set(h, 'XData', xdata, 'YData', ydata(:, i));
+    end
+    localSetAxesUserDataField(ax, 'scoreDataSignature', dataSignature);
 end
 
 % ------------------------------------------------------------
@@ -548,6 +601,9 @@ markerIdx = find(arrayfun(@(h) isgraphics(h) && isa(h, 'matlab.graphics.chart.pr
 if ~isempty(markerIdx) && ~isempty(layoutOptions.frames)
     cc = 1;
     for k = 1:length(layoutOptions.frames)
+        if cc > numel(markerIdx)
+            break;
+        end
         fIdx = layoutOptions.frames(k);
 
         if layoutOptions.timeOffset
