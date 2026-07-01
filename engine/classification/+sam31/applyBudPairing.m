@@ -66,7 +66,7 @@ source = struct( ...
     'displayName', localLineageDisplayName(outputName, channelName), ...
     'show', localParamBool(params.budPairingShowSource, true), ...
     'version', 1, ...
-    'mode', 'sam31_label_heuristic_v1', ...
+    'mode', 'sam31_label_heuristic_v2', ...
     'createdAt', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
 ds.userData.lineageSources.(sourceKey) = source;
 
@@ -94,11 +94,14 @@ params.budPairingOverwriteMotherOf = false;
 params.budPairingMaxBirthArea = 350;
 params.budPairingMinParentArea = 80;
 params.budPairingMaxParentDistance = 35;
+params.budPairingMaxParentCentroidDistance = 35;
 params.budPairingFutureWindow = 6;
 params.budPairingMinParentAgeFrames = 6;
 params.budPairingMaxFutureDistance = 45;
-params.budPairingAngleWeight = 8;
+params.budPairingAngleWeight = 1;
+params.budPairingCentroidWeight = 1;
 params.budPairingFutureWeight = 0.6;
+params.budPairingFutureCentroidWeight = 0.4;
 
 params = localMergeParams(params, localNestedParams(classif, {'runProfiles','classify','params'}));
 params = localMergeParams(params, localNestedParams(ctx, {'params'}));
@@ -143,9 +146,9 @@ end
 function sourceKey = localLineageSourceKey(params, outputName, channelName)
 sourceKey = localParamString(params.budPairingSourceKey, '');
 if isempty(sourceKey)
-    seed = char(string(outputName));
+    seed = char(string(channelName));
     if isempty(seed)
-        seed = char(string(channelName));
+        seed = char(string(outputName));
     end
     sourceKey = matlab.lang.makeValidName(seed);
 end
@@ -298,6 +301,7 @@ end
 maxBirthArea = localParamNumber(params.budPairingMaxBirthArea, 350);
 minParentArea = localParamNumber(params.budPairingMinParentArea, 80);
 maxParentDistance = localParamNumber(params.budPairingMaxParentDistance, 35);
+maxParentCentroidDistance = localParamNumber(params.budPairingMaxParentCentroidDistance, 35);
 futureWindow = max(0, round(localParamNumber(params.budPairingFutureWindow, 6)));
 minParentAge = max(0, round(localParamNumber(params.budPairingMinParentAgeFrames, 6)));
 maxFutureDistance = localParamNumber(params.budPairingMaxFutureDistance, 45);
@@ -329,7 +333,8 @@ for i = 1:numel(ids)
 
     childMask = labels(:, :, startFrame) == childId;
     best = struct('motherId', 0, 'cost', Inf, 'distance', Inf, ...
-        'futureDistance', Inf, 'angleDeg', NaN, 'motherArea', 0);
+        'futureDistance', Inf, 'centroidDistance', Inf, ...
+        'futureCentroidDistance', Inf, 'angleDeg', NaN, 'motherArea', 0);
 
     for j = 1:numel(ids)
         if j == i
@@ -348,23 +353,35 @@ for i = 1:numel(ids)
         if d0 > maxParentDistance
             continue;
         end
+        centroidDistance = localCentroidDistance(childMask, motherMask);
+        if centroidDistance > maxParentCentroidDistance
+            continue;
+        end
 
         [futureDistance, futureSupport] = localFutureDistance(labels, childId, motherId, ...
             startFrame, futureWindow, maxFutureDistance);
+        futureCentroidDistance = localFutureCentroidDistance(labels, childId, motherId, ...
+            startFrame, futureWindow, maxParentCentroidDistance);
         angleDeg = localAxisAngle(childMask, motherMask);
         angleWeight = localParamNumber(params.budPairingAngleWeight, 8);
+        centroidWeight = localParamNumber(params.budPairingCentroidWeight, 1);
         futureWeight = localParamNumber(params.budPairingFutureWeight, 0.6);
+        futureCentroidWeight = localParamNumber(params.budPairingFutureCentroidWeight, 0.4);
         angleCost = 0;
         if isfinite(angleDeg)
             angleCost = angleWeight * min(angleDeg, 90) / 90;
         end
         futureCost = futureWeight * futureDistance;
+        centroidCost = centroidWeight * centroidDistance;
+        futureCentroidCost = futureCentroidWeight * futureCentroidDistance;
         supportBonus = -4 * futureSupport;
-        cost = d0 + futureCost + angleCost + supportBonus;
+        cost = d0 + centroidCost + futureCost + futureCentroidCost + angleCost + supportBonus;
 
         if cost < best.cost
             best = struct('motherId', double(motherId), 'cost', cost, ...
                 'distance', d0, 'futureDistance', futureDistance, ...
+                'centroidDistance', centroidDistance, ...
+                'futureCentroidDistance', futureCentroidDistance, ...
                 'angleDeg', angleDeg, 'motherArea', areas(j, startFrame));
         end
     end
@@ -377,6 +394,8 @@ for i = 1:numel(ids)
             'cost', double(best.cost), ...
             'distance', double(best.distance), ...
             'futureDistance', double(best.futureDistance), ...
+            'centroidDistance', double(best.centroidDistance), ...
+            'futureCentroidDistance', double(best.futureCentroidDistance), ...
             'axisAngleDeg', double(best.angleDeg), ...
             'areaAtBirth', double(birthArea), ...
             'motherAreaAtBirth', double(best.motherArea)); %#ok<AGROW>
@@ -386,7 +405,8 @@ end
 
 function events = localEmptyEvents()
 events = struct('childId', {}, 'motherId', {}, 'startFrame', {}, ...
-    'cost', {}, 'distance', {}, 'futureDistance', {}, 'axisAngleDeg', {}, ...
+    'cost', {}, 'distance', {}, 'futureDistance', {}, ...
+    'centroidDistance', {}, 'futureCentroidDistance', {}, 'axisAngleDeg', {}, ...
     'areaAtBirth', {}, 'motherAreaAtBirth', {});
 end
 
@@ -430,6 +450,37 @@ else
     end
 end
 support = support / max(1, numel(distances));
+end
+
+function d = localCentroidDistance(maskA, maskB)
+ca = localCentroid(maskA);
+cb = localCentroid(maskB);
+if any(~isfinite(ca)) || any(~isfinite(cb))
+    d = Inf;
+else
+    d = sqrt(sum((ca - cb).^2));
+end
+end
+
+function d = localFutureCentroidDistance(labels, childId, motherId, startFrame, futureWindow, maxDistance)
+lastFrame = min(size(labels, 3), startFrame + futureWindow);
+distances = [];
+for t = startFrame:lastFrame
+    childMask = labels(:, :, t) == childId;
+    motherMask = labels(:, :, t) == motherId;
+    if ~any(childMask(:)) || ~any(motherMask(:))
+        continue;
+    end
+    distances(end+1) = localCentroidDistance(childMask, motherMask); %#ok<AGROW>
+end
+if isempty(distances)
+    d = maxDistance;
+else
+    d = mean(distances(isfinite(distances)));
+    if ~isfinite(d)
+        d = maxDistance;
+    end
+end
 end
 
 function angleDeg = localAxisAngle(childMask, motherMask)

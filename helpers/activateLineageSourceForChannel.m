@@ -5,6 +5,8 @@ function key = activateLineageSourceForChannel(roiobj, channelName, pix, varargi
 p = inputParser;
 p.addParameter('sourceHint', '', @(x) ischar(x) || isstring(x));
 p.addParameter('exclusive', false, @(x) islogical(x) && isscalar(x));
+p.addParameter('WriteLegacyAlias', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('CreateIfMissing', true, @(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 channelName = string(channelName);
@@ -25,7 +27,17 @@ ds = ensureLineageUserData(ds);
 
 key = resolveSourceKey(ds, channelName, sourceHint);
 if strlength(key) == 0
-    key = matlab.lang.makeValidName("lineage_" + sourceHint);
+    if ~p.Results.CreateIfMissing
+        return;
+    end
+    key = matlab.lang.makeValidName(channelName);
+    if strlength(key) == 0
+        key = matlab.lang.makeValidName("lineage_" + sourceHint);
+    end
+    if strlength(key) > 0 && isfield(ds.userData.lineageSources, char(key))
+        fields = fieldnames(ds.userData.lineageSources);
+        key = string(matlab.lang.makeUniqueStrings(char(key), fields));
+    end
 end
 key = char(key);
 
@@ -64,10 +76,12 @@ ds.userData.activeLineageChannelName = char(channelName);
 ds.userData.lineageChannelName = channelName;
 ds.userData.lineageChannelPix = double(pix);
 
-% Compatibility alias for older code paths. The authoritative map remains
-% lineageSources.(activeLineageSource).motherOf.
-ds.userData.motherOf = src.motherOf;
-ds.userData.motherOfSourceKey = key;
+% Compatibility alias for older code paths. Pure display activation can opt
+% out so selecting a channel does not silently redefine canonical lineage.
+if p.Results.WriteLegacyAlias
+    ds.userData.motherOf = src.motherOf;
+    ds.userData.motherOfSourceKey = key;
+end
 end
 
 function ds = ensureLineageUserData(ds)
@@ -99,19 +113,22 @@ end
 
 hintKey = matlab.lang.makeValidName(sourceHint);
 if strlength(hintKey) > 0 && isfield(ds.userData.lineageSources, char(hintKey))
-    key = hintKey;
-    return;
+    src = ds.userData.lineageSources.(char(hintKey));
+    if ~isfield(src, 'channelName') || isempty(src.channelName) || strcmp(string(src.channelName), channelName)
+        key = hintKey;
+        return;
+    end
 end
 
 for i = 1:numel(fields)
     src = ds.userData.lineageSources.(fields{i});
-    if matchesSourceHint(src, sourceHint)
+    if matchesSourceHint(src, sourceHint) && ...
+            (~isfield(src, 'channelName') || isempty(src.channelName) || strcmp(string(src.channelName), channelName))
         key = string(fields{i});
         return;
     end
 end
 
-key = hintKey;
 end
 
 function tf = matchesSourceHint(src, sourceHint)

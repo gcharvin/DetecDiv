@@ -26,4 +26,15 @@ p.budPairingShowSource = true;
 p.budPairingActivateSource = true;
 p.budPairingWriteCanonical = true;
 p.budPairingOverwriteMotherOf = false;
+p.budPairingMaxBirthArea = 350;
+p.budPairingMinParentArea = 80;
+p.budPairingMaxParentDistance = 35;
+p.budPairingMaxParentCentroidDistance = 35;
+p.budPairingFutureWindow = 6;
+p.budPairingMinParentAgeFrames = 6;
+p.budPairingMaxFutureDistance = 45;
+p.budPairingAngleWeight = 1;
+p.budPairingCentroidWeight = 1;
+p.budPairingFutureWeight = 0.6;
+p.budPairingFutureCentroidWeight = 0.4;
 end

@@ -86,6 +86,8 @@ classdef score < matlab.apps.AppBase
         SelectedobjectindexEditField    matlab.ui.control.NumericEditField
         SelectedobjectindexEditFieldLabel  matlab.ui.control.Label
         PaintButton                     matlab.ui.control.StateButton
+        DisplayLineageCheckBox          matlab.ui.control.CheckBox
+        DisplayBudPairingCheckBox       matlab.ui.control.CheckBox
         IndexChannelLabel               matlab.ui.control.Label
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
@@ -169,7 +171,8 @@ classdef score < matlab.apps.AppBase
         SelectedObjectChannelIdx double = NaN         % index du canal d’annotation
         SelectedObjectLabelCell double = NaN              % label de l’objet
         SelectedObjectRoiId string = ""               % id de la ROI (pour vérifier qu’on est sur la même)
-        ShowLineageOverlay logical = true
+        ShowLineageOverlay logical = false
+        ShowBudPairingOverlay logical = true
     end
 
     properties (Access = private)
@@ -536,6 +539,150 @@ classdef score < matlab.apps.AppBase
                 if ~isempty(idx)
                     targetRows(idx, 1:nCols) = sourceRows(i, 1:nCols);
                 end
+            end
+        end
+
+        function roi = getSelectedROI(app)
+            roi = [];
+            try
+                if isempty(app.content.ROIList) || isempty(app.UIROITable.Data)
+                    return;
+                end
+                selectedROIIndex = find(cell2mat(app.UIROITable.Data(:,1)), 1);
+                if isempty(selectedROIIndex)
+                    return;
+                end
+                roi = app.content.ROIList{selectedROIIndex};
+            catch
+                roi = [];
+            end
+        end
+
+        function [roi, channelName, pix, sourceHint] = selectedPaintLineageChannel(app)
+            roi = app.getSelectedROI();
+            channelName = '';
+            pix = [];
+            sourceHint = '';
+            if isempty(roi) || isempty(app.UIAnnotationTable.Selection)
+                return;
+            end
+
+            selectedRow = app.UIAnnotationTable.Selection;
+            if isempty(selectedRow) || isempty(selectedRow(1)) || isempty(app.UIAnnotationTable.Data)
+                return;
+            end
+
+            annotationPart = app.UIAnnotationTable.Data{selectedRow(1), 2};
+            classPart = app.UIAnnotationTable.Data{selectedRow(1), 3};
+            if isempty(classPart)
+                channelName = char(string(annotationPart));
+            else
+                channelName = [char(string(annotationPart)) '_' char(string(classPart))];
+            end
+            sourceHint = channelName;
+
+            channelIdx = find(strcmp(roi.display.channel, channelName), 1, 'first');
+            if isempty(channelIdx)
+                channelName = '';
+                return;
+            end
+            pix = roi.findChannelID(roi.display.channel{channelIdx});
+            if isempty(pix) || numel(pix) ~= 1 || pix < 1
+                channelName = '';
+                pix = [];
+            end
+        end
+
+        function key = syncLineageDisplayForPaintChannel(app)
+            key = '';
+            roi = app.getSelectedROI();
+            if isempty(roi)
+                return;
+            end
+
+            showBud = app.ShowBudPairingOverlay;
+            showGenealogy = app.ShowLineageOverlay;
+            try
+                if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
+                    showBud = logical(app.DisplayBudPairingCheckBox.Value);
+                end
+                if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
+                    showGenealogy = logical(app.DisplayLineageCheckBox.Value);
+                end
+            catch
+            end
+            app.ShowBudPairingOverlay = showBud;
+            app.ShowLineageOverlay = showGenealogy;
+
+            if ~app.PaintButton.Value || (~showBud && ~showGenealogy)
+                app.clearLineageDisplayForROI(roi);
+                return;
+            end
+
+            [roi, channelName, pix, sourceHint] = app.selectedPaintLineageChannel();
+            if isempty(roi) || isempty(channelName)
+                app.clearLineageDisplayForROI(roi);
+                return;
+            end
+
+            key = char(activateLineageSourceForChannel(roi, channelName, pix, ...
+                'sourceHint', sourceHint, ...
+                'exclusive', true, ...
+                'WriteLegacyAlias', false, ...
+                'CreateIfMissing', false));
+            if isempty(key)
+                app.clearLineageDisplayForROI(roi);
+                return;
+            end
+
+            roi.display.lineage = struct( ...
+                'enabled', true, ...
+                'channelName', channelName, ...
+                'channelPix', double(pix), ...
+                'sourceKey', key, ...
+                'showBudPairing', logical(showBud), ...
+                'showGenealogy', logical(showGenealogy), ...
+                'budWindowBefore', 0, ...
+                'budWindowAfter', 6);
+        end
+
+        function clearLineageDisplayForROI(app, roi) %#ok<INUSL>
+            if isempty(roi)
+                return;
+            end
+            try
+                roi.display.lineage = struct( ...
+                    'enabled', false, ...
+                    'channelName', '', ...
+                    'channelPix', [], ...
+                    'sourceKey', '', ...
+                    'showBudPairing', false, ...
+                    'showGenealogy', false, ...
+                    'budWindowBefore', 0, ...
+                    'budWindowAfter', 6);
+            catch
+            end
+            try
+                idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(char(string(x.groupid)), 'cell_information'), roi.data), 1, 'first');
+                if ~isempty(idx) && isstruct(roi.data(idx).userData) && isfield(roi.data(idx).userData, 'lineageSources')
+                    fields = fieldnames(roi.data(idx).userData.lineageSources);
+                    for i = 1:numel(fields)
+                        src = roi.data(idx).userData.lineageSources.(fields{i});
+                        src.show = false;
+                        roi.data(idx).userData.lineageSources.(fields{i}) = src;
+                    end
+                end
+            catch
+            end
+        end
+
+        function LineageDisplayCheckBoxValueChanged(app, event) %#ok<INUSD>
+            try
+                app.syncLineageDisplayForPaintChannel();
+                score_display(app, 'refresh');
+            catch ME
+                warning('Score:LineageDisplay', ...
+                    'Could not refresh lineage display: %s', ME.message);
             end
         end
 
@@ -2104,48 +2251,34 @@ end
                     t(:, end+1:6) = {''};
                 end
 
+                % Lineage display is intentionally not driven from ROI Data.
+                % It follows the currently selected annotation channel when
+                % Paint is enabled, through roi.display.lineage.  Hide both
+                % stale lineageSource pseudo-rows and the legacy canonical
+                % lineage variable, which otherwise appears as an empty plot.
                 isLineageRow = false(size(t,1), 1);
                 if size(t,2) >= 3
                     isLineageRow = strcmp(string(t(:,3)), "lineageSource");
                 end
+                if size(t,2) >= 2
+                    isLineageRow = isLineageRow | strcmp(string(t(:,2)), "lineage");
+                end
                 t(isLineageRow, :) = [];
-
-                if ~any(strcmp(string(groupChoices), "lineage"))
-                    groupChoices{end+1} = 'lineage';
+                groupChoices = groupChoices(~strcmp(string(groupChoices), "lineage"));
+                if isempty(groupChoices)
+                    groupChoices = {'Default'};
                 end
-                if numel(columnformat) < 6
-                    columnformat(end+1:6) = {'char'};
+                if numel(columnformat) >= 6
+                    columnformat{6} = groupChoices;
                 end
-                columnformat{6} = groupChoices;
-
-                if ~isprop(selectedData, 'groupProperties') || isempty(selectedData.groupProperties)
-                    selectedData.groupProperties = {'lineage', 'Traj', 'auto', 'auto'};
-                else
+                if isprop(selectedData, 'groupProperties') && ~isempty(selectedData.groupProperties)
                     gp = selectedData.groupProperties;
-                    hasLineage = false;
                     try
-                        hasLineage = any(strcmp(string(gp(:,1)), "lineage"));
+                        gp(strcmp(string(gp(:,1)), "lineage"), :) = [];
                     catch
                     end
-                    if ~hasLineage
-                        selectedData.groupProperties = [gp; {'lineage', 'Traj', 'auto', 'auto'}];
-                    end
+                    selectedData.groupProperties = gp;
                 end
-
-                sourceKeys = fieldnames(selectedData.userData.lineageSources);
-                activeKey = '';
-                try
-                    activeKey = char(string(selectedData.userData.activeLineageSource));
-                catch
-                end
-                for k = 1:numel(sourceKeys)
-                    key = sourceKeys{k};
-                    src = selectedData.userData.lineageSources.(key);
-                    show = false;
-                    try, show = logical(src.show); catch, end
-                    t(end+1, :) = {show, ['lineage:' key], 'lineageSource', 'auto', 2, 'lineage'}; %#ok<AGROW>
-                end
-
                 selectedData.plotProperties = t;
                 selectedData.plotGroup = columnformat;
             catch ME
@@ -3981,6 +4114,7 @@ end
 
             if app.PaintButton.Value
                 app.DisplaySettings.Movie.paintChannel=selection(1);
+                app.syncLineageDisplayForPaintChannel();
                 score_display(app, 'refresh');
             end
 
@@ -4230,9 +4364,10 @@ end
         function PaintButtonValueChanged(app, event)
             value = app.PaintButton.Value;
 
-            selectedRow = app.UIAnnotationTable.Selection
+            selectedRow = app.UIAnnotationTable.Selection;
             if isempty(selectedRow) || isempty(selectedRow(1))
                 errordlg('No channel selected!');
+                app.PaintButton.Value = false;
                 return;
             end
 
@@ -4248,6 +4383,7 @@ end
                     paintRank = [t{selectedRow(1),2} '_' t{selectedRow(1),3}]; % HERE chang and find 
 
                app.DisplaySettings.Movie.paintChannel = paintRank;
+               app.syncLineageDisplayForPaintChannel();
 
                 end
             else
@@ -4255,6 +4391,7 @@ end
                     app.ImageFigure.WindowButtonDownFcn=[];
                     app.SelectedobjectindexEditField.Enable="off";
                     app.DisplaySettings.Movie.paintChannel=0;
+                    app.clearLineageDisplayForROI(app.getSelectedROI());
                     if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
                         delete(app.SelectedObjectRectangle);
                     end
@@ -4721,23 +4858,13 @@ end
                 if ~iscell(t) || size(t,2) < 3
                     return;
                 end
-                for r = 1:size(t,1)
-                    if ~strcmp(char(string(t{r,3})), 'lineageSource')
-                        continue;
-                    end
-                    name = char(string(t{r,2}));
-                    if ~startsWith(name, 'lineage:')
-                        continue;
-                    end
-                    key = char(extractAfter(string(name), strlength("lineage:")));
-                    if isempty(key) || ~isfield(selectedData.userData.lineageSources, key)
-                        continue;
-                    end
-                    show = logical(t{r,1});
-                    selectedData.userData.lineageSources.(key).show = show;
-                    if show
-                        selectedData.userData.activeLineageSource = key;
-                    end
+                removeRows = strcmp(string(t(:,3)), "lineageSource");
+                if size(t,2) >= 2
+                    removeRows = removeRows | strcmp(string(t(:,2)), "lineage");
+                end
+                if any(removeRows)
+                    t(removeRows, :) = [];
+                    selectedData.plotProperties = t;
                 end
             catch ME
                 warning('score:LineageSourceSyncFailed', ...
@@ -5991,6 +6118,20 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.PaintButton.ValueChangedFcn = createCallbackFcn(app, @PaintButtonValueChanged, true);
             app.PaintButton.Text = 'Paint';
             app.PaintButton.Position = [260 39 149 25];
+
+            % Create DisplayBudPairingCheckBox
+            app.DisplayBudPairingCheckBox = uicheckbox(app.ObjectspanelPanel);
+            app.DisplayBudPairingCheckBox.ValueChangedFcn = createCallbackFcn(app, @LineageDisplayCheckBoxValueChanged, true);
+            app.DisplayBudPairingCheckBox.Text = 'Bud links';
+            app.DisplayBudPairingCheckBox.Value = true;
+            app.DisplayBudPairingCheckBox.Position = [420 40 90 22];
+
+            % Create DisplayLineageCheckBox
+            app.DisplayLineageCheckBox = uicheckbox(app.ObjectspanelPanel);
+            app.DisplayLineageCheckBox.ValueChangedFcn = createCallbackFcn(app, @LineageDisplayCheckBoxValueChanged, true);
+            app.DisplayLineageCheckBox.Text = 'Genealogy';
+            app.DisplayLineageCheckBox.Value = false;
+            app.DisplayLineageCheckBox.Position = [420 17 100 22];
 
             % Create SelectedobjectindexEditFieldLabel
             app.SelectedobjectindexEditFieldLabel = uilabel(app.ObjectspanelPanel);

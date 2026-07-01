@@ -38,6 +38,10 @@ for j = 1:numel(layout.dataSelectedIdx)
         if size(data.plotProperties, 2) >= 3
             lineageRows = strcmp(string(data.plotProperties(:,3)), "lineageSource");
         end
+        if isprop(data, 'groupid') && strcmp(char(string(data.groupid)), 'cell_information') && ...
+                size(data.plotProperties, 2) >= 2
+            lineageRows = lineageRows | strcmp(string(data.plotProperties(:,2)), "lineage");
+        end
     catch
         lineageRows = false(size(data.plotProperties, 1), 1);
     end
