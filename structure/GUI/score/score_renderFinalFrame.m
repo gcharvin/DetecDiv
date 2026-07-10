@@ -266,6 +266,10 @@ newPath = fullfile(folder, [name '.pdf']);
             %             axImg.UserData.OverlayHandle = hOverlay;
             %  axOverlay.UserData.CDataHandle=
             graphicsHandles.overlayHandles(tileIndex) = hOverlay;
+            hScale = localDrawChannelScaleBars(axOverlay, layoutOptions);
+            if ~isempty(hScale)
+                graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+            end
             axarray=[axarray axOverlay];
         else
             % Si overlay false, chaque canal est affiché.
@@ -372,6 +376,11 @@ if strlength(titleStr) > 0
         'Clipping','on');
 end
 score_drawMovieEventText(ax, layoutOptions, layoutOptions.frames(1));
+
+hScale = localDrawChannelScaleBars(ax, layoutOptions);
+if ~isempty(hScale)
+    graphicsHandles.scaleBarHandles(tileIndex) = hScale;
+end
 
 
 
@@ -626,6 +635,27 @@ yCenter = mean(ylim_);
 wid=2*nbrick*scalingFactor;
 line(ax, [xRight xRight], ylim_, ...
     'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+end
+
+function hScale = localDrawChannelScaleBars(ax, layoutOptions)
+hScale = gobjects(0);
+if isempty(ax) || ~isgraphics(ax) || isempty(layoutOptions) || ...
+        ~isfield(layoutOptions, 'scale') || isempty(layoutOptions.scale)
+    return;
+end
+
+nCh = numel(layoutOptions.scale);
+if isfield(layoutOptions, 'Nchannel') && ~isempty(layoutOptions.Nchannel)
+    nCh = min(nCh, layoutOptions.Nchannel);
+end
+scaledChannels = find(logical(layoutOptions.scale(1:nCh)));
+offsetCount = numel(scaledChannels);
+for i = 1:offsetCount
+    h = score_drawChannelScaleBar(ax, layoutOptions, scaledChannels(i), i, offsetCount);
+    if ~isempty(h)
+        hScale = [hScale h]; %#ok<AGROW>
+    end
+end
 end
 
 function localAddMovieImageDataGap(ax, layoutOptions, dataPanelIndex)

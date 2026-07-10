@@ -36,6 +36,7 @@ switch mode
             h = graphicsHandles.overlayHandles(tileIndex);
             set(h, 'CData', indexedOverlay);
             set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            localRefreshScaleBars(graphicsHandles, tileIndex, h.Parent, layoutOptions);
         else
             for ch = 1:layoutOptions.Nchannel
                 local_row = 1;
@@ -142,6 +143,7 @@ switch mode
                         h = localImageHandle(graphicsHandles.imgHandles(tileIndex));
                         set(h, 'CData', displayImage);
                         ax=h.Parent;
+                        localRefreshScaleBars(graphicsHandles, tileIndex, ax, layoutOptions);
 
                         [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -364,7 +366,7 @@ end
 
 function localRefreshScaleBar(graphicsHandles, tileIndex, ax, layoutOptions, ch)
 if isempty(graphicsHandles) || ~isfield(graphicsHandles, 'scaleBarHandles') || ...
-        isempty(graphicsHandles.scaleBarHandles) || isempty(ax) || ~isgraphics(ax)
+        isempty(ax) || ~isgraphics(ax)
     return;
 end
 
@@ -385,6 +387,42 @@ if isKey(graphicsHandles.scaleBarHandles, tileIndex)
 end
 
 newHandles = score_drawChannelScaleBar(ax, layoutOptions, ch);
+if ~isempty(newHandles)
+    graphicsHandles.scaleBarHandles(tileIndex) = newHandles;
+end
+end
+
+function localRefreshScaleBars(graphicsHandles, tileIndex, ax, layoutOptions)
+if isempty(graphicsHandles) || ~isfield(graphicsHandles, 'scaleBarHandles') || ...
+        isempty(ax) || ~isgraphics(ax)
+    return;
+end
+
+if isKey(graphicsHandles.scaleBarHandles, tileIndex)
+    oldHandles = graphicsHandles.scaleBarHandles(tileIndex);
+    if ~isempty(oldHandles)
+        delete(oldHandles(isgraphics(oldHandles)));
+    end
+    remove(graphicsHandles.scaleBarHandles, tileIndex);
+end
+
+if ~isfield(layoutOptions, 'scale') || isempty(layoutOptions.scale)
+    return;
+end
+
+nCh = numel(layoutOptions.scale);
+if isfield(layoutOptions, 'Nchannel') && ~isempty(layoutOptions.Nchannel)
+    nCh = min(nCh, layoutOptions.Nchannel);
+end
+scaledChannels = find(logical(layoutOptions.scale(1:nCh)));
+offsetCount = numel(scaledChannels);
+newHandles = gobjects(0);
+for i = 1:offsetCount
+    h = score_drawChannelScaleBar(ax, layoutOptions, scaledChannels(i), i, offsetCount);
+    if ~isempty(h)
+        newHandles = [newHandles h]; %#ok<AGROW>
+    end
+end
 if ~isempty(newHandles)
     graphicsHandles.scaleBarHandles(tileIndex) = newHandles;
 end

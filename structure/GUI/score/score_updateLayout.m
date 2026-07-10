@@ -195,41 +195,50 @@ end
 
 
 % Comptage des canaux non-indexés
-nChannel = 0;
-nonIndexedNames = {};
-nonIndexedScale = [];
-nonIndexedLog = [];
-nonIndexedDisplayLevels = {};
-for j = 1:numel(layoutOptions.channel)
-    if ~iscell(layoutOptions.levels{j})
-        nChannel = nChannel + 1;
-        if isfield(layoutOptions, 'channelLabel') && numel(layoutOptions.channelLabel) >= j
-            nonIndexedNames{end+1} = layoutOptions.channelLabel{j};
-        elseif iscell(layoutOptions.channel)
-            nonIndexedNames{end+1} = layoutOptions.channel{j};
-        else
-            nonIndexedNames{end+1} = layoutOptions.channel(j);
-        end
-        if isfield(layoutOptions, 'scale') && numel(layoutOptions.scale) >= j
-            nonIndexedScale(end+1) = logical(layoutOptions.scale(j)); %#ok<AGROW>
-        else
-            nonIndexedScale(end+1) = false; %#ok<AGROW>
-        end
-        if isfield(layoutOptions, 'log') && numel(layoutOptions.log) >= j
-            nonIndexedLog(end+1) = logical(layoutOptions.log(j)); %#ok<AGROW>
-        else
-            nonIndexedLog(end+1) = false; %#ok<AGROW>
-        end
-        if isfield(layoutOptions, 'displayLevels') && numel(layoutOptions.displayLevels) >= j
-            nonIndexedDisplayLevels{end+1} = layoutOptions.displayLevels{j}; %#ok<AGROW>
-        else
-            nonIndexedDisplayLevels{end+1} = layoutOptions.levels{j}; %#ok<AGROW>
-        end
-    end
+isIndexedChannel = false(1, numel(layoutOptions.levels));
+for j = 1:numel(layoutOptions.levels)
+    isIndexedChannel(j) = iscell(layoutOptions.levels{j});
 end
-layoutOptions.scale = logical(nonIndexedScale);
-layoutOptions.log = logical(nonIndexedLog);
-layoutOptions.displayLevels = nonIndexedDisplayLevels;
+nonIndexedOrder = find(~isIndexedChannel);
+indexedOrder = find(isIndexedChannel);
+displayOrder = [nonIndexedOrder indexedOrder];
+nChannel = numel(nonIndexedOrder);
+
+layoutOptions.channel = localReorderDisplayField(layoutOptions.channel, displayOrder);
+layoutOptions.levels = localReorderDisplayField(layoutOptions.levels, displayOrder);
+if isfield(layoutOptions, 'channelLabel')
+    layoutOptions.channelLabel = localReorderDisplayField(layoutOptions.channelLabel, displayOrder);
+end
+if isfield(layoutOptions, 'RGB')
+    layoutOptions.RGB = localReorderDisplayField(layoutOptions.RGB, displayOrder);
+end
+if isfield(layoutOptions, 'colorMode')
+    layoutOptions.colorMode = localReorderDisplayField(layoutOptions.colorMode, displayOrder);
+end
+if isfield(layoutOptions, 'colormapName')
+    layoutOptions.colormapName = localReorderDisplayField(layoutOptions.colormapName, displayOrder);
+end
+if isfield(layoutOptions, 'weights')
+    layoutOptions.weights = localReorderDisplayField(layoutOptions.weights, displayOrder);
+end
+
+scale = localReorderDisplayField(layoutOptions.scale, displayOrder);
+layoutOptions.scale = logical(scale(1:nChannel));
+
+if isfield(layoutOptions, 'log')
+    logFlags = localReorderDisplayField(layoutOptions.log, displayOrder);
+    layoutOptions.log = logical(logFlags(1:nChannel));
+else
+    layoutOptions.log = false(1, nChannel);
+end
+
+displayLevels = localReorderDisplayField(layoutOptions.displayLevels, displayOrder);
+layoutOptions.displayLevels = displayLevels(1:nChannel);
+if isfield(layoutOptions, 'channelLabel')
+    layoutOptions.nonIndexedNames = layoutOptions.channelLabel(1:nChannel);
+else
+    layoutOptions.nonIndexedNames = layoutOptions.channel(1:nChannel);
+end
 
 %% layout parameters
 
@@ -252,6 +261,31 @@ layoutOptions.tileH = basesize(1);
 layoutOptions.tileW = basesize(2);
 layoutOptions.Nchannel=nChannel;
 layoutOut=layoutOptions;
+end
+
+function value = localReorderDisplayField(value, order)
+if isempty(order)
+    value = value([]);
+    return;
+end
+
+try
+    order = order(order >= 1 & order <= numel(value));
+    if iscell(value)
+        value = value(order);
+    elseif isstring(value)
+        value = value(order);
+    else
+        wasColumn = iscolumn(value);
+        value = value(order);
+        if wasColumn
+            value = value(:);
+        else
+            value = value(:).';
+        end
+    end
+catch
+end
 end
 
 function tf = isDefaultDisplayLim(lims)

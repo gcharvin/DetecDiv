@@ -142,8 +142,9 @@ restoreScoreFigureState(app, figureState);
    end
 
 score_syncOverlayAxes(app.graphicsHandles);
+score_refreshScaleBars(app.graphicsHandles, opts);
 try
-    app.ImageFigure.SizeChangedFcn = @(~, ~) score_syncOverlayAxes(app.graphicsHandles);
+    app.ImageFigure.SizeChangedFcn = @(~, ~) syncScoreOverlayAndScaleBars(app);
 catch
 end
 
@@ -349,6 +350,16 @@ try
 catch ME
     warning("score_display:SyncChannelTableLevelsFailed", ...
         "Could not update display level table: %s", ME.message);
+end
+end
+
+function syncScoreOverlayAndScaleBars(app)
+try
+    score_syncOverlayAxes(app.graphicsHandles);
+    if isprop(app, 'layoutOptions') && ~isempty(app.layoutOptions)
+        score_refreshScaleBars(app.graphicsHandles, app.layoutOptions);
+    end
+catch
 end
 end
 
