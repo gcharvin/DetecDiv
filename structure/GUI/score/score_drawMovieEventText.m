@@ -14,9 +14,10 @@ end
 
 labels = strings(0);
 frameIndex = double(frameIndex);
+frameX = localFrameToTimeX(layoutOptions, frameIndex);
 for i = 1:numel(events)
-    if frameIndex >= events(i).startFrame && frameIndex <= events(i).endFrame && ...
-            strlength(string(events(i).label)) > 0
+    eventStarted = frameIndex >= events(i).startFrame || frameX >= events(i).startFrame;
+    if eventStarted && strlength(string(events(i).label)) > 0
         labels(end+1) = string(events(i).label); %#ok<AGROW>
     end
 end
@@ -25,7 +26,7 @@ if isempty(labels)
 end
 
 txt = strjoin(labels, " | ");
-h = text(ax, 0.02, 0.02, score_wrapDisplayLabel(txt, 28), ...
+h = text(ax, 0.04, 0.08, score_wrapDisplayLabel(txt, 28), ...
     'Units', 'normalized', ...
     'HorizontalAlignment', 'left', ...
     'VerticalAlignment', 'bottom', ...
@@ -37,6 +38,19 @@ h = text(ax, 0.02, 0.02, score_wrapDisplayLabel(txt, 28), ...
     'Margin', 2, ...
     'Clipping', 'on', ...
     'Tag', 'ScoreMovieEventText');
+end
+
+function x = localFrameToTimeX(layoutOptions, frameValue)
+try
+    framerate = double(layoutOptions.framerate);
+    if isfield(layoutOptions, 'timeOffset') && layoutOptions.timeOffset
+        x = (double(frameValue) - double(layoutOptions.frames(1))) * framerate;
+    else
+        x = double(frameValue) * framerate;
+    end
+catch
+    x = double(frameValue);
+end
 end
 
 function color = localAxisColor(layoutOptions)

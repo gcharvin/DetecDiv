@@ -16,9 +16,8 @@ holdState = ishold(ax);
 hold(ax, 'on');
 
 for i = 1:numel(events)
-    xStart = localFrameToX(layoutOptions, events(i).startFrame);
-    xEnd = localFrameToX(layoutOptions, events(i).endFrame);
     xl = xlim(ax);
+    [xStart, xEnd] = localEventXRange(layoutOptions, events(i), xl);
     if xEnd < min(xl) || xStart > max(xl)
         continue;
     end
@@ -50,7 +49,21 @@ if ~holdState
 end
 end
 
-function x = localFrameToX(layoutOptions, frameValue)
+function [xStart, xEnd] = localEventXRange(layoutOptions, event, xl)
+rawStart = double(event.startFrame);
+rawEnd = double(event.endFrame);
+xStart = localFrameToTimeX(layoutOptions, rawStart);
+xEnd = localFrameToTimeX(layoutOptions, rawEnd);
+
+timeVisible = ~(xEnd < min(xl) || xStart > max(xl));
+rawVisible = ~(rawEnd < min(xl) || rawStart > max(xl));
+if ~timeVisible && rawVisible
+    xStart = rawStart;
+    xEnd = rawEnd;
+end
+end
+
+function x = localFrameToTimeX(layoutOptions, frameValue)
 try
     framerate = double(layoutOptions.framerate);
     if isfield(layoutOptions, 'timeOffset') && layoutOptions.timeOffset
@@ -79,11 +92,14 @@ try
         return;
     end
 
-    xText = visibleStart + 0.55 * (visibleEnd - visibleStart);
-    if visibleEnd == visibleStart
-        xText = min(visibleStart + 0.015 * diff(xl), max(xl));
+    dx = 0.035 * diff(xl);
+    if xStart >= min(xl) && xStart <= max(xl)
+        anchorX = xStart;
+    else
+        anchorX = visibleStart;
     end
-    yText = yl(1) + 0.08 * diff(yl);
+    xText = min(anchorX + dx, max(xl) - dx);
+    yText = yl(1) + 0.05 * diff(yl);
 
     fontSize = max(6, floor(0.9 * layoutOptions.fontSize));
     if isfield(layoutOptions, 'scalingFactor') && ~isempty(layoutOptions.scalingFactor)
@@ -95,12 +111,26 @@ try
         'FontSize', fontSize, ...
         'FontWeight', 'bold', ...
         'Interpreter', 'none', ...
-        'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'bottom', ...
+        'HorizontalAlignment', 'left', ...
+        'VerticalAlignment', 'middle', ...
+        'Rotation', 90, ...
+        'BackgroundColor', localBackgroundColor(layoutOptions), ...
+        'Margin', 1, ...
         'Clipping', 'on', ...
         'Tag', 'ScoreMovieEventLineLabel');
 catch
     hText = gobjects(0);
+end
+end
+
+function color = localBackgroundColor(layoutOptions)
+color = [0 0 0];
+try
+    if isfield(layoutOptions, 'background') && isnumeric(layoutOptions.background) && numel(layoutOptions.background) == 3
+        color = min(max(double(layoutOptions.background(:).'), 0), 1);
+    end
+catch
+    color = [0 0 0];
 end
 end
 

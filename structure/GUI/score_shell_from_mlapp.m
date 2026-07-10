@@ -544,6 +544,91 @@ classdef score < matlab.apps.AppBase
             end
         end
 
+        function presets = collectDataseriesDisplayPresets(app, roiObj) %#ok<INUSL>
+            presets = struct('groupid', {}, 'id', {}, 'show', {}, ...
+                'plotProperties', {}, 'plotGroup', {}, 'groupProperties', {});
+            try
+                if isempty(roiObj) || ~isprop(roiObj, 'data') || isempty(roiObj.data)
+                    return;
+                end
+                for i = 1:numel(roiObj.data)
+                    ds = roiObj.data(i);
+                    item = struct();
+                    item.groupid = '';
+                    item.id = '';
+                    item.show = true;
+                    item.plotProperties = {};
+                    item.plotGroup = {};
+                    item.groupProperties = {};
+                    if isprop(ds, 'groupid'), item.groupid = char(string(ds.groupid)); end
+                    if isprop(ds, 'id'), item.id = char(string(ds.id)); end
+                    if isprop(ds, 'show'), item.show = logical(ds.show); end
+                    if isprop(ds, 'plotProperties'), item.plotProperties = ds.plotProperties; end
+                    if isprop(ds, 'plotGroup'), item.plotGroup = ds.plotGroup; end
+                    if isprop(ds, 'groupProperties'), item.groupProperties = ds.groupProperties; end
+                    presets(end+1) = item; %#ok<AGROW>
+                end
+            catch ME
+                warning('Score:CollectDataPreset', ...
+                    'Could not collect dataseries display presets: %s', ME.message);
+            end
+        end
+
+        function applyDataseriesDisplayPresets(app, roiObj, dataPresets)
+            try
+                if isempty(roiObj) || isempty(dataPresets) || ...
+                        ~isprop(roiObj, 'data') || isempty(roiObj.data)
+                    return;
+                end
+                for i = 1:numel(dataPresets)
+                    idx = app.findMatchingDataseriesPreset(roiObj.data, dataPresets(i));
+                    if isempty(idx)
+                        continue;
+                    end
+                    ds = roiObj.data(idx);
+                    if isfield(dataPresets(i), 'show') && isprop(ds, 'show')
+                        ds.show = logical(dataPresets(i).show);
+                    end
+                    if isfield(dataPresets(i), 'groupProperties') && isprop(ds, 'groupProperties') && ...
+                            ~isempty(dataPresets(i).groupProperties)
+                        ds.groupProperties = dataPresets(i).groupProperties;
+                    end
+                    if isfield(dataPresets(i), 'plotGroup') && isprop(ds, 'plotGroup') && ...
+                            ~isempty(dataPresets(i).plotGroup)
+                        ds.plotGroup = dataPresets(i).plotGroup;
+                    end
+                    if isfield(dataPresets(i), 'plotProperties') && isprop(ds, 'plotProperties') && ...
+                            ~isempty(dataPresets(i).plotProperties)
+                        if isempty(ds.plotProperties) || isequal(size(ds.plotProperties), size(dataPresets(i).plotProperties))
+                            ds.plotProperties = dataPresets(i).plotProperties;
+                        else
+                            ds.plotProperties = app.copyRowsByName(dataPresets(i).plotProperties, ds.plotProperties, 2);
+                        end
+                    end
+                    roiObj.data(idx) = ds;
+                end
+            catch ME
+                warning('Score:ApplyDataPreset', ...
+                    'Could not apply dataseries display presets: %s', ME.message);
+            end
+        end
+
+        function idx = findMatchingDataseriesPreset(app, dataList, preset) %#ok<INUSL>
+            idx = [];
+            try
+                if isfield(preset, 'groupid') && strlength(string(preset.groupid)) > 0
+                    ids = arrayfun(@(d) char(string(d.groupid)), dataList, 'UniformOutput', false);
+                    idx = find(strcmp(ids, char(string(preset.groupid))), 1, 'first');
+                end
+                if isempty(idx) && isfield(preset, 'id') && strlength(string(preset.id)) > 0
+                    ids = arrayfun(@(d) char(string(d.id)), dataList, 'UniformOutput', false);
+                    idx = find(strcmp(ids, char(string(preset.id))), 1, 'first');
+                end
+            catch
+                idx = [];
+            end
+        end
+
         function roi = getSelectedROI(app)
             roi = [];
             try
@@ -3217,9 +3302,8 @@ end
         function arg=setMovieMosaicArguments(app)
 
             % Récupérer les paramètres du movie depuis DisplaySettings.Movie
-            dsM = app.DisplaySettings.Movie;
-
             CopypresetsMenuSelected(app);
+            dsM = app.DisplaySettings.Movie;
 
             % Construction de la liste d'arguments pour mosaic.m
             arg = {};
@@ -3270,7 +3354,9 @@ end
             arg= [arg , {'dataColormap',dsM.MovieDatacolormapEditField}];
             arg= [arg , {'legend',dsM.MovielegendCheckBox}];
             arg= [arg , {'ROITitle',dsM.MovieROItitleCheckBox}];
-            if isfield(dsM, 'MovieeventmarkersEditField') && strlength(string(dsM.MovieeventmarkersEditField)) > 0
+            if isprop(app, 'MovieeventmarkersEditField') && strlength(string(app.MovieeventmarkersEditField.Value)) > 0
+                eventMarkers = app.parseMovieEventMarkers(app.MovieeventmarkersEditField.Value);
+            elseif isfield(dsM, 'MovieeventmarkersEditField') && strlength(string(dsM.MovieeventmarkersEditField)) > 0
                 eventMarkers = app.parseMovieEventMarkers(dsM.MovieeventmarkersEditField);
             elseif isfield(dsM, 'eventMarkers') && ~isempty(dsM.eventMarkers)
                 eventMarkers = dsM.eventMarkers;
@@ -5099,6 +5185,12 @@ end
             % 3) Copier le contenu des tables de données
             presets.dataTable = app.UIDataTable.Data;
             presets.subDataTable = app.UISubDataTable.Data;
+            presets.groupTable = app.UIGroupTable.Data;
+            if ~isempty(selectedROIIndex)
+                presets.dataSeries = app.collectDataseriesDisplayPresets(roi);
+            else
+                presets.dataSeries = [];
+            end
 
             % 4) Copier d'autres réglages (par exemple, la transparence et éventuellement la table des canaux)
             %   presets.transparency = app.Transparency.Value;
@@ -5194,6 +5286,12 @@ end
             end
 
             % 3) Mise à jour des réglages de Data settings
+            if ~isempty(selectedROIIndex) && isfield(presets, 'dataSeries') && ~isempty(presets.dataSeries)
+                roi = app.content.ROIList{selectedROIIndex};
+                app.applyDataseriesDisplayPresets(roi, presets.dataSeries);
+                app.content.ROIList{selectedROIIndex} = roi;
+                displayData(app);
+            end
             if isfield(presets, 'dataTable') && ~isempty(presets.dataTable) && ~isempty(app.UIDataTable.Data)
                 dt = app.UIDataTable.Data;
                 presetDT = presets.dataTable;
@@ -5215,6 +5313,9 @@ end
                     end
                 end
                 app.UISubDataTable.Data = sd;
+            end
+            if isfield(presets, 'groupTable') && ~isempty(presets.groupTable)
+                app.UIGroupTable.Data = presets.groupTable;
             end
 
             % 4) Mise à jour des autres réglages
