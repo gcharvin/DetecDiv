@@ -93,6 +93,8 @@ classdef score < matlab.apps.AppBase
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
         ShowmovieandfolderButton        matlab.ui.control.Button
+        MovieeventmarkersEditField      matlab.ui.control.EditField
+        MovieeventmarkersEditFieldLabel  matlab.ui.control.Label
         MovielegendCheckBox             matlab.ui.control.CheckBox
         MovietrackwindowEditField       matlab.ui.control.EditField
         MovietrackwindowEditFieldLabel  matlab.ui.control.Label
@@ -785,6 +787,10 @@ end
                 tableData{i, 1} = logical(selectedROI.display.selectedchannel(chIndex));
                 % Colonne "Name" : nom du canal
                 tableData{i, 2} = selectedROI.display.channel{chIndex};
+                if isfield(selectedROI.display, 'channelAlias') && numel(selectedROI.display.channelAlias) >= chIndex && ...
+                        strlength(string(selectedROI.display.channelAlias{chIndex})) > 0
+                    tableData{i, 2} = char(string(selectedROI.display.channelAlias{chIndex}));
+                end
                 tableData{i, 3} = logical(selectedROI.display.scale(chIndex));
                 % Colonne "Levels" : niveaux d'affichage (convertis en échelle 0-65535)
 
@@ -832,7 +838,7 @@ tableData{i, 4} = sprintf('%.0f %.0f', ...
                     % Optionnel : vous pouvez afficher "RGB" ou une valeur par défaut
                     tableData{i, 5} = 'RGB';
                 else
-                    tableData{i, 5} = sprintf('%.1f %.1f %.1f', selectedROI.display.rgb(chIndex, :));
+                    tableData{i, 5} = score_channelColorSpec(selectedROI.display, chIndex);
                 end
                 % Colonne "Weight" : poids du canal
 
@@ -850,7 +856,7 @@ tableData{i, 4} = sprintf('%.0f %.0f', ...
             app.UIChannelTable.ColumnName = {'Display', 'Name', 'Scale', 'Levels', 'RGB', 'Weight', 'Auto','Log'};
             app.UIChannelTable.ColumnWidth = {70, 200, 55, 70, 70, 70, 50, 50};
             % Rendre certaines colonnes éditables (ici Display, Levels, RGB, Weight, Auto)
-            app.UIChannelTable.ColumnEditable = [true, false, true, true, true, true, true, true];
+            app.UIChannelTable.ColumnEditable = [true, true, true, true, true, true, true, true];
 
             % Définir le callback pour gérer les modifications
             app.UIChannelTable.CellEditCallback = @(src, event) app.handleChannelTableEdit(event, selectedROI, colorChannels);
@@ -935,6 +941,12 @@ tableData{i, 4} = sprintf('%.0f %.0f', ...
                 case 1 % Modification dans la colonne "Display" (checkbox)
                     selectedROI.display.selectedchannel(chIndex) = event.NewData;
 
+                case 2 % Modification dans la colonne "Name" (alias d'affichage)
+                    if ~isfield(selectedROI.display, 'channelAlias') || numel(selectedROI.display.channelAlias) < numel(selectedROI.display.channel)
+                        selectedROI.display.channelAlias = selectedROI.display.channel;
+                    end
+                    selectedROI.display.channelAlias{chIndex} = char(string(event.NewData));
+
                 case 3 % Modification dans la colonne "Scale" (checkbox)
                     selectedROI.display.scale(chIndex) = logical(event.NewData);
 
@@ -976,19 +988,18 @@ case 4
 
                 case 5 % Modification dans la colonne "RGB"
                     % Valider l'entrée comme un triplet RGB
-                    rgbValues = str2double(strsplit(event.NewData, {' ', ','}));
+                    [ok, message] = score_applyChannelColorSpec(selectedROI, chIndex, event.NewData);
 
-                    if numel(rgbValues) == 3 && all(~isnan(rgbValues))
-                        disp('RGB values parsed successfully');
+                    if ok
+                        disp('Color spec parsed successfully');
                     else
                         disp('Invalid RGB input format');
                     end
 
-                    if numel(rgbValues) == 3 && all(rgbValues >= 0 & rgbValues <= 1)
-                        selectedROI.display.rgb(chIndex, :) = rgbValues';
-                    else
-                        uialert(app.ScoreAppUIFigure, 'RGB values must be three numbers between 0 and 1.', 'Invalid Input');
-                        app.displayROIChannels(); % Réinitialiser la table
+                    if ~ok
+                        uialert(app.ScoreAppUIFigure, message, 'Invalid Input');
+                        app.displayROIChannels();
+                        return;
                     end
 
                 case 6 % Modification dans la colonne "Weight"
@@ -1024,7 +1035,7 @@ case 4
 
             displayChannelFeatures(app);
             displayData(app);
-            if any(colIndex == [3 4 7 8])
+            if any(colIndex == [2 3 4 5 6 7 8])
                 score_display(app, 'slow');
             end
            % score_display(app, 'slow');
@@ -1065,7 +1076,7 @@ case 4
     selectedChannelName = app.UIChannelTable.Data{rowIdx, 2};
 
     % Trouver l'index logique du channel
-    channelIndex = find(strcmp(selectedROI.display.channel, selectedChannelName), 1);
+    channelIndex = app.resolveDisplayChannelIndex(selectedROI, selectedChannelName);
     if isempty(channelIndex)
         if ~isempty(selectedROI.display.channel)
             channelIndex = 1;
@@ -1246,7 +1257,7 @@ case 4
                     round(65535 * selectedROI.display.displaylim(2, chanIndex)));
 
                 % Mettre à jour la colonne "RGB" (sans crochets)
-                tableData{i, 5} = sprintf('%.2f %.2f %.2f', selectedROI.display.rgb(chanIndex, :));
+                tableData{i, 5} = score_channelColorSpec(selectedROI.display, chanIndex);
 
 
                 % Mettre à jour la colonne "Weight"
@@ -1354,6 +1365,9 @@ end
             app.DisplaySettings = evalin('base', 'DisplaySettings');
 
             initMovieDisplaySettings(app);
+            if ~isfield(app.DisplaySettings.Movie, 'MovieeventmarkersEditField')
+                app.DisplaySettings.Movie.MovieeventmarkersEditField = app.MovieeventmarkersEditField.Value;
+            end
             app.DisplaySettings.Movie.defaultClass=app.isthedefautcolorCheckBox.Value;
             app.DisplaySettings.Movie.paintChannel=0;
             app.DisplaySettings.Movie.OverlayCheckBox=app.OverlayCheckBox.Value;
@@ -3060,6 +3074,10 @@ end
             cc = 1;
             for i = selectedChannelIndex
                 name = app.UIChannelTable.Data{i, 2};
+                channelIdx = app.resolveDisplayChannelIndex(selectedROI, name);
+                if ~isempty(channelIdx)
+                    name = selectedROI.display.channel{channelIdx};
+                end
                 processObj.processArg.(['channel' num2str(cc) '_name']) = {name name};
                 cc = cc + 1;
                 if cc > 4  % only up to 4 channels are considered
@@ -3131,6 +3149,71 @@ end
         end
 
 
+        function events = parseMovieEventMarkers(app, rawText) %#ok<INUSL>
+            events = {};
+            if nargin < 2 || isempty(rawText)
+                return;
+            end
+            if istable(rawText) || iscell(rawText)
+                events = rawText;
+                return;
+            end
+            txt = char(string(rawText));
+            txt = strrep(txt, newline, ';');
+            rows = regexp(txt, '[;\r\n]+', 'split');
+            for i = 1:numel(rows)
+                row = strtrim(rows{i});
+                if isempty(row)
+                    continue;
+                end
+                parts = regexp(row, '\s*,\s*', 'split');
+                if numel(parts) == 1 && contains(row, ':')
+                    pair = regexp(row, '\s*:\s*', 'split');
+                    framePart = pair{1};
+                    labelPart = pair{2};
+                    frameRange = regexp(framePart, '\s*[-:]\s*', 'split');
+                    if numel(frameRange) >= 2
+                        parts = {frameRange{1}, frameRange{2}, labelPart};
+                    else
+                        parts = {framePart, framePart, labelPart};
+                    end
+                end
+                startFrame = str2double(parts{1});
+                if numel(parts) >= 2
+                    endFrame = str2double(parts{2});
+                else
+                    endFrame = startFrame;
+                end
+                if ~isfinite(startFrame)
+                    continue;
+                end
+                if ~isfinite(endFrame)
+                    endFrame = startFrame;
+                end
+                label = "";
+                if numel(parts) >= 3 && strlength(string(parts{3})) > 0
+                    label = string(parts{3});
+                end
+                width = '1.5';
+                if numel(parts) >= 4 && strlength(string(parts{4})) > 0
+                    width = char(string(parts{4}));
+                end
+                events(end+1, :) = {true, startFrame, endFrame, char(label), width}; %#ok<AGROW>
+            end
+        end
+
+
+        function channelIndex = resolveDisplayChannelIndex(app, selectedROI, channelLabel) %#ok<INUSL>
+            channelIndex = find(strcmp(selectedROI.display.channel, channelLabel), 1);
+            if ~isempty(channelIndex)
+                return;
+            end
+            if isfield(selectedROI.display, 'channelAlias') && ~isempty(selectedROI.display.channelAlias)
+                channelIndex = find(strcmp(selectedROI.display.channelAlias, channelLabel), 1);
+            end
+        end
+
+
         function arg=setMovieMosaicArguments(app)
 
             % Récupérer les paramètres du movie depuis DisplaySettings.Movie
@@ -3187,6 +3270,14 @@ end
             arg= [arg , {'dataColormap',dsM.MovieDatacolormapEditField}];
             arg= [arg , {'legend',dsM.MovielegendCheckBox}];
             arg= [arg , {'ROITitle',dsM.MovieROItitleCheckBox}];
+            if isfield(dsM, 'MovieeventmarkersEditField') && strlength(string(dsM.MovieeventmarkersEditField)) > 0
+                eventMarkers = app.parseMovieEventMarkers(dsM.MovieeventmarkersEditField);
+            elseif isfield(dsM, 'eventMarkers') && ~isempty(dsM.eventMarkers)
+                eventMarkers = dsM.eventMarkers;
+            else
+                eventMarkers = [];
+            end
+            arg= [arg , {'eventMarkers', eventMarkers}];
 
             % Mise en page pour l'affichage des images
 
@@ -3622,7 +3713,7 @@ end
 
             % Trouver l'index réel du canal dans colorChannels
             channelName = app.UIChannelTable.Data{selectedChannelIndex(1), 2}; % Nom du canal
-            channelIndex = find(strcmp(selectedROI.display.channel, channelName), 1);
+            channelIndex = app.resolveDisplayChannelIndex(selectedROI, channelName);
 
             if isempty(channelIndex)
                 return;
@@ -3663,7 +3754,7 @@ end
 
             % Trouver l'index réel du canal dans colorChannels
             channelName = app.UIChannelTable.Data{selectedChannelIndex(1), 2}; % Nom du canal
-            channelIndex = find(strcmp(selectedROI.display.channel, channelName), 1);
+            channelIndex = app.resolveDisplayChannelIndex(selectedROI, channelName);
 
             if isempty(channelIndex)
                 return;
@@ -3673,7 +3764,7 @@ end
             newRGB = event.Value;
 
             % Mettre à jour la couleur RGB dans selectedROI
-            selectedROI.display.rgb(channelIndex, :) = newRGB;
+            score_applyChannelColorSpec(selectedROI, channelIndex, sprintf('%.6g %.6g %.6g', newRGB));
 
             % Mettre à jour la colonne "RGB" dans la table des canaux
             updateChannelTable(app, selectedROI);
@@ -4051,7 +4142,7 @@ end
                 return;
             end
             selectedChannelName = app.UIChannelTable.Data{selectedChannelIndex(1), 2};
-            channelIndex = find(strcmp(selectedROI.display.channel, selectedChannelName), 1);
+            channelIndex = app.resolveDisplayChannelIndex(selectedROI, selectedChannelName);
             if isempty(channelIndex)
                 return;
             end
@@ -5080,6 +5171,15 @@ end
                         if isfield(presets.channels, 'width') && numel(presets.channels.width) >= i
                             roi.display.width(idx) = presets.channels.width(i);
                         end
+                        if isfield(presets.channels, 'colorMode') && numel(presets.channels.colorMode) >= i
+                            roi.display.colorMode{idx} = presets.channels.colorMode{i};
+                        end
+                        if isfield(presets.channels, 'colormapName') && numel(presets.channels.colormapName) >= i
+                            roi.display.colormapName{idx} = presets.channels.colormapName{i};
+                        end
+                        if isfield(presets.channels, 'channelAlias') && numel(presets.channels.channelAlias) >= i
+                            roi.display.channelAlias{idx} = presets.channels.channelAlias{i};
+                        end
 
                     else
                         % Aucun channel correspondant exact trouvé : on ignore ce preset
@@ -5999,7 +6099,7 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.UISubDataTable.ColumnName = {'Plot'; 'PlotName'; 'Type'; 'Color'; 'Width'; 'Plot group'};
             app.UISubDataTable.ColumnWidth = {50, 200, 100, 70, 50, 100};
             app.UISubDataTable.RowName = {};
-            app.UISubDataTable.ColumnEditable = [true false false true true true];
+            app.UISubDataTable.ColumnEditable = [true true false true true true];
             app.UISubDataTable.CellEditCallback = createCallbackFcn(app, @UISubDataTableCellEdit, true);
             app.UISubDataTable.SelectionChangedFcn = createCallbackFcn(app, @UISubDataTableSelectionChanged, true);
             app.UISubDataTable.FontSize = 10;
@@ -6442,6 +6542,17 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.MovielegendCheckBox = uicheckbox(app.MoviePanel);
             app.MovielegendCheckBox.Text = 'Movie legend';
             app.MovielegendCheckBox.Position = [273 204 93 22];
+
+            % Create MovieeventmarkersEditFieldLabel
+            app.MovieeventmarkersEditFieldLabel = uilabel(app.MoviePanel);
+            app.MovieeventmarkersEditFieldLabel.HorizontalAlignment = 'right';
+            app.MovieeventmarkersEditFieldLabel.Position = [230 169 105 22];
+            app.MovieeventmarkersEditFieldLabel.Text = 'Movie events fr';
+
+            % Create MovieeventmarkersEditField
+            app.MovieeventmarkersEditField = uieditfield(app.MoviePanel, 'text');
+            app.MovieeventmarkersEditField.Position = [350 169 150 22];
+            app.MovieeventmarkersEditField.Value = '';
 
             % Create ShowmovieandfolderButton
             app.ShowmovieandfolderButton = uibutton(app.MoviePanel, 'push');

@@ -66,7 +66,7 @@ switch lower(displayHandles.mode)
                 if layoutOptions.overlay
                     % Combine les canaux pour chaque frame.
                     for frame = 1:numel(layoutOptions.frames)
-                        % curframe=layoutOptions.frames(frame);
+                        curframe=layoutOptions.frames(frame);
 
 
 
@@ -81,6 +81,7 @@ switch lower(displayHandles.mode)
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
 
                         hImg = imshow(displayImage, []);
+                        score_drawMovieEventText(ax, layoutOptions, curframe);
 
                         [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
 
@@ -112,6 +113,9 @@ switch lower(displayHandles.mode)
 
                             %  img = roiData.image(:,:,ch,frame);
                             hImg = imshow(displayImage(:,:,:,ch), []);
+                            if ch == 1
+                                score_drawMovieEventText(ax, layoutOptions, curframe);
+                            end
                             [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
                             if frame == numel(layoutOptions.frames)
                                 hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
