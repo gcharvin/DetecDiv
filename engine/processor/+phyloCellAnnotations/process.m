@@ -16,12 +16,10 @@ if isstruct(param)
     paramout = mergeStructOverride(paramout, param);
 end
 
-if isempty(roiobj.image)
-    roiobj.load;
-end
-if isempty(roiobj.image)
-    error('phyloCellAnnotations:NoImage', ...
-        'ROI "%s" has no extracted image. Run roiExtract before phyloCellAnnotations.', safeRoiId(roiobj));
+[height, width, nFrames] = resolveRoiGeometry(roiobj);
+if height <= 0 || width <= 0 || nFrames <= 0
+    error('phyloCellAnnotations:NoGeometry', ...
+        'Cannot determine ROI "%s" image geometry. Run roiExtract before phyloCellAnnotations.', safeRoiId(roiobj));
 end
 
 segFile = resolveSegmentationFile(roiobj, paramout);
@@ -36,31 +34,30 @@ if ~isfield(S, 'segmentation')
     error('phyloCellAnnotations:NoSegmentationVariable', ...
         'File "%s" does not contain a segmentation variable.', segFile);
 end
-S.segmentation = scrubPhyloCellGraphics(S.segmentation);
+if logical(getField(paramout, 'scrubGraphics', false))
+    S.segmentation = scrubPhyloCellGraphics(S.segmentation);
+end
 segmentation = S.segmentation;
 clear S;
 deletePhyloCellFigures();
 
-frames = resolveFrames(ctx, paramout, size(roiobj.image, 4));
+frames = resolveFrames(ctx, paramout, nFrames);
 createdChannels = {};
 roiRect = double(roiobj.value);
+useVirtualChannels = isempty(roiobj.image);
 
 if logical(getField(paramout, 'createCellMasks', true)) && isfield(segmentation, 'cells1')
-    mask = rasterizePhyloObjects(segmentation.cells1, size(roiobj.image, 1), size(roiobj.image, 2), ...
-        size(roiobj.image, 4), frames, roiRect);
+    mask = rasterizePhyloObjects(segmentation.cells1, height, width, nFrames, frames, roiRect);
     if any(mask(:))
-        roiobj = replaceChannelIfPresent(roiobj, paramout.cellChannelName);
-        roiobj.addChannel(mask, paramout.cellChannelName, [1 0.35 0.05], [0 0 0]);
+        roiobj = writeAnnotationChannel(roiobj, mask, paramout.cellChannelName, [1 0.35 0.05], useVirtualChannels);
         createdChannels{end+1} = paramout.cellChannelName; %#ok<AGROW>
     end
 end
 
 if logical(getField(paramout, 'createNucleusMasks', true)) && isfield(segmentation, 'nucleus')
-    mask = rasterizePhyloObjects(segmentation.nucleus, size(roiobj.image, 1), size(roiobj.image, 2), ...
-        size(roiobj.image, 4), frames, roiRect);
+    mask = rasterizePhyloObjects(segmentation.nucleus, height, width, nFrames, frames, roiRect);
     if any(mask(:))
-        roiobj = replaceChannelIfPresent(roiobj, paramout.nucleusChannelName);
-        roiobj.addChannel(mask, paramout.nucleusChannelName, [0.1 0.45 1], [0 0 0]);
+        roiobj = writeAnnotationChannel(roiobj, mask, paramout.nucleusChannelName, [0.1 0.45 1], useVirtualChannels);
         createdChannels{end+1} = paramout.nucleusChannelName; %#ok<AGROW>
     end
 end
@@ -77,11 +74,189 @@ end
 
 paramout.saveChannels = createdChannels;
 dataout = roiobj.data;
-if isempty(createdChannels)
+if useVirtualChannels
+    imageout = [];
+elseif isempty(createdChannels)
     imageout = [];
 else
     imageout = roiobj.image;
 end
+end
+
+function [height, width, nFrames] = resolveRoiGeometry(roiobj)
+height = 0;
+width = 0;
+nFrames = 0;
+
+try
+    if ~isempty(roiobj.image)
+        sz = size(roiobj.image);
+        sz(end+1:4) = 1;
+        height = sz(1);
+        width = sz(2);
+        nFrames = sz(4);
+        return;
+    end
+catch
+end
+
+try
+    roiRect = double(roiobj.value);
+    if numel(roiRect) >= 4
+        width = max(width, round(roiRect(3)));
+        height = max(height, round(roiRect(4)));
+    end
+catch
+end
+
+h5File = '';
+try
+    h5File = fullfile(roiobj.path, ['im_' roiobj.id '.h5']);
+catch
+    h5File = '';
+end
+if ~isempty(h5File) && exist(h5File, 'file') == 2
+    try
+        info = h5info(h5File);
+        if isfield(info, 'Datasets') && ~isempty(info.Datasets)
+            h5Path = ['/' info.Datasets(1).Name];
+            try
+                bb = double(h5readatt(h5File, h5Path, 'bbox'));
+                if numel(bb) >= 4
+                    width = max(width, round(bb(3)));
+                    height = max(height, round(bb(4)));
+                end
+            catch
+            end
+            try
+                frames = h5readatt(h5File, h5Path, 'frames');
+                nFrames = max(nFrames, numel(frames));
+            catch
+            end
+            try
+                absT = h5readatt(h5File, h5Path, 'abs_T');
+                nFrames = max(nFrames, double(absT(1)));
+            catch
+            end
+            if nFrames <= 0
+                dims = double(info.Datasets(1).Dataspace.Size);
+                if ~isempty(dims)
+                    nFrames = max(dims(:));
+                end
+            end
+        end
+    catch
+    end
+end
+
+try
+    fovObj = roiobj.parent;
+    if nFrames <= 0 && ~isempty(fovObj) && isprop(fovObj, 'frames') && ~isempty(fovObj.frames)
+        nFrames = max(double(fovObj.frames(:)));
+    end
+catch
+end
+end
+
+function roiobj = writeAnnotationChannel(roiobj, mask, channelName, rgb, useVirtualChannels)
+if useVirtualChannels
+    roiobj = removeVirtualChannelIfPresent(roiobj, channelName);
+    display = struct('intensity', [0 0 0], 'rgb', rgb, 'indexed', uint8(1), ...
+        'alpha', 0.35, 'contour', uint8(1), 'width', 1.5, 'displaylim', [0; double(max(mask(:)))]);
+    roiobj.appendVirtualChannel(channelName, mask, true, 'Display', display);
+else
+    roiobj = replaceChannelIfPresent(roiobj, channelName);
+    roiobj.addChannel(mask, channelName, rgb, [0 0 0]);
+end
+end
+
+function roiobj = removeVirtualChannelIfPresent(roiobj, channelName)
+names = {};
+try
+    if isfield(roiobj.display, 'channel') && ~isempty(roiobj.display.channel)
+        names = roiobj.display.channel;
+    end
+catch
+    names = {};
+end
+if ischar(names) || isstring(names)
+    names = cellstr(string(names));
+elseif ~iscell(names)
+    names = cellstr(string(names));
+end
+idx = find(strcmpi(names, char(string(channelName))));
+if isempty(idx)
+    deleteH5DatasetIfPresent(roiobj, channelName);
+    return;
+end
+keep = setdiff(1:numel(names), idx);
+roiobj.display = keepDisplayRows(roiobj.display, keep);
+try
+    if ~isempty(roiobj.channelid)
+        keepSub = ~ismember(double(roiobj.channelid), idx);
+        old = double(roiobj.channelid(keepSub));
+        for k = 1:numel(idx)
+            old(old > idx(k)) = old(old > idx(k)) - 1;
+        end
+        roiobj.channelid = old;
+    end
+catch
+end
+deleteH5DatasetIfPresent(roiobj, channelName);
+end
+
+function display = keepDisplayRows(display, keep)
+if isempty(keep)
+    display.channel = {};
+    return;
+end
+fields = {'channel','intensity','rgb','selectedchannel','indexed','alpha','contour','width','scale','log','valueTransform'};
+for i = 1:numel(fields)
+    fld = fields{i};
+    if ~isfield(display, fld) || isempty(display.(fld))
+        continue;
+    end
+    val = display.(fld);
+    try
+        if iscell(val)
+            display.(fld) = val(keep);
+        elseif isstruct(val)
+            display.(fld) = val(keep);
+        elseif size(val, 1) >= max(keep) && ~isvector(val)
+            display.(fld) = val(keep, :);
+        else
+            val = val(:).';
+            display.(fld) = val(keep);
+        end
+    catch
+    end
+end
+end
+
+function deleteH5DatasetIfPresent(roiobj, channelName)
+try
+    h5File = fullfile(roiobj.path, ['im_' roiobj.id '.h5']);
+    if exist(h5File, 'file') ~= 2
+        return;
+    end
+    h5Path = ['/' sanitizeDatasetNameLocal(channelName)];
+    fid = H5F.open(h5File, 'H5F_ACC_RDWR', 'H5P_DEFAULT');
+    cleanup = onCleanup(@()H5F.close(fid));
+    if H5L.exists(fid, h5Path, 'H5P_DEFAULT') > 0
+        H5L.delete(fid, h5Path, 'H5P_DEFAULT');
+    end
+    clear cleanup;
+catch
+end
+end
+
+function nameOut = sanitizeDatasetNameLocal(nameIn)
+s = char(string(nameIn));
+s = regexprep(s, '^\s+|\s+$', '');
+s = regexprep(s, '\s+', '_');
+s = regexprep(s, '[^A-Za-z0-9_\-\.]', '_');
+if isempty(s), s = 'channel'; end
+nameOut = s;
 end
 
 function deletePhyloCellFigures()
@@ -220,8 +395,8 @@ for f = frameSet
         if numel(x) < 3 || numel(y) < 3
             continue;
         end
-        pix = polygonMask(x, y, height, width);
-        if ~any(pix(:))
+        [rows, cols] = polygonPixels(x, y, height, width);
+        if isempty(rows)
             continue;
         end
         label = double(obj.n);
@@ -230,7 +405,7 @@ for f = frameSet
         end
         label = uint16(min(label, double(intmax('uint16'))));
         plane = mask(:, :, 1, f);
-        plane(pix) = label;
+        plane(sub2ind([height width], rows, cols)) = label;
         mask(:, :, 1, f) = plane;
     end
 end
@@ -269,13 +444,39 @@ catch
 end
 end
 
-function pix = polygonMask(x, y, height, width)
-try
-    pix = poly2mask(x, y, height, width);
-catch
-    [xx, yy] = meshgrid(1:width, 1:height);
-    pix = inpolygon(xx, yy, x, y);
+function [rows, cols] = polygonPixels(x, y, height, width)
+rows = [];
+cols = [];
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+if numel(x) < 3 || numel(y) < 3
+    return;
 end
+xmin = max(1, floor(min(x)));
+xmax = min(width, ceil(max(x)));
+ymin = max(1, floor(min(y)));
+ymax = min(height, ceil(max(y)));
+if xmax < xmin || ymax < ymin
+    return;
+end
+
+localX = x - xmin + 1;
+localY = y - ymin + 1;
+boxW = xmax - xmin + 1;
+boxH = ymax - ymin + 1;
+try
+    pixLocal = poly2mask(localX, localY, boxH, boxW);
+catch
+    [xx, yy] = meshgrid(1:boxW, 1:boxH);
+    pixLocal = inpolygon(xx, yy, localX, localY);
+end
+if ~any(pixLocal(:))
+    return;
+end
+[rr, cc] = find(pixLocal);
+rows = rr + ymin - 1;
+cols = cc + xmin - 1;
 end
 
 function ds = buildLineageDataseries(segmentation, outputName, roiId, segFile)
