@@ -16,6 +16,7 @@ function param = setparam(ctx)
     param.driftSubpixel = true;
     param.driftMaxShift = 20;
     param.scale = 1;
+    param.binning = [];
     param.cropDrift = 1.0;
 
     if nargin < 1 || isempty(ctx)

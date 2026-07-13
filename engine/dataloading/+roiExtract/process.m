@@ -95,6 +95,7 @@ function ctx = process(ctx)
     if isfield(p,'roiList') && ~isempty(p.roiList)
         p.roiList = normalizeRoiSelectionParam(p.roiList);
     end
+    p = normalizeScaleBinningParams(p);
 
     existingPolicy = resolveExistingPolicy(ctx, p);
     switch existingPolicy
@@ -658,6 +659,27 @@ function ds = collectDataSeries(roiList)
     if ~isempty(ds)
         ds = unique(ds,'stable');
     end
+end
+
+function p = normalizeScaleBinningParams(p)
+    if ~isfield(p, 'binning') || isempty(p.binning)
+        return;
+    end
+    try
+        b = double(p.binning(1));
+    catch
+        b = [];
+    end
+    if isempty(b) || ~isfinite(b) || b <= 0
+        currentScale = 1;
+        if isfield(p, 'scale') && ~isempty(p.scale)
+            currentScale = p.scale;
+        end
+        warning('roiExtract.process:InvalidBinning', ...
+            'Invalid binning=%s -> keeping scale=%s', mat2str(p.binning), mat2str(currentScale));
+        return;
+    end
+    p.scale = 1 ./ b;
 end
 
 function args = buildExtractArgs(p, progressDlg, ctx)

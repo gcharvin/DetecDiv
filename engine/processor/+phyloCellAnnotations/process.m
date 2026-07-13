@@ -44,10 +44,11 @@ deletePhyloCellFigures();
 frames = resolveFrames(ctx, paramout, nFrames);
 createdChannels = {};
 roiRect = double(roiobj.value);
+coordinateScale = resolveCoordinateScale(paramout, roiRect, width, height);
 useVirtualChannels = isempty(roiobj.image);
 
 if logical(getField(paramout, 'createCellMasks', true)) && isfield(segmentation, 'cells1')
-    mask = rasterizePhyloObjects(segmentation.cells1, height, width, nFrames, frames, roiRect);
+    mask = rasterizePhyloObjects(segmentation.cells1, height, width, nFrames, frames, roiRect, coordinateScale);
     if any(mask(:))
         roiobj = writeAnnotationChannel(roiobj, mask, paramout.cellChannelName, [1 0.35 0.05], useVirtualChannels);
         createdChannels{end+1} = paramout.cellChannelName; %#ok<AGROW>
@@ -55,7 +56,7 @@ if logical(getField(paramout, 'createCellMasks', true)) && isfield(segmentation,
 end
 
 if logical(getField(paramout, 'createNucleusMasks', true)) && isfield(segmentation, 'nucleus')
-    mask = rasterizePhyloObjects(segmentation.nucleus, height, width, nFrames, frames, roiRect);
+    mask = rasterizePhyloObjects(segmentation.nucleus, height, width, nFrames, frames, roiRect, coordinateScale);
     if any(mask(:))
         roiobj = writeAnnotationChannel(roiobj, mask, paramout.nucleusChannelName, [0.1 0.45 1], useVirtualChannels);
         createdChannels{end+1} = paramout.nucleusChannelName; %#ok<AGROW>
@@ -64,6 +65,10 @@ end
 
 if logical(getField(paramout, 'createLineage', true))
     [lineageDs, lineageTable] = buildLineageDataseries(segmentation, paramout.outputName, safeRoiId(roiobj), segFile);
+    try
+        lineageDs.userData.coordinateScale = coordinateScale;
+    catch
+    end
     roiobj.data = replaceDataseriesGroup(roiobj.data, paramout.outputName, lineageDs);
     if logical(getField(paramout, 'createScoreLineage', true))
         roiobj = upsertScoreLineageDataseries(roiobj, lineageTable, paramout.cellChannelName, nFrames, segFile);
@@ -90,6 +95,8 @@ function [height, width, nFrames] = resolveRoiGeometry(roiobj)
 height = 0;
 width = 0;
 nFrames = 0;
+roiHeight = 0;
+roiWidth = 0;
 
 try
     if ~isempty(roiobj.image)
@@ -106,11 +113,13 @@ end
 try
     roiRect = double(roiobj.value);
     if numel(roiRect) >= 4
-        width = max(width, round(roiRect(3)));
-        height = max(height, round(roiRect(4)));
+        roiWidth = max(0, round(roiRect(3)));
+        roiHeight = max(0, round(roiRect(4)));
     end
 catch
 end
+width = roiWidth;
+height = roiHeight;
 
 h5File = '';
 try
@@ -122,30 +131,15 @@ if ~isempty(h5File) && exist(h5File, 'file') == 2
     try
         info = h5info(h5File);
         if isfield(info, 'Datasets') && ~isempty(info.Datasets)
-            h5Path = ['/' info.Datasets(1).Name];
-            try
-                bb = double(h5readatt(h5File, h5Path, 'bbox'));
-                if numel(bb) >= 4
-                    width = max(width, round(bb(3)));
-                    height = max(height, round(bb(4)));
-                end
-            catch
+            ds = info.Datasets(1);
+            h5Path = ['/' ds.Name];
+            [h5Height, h5Width, h5Frames] = h5DatasetGeometry(ds, h5File, h5Path);
+            if h5Height > 0 && h5Width > 0
+                height = h5Height;
+                width = h5Width;
             end
-            try
-                frames = h5readatt(h5File, h5Path, 'frames');
-                nFrames = max(nFrames, numel(frames));
-            catch
-            end
-            try
-                absT = h5readatt(h5File, h5Path, 'abs_T');
-                nFrames = max(nFrames, double(absT(1)));
-            catch
-            end
-            if nFrames <= 0
-                dims = double(info.Datasets(1).Dataspace.Size);
-                if ~isempty(dims)
-                    nFrames = max(dims(:));
-                end
+            if h5Frames > 0
+                nFrames = h5Frames;
             end
         end
     catch
@@ -159,6 +153,102 @@ try
     end
 catch
 end
+end
+
+function [height, width, nFrames] = h5DatasetGeometry(ds, h5File, h5Path)
+height = 0;
+width = 0;
+nFrames = 0;
+
+try
+    dims = double(ds.Dataspace.Size);
+catch
+    dims = [];
+end
+
+try
+    frames = h5readatt(h5File, h5Path, 'frames');
+    nFrames = max(nFrames, numel(frames));
+catch
+end
+try
+    absT = h5readatt(h5File, h5Path, 'abs_T');
+    nFrames = max(nFrames, double(absT(1)));
+catch
+end
+
+if numel(dims) >= 4
+    dims = dims(:).';
+    height = round(dims(1));
+    width = round(dims(2));
+    if nFrames <= 0
+        nFrames = round(dims(4));
+    end
+elseif numel(dims) >= 2
+    height = round(dims(1));
+    width = round(dims(2));
+end
+
+if nFrames <= 0
+    if numel(dims) >= 4
+        nFrames = max(1, round(dims(4)));
+    else
+        nFrames = 1;
+    end
+end
+end
+
+function coordinateScale = resolveCoordinateScale(paramout, roiRect, width, height)
+coordinateScale = [1 1];
+
+try
+    b = getField(paramout, 'coordinateBinning', []);
+    if ~isempty(b)
+        b = double(b);
+        if isscalar(b)
+            coordinateScale = [1 1] ./ b;
+        elseif numel(b) >= 2
+            coordinateScale = [1 ./ b(1), 1 ./ b(2)];
+        end
+        coordinateScale = sanitizeCoordinateScale(coordinateScale);
+        return;
+    end
+catch
+end
+
+try
+    s = getField(paramout, 'coordinateScale', []);
+    if ~isempty(s)
+        s = double(s);
+        if isscalar(s)
+            coordinateScale = [s s];
+        elseif numel(s) >= 2
+            coordinateScale = [s(1) s(2)];
+        end
+        coordinateScale = sanitizeCoordinateScale(coordinateScale);
+        return;
+    end
+catch
+end
+
+try
+    if numel(roiRect) >= 4 && roiRect(3) > 0 && roiRect(4) > 0 && width > 0 && height > 0
+        coordinateScale = [double(width) ./ double(roiRect(3)), double(height) ./ double(roiRect(4))];
+    end
+catch
+end
+coordinateScale = sanitizeCoordinateScale(coordinateScale);
+end
+
+function coordinateScale = sanitizeCoordinateScale(coordinateScale)
+coordinateScale = double(coordinateScale(:).');
+if numel(coordinateScale) < 2
+    coordinateScale = [1 1];
+else
+    coordinateScale = coordinateScale(1:2);
+end
+bad = ~isfinite(coordinateScale) | coordinateScale <= 0;
+coordinateScale(bad) = 1;
 end
 
 function roiobj = writeAnnotationChannel(roiobj, mask, channelName, rgb, useVirtualChannels)
@@ -376,11 +466,15 @@ for i = 1:numel(arr)
 end
 end
 
-function mask = rasterizePhyloObjects(objects, height, width, nFrames, frames, roiRect)
+function mask = rasterizePhyloObjects(objects, height, width, nFrames, frames, roiRect, coordinateScale)
 mask = zeros(height, width, 1, nFrames, 'uint16');
 if isempty(objects) || ~isobject(objects)
     return;
 end
+if nargin < 7 || isempty(coordinateScale)
+    coordinateScale = [1 1];
+end
+coordinateScale = sanitizeCoordinateScale(coordinateScale);
 
 frameSet = frames(:)';
 for f = frameSet
@@ -393,8 +487,8 @@ for f = frameSet
         if ~isLivePhyloObject(obj)
             continue;
         end
-        x = double(obj.x(:)) - roiRect(1) + 1;
-        y = double(obj.y(:)) - roiRect(2) + 1;
+        x = (double(obj.x(:)) - roiRect(1)) .* coordinateScale(1) + 1;
+        y = (double(obj.y(:)) - roiRect(2)) .* coordinateScale(2) + 1;
         if numel(x) < 3 || numel(y) < 3
             continue;
         end
