@@ -85,7 +85,7 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
             removeCellMother(roi, daughterID);
             flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
         end
-        score_display(app,'fast');
+        refreshLineageAfterEdit(app, roi, frm);
         return;
     end
 end
@@ -1015,6 +1015,37 @@ catch
 end
 end
 
+
+function refreshLineageAfterEdit(app, roi, frm)
+try
+    if ~isprop(app, 'graphicsHandles') || isempty(app.graphicsHandles) || ...
+            ~isprop(app, 'layoutOptions') || isempty(app.layoutOptions) || ...
+            isempty(app.displayHandles)
+        score_display(app, 'fast');
+        return;
+    end
+
+    opts = app.layoutOptions;
+    try
+        if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
+            opts.ShowBudPairingOverlay = logical(app.DisplayBudPairingCheckBox.Value);
+        end
+        if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
+            opts.ShowLineageOverlay = logical(app.DisplayLineageCheckBox.Value);
+        end
+    catch
+    end
+    opts.LineageUseViewport = true;
+    app.layoutOptions = opts;
+
+    refreshLineageOverlays(app.graphicsHandles, roi, opts, app.displayHandles, frm);
+    drawnow limitrate;
+catch ME
+    warning('score:LineageEditRefresh', ...
+        'Fast lineage refresh failed, falling back to score_display: %s', ME.message);
+    score_display(app, 'fast');
+end
+end
 
 function ds = getCellInfoDataseries(roi)
 % Retourne le handle du dataseries groupid='cell_information' (assuré existant)

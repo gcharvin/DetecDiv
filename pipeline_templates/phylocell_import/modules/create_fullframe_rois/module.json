@@ -1,0 +1,22 @@
+{
+  "id": "create_fullframe_rois",
+  "type": "roiGrid",
+  "pkg": "roiGrid",
+  "func": "roiGrid.process",
+  "params": {
+    "mode": "fullframe",
+    "gridCount": 1,
+    "referenceFrame": 1,
+    "channelIndex": [],
+    "channel": "",
+    "gridRects": [],
+    "candidateRects": [],
+    "previewRects": [],
+    "keepExisting": false,
+    "skipExisting": false,
+    "errorOnExisting": false
+  },
+  "inputs": [],
+  "outputs": [],
+  "updatedAt": "13-Jul-2026 19:47:35"
+}

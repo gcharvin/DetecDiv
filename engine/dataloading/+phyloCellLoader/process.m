@@ -15,7 +15,7 @@ if isfield(ctx, 'phyloCellLoader') && isstruct(ctx.phyloCellLoader) && ~isempty(
 elseif isfield(ctx, 'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     p = mergeStructOverride(p, ctx.params);
 end
-if isfield(ctx, 'path') && ~isempty(ctx.path)
+if (~isfield(p, 'path') || isempty(p.path)) && isfield(ctx, 'path') && ~isempty(ctx.path)
     p.path = char(string(ctx.path));
 end
 if isfield(ctx, 'projectPath') && ~isempty(ctx.projectPath)
@@ -29,13 +29,18 @@ if ~isfield(p, 'includeContours') || isempty(p.includeContours)
     p.includeContours = false;
 end
 
+if isTrueScalar(getStructFieldLocal(p, 'useExistingProjectSources', false))
+    ctx = useExistingDetecDivProjectSources(ctx, p);
+    return;
+end
+
 if ~isfield(p, 'path') || isempty(p.path)
-    error('phyloCellLoader.process:NoPath', 'No phyloCell project path provided.');
+    error('phyloCellLoader:NoPath', 'No phyloCell project path provided.');
 end
 
 [parsePath, projectFile, prefix] = normalizePhyloCellPath(p.path);
 if isempty(parsePath) || exist(parsePath, 'dir') ~= 7
-    error('phyloCellLoader.process:MissingFolder', ...
+    error('phyloCellLoader:MissingFolder', ...
         'Cannot find phyloCell project folder for "%s".', char(string(p.path)));
 end
 
@@ -50,23 +55,23 @@ end
 
 args = {'phylocellcontours', logical(p.includeContours)};
 if isfield(p, 'positionFilter') && ~isempty(p.positionFilter)
-    args = [args {'positionfilter'} {p.positionFilter}]; %#ok<AGROW>
+    args = [args {'positionfilter'} {p.positionFilter}];
 end
 if isfield(p, 'channelFilter') && ~isempty(p.channelFilter)
-    args = [args {'channelfilter'} {p.channelFilter}]; %#ok<AGROW>
+    args = [args {'channelfilter'} {p.channelFilter}];
 end
 if isfield(p, 'stackFilter') && ~isempty(p.stackFilter)
-    args = [args {'stackfilter'} {p.stackFilter}]; %#ok<AGROW>
+    args = [args {'stackfilter'} {p.stackFilter}];
 end
 if isfield(p, 'positionIdx') && ~isempty(p.positionIdx)
-    args = [args {'phylocellpositionidx'} {p.positionIdx}]; %#ok<AGROW>
+    args = [args {'phylocellpositionidx'} {p.positionIdx}];
 end
 if isfield(p, 'progress') && ~isempty(p.progress)
-    args = [args {'progress'} {p.progress}]; %#ok<AGROW>
+    args = [args {'progress'} {p.progress}];
 end
 tokenFile = cancelTokenFileFromCtx(ctx);
 if ~isempty(tokenFile)
-    args = [args {'canceltokenfile'} {tokenFile}]; %#ok<AGROW>
+    args = [args {'canceltokenfile'} {tokenFile}];
 end
 
 detecdiv_check_cancel(ctx, 'phyloCellLoader before parseInputData');
@@ -97,6 +102,59 @@ if isfield(ctx, 'shallow') && ~isempty(ctx.shallow) && isprop(ctx.shallow, 'runP
 end
 end
 
+function ctx = useExistingDetecDivProjectSources(ctx, p)
+detecdiv_check_cancel(ctx, 'phyloCellLoader use existing project sources');
+
+projectObj = [];
+if isfield(ctx, 'shallow') && ~isempty(ctx.shallow) && isa(ctx.shallow, 'shallow')
+    projectObj = ctx.shallow;
+elseif isfield(ctx, 'shallowObj') && ~isempty(ctx.shallowObj) && isa(ctx.shallowObj, 'shallow')
+    projectObj = ctx.shallowObj;
+end
+
+if isempty(projectObj)
+    error('phyloCellLoader:ExistingProjectRequiresLoadedProject', ...
+        ['The phyloCell dataloader is configured to reuse an existing DetecDiv project, ' ...
+         'but no DetecDiv project is loaded in the pipeline run context. ' ...
+         'Open/select the existing DetecDiv project before running, or switch the runtime input ' ...
+         'to "Parse raw images into project" and set the phyloCell path to the *-project.mat file ' ...
+         'or to its parent folder.']);
+end
+
+ctx.shallow = projectObj;
+ctx.shallowObj = projectObj;
+ctx.fovList = projectObj.fov;
+ctx.images = ctx.fovList;
+ctx.dataLoader = p;
+ctx.phyloCellLoader = p;
+
+if ~isempty(ctx.fovList)
+    try
+        fovChannels = ctx.fovList(1).channel;
+        if ~isempty(fovChannels)
+            ctx.channels = fovChannels;
+        elseif ~isfield(ctx, 'channels') || isempty(ctx.channels)
+            ctx.channels = {};
+        end
+    catch
+    end
+end
+
+if isfield(ctx, 'pipeline') && isstruct(ctx.pipeline)
+    ctx.pipeline.nodeStatusOverride = 'skipped_existing';
+    ctx.pipeline.nodeMessage = 'Reused the loaded DetecDiv project; phyloCell raw parsing was not run.';
+end
+
+if isprop(projectObj, 'runProfiles')
+    rp = projectObj.runProfiles;
+    if ~isfield(rp, 'dataloading') || isempty(rp.dataloading)
+        rp.dataloading = struct();
+    end
+    rp.dataloading.phyloCellLoader = p;
+    projectObj.runProfiles = rp;
+end
+end
+
 function [parsePath, projectFile, prefix] = normalizePhyloCellPath(pathIn)
 pathIn = char(string(pathIn));
 parsePath = pathIn;
@@ -105,10 +163,18 @@ prefix = '';
 
 if exist(pathIn, 'file') == 2
     [folder, name, ext] = fileparts(pathIn);
-    parsePath = folder;
-    projectFile = pathIn;
-    fname = [name ext];
-    prefix = regexprep(fname, '-project\.mat$', '', 'ignorecase');
+    if strcmpi(ext, '.mat') && endsWith([name ext], '-project.mat', 'IgnoreCase', true)
+        parsePath = folder;
+        projectFile = pathIn;
+        fname = [name ext];
+        prefix = regexprep(fname, '-project\.mat$', '', 'ignorecase');
+    else
+        [parsePath, projectFile, prefix] = findAncestorPhyloCellProject(folder);
+        if isempty(parsePath)
+            parsePath = folder;
+            prefix = name;
+        end
+    end
 elseif exist(pathIn, 'dir') == 7
     files = dir(fullfile(pathIn, '*-project.mat'));
     files = files(~contains({files.name}, 'BK-project.mat') & ~contains({files.name}, '-project.mat.bk'));
@@ -117,7 +183,14 @@ elseif exist(pathIn, 'dir') == 7
         projectFile = fullfile(files(idx).folder, files(idx).name);
         prefix = regexprep(files(idx).name, '-project\.mat$', '', 'ignorecase');
     else
-        [~, prefix] = fileparts(pathIn);
+        [ancestorPath, ancestorProjectFile, ancestorPrefix] = findAncestorPhyloCellProject(pathIn);
+        if ~isempty(ancestorPath)
+            parsePath = ancestorPath;
+            projectFile = ancestorProjectFile;
+            prefix = ancestorPrefix;
+        else
+            [~, prefix] = fileparts(pathIn);
+        end
     end
 end
 
@@ -127,6 +200,35 @@ end
 prefix = regexprep(prefix, '[<>:"/\\|?*]', '_');
 if isempty(prefix)
     prefix = 'phylocell_project';
+end
+end
+
+function [parsePath, projectFile, prefix] = findAncestorPhyloCellProject(startPath)
+parsePath = '';
+projectFile = '';
+prefix = '';
+
+cur = char(string(startPath));
+if isempty(cur)
+    return;
+end
+cur = char(java.io.File(cur).getCanonicalPath());
+
+for depth = 1:8
+    files = dir(fullfile(cur, '*-project.mat'));
+    files = files(~contains({files.name}, 'BK-project.mat') & ~contains({files.name}, '-project.mat.bk'));
+    if ~isempty(files)
+        [~, idx] = max([files.datenum]);
+        parsePath = cur;
+        projectFile = fullfile(files(idx).folder, files(idx).name);
+        prefix = regexprep(files(idx).name, '-project\.mat$', '', 'ignorecase');
+        return;
+    end
+    parent = fileparts(cur);
+    if isempty(parent) || strcmp(parent, cur)
+        return;
+    end
+    cur = parent;
 end
 end
 
@@ -166,6 +268,31 @@ try
     end
 catch
     tokenFile = '';
+end
+end
+
+function value = getStructFieldLocal(s, name, defaultValue)
+value = defaultValue;
+try
+    if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
+        value = s.(name);
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function tf = isTrueScalar(value)
+tf = false;
+try
+    if islogical(value) || isnumeric(value)
+        tf = isscalar(value) && logical(value);
+    elseif ischar(value) || (isstring(value) && isscalar(value))
+        txt = strtrim(char(string(value)));
+        tf = any(strcmpi(txt, {'1','true','yes','on'}));
+    end
+catch
+    tf = false;
 end
 end
 

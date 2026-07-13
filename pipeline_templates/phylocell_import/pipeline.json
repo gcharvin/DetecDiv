@@ -1,0 +1,162 @@
+{
+  "name": "phylocell_import",
+  "id": 1,
+  "version": "1.0",
+  "description": "Created from pipelineGUI2",
+  "nodes": [
+    {
+      "id": "load_phylocell",
+      "type": "dataLoader",
+      "func": "phyloCellLoader.process",
+      "pkg": "phyloCellLoader",
+      "params": {
+        "positionFilter": [],
+        "channelFilter": [],
+        "stackFilter": [],
+        "label": "",
+        "write": true,
+        "interactive": false,
+        "useExistingProjectSources": false,
+        "projectPath": "",
+        "projectName": "",
+        "includeContours": false,
+        "segmentationPolicy": "prefer_autotrack"
+      },
+      "paramRequired": [
+        "path"
+      ],
+      "gui": "",
+      "guiMode": "replace",
+      "layout": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "name": "load_phylocell",
+      "uiAdvanced": false,
+      "status": "OK"
+    },
+    {
+      "id": "create_fullframe_rois",
+      "type": "roiGrid",
+      "func": "roiGrid.process",
+      "pkg": "roiGrid",
+      "params": {
+        "mode": "fullframe",
+        "gridCount": 1,
+        "referenceFrame": 1,
+        "channelIndex": [],
+        "channel": "",
+        "gridRects": [],
+        "candidateRects": [],
+        "previewRects": [],
+        "keepExisting": false,
+        "skipExisting": false,
+        "errorOnExisting": false
+      },
+      "paramRequired": [],
+      "gui": "roiGrid.ui",
+      "guiMode": "replace",
+      "layout": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "name": "create_fullframe_rois",
+      "uiAdvanced": false,
+      "status": "OK"
+    },
+    {
+      "id": "extract_raw_channels",
+      "type": "roiExtract",
+      "func": "roiExtract.process",
+      "pkg": "roiExtract",
+      "params": {
+        "channels": [],
+        "extractChannels": "@source",
+        "forceChannelNames": true,
+        "correctDrift": true,
+        "driftChannel": [],
+        "driftMethod": "subpixel",
+        "driftRefMode": "previous",
+        "driftSubpixel": true,
+        "driftMaxShift": 20,
+        "scale": 0.5,
+        "cropDrift": 1
+      },
+      "paramRequired": [],
+      "gui": "roiExtract.ui",
+      "guiMode": "replace",
+      "layout": [
+        3,
+        1,
+        1,
+        1
+      ],
+      "name": "extract_raw_channels",
+      "uiAdvanced": false,
+      "status": "OK"
+    },
+    {
+      "id": "convert_phylocell_annotations",
+      "type": "processor",
+      "func": "phyloCellAnnotations.process",
+      "pkg": "phyloCellAnnotations",
+      "params": {
+        "pkg": "phyloCellAnnotations",
+        "outputName": "phyloCell_lineage",
+        "cellChannelName": "phyloCell_cells",
+        "nucleusChannelName": "phyloCell_nuclei",
+        "createCellMasks": true,
+        "createNucleusMasks": true,
+        "createLineage": true,
+        "segmentationFile": "",
+        "existingPolicy": "replace",
+        "frames": [],
+        "tip": [
+          "Output dataseries groupid for imported phyloCell lineage metadata",
+          "Logical channel name for indexed cell masks",
+          "Logical channel name for indexed nucleus masks",
+          "Create indexed cell masks from segmentation.cells1 contours",
+          "Create indexed nucleus masks from segmentation.nucleus contours",
+          "Create lineage/object dataseries from tcells1/tnucleus metadata"
+        ]
+      },
+      "paramRequired": [],
+      "gui": "",
+      "guiMode": "",
+      "layout": [
+        4,
+        1,
+        1,
+        1
+      ],
+      "name": "convert_phylocell_annotations",
+      "uiAdvanced": false,
+      "status": "OK"
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_phylocell",
+      "to": "create_fullframe_rois",
+      "condition": ""
+    },
+    {
+      "from": "create_fullframe_rois",
+      "to": "extract_raw_channels",
+      "condition": ""
+    },
+    {
+      "from": "extract_raw_channels",
+      "to": "convert_phylocell_annotations",
+      "condition": ""
+    }
+  ],
+  "runState": {},
+  "runProfiles": {},
+  "createdAt": "",
+  "updatedAt": "13-Jul-2026 19:47:35"
+}

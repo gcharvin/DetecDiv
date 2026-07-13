@@ -218,8 +218,15 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
       
 
       output.pos(i).channels=numel(output.pos(i).binning);
-      output.pos(i).binning= output.pos(i).binning./ output.pos(i).binning(1);
-      output.pos(i).interval=output.pos(i).interval(1)./output.pos(i).interval;
+      if isempty(output.pos(i).binning)
+          warning('buildfolders:NoReadableChannels', ...
+              'No readable image channel was found in folder "%s"; skipping binning normalization.', list(i).folder);
+          output.pos(i).binning = 1;
+          output.pos(i).interval = 1;
+      else
+          output.pos(i).binning= output.pos(i).binning./ output.pos(i).binning(1);
+          output.pos(i).interval=output.pos(i).interval(1)./output.pos(i).interval;
+      end
       
       
       output.pos(i).positionfilter2=posfilter2; % output filter

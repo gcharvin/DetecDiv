@@ -75,6 +75,7 @@ end
  opts = score_collectDisplayOptions(arg{:});
  %cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI);
+ opts = localApplyLineageOverlayOptions(app, opts);
  syncChannelTableLevels(app, opts, selectedROI);
 
  %opts.paintChannel = app.DisplaySettings.Movie.paintChannel;  % peut être 0, un rang, ou un nom
@@ -363,4 +364,30 @@ catch
 end
 end
 
+function opts = localApplyLineageOverlayOptions(app, opts)
+showBud = true;
+showGenealogy = false;
+try
+    if isprop(app, 'ShowBudPairingOverlay') && ~isempty(app.ShowBudPairingOverlay)
+        showBud = logical(app.ShowBudPairingOverlay);
+    end
+    if isprop(app, 'ShowLineageOverlay') && ~isempty(app.ShowLineageOverlay)
+        showGenealogy = logical(app.ShowLineageOverlay);
+    end
+    if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
+        showBud = logical(app.DisplayBudPairingCheckBox.Value);
+    end
+    if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
+        showGenealogy = logical(app.DisplayLineageCheckBox.Value);
+    end
+catch
+end
+opts.ShowBudPairingOverlay = showBud;
+opts.ShowLineageOverlay = showGenealogy;
+try
+    app.ShowBudPairingOverlay = showBud;
+    app.ShowLineageOverlay = showGenealogy;
+catch
+end
+end
 

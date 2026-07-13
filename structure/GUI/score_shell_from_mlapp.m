@@ -708,7 +708,10 @@ classdef score < matlab.apps.AppBase
 
             [roi, channelName, pix, sourceHint] = app.selectedPaintLineageChannel();
             if isempty(roi) || isempty(channelName)
-                app.clearLineageDisplayForROI(roi);
+                key = app.restoreLineageDisplayFromUserData(roi, showBud, showGenealogy);
+                if isempty(key)
+                    app.clearLineageDisplayForROI(roi);
+                end
                 return;
             end
 
@@ -718,7 +721,10 @@ classdef score < matlab.apps.AppBase
                 'WriteLegacyAlias', false, ...
                 'CreateIfMissing', false));
             if isempty(key)
-                app.clearLineageDisplayForROI(roi);
+                key = app.restoreLineageDisplayFromUserData(roi, showBud, showGenealogy);
+                if isempty(key)
+                    app.clearLineageDisplayForROI(roi);
+                end
                 return;
             end
 
@@ -731,6 +737,89 @@ classdef score < matlab.apps.AppBase
                 'showGenealogy', logical(showGenealogy), ...
                 'budWindowBefore', 0, ...
                 'budWindowAfter', 6);
+        end
+
+        function key = restoreLineageDisplayFromUserData(app, roi, showBud, showGenealogy) %#ok<INUSL>
+            key = '';
+            if isempty(roi)
+                return;
+            end
+            try
+                idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(char(string(x.groupid)), 'cell_information'), roi.data), 1, 'first');
+                if isempty(idx) || ~isstruct(roi.data(idx).userData)
+                    return;
+                end
+                ud = roi.data(idx).userData;
+                if ~isfield(ud, 'lineageSources') || ~isstruct(ud.lineageSources)
+                    return;
+                end
+                sourceKey = '';
+                if isfield(ud, 'activeLineageSource') && ~isempty(ud.activeLineageSource) && ...
+                        isfield(ud.lineageSources, char(string(ud.activeLineageSource)))
+                    sourceKey = char(string(ud.activeLineageSource));
+                elseif isfield(ud, 'motherOfSourceKey') && ~isempty(ud.motherOfSourceKey) && ...
+                        isfield(ud.lineageSources, char(string(ud.motherOfSourceKey)))
+                    sourceKey = char(string(ud.motherOfSourceKey));
+                else
+                    fields = fieldnames(ud.lineageSources);
+                    for i = 1:numel(fields)
+                        srcCandidate = ud.lineageSources.(fields{i});
+                        if isfield(srcCandidate, 'motherOf') && isa(srcCandidate.motherOf, 'containers.Map') && srcCandidate.motherOf.Count > 0
+                            sourceKey = fields{i};
+                            break;
+                        end
+                    end
+                end
+                if isempty(sourceKey)
+                    return;
+                end
+                src = ud.lineageSources.(sourceKey);
+                channelName = '';
+                if isfield(src, 'channelName') && ~isempty(src.channelName)
+                    channelName = char(string(src.channelName));
+                elseif isfield(ud, 'lineageChannelName') && ~isempty(ud.lineageChannelName)
+                    channelName = char(string(ud.lineageChannelName));
+                end
+                if isempty(channelName)
+                    return;
+                end
+                pix = [];
+                try
+                    pix = roi.findChannelID(channelName);
+                catch
+                    pix = [];
+                end
+                if isempty(pix) && isfield(src, 'channelPix') && ~isempty(src.channelPix)
+                    pix = double(src.channelPix);
+                elseif isempty(pix) && isfield(ud, 'lineageChannelPix') && ~isempty(ud.lineageChannelPix)
+                    pix = double(ud.lineageChannelPix);
+                end
+                if isempty(pix) || numel(pix) ~= 1 || pix < 1
+                    return;
+                end
+                src.show = true;
+                ud.lineageSources.(sourceKey) = src;
+                ud.activeLineageSource = sourceKey;
+                ud.lineageChannelName = string(channelName);
+                ud.lineageChannelPix = double(pix);
+                ud.activeLineageChannelName = channelName;
+                roi.data(idx).userData = ud;
+
+                roi.display.lineage = struct( ...
+                    'enabled', true, ...
+                    'channelName', channelName, ...
+                    'channelPix', double(pix), ...
+                    'sourceKey', sourceKey, ...
+                    'showBudPairing', logical(showBud), ...
+                    'showGenealogy', logical(showGenealogy), ...
+                    'budWindowBefore', 0, ...
+                    'budWindowAfter', 6);
+                key = sourceKey;
+            catch ME
+                warning('Score:LineageRestore', ...
+                    'Could not restore lineage display from userData: %s', ME.message);
+                key = '';
+            end
         end
 
         function clearLineageDisplayForROI(app, roi) %#ok<INUSL>
@@ -747,18 +836,6 @@ classdef score < matlab.apps.AppBase
                     'showGenealogy', false, ...
                     'budWindowBefore', 0, ...
                     'budWindowAfter', 6);
-            catch
-            end
-            try
-                idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(char(string(x.groupid)), 'cell_information'), roi.data), 1, 'first');
-                if ~isempty(idx) && isstruct(roi.data(idx).userData) && isfield(roi.data(idx).userData, 'lineageSources')
-                    fields = fieldnames(roi.data(idx).userData.lineageSources);
-                    for i = 1:numel(fields)
-                        src = roi.data(idx).userData.lineageSources.(fields{i});
-                        src.show = false;
-                        roi.data(idx).userData.lineageSources.(fields{i}) = src;
-                    end
-                end
             catch
             end
         end

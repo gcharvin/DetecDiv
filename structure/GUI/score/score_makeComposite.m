@@ -202,8 +202,7 @@ for ch = 1:numel(channel)
     if isIndexed && ndims(imraw) > 2
         imraw = imraw(:,:,1);
     end
-    L = imadjust(imraw, [0 1]);
-    L = double(L);
+    L = double(imraw);
 
     indices = str2num(levCh{1}); %#ok<ST2NM>
 
@@ -233,17 +232,23 @@ for ch = 1:numel(channel)
     end
 
     % indices par défaut
+    presentLabels = unique(L(:));
+    presentLabels = presentLabels(isfinite(presentLabels) & presentLabels > 0);
+    presentLabels = presentLabels(:).';
+
     if isempty(indices) || (numel(indices)==1 && indices==-1)
-        maxLabel = max(L(:));
+        maxLabel = max([presentLabels 0]);
         if shouldHideIndexedBackgroundClass(defaultClass, currentIndx, paintChannel, thisName)
             if maxLabel <= 1
-                indices = 1:maxLabel;
+                indices = presentLabels;
             else
-                indices = 2:maxLabel;
+                indices = presentLabels(presentLabels ~= 1);
             end
         else
-            indices = 1:maxLabel;
+            indices = presentLabels;
         end
+    else
+        indices = intersect(double(indices(:).'), presentLabels, 'stable');
     end
 
     % ce canal est-il le canal "paint" ?
@@ -272,8 +277,8 @@ for ch = 1:numel(channel)
     end
 
     % paramètres overlay
-    wid       = levCh{5};
-    weiVal    = double(levCh{3});
+    wid       = localScalarNumber(levCh{5}, 1);
+    weiVal    = localScalarNumber(levCh{3}, 1);
     fillAlpha = min(1, max(0, weiVal));
 
     switch mode
@@ -310,12 +315,18 @@ for ch = 1:numel(channel)
 
         case "display"
             % --- version raster : indexedOverlay + alphaOverlay ---
-            for iVal = 1:numel(indices)
-                mask = (L == indices(iVal));
-                if ~any(mask(:)), continue; end
-
-                [indexedOverlay, alphaOverlay] = compositeOverlayLayer( ...
-                    indexedOverlay, alphaOverlay, mask, levmap(iVal,:), fillAlpha);
+            if isempty(indices)
+                continue;
+            end
+            if useLabelColors
+                [indexedOverlay, alphaOverlay] = compositeLabelColorOverlay( ...
+                    indexedOverlay, alphaOverlay, L, indices, fillAlpha);
+            else
+                mask = ismember(L, indices);
+                if any(mask(:))
+                    [indexedOverlay, alphaOverlay] = compositeOverlayLayer( ...
+                        indexedOverlay, alphaOverlay, mask, levmap(1,:), fillAlpha);
+                end
             end
     end
 
@@ -378,6 +389,41 @@ end
 alphaOut(mask) = newAlpha;
 end
 
+function [rgbOut, alphaOut] = compositeLabelColorOverlay(rgbIn, alphaIn, L, indices, alpha)
+% Vectorized equivalent of applying label2color(id) to every selected label.
+rgbOut = rgbIn;
+alphaOut = alphaIn;
+
+alpha = min(1, max(0, double(alpha)));
+if alpha <= 0 || isempty(indices)
+    return;
+end
+
+mask = ismember(L, indices);
+if ~any(mask(:))
+    return;
+end
+
+pal = getPalette(16);
+labelValues = round(double(L(mask)));
+labelValues(~isfinite(labelValues) | labelValues < 1) = 1;
+colorIdx = 1 + mod(labelValues - 1, size(pal,1));
+
+oldAlpha = alphaOut(mask);
+newAlpha = alpha + oldAlpha .* (1 - alpha);
+safeAlpha = max(newAlpha, eps);
+
+for c = 1:3
+    plane = rgbOut(:,:,c);
+    oldColor = plane(mask);
+    newColor = pal(colorIdx, c);
+    plane(mask) = (newColor .* alpha + oldColor .* oldAlpha .* (1 - alpha)) ./ safeAlpha;
+    rgbOut(:,:,c) = plane;
+end
+
+alphaOut(mask) = newAlpha;
+end
+
 function img = adjustIntensityImage(img, lims)
 if ndims(img) <= 2 || size(img, 3) == 1
     img = imadjust(img(:, :, 1), lims);
@@ -406,6 +452,25 @@ try
         value = logical(flags);
     elseif ch >= 1 && ch <= numel(flags)
         value = logical(flags(ch));
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function value = localScalarNumber(raw, defaultValue)
+value = defaultValue;
+try
+    if ischar(raw) || isstring(raw)
+        parsed = str2double(raw);
+    else
+        parsed = double(raw);
+    end
+    if ~isempty(parsed)
+        parsed = parsed(1);
+    end
+    if isfinite(parsed)
+        value = parsed;
     end
 catch
     value = defaultValue;

@@ -120,6 +120,15 @@ end
 
 function v = firstNonEmptyNum(cands)
 % prend le premier nombre non-vide (tolère des [])
-mask = ~arrayfun(@isempty, arrayfun(@(x){x}, cands));
-if any(mask), v = cands(find(mask,1,'first')); else, v = []; end
+try
+    cands = double(cands(:).');
+    mask = isfinite(cands) & cands >= 1;
+    if any(mask)
+        v = cands(find(mask, 1, 'first'));
+    else
+        v = 1;
+    end
+catch
+    v = 1;
+end
 end

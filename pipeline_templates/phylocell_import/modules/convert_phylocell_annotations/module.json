@@ -1,0 +1,29 @@
+{
+  "id": "convert_phylocell_annotations",
+  "type": "processor",
+  "pkg": "phyloCellAnnotations",
+  "func": "phyloCellAnnotations.process",
+  "params": {
+    "pkg": "phyloCellAnnotations",
+    "outputName": "phyloCell_lineage",
+    "cellChannelName": "phyloCell_cells",
+    "nucleusChannelName": "phyloCell_nuclei",
+    "createCellMasks": true,
+    "createNucleusMasks": true,
+    "createLineage": true,
+    "segmentationFile": "",
+    "existingPolicy": "replace",
+    "frames": [],
+    "tip": [
+      "Output dataseries groupid for imported phyloCell lineage metadata",
+      "Logical channel name for indexed cell masks",
+      "Logical channel name for indexed nucleus masks",
+      "Create indexed cell masks from segmentation.cells1 contours",
+      "Create indexed nucleus masks from segmentation.nucleus contours",
+      "Create lineage/object dataseries from tcells1/tnucleus metadata"
+    ]
+  },
+  "inputs": [],
+  "outputs": [],
+  "updatedAt": "13-Jul-2026 19:47:35"
+}

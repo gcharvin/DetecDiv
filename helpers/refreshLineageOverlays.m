@@ -1,16 +1,12 @@
 function refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles,currentFrames)
 
-if ~hasAnyVisibleLineageSource(roiobj)
+[showGenealogy, showBudPairing] = lineageOverlayToggles(layoutOptions);
+if ~showGenealogy && ~showBudPairing
     clearLineageAllTiles(graphicsHandles);
     return;
 end
 
-% --- toggle global (sans app)
-show = true;
-if isfield(layoutOptions,'ShowLineageOverlay')
-    show = logical(layoutOptions.ShowLineageOverlay);
-end
-if ~show
+if ~hasAnyVisibleLineageSource(roiobj, layoutOptions)
     clearLineageAllTiles(graphicsHandles);
     return;
 end
@@ -70,6 +66,9 @@ if isfield(graphicsHandles,'lineageHandles') && isa(graphicsHandles.lineageHandl
     ks = graphicsHandles.lineageHandles.keys;
     for t=1:numel(ks)
         L = graphicsHandles.lineageHandles(ks{t});
+        if isstruct(L) && isfield(L,'image') && ~isempty(L.image) && isgraphics(L.image)
+            delete(L.image);
+        end
         if isstruct(L) && isfield(L,'map') && isa(L.map,'containers.Map')
             k2 = L.map.keys;
             for u=1:numel(k2)
@@ -106,7 +105,7 @@ for t = tileIdxList
         if isgraphics(hImg), axOverlay = ancestor(hImg,'axes'); end
     end
     if isempty(axOverlay) || ~isgraphics(axOverlay), continue; end
-    drawOrUpdateLineageOnAxes(graphicsHandles, t, axOverlay, roi, pix, frm,col); % <<< frame passée ici
+    drawOrUpdateLineageOnAxes(graphicsHandles, t, axOverlay, roi, pix, frm, col, layoutOptions); % <<< frame passée ici
 end
 end
 
@@ -132,7 +131,7 @@ for t = tileIdxList
         if isgraphics(hImg), axOverlay = ancestor(hImg,'axes'); end
     end
     if isempty(axOverlay) || ~isgraphics(axOverlay), continue; end
-    drawOrUpdateLineageOnAxes(graphicsHandles, t, axOverlay, roi, pix, frm,col); % <<< frame passée ici
+    drawOrUpdateLineageOnAxes(graphicsHandles, t, axOverlay, roi, pix, frm, col, layoutOptions); % <<< frame passée ici
 end
 end
 
@@ -167,7 +166,7 @@ for i = 1:layoutOptions.Nrow
                 ax = getTileAxesFromHandles(graphicsHandles, tileIndex);
                 if isempty(ax) || ~isgraphics(ax), continue; end
 
-                drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm, col);
+                drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm, col, layoutOptions);
             end
         else
             for ch = 1:layoutOptions.Nchannel
@@ -182,7 +181,7 @@ for i = 1:layoutOptions.Nrow
                     ax = getTileAxesFromHandles(graphicsHandles, tileIndex);
                     if isempty(ax) || ~isgraphics(ax), continue; end
 
-                    drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm, col);
+                    drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm, col, layoutOptions);
                 end
             end
         end
@@ -274,22 +273,32 @@ end
 end
 
 
-function drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm,col)
-geoms = getLineageGeometriesForFrame_ROI(roi, pix, frm, col);
+function drawOrUpdateLineageOnAxes(graphicsHandles, tileIndex, ax, roi, pix, frm, col, layoutOptions)
+geoms = getLineageGeometriesForFrame_ROI(roi, pix, frm, col, layoutOptions);
 
 % conteneur de cette tuile
 if isKey(graphicsHandles.lineageHandles, tileIndex)
     L = graphicsHandles.lineageHandles(tileIndex);
 else
-    L = struct('map',containers.Map('KeyType','int32','ValueType','any'),'ax',ax);
+    L = struct('map',containers.Map('KeyType','int32','ValueType','any'), ...
+        'ax',ax,'image',[],'geoms',geoms,'renderMode','raster','rasterSize',[]);
 end
 
 % axes recréé ?
 if ~isempty(L.ax) && ~isequal(L.ax, ax)
     purgeLineageMap(L.map);
     L.map = containers.Map('KeyType','int32','ValueType','any');
+    if isfield(L,'image') && ~isempty(L.image) && isgraphics(L.image)
+        delete(L.image);
+    end
+    L.image = [];
     L.ax  = ax;
 end
+
+if ~isfield(L,'image')
+    L.image = [];
+end
+L.geoms = geoms;
 
 % ==== PROTECTION CONTRE L'EFFACEMENT ====
 % on gèle les limites et on empêche 'line'/'quiver' d'effacer l'image overlay
@@ -300,6 +309,73 @@ oldYMode = get(ax,'YLimMode');
 oldNP   = get(ax,'NextPlot');
 
 set(ax,'XLimMode','manual','YLimMode','manual','NextPlot','add');
+
+if useRasterLineage(layoutOptions)
+    L.renderMode = 'raster';
+    purgeLineageMap(L.map);
+    L.map = containers.Map('KeyType','int32','ValueType','any');
+
+    imgSize = size(roi.image);
+    if numel(imgSize) < 3
+        imgSize(3) = 1;
+    end
+    if numel(imgSize) < 4
+        imgSize(4) = 1;
+    end
+    if isempty(pix) || isempty(frm)
+        if ~isempty(L.image) && isgraphics(L.image), set(L.image,'Visible','off'); end
+        set(ax,'XLim',oldXLim,'YLim',oldYLim,'XLimMode',oldXMode,'YLimMode',oldYMode,'NextPlot',oldNP);
+        graphicsHandles.lineageHandles(tileIndex) = L;
+        return;
+    end
+    pix = double(pix(1));
+    frm = double(frm(1));
+    if pix < 1 || pix > imgSize(3) || frm < 1 || frm > imgSize(4)
+        if ~isempty(L.image) && isgraphics(L.image), set(L.image,'Visible','off'); end
+        set(ax,'XLim',oldXLim,'YLim',oldYLim,'XLimMode',oldXMode,'YLimMode',oldYMode,'NextPlot',oldNP);
+        graphicsHandles.lineageHandles(tileIndex) = L;
+        return;
+    end
+
+    H = imgSize(1);
+    W = imgSize(2);
+    [xRange, yRange] = lineageRasterWindow(ax, H, W, layoutOptions);
+    rasterH = numel(yRange);
+    rasterW = numel(xRange);
+    L.rasterSize = [rasterH rasterW];
+    L.rasterOrigin = [xRange(1) yRange(1)];
+    [rgbLine, alphaLine] = rasterizeLineageGeoms(geoms, rasterH, rasterW, L.rasterOrigin);
+    if any(alphaLine(:) > 0)
+        if isempty(L.image) || ~isgraphics(L.image)
+            L.image = image(ax, [xRange(1) xRange(end)], [yRange(1) yRange(end)], rgbLine, ...
+                'AlphaData', alphaLine, ...
+                'AlphaDataMapping', 'none', ...
+                'HitTest', 'off', ...
+                'PickableParts', 'none', ...
+                'Visible', 'on');
+        else
+            set(L.image, 'XData', [xRange(1) xRange(end)], 'YData', [yRange(1) yRange(end)], ...
+                'CData', rgbLine, 'AlphaData', alphaLine, 'Visible', 'on');
+        end
+        try
+            uistack(L.image, 'top');
+        catch
+        end
+    elseif ~isempty(L.image) && isgraphics(L.image)
+        set(L.image, 'Visible', 'off');
+    end
+
+    set(ax,'XLim',oldXLim,'YLim',oldYLim,'XLimMode',oldXMode,'YLimMode',oldYMode,'NextPlot',oldNP);
+    graphicsHandles.lineageHandles(tileIndex) = L;
+    return;
+end
+
+if ~isempty(L.image) && isgraphics(L.image)
+    delete(L.image);
+end
+L.image = [];
+L.renderMode = 'vector';
+L.rasterSize = [];
 
 alive = int32([]);
 
@@ -328,10 +404,10 @@ for i=1:numel(geoms)
         end
 
         try
-    if isgraphics(h.line),  uistack(h.line,  'top'); end
-    if isgraphics(h.arrow), uistack(h.arrow, 'top'); end
-catch
-end
+            if isgraphics(h.line),  uistack(h.line,  'top'); end
+            if isgraphics(h.arrow), uistack(h.arrow, 'top'); end
+        catch
+        end
 
         h.motherID = m;
         h.daughterID = geoms(i).daughterID;
@@ -391,7 +467,130 @@ for i=1:numel(ks)
 end
 end
 
-function geoms = getLineageGeometriesForFrame_ROI(roi, fallbackPix, frm, fallbackColor)
+function tf = useRasterLineage(layoutOptions)
+tf = true;
+if isstruct(layoutOptions) && isfield(layoutOptions, 'LineageRenderMode')
+    mode = lower(string(layoutOptions.LineageRenderMode));
+    tf = mode ~= "vector";
+end
+end
+
+function [xRange, yRange] = lineageRasterWindow(ax, H, W, layoutOptions)
+xRange = 1:W;
+yRange = 1:H;
+useViewport = false;
+try
+    useViewport = isstruct(layoutOptions) && isfield(layoutOptions, 'LineageUseViewport') && ...
+        logical(layoutOptions.LineageUseViewport);
+catch
+    useViewport = false;
+end
+if ~useViewport || isempty(ax) || ~isgraphics(ax)
+    return;
+end
+try
+    xl = get(ax, 'XLim');
+    yl = get(ax, 'YLim');
+    x1 = max(1, floor(min(xl)));
+    x2 = min(W, ceil(max(xl)));
+    y1 = max(1, floor(min(yl)));
+    y2 = min(H, ceil(max(yl)));
+    if x2 < x1 || y2 < y1
+        return;
+    end
+
+    visibleArea = double(x2 - x1 + 1) * double(y2 - y1 + 1);
+    fullArea = double(W) * double(H);
+    if visibleArea >= 0.85 * fullArea
+        return;
+    end
+    xRange = x1:x2;
+    yRange = y1:y2;
+catch
+    xRange = 1:W;
+    yRange = 1:H;
+end
+end
+
+function [rgbLine, alphaLine] = rasterizeLineageGeoms(geoms, H, W, origin)
+if nargin < 4 || isempty(origin)
+    origin = [1 1];
+end
+rgbLine = zeros(H, W, 3, 'uint8');
+alphaLine = zeros(H, W, 'single');
+for i = 1:numel(geoms)
+    [rows, cols] = linePixels(geoms(i).xm, geoms(i).ym, geoms(i).xd, geoms(i).yd, H, W, geoms(i).lineStyle, origin);
+    if isempty(rows)
+        continue;
+    end
+    radius = max(0, round(double(geoms(i).lineWidth) / 2));
+    [rows, cols] = thickenPixels(rows, cols, radius, H, W);
+    idx = sub2ind([H W], rows, cols);
+    color = uint8(max(0, min(1, double(geoms(i).color(:).'))) * 255);
+    for c = 1:3
+        plane = rgbLine(:,:,c);
+        plane(idx) = color(c);
+        rgbLine(:,:,c) = plane;
+    end
+    alphaLine(idx) = max(alphaLine(idx), single(0.95));
+end
+end
+
+function [rows, cols] = linePixels(x1, y1, x2, y2, H, W, lineStyle, origin)
+if nargin < 8 || isempty(origin)
+    origin = [1 1];
+end
+if any(~isfinite([x1 y1 x2 y2]))
+    rows = [];
+    cols = [];
+    return;
+end
+n = max(2, ceil(max(abs([x2 - x1, y2 - y1]))) + 1);
+cols = round(linspace(x1, x2, n));
+rows = round(linspace(y1, y2, n));
+cols = cols - double(origin(1)) + 1;
+rows = rows - double(origin(2)) + 1;
+
+if strcmp(char(lineStyle), '--')
+    keep = mod(floor(((1:numel(rows)) - 1) / 8), 2) == 0;
+    rows = rows(keep);
+    cols = cols(keep);
+end
+
+valid = rows >= 1 & rows <= H & cols >= 1 & cols <= W;
+rows = rows(valid);
+cols = cols(valid);
+if isempty(rows)
+    return;
+end
+pairs = unique([rows(:), cols(:)], 'rows', 'stable');
+rows = pairs(:,1);
+cols = pairs(:,2);
+end
+
+function [rowsOut, colsOut] = thickenPixels(rows, cols, radius, H, W)
+if radius <= 0
+    rowsOut = rows(:);
+    colsOut = cols(:);
+    return;
+end
+[dc, dr] = meshgrid(-radius:radius, -radius:radius);
+mask = (dr.^2 + dc.^2) <= radius^2;
+dr = dr(mask);
+dc = dc(mask);
+rowsOut = rows(:) + dr(:).';
+colsOut = cols(:) + dc(:).';
+rowsOut = rowsOut(:);
+colsOut = colsOut(:);
+valid = rowsOut >= 1 & rowsOut <= H & colsOut >= 1 & colsOut <= W;
+rowsOut = rowsOut(valid);
+colsOut = colsOut(valid);
+pairs = unique([rowsOut, colsOut], 'rows', 'stable');
+rowsOut = pairs(:,1);
+colsOut = pairs(:,2);
+end
+
+function geoms = getLineageGeometriesForFrame_ROI(roi, fallbackPix, frm, fallbackColor, layoutOptions)
 geoms = struct('mapKey',{},'daughterID',{},'motherID',{},'xd',{},'yd',{},'xm',{},'ym',{}, ...
     'color',{},'sourceKey',{},'mode',{},'lineWidth',{},'lineStyle',{});
 idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
@@ -399,7 +598,7 @@ if isempty(idx), return; end
 ds = roi.data(idx);
 if ~isprop(ds,'userData') || ~isstruct(ds.userData), return; end
 
-sources = getVisibleLineageSources(roi, ds);
+sources = getVisibleLineageSources(roi, ds, layoutOptions);
 if isempty(sources)
     return;
 end
@@ -418,20 +617,21 @@ for s = 1:numel(sources)
     M = roi.image(:,:,pix,frm);
     if isempty(M), continue; end
 
-    present = unique(M(:));
-    present(present==0) = [];
-    present = int32(present(:)');
+    centroids = computeLabelCentroidMap(M);
+    if centroids.Count == 0
+        continue;
+    end
 
     if sources(s).showBudPairing
-        geoms = appendBudEventGeoms(geoms, sources(s), s, M, present, frm);
+        geoms = appendBudEventGeoms(geoms, sources(s), s, centroids, frm);
     end
     if sources(s).showGenealogy
-        geoms = appendMotherMapGeoms(geoms, sources(s), s, M, present, fallbackColor);
+        geoms = appendMotherMapGeoms(geoms, sources(s), s, centroids, fallbackColor);
     end
 end
 end
 
-function geoms = appendBudEventGeoms(geoms, source, sourceIndex, M, present, frm)
+function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm)
 if ~isfield(source, 'events') || isempty(source.events)
     return;
 end
@@ -447,32 +647,37 @@ for k = 1:numel(events)
     if ~isfield(events(k), 'childId') || ~isfield(events(k), 'motherId')
         continue;
     end
-    geoms = appendPairGeom(geoms, source, sourceIndex, M, present, ...
+    geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
         int32(events(k).childId), double(events(k).motherId), ...
         "bud", [1.0 0.82 0.05], 2.0, '-');
 end
 end
 
-function geoms = appendMotherMapGeoms(geoms, source, sourceIndex, M, present, fallbackColor)
+function geoms = appendMotherMapGeoms(geoms, source, sourceIndex, centroids, fallbackColor)
 keysD = source.motherOf.keys;
 for k = 1:numel(keysD)
     daughterID = int32(keysD{k});
     motherID = double(source.motherOf(daughterID));
-    geoms = appendPairGeom(geoms, source, sourceIndex, M, present, ...
+    geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
         daughterID, motherID, "genealogy", fallbackColor, 1.25, '--');
 end
 end
 
-function geoms = appendPairGeom(geoms, source, sourceIndex, M, present, daughterID, motherID, mode, color, lineWidth, lineStyle)
-if ~ismember(daughterID, present)
+function geoms = appendPairGeom(geoms, source, sourceIndex, centroids, daughterID, motherID, mode, color, lineWidth, lineStyle)
+if ~isKey(centroids, daughterID)
     return;
 end
-if ~isfinite(motherID) || motherID <= 0 || ~ismember(int32(motherID), present)
+motherKey = int32(round(motherID));
+if ~isfinite(motherID) || motherID <= 0 || ~isKey(centroids, motherKey)
     return;
 end
-[xd, yd] = fastCentroidSingle(M, double(daughterID));
-[xm, ym] = fastCentroidSingle(M, double(motherID));
-if isnan(xd) || isnan(yd) || isnan(xm) || isnan(ym)
+daughterCentroid = centroids(daughterID);
+motherCentroid = centroids(motherKey);
+xd = daughterCentroid(1);
+yd = daughterCentroid(2);
+xm = motherCentroid(1);
+ym = motherCentroid(2);
+if any(~isfinite([xd yd xm ym]))
     return;
 end
 geoms(end+1) = struct( ... %#ok<AGROW>
@@ -483,8 +688,29 @@ geoms(end+1) = struct( ... %#ok<AGROW>
     'color', color, ...
     'sourceKey', char(source.key), ...
     'mode', char(mode), ...
-    'lineWidth', double(lineWidth), ...
-    'lineStyle', char(lineStyle));
+        'lineWidth', double(lineWidth), ...
+        'lineStyle', char(lineStyle));
+end
+
+function centroids = computeLabelCentroidMap(M)
+centroids = containers.Map('KeyType', 'int32', 'ValueType', 'any');
+try
+    nz = M > 0;
+    if ~any(nz(:))
+        return;
+    end
+    [rows, cols] = find(nz);
+    labels = int32(M(nz));
+    [ids, ~, groupIdx] = unique(labels);
+    counts = accumarray(groupIdx, 1);
+    xsum = accumarray(groupIdx, double(cols));
+    ysum = accumarray(groupIdx, double(rows));
+    for i = 1:numel(ids)
+        centroids(ids(i)) = [xsum(i) ./ counts(i), ysum(i) ./ counts(i)];
+    end
+catch
+    centroids = containers.Map('KeyType', 'int32', 'ValueType', 'any');
+end
 end
 
 function pix = resolvePixForChannelName(roi, channelName)
@@ -512,10 +738,17 @@ end
 mapKey = int32(sourceIndex * 1000000 + modeOffset + double(daughterID));
 end
 
-function sources = getVisibleLineageSources(roi, ds)
+function sources = getVisibleLineageSources(roi, ds, layoutOptions)
 sources = struct('key',{},'motherOf',{},'channelName',{},'events',{}, ...
     'showBudPairing',{},'showGenealogy',{},'budWindowBefore',{},'budWindowAfter',{});
+if nargin < 3
+    layoutOptions = struct();
+end
 cfg = getLineageDisplayConfig(roi);
+if ~cfg.enabled
+    cfg = getLineageDisplayConfigFromUserData(ds);
+end
+cfg = applyLineageOverlayToggles(cfg, layoutOptions);
 if ~cfg.enabled
     return;
 end
@@ -571,12 +804,15 @@ for s = 1:numel(maps)
 end
 end
 
-function maps = getVisibleLineageMaps(roi, ds)
+function maps = getVisibleLineageMaps(roi, ds, layoutOptions)
 maps = {};
 if ~isprop(ds,'userData') || ~isstruct(ds.userData)
     return;
 end
-sources = getVisibleLineageSources(roi, ds);
+if nargin < 3
+    layoutOptions = struct();
+end
+sources = getVisibleLineageSources(roi, ds, layoutOptions);
 for i = 1:numel(sources)
     maps{end+1} = sources(i).motherOf; %#ok<AGROW>
 end
@@ -585,12 +821,13 @@ end
 function cfg = getLineageDisplayConfig(roi)
 cfg = struct('enabled', false, 'channelName', "", 'channelPix', [], ...
     'sourceKey', "", 'showBudPairing', false, 'showGenealogy', false, ...
-    'budWindowBefore', 0, 'budWindowAfter', 6);
+    'budWindowBefore', 0, 'budWindowAfter', 6, 'explicit', false);
 try
     if ~isprop(roi, 'display') || ~isstruct(roi.display) || ...
             ~isfield(roi.display, 'lineage') || isempty(roi.display.lineage)
         return;
     end
+    cfg.explicit = true;
     in = roi.display.lineage;
     if isfield(in, 'enabled'), cfg.enabled = logical(in.enabled); end
     if isfield(in, 'channelName'), cfg.channelName = string(in.channelName); end
@@ -601,6 +838,91 @@ try
     if isfield(in, 'budWindowBefore'), cfg.budWindowBefore = max(0, double(in.budWindowBefore)); end
     if isfield(in, 'budWindowAfter'), cfg.budWindowAfter = max(0, double(in.budWindowAfter)); end
     cfg.enabled = cfg.enabled && (cfg.showBudPairing || cfg.showGenealogy) && strlength(cfg.channelName) > 0;
+catch
+    cfg.enabled = false;
+end
+end
+
+function cfg = getLineageDisplayConfigFromUserData(ds)
+cfg = struct('enabled', false, 'channelName', "", 'channelPix', [], ...
+    'sourceKey', "", 'showBudPairing', false, 'showGenealogy', false, ...
+    'budWindowBefore', 0, 'budWindowAfter', 6);
+
+try
+    if ~isprop(ds, 'userData') || ~isstruct(ds.userData)
+        return;
+    end
+    ud = ds.userData;
+    key = "";
+    src = [];
+
+    if isfield(ud, 'activeLineageSource') && ~isempty(ud.activeLineageSource)
+        candidate = string(ud.activeLineageSource);
+        if isfield(ud, 'lineageSources') && isstruct(ud.lineageSources) && ...
+                isfield(ud.lineageSources, char(candidate))
+            key = candidate;
+            src = ud.lineageSources.(char(key));
+        end
+    end
+
+    if isempty(src) && isfield(ud, 'motherOfSourceKey') && ~isempty(ud.motherOfSourceKey)
+        candidate = string(ud.motherOfSourceKey);
+        if isfield(ud, 'lineageSources') && isstruct(ud.lineageSources) && ...
+                isfield(ud.lineageSources, char(candidate))
+            key = candidate;
+            src = ud.lineageSources.(char(key));
+        end
+    end
+
+    if isempty(src) && isfield(ud, 'lineageSources') && isstruct(ud.lineageSources)
+        fields = fieldnames(ud.lineageSources);
+        for i = 1:numel(fields)
+            candidate = ud.lineageSources.(fields{i});
+            show = true;
+            if isfield(candidate, 'show')
+                show = logical(candidate.show);
+            end
+            if show && isfield(candidate, 'motherOf') && isa(candidate.motherOf, 'containers.Map') && ...
+                    candidate.motherOf.Count > 0
+                key = string(fields{i});
+                src = candidate;
+                break;
+            end
+        end
+    end
+
+    if ~isempty(src)
+        show = true;
+        if isfield(src, 'show')
+            show = logical(src.show);
+        end
+        if ~show || ~isfield(src, 'motherOf') || ~isa(src.motherOf, 'containers.Map') || src.motherOf.Count == 0
+            return;
+        end
+        cfg.sourceKey = key;
+        if isfield(src, 'channelName') && ~isempty(src.channelName)
+            cfg.channelName = string(src.channelName);
+        end
+        if isfield(src, 'channelPix') && ~isempty(src.channelPix)
+            cfg.channelPix = double(src.channelPix);
+        end
+        cfg.showGenealogy = true;
+        cfg.showBudPairing = isfield(src, 'events') && ~isempty(src.events);
+    elseif isfield(ud, 'motherOf') && isa(ud.motherOf, 'containers.Map') && ud.motherOf.Count > 0
+        cfg.sourceKey = "legacy";
+        cfg.showGenealogy = true;
+        cfg.showBudPairing = isfield(ud, 'events') && ~isempty(ud.events);
+    else
+        return;
+    end
+
+    if strlength(cfg.channelName) == 0 && isfield(ud, 'lineageChannelName') && ~isempty(ud.lineageChannelName)
+        cfg.channelName = string(ud.lineageChannelName);
+    end
+    if isempty(cfg.channelPix) && isfield(ud, 'lineageChannelPix') && ~isempty(ud.lineageChannelPix)
+        cfg.channelPix = double(ud.lineageChannelPix);
+    end
+    cfg.enabled = strlength(cfg.channelName) > 0 && (cfg.showBudPairing || cfg.showGenealogy);
 catch
     cfg.enabled = false;
 end
@@ -701,13 +1023,16 @@ end
 end
 
 
-function tf = hasAnyVisibleLineageSource(roiobj)
+function tf = hasAnyVisibleLineageSource(roiobj, layoutOptions)
 tf = false;
+if nargin < 2
+    layoutOptions = struct();
+end
 for r = 1:numel(roiobj)
     try
         idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiobj(r).data),1,'first');
         if isempty(idx), continue; end
-        if ~isempty(getVisibleLineageMaps(roiobj(r), roiobj(r).data(idx)))
+        if ~isempty(getVisibleLineageMaps(roiobj(r), roiobj(r).data(idx), layoutOptions))
             tf = true;
             return;
         end
@@ -756,6 +1081,29 @@ end
 
 if isfield(ds.userData,'lineageChannelName') && ~isempty(ds.userData.lineageChannelName)
     names = string(ds.userData.lineageChannelName);
+end
+end
+
+function cfg = applyLineageOverlayToggles(cfg, layoutOptions)
+[showGenealogy, showBudPairing] = lineageOverlayToggles(layoutOptions);
+cfg.showGenealogy = logical(cfg.showGenealogy) && showGenealogy;
+cfg.showBudPairing = logical(cfg.showBudPairing) && showBudPairing;
+cfg.enabled = logical(cfg.enabled) && (cfg.showGenealogy || cfg.showBudPairing) && strlength(string(cfg.channelName)) > 0;
+end
+
+function [showGenealogy, showBudPairing] = lineageOverlayToggles(layoutOptions)
+showGenealogy = true;
+showBudPairing = true;
+try
+    if isstruct(layoutOptions) && isfield(layoutOptions, 'ShowLineageOverlay')
+        showGenealogy = logical(layoutOptions.ShowLineageOverlay);
+    end
+    if isstruct(layoutOptions) && isfield(layoutOptions, 'ShowBudPairingOverlay')
+        showBudPairing = logical(layoutOptions.ShowBudPairingOverlay);
+    end
+catch
+    showGenealogy = true;
+    showBudPairing = true;
 end
 end
 function col = resolveLineageColor(roi, layoutOptions)

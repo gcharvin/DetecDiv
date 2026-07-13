@@ -1,0 +1,22 @@
+{
+  "id": "extract_raw_channels",
+  "type": "roiExtract",
+  "pkg": "roiExtract",
+  "func": "roiExtract.process",
+  "params": {
+    "channels": [],
+    "extractChannels": "@source",
+    "forceChannelNames": true,
+    "correctDrift": true,
+    "driftChannel": [],
+    "driftMethod": "subpixel",
+    "driftRefMode": "previous",
+    "driftSubpixel": true,
+    "driftMaxShift": 20,
+    "scale": 0.5,
+    "cropDrift": 1
+  },
+  "inputs": [],
+  "outputs": [],
+  "updatedAt": "13-Jul-2026 19:47:35"
+}
