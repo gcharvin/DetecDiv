@@ -29,6 +29,7 @@ output.datatype='';
 progress=[];
 cancelTokenFile='';
 typ=[];
+phyloCellIncludeContours = true;
 
 % check if string represents a valid file or folder
 inputIsFile = false;
@@ -63,6 +64,9 @@ for i=1:numel(varargin)
     end
     if strcmpi(varargin{i}, 'canceltokenfile') || strcmpi(varargin{i}, 'cancel_token_file')
         cancelTokenFile=char(string(varargin{i+1}));
+    end
+    if strcmpi(varargin{i}, 'phylocellcontours') || strcmpi(varargin{i}, 'phylocellincludecontours')
+        phyloCellIncludeContours=logical(varargin{i+1});
     end
 end
 progress = attachCancelTokenToProgress(progress, cancelTokenFile);
@@ -286,7 +290,7 @@ switch typ
         detecdiv_check_cancel(progress, 'raw parser phylocell');
         
         output.comments=['The folder contains a phylocell project' char(10)];
-        output= buildphylocell(phyloproj,output,progress);
+        output= buildphylocell(phyloproj,output,progress,phyloCellIncludeContours);
         
     case 'folders' % process each folder as independent positions (incldues micromanager)
         detecdiv_check_cancel(progress, 'raw parser folders');

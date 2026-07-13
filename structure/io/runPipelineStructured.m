@@ -1033,7 +1033,12 @@ function ctx = executeNode(node, ctx)
     switch nodeType
         case 'dataloader'
             try
-                ctx = dataLoader.process(ctx);
+                fun = resolveNodeFunc(node);
+                if strcmpi(char(string(fun)), 'dataLoader.process')
+                    ctx = dataLoader.process(ctx);
+                else
+                    ctx = feval(fun, ctx);
+                end
                 ctx = markDataloaderFovSelectionApplied(ctx);
             catch ME
                 throwNodeFailed(node, ME);
