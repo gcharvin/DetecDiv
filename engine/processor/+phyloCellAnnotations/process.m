@@ -63,8 +63,11 @@ if logical(getField(paramout, 'createNucleusMasks', true)) && isfield(segmentati
 end
 
 if logical(getField(paramout, 'createLineage', true))
-    lineageDs = buildLineageDataseries(segmentation, paramout.outputName, safeRoiId(roiobj), segFile);
+    [lineageDs, lineageTable] = buildLineageDataseries(segmentation, paramout.outputName, safeRoiId(roiobj), segFile);
     roiobj.data = replaceDataseriesGroup(roiobj.data, paramout.outputName, lineageDs);
+    if logical(getField(paramout, 'createScoreLineage', true))
+        roiobj = upsertScoreLineageDataseries(roiobj, lineageTable, paramout.cellChannelName, nFrames, segFile);
+    end
 end
 
 if isempty(createdChannels) && ~logical(getField(paramout, 'createLineage', true))
@@ -479,7 +482,7 @@ rows = rr + ymin - 1;
 cols = cc + xmin - 1;
 end
 
-function ds = buildLineageDataseries(segmentation, outputName, roiId, segFile)
+function [ds, tbl] = buildLineageDataseries(segmentation, outputName, roiId, segFile)
 rows = {};
 rows = [rows; lineageRows(getField(segmentation, 'tcells1', []), 'cell')]; %#ok<AGROW>
 rows = [rows; lineageRows(getField(segmentation, 'tnucleus', []), 'nucleus')]; %#ok<AGROW>
@@ -501,6 +504,158 @@ ds = dataseries(tbl, tbl.Properties.VariableNames, ...
 ds.description = 'Imported phyloCell lineage/object metadata.';
 ds.userData = struct('source', 'phyloCell', 'segmentationFile', segFile, ...
     'lineage_semantics', 'ObjectID values match the indexed mask labels when phyloCell provided matching object ids.');
+end
+
+function roiobj = upsertScoreLineageDataseries(roiobj, lineageTable, cellChannelName, nFrames, segFile)
+if isempty(lineageTable) || ~istable(lineageTable) || ~all(ismember({'ObjectType','ObjectID','MotherID'}, lineageTable.Properties.VariableNames))
+    return;
+end
+
+ensureCellInformationDataseries(roiobj, 'nFrames', max(1, nFrames));
+idx = find(arrayfun(@(x) isprop(x, 'groupid') && strcmp(char(string(x.groupid)), 'cell_information'), roiobj.data), 1, 'first');
+if isempty(idx)
+    return;
+end
+
+ds = roiobj.data(idx);
+if ~isprop(ds, 'userData') || isempty(ds.userData) || ~isstruct(ds.userData)
+    ds.userData = struct();
+end
+if ~isfield(ds.userData, 'lineageSources') || ~isstruct(ds.userData.lineageSources)
+    ds.userData.lineageSources = struct();
+end
+
+[motherOf, birthOf, events] = scoreLineageMapsFromTable(lineageTable);
+if motherOf.Count == 0
+    return;
+end
+
+channelPix = resolveChannelPix(roiobj, cellChannelName);
+sourceKey = 'phyloCell';
+src = struct();
+src.motherOf = motherOf;
+src.birthOf = birthOf;
+src.events = events;
+src.channelName = char(string(cellChannelName));
+src.channelPix = double(channelPix);
+src.outputName = 'phyloCell';
+src.sourceClassifierStrid = 'phyloCell';
+src.displayName = 'phyloCell';
+src.show = true;
+src.version = 1;
+src.mode = 'phylocell_import';
+src.segmentationFile = segFile;
+src.createdAt = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+
+ds.userData.lineageSources.(sourceKey) = src;
+ds.userData.motherOf = motherOf;
+ds.userData.birthOf = birthOf;
+ds.userData.events = events;
+ds.userData.version = 1;
+ds.userData.note = "phyloCell lineage imported into cell_information.userData.lineageSources";
+ds.userData.lineageChannelName = string(cellChannelName);
+ds.userData.lineageChannelPix = double(channelPix);
+ds.userData.motherOfSourceKey = sourceKey;
+ds.userData.motherOfSourceChannelName = char(string(cellChannelName));
+ds.userData.activeLineageSource = sourceKey;
+ds.userData.activeLineageChannelName = char(string(cellChannelName));
+
+try
+    ds.show = false;
+catch
+end
+roiobj.data(idx) = ds;
+
+roiobj.display.lineage = struct( ...
+    'enabled', true, ...
+    'channelName', char(string(cellChannelName)), ...
+    'channelPix', double(channelPix), ...
+    'sourceKey', sourceKey, ...
+    'showBudPairing', ~isempty(events), ...
+    'showGenealogy', true, ...
+    'budWindowBefore', 0, ...
+    'budWindowAfter', 6);
+end
+
+function [motherOf, birthOf, events] = scoreLineageMapsFromTable(tbl)
+motherOf = containers.Map('KeyType', 'int32', 'ValueType', 'double');
+birthOf = containers.Map('KeyType', 'int32', 'ValueType', 'int32');
+events = struct('childId', {}, 'motherId', {}, 'startFrame', {}, 'source', {});
+
+try
+    isCell = strcmp(string(tbl.ObjectType), "cell");
+catch
+    isCell = true(height(tbl), 1);
+end
+cellTbl = tbl(isCell, :);
+
+for i = 1:height(cellTbl)
+    childId = double(cellTbl.ObjectID(i));
+    motherId = double(cellTbl.MotherID(i));
+    if ~isfinite(childId) || childId <= 0 || ~isfinite(motherId) || motherId <= 0 || childId == motherId
+        continue;
+    end
+    childKey = int32(round(childId));
+    motherOf(childKey) = motherId;
+
+    birthFrame = firstPositiveFrame(cellTbl, i, {'BirthFrame','DetectionFrame'});
+    if isfinite(birthFrame) && birthFrame >= 1
+        birthOf(childKey) = int32(round(birthFrame));
+        events(end+1) = struct( ... %#ok<AGROW>
+            'childId', double(childKey), ...
+            'motherId', double(motherId), ...
+            'startFrame', double(birthFrame), ...
+            'source', 'phyloCell');
+    end
+end
+end
+
+function frame = firstPositiveFrame(tbl, rowIdx, varNames)
+frame = NaN;
+for i = 1:numel(varNames)
+    name = varNames{i};
+    if ~ismember(name, tbl.Properties.VariableNames)
+        continue;
+    end
+    try
+        value = double(tbl.(name)(rowIdx));
+        if isfinite(value) && value >= 1
+            frame = value;
+            return;
+        end
+    catch
+    end
+end
+end
+
+function pix = resolveChannelPix(roiobj, channelName)
+pix = [];
+try
+    pix = roiobj.findChannelID(channelName, 'exact');
+    if ~isempty(pix)
+        pix = pix(1);
+        return;
+    end
+catch
+end
+try
+    names = roiobj.display.channel;
+    if ischar(names) || isstring(names)
+        names = cellstr(string(names));
+    end
+    idx = find(strcmpi(names, char(string(channelName))), 1, 'first');
+    if ~isempty(idx) && ~isempty(roiobj.channelid)
+        sub = find(double(roiobj.channelid) == idx, 1, 'first');
+        if ~isempty(sub)
+            pix = sub;
+            return;
+        end
+    end
+catch
+end
+if isempty(pix)
+    pix = NaN;
+end
 end
 
 function rows = lineageRows(trackObjects, objectType)

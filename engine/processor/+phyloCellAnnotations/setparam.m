@@ -13,6 +13,7 @@ paramout.nucleusChannelName = 'phyloCell_nuclei';
 paramout.createCellMasks = true;
 paramout.createNucleusMasks = true;
 paramout.createLineage = true;
+paramout.createScoreLineage = true;
 paramout.segmentationFile = '';
 paramout.scrubGraphics = false;
 paramout.existingPolicy = 'replace';
