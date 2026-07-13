@@ -100,6 +100,30 @@ while ~success && attempts < max_attempts
         % fullSave = tous les canaux
         fullSave = (~onlyData) && isempty(requestedChannels);
 
+        % A ROI can legitimately hold a compact, partially loaded image in
+        % memory (for example only ch1), while display/channelid still know
+        % about every logical channel stored in the HDF5 file. In that case
+        % a "full" save must preserve the HDF5 datasets that are not backed
+        % by obj.image instead of indexing past the compact C dimension.
+        [channelIndexSets, channelHasImage] = localImageBackedChannelSets(obj, logicNames, C);
+        existingH5Channels = {};
+        h5ChannelsNotInMemory = {};
+        if fullSave && exist(h5File,'file')
+            existingH5Channels = localH5LogicalChannelNames(h5File);
+            h5ChannelsNotInMemory = setdiff(existingH5Channels, logicNames, 'stable');
+        end
+        if fullSave && exist(h5File,'file') && (any(~channelHasImage) || ~isempty(h5ChannelsNotInMemory))
+            fullSave = false;
+            requestedChannels = logicNames(channelHasImage);
+            if verbose
+                skipped = unique([logicNames(~channelHasImage), h5ChannelsNotInMemory], 'stable');
+                fprintf(['ROI #%s: image in memory contains %d/%d logical channel(s); ' ...
+                    'preserving existing HDF5 datasets for: %s.\n'], ...
+                    obj.id, nnz(channelHasImage), max(numel(logicNames), numel(existingH5Channels)), ...
+                    strjoin(skipped, ', '));
+            end
+        end
+
         if ~fullSave && ~exist(h5File,'file')
             if verbose
                 disp('Partial save requested but no H5 exists, falling back to full save.');
@@ -157,14 +181,14 @@ while ~success && attempts < max_attempts
             if ~doThisOne, continue; end
 
             % Indices de la 3e dimension
-            idxSet = obj.findChannelID(chanNameLogical, 'exact');  % vecteur
+            idxSet = channelIndexSets{iChan};
             if isempty(idxSet)
-                idxSet = find(obj.channelid == iChan).';
-                if isempty(idxSet), idxSet = iChan; end
+                if verbose
+                    fprintf('ROI #%s: skipping HDF5 save of "%s" (channel not loaded in image memory).\n', ...
+                        obj.id, chanNameLogical);
+                end
+                continue;
             end
-            idxSet = idxSet(:)';
-
-            if isempty(idxSet), continue; end
 
             k = numel(idxSet);
             chanBlock = imArray(:,:,idxSet,:);   % [H W k T]
@@ -452,6 +476,60 @@ if isprop(obj,'display') && ~isempty(obj.display) && isstruct(obj.display) ...
     names = ch;
 end
 if isempty(names), names = {'channel_001'}; end
+end
+
+function [idxSets, hasImage] = localImageBackedChannelSets(obj, logicNames, C)
+idxSets = cell(1, numel(logicNames));
+hasImage = false(1, numel(logicNames));
+
+for iChan = 1:numel(logicNames)
+    chanNameLogical = logicNames{iChan};
+    idxSet = [];
+    try
+        idxSet = obj.findChannelID(chanNameLogical, 'exact');  % vector in obj.image C-space
+    catch
+        idxSet = [];
+    end
+    if isempty(idxSet)
+        try
+            idxSet = find(obj.channelid == iChan).';
+        catch
+            idxSet = [];
+        end
+        if isempty(idxSet)
+            idxSet = iChan;
+        end
+    end
+
+    idxSet = unique(idxSet(:).', 'stable');
+    idxSet = idxSet(isfinite(double(idxSet)) & double(idxSet) >= 1 & double(idxSet) <= C);
+    idxSets{iChan} = idxSet;
+    hasImage(iChan) = ~isempty(idxSet);
+end
+end
+
+function names = localH5LogicalChannelNames(h5File)
+names = {};
+try
+    info = h5info(h5File);
+catch
+    return;
+end
+if ~isfield(info, 'Datasets') || isempty(info.Datasets)
+    return;
+end
+names = cell(1, numel(info.Datasets));
+for i = 1:numel(info.Datasets)
+    datasetName = info.Datasets(i).Name;
+    h5Path = ['/' datasetName];
+    try
+        names{i} = char(string(h5readatt(h5File, h5Path, 'channel_name')));
+    catch
+        names{i} = char(string(datasetName));
+    end
+end
+names = names(~cellfun(@isempty, names));
+names = unique(names, 'stable');
 end
 
 function bb = getBBox(obj)
