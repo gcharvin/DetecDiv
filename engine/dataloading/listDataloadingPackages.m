@@ -1,9 +1,7 @@
 function pkglist = listDataloadingPackages()
 % listDataloadingPackages  List available dataloading packages.
 
-    str = which('shallowNew.m');
-    [pth, ~, ~] = fileparts(str);
-    rootPath = fullfile(pth, 'dataloading');
+    rootPath = fileparts(mfilename('fullpath'));
 
     if ~exist(rootPath, 'dir')
         pkglist = {};
@@ -33,6 +31,8 @@ end
 function cat = inferDataloadingCategory(pkgName)
     switch lower(pkgName)
         case 'dataloader'
+            cat = 'Loader';
+        case 'phylocellloader'
             cat = 'Loader';
         case 'roiidentify'
             cat = 'ROI';

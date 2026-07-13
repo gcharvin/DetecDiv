@@ -18,6 +18,13 @@ end
 if isfield(ctx, 'path') && ~isempty(ctx.path)
     p.path = char(string(ctx.path));
 end
+if isfield(ctx, 'projectPath') && ~isempty(ctx.projectPath)
+    p.projectPath = char(string(ctx.projectPath));
+elseif isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'projectPath') && ~isempty(ctx.run.projectPath)
+    p.projectPath = char(string(ctx.run.projectPath));
+elseif isfield(ctx, 'io') && isstruct(ctx.io) && isfield(ctx.io, 'projectPath') && ~isempty(ctx.io.projectPath)
+    p.projectPath = char(string(ctx.io.projectPath));
+end
 if ~isfield(p, 'includeContours') || isempty(p.includeContours)
     p.includeContours = false;
 end
@@ -50,6 +57,9 @@ if isfield(p, 'channelFilter') && ~isempty(p.channelFilter)
 end
 if isfield(p, 'stackFilter') && ~isempty(p.stackFilter)
     args = [args {'stackfilter'} {p.stackFilter}]; %#ok<AGROW>
+end
+if isfield(p, 'positionIdx') && ~isempty(p.positionIdx)
+    args = [args {'phylocellpositionidx'} {p.positionIdx}]; %#ok<AGROW>
 end
 if isfield(p, 'progress') && ~isempty(p.progress)
     args = [args {'progress'} {p.progress}]; %#ok<AGROW>
@@ -121,15 +131,27 @@ end
 end
 
 function [projectPath, projectName] = defaultDetecDivProjectTarget(p, parsePath, prefix)
+projectName = '';
+if isfield(p, 'projectName') && ~isempty(p.projectName)
+    projectName = char(string(p.projectName));
+end
+
 if isfield(p, 'projectPath') && ~isempty(p.projectPath)
-    projectPath = char(string(p.projectPath));
+    target = char(string(p.projectPath));
+    [pth, name, ext] = fileparts(target);
+    if strcmpi(ext, '.mat')
+        projectPath = pth;
+        if isempty(projectName)
+            projectName = name;
+        end
+    else
+        projectPath = target;
+    end
 else
     projectPath = fullfile(parsePath, ['detecdiv_' prefix]);
 end
 
-if isfield(p, 'projectName') && ~isempty(p.projectName)
-    projectName = char(string(p.projectName));
-else
+if isempty(projectName)
     projectName = [prefix '_detecdiv'];
 end
 projectName = regexprep(projectName, '\.mat$', '', 'ignorecase');

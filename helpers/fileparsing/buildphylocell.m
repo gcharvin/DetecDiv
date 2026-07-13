@@ -1,4 +1,4 @@
-function output = buildphylocell(phyloproj, outputin, progress, includeContours)
+function output = buildphylocell(phyloproj, outputin, progress, includeContours, positionIdx)
 % buildphylocell  Parse a legacy phyloCell timeLapse project.
 %
 % includeContours keeps the historical behavior of embedding phyloCell
@@ -7,6 +7,9 @@ function output = buildphylocell(phyloproj, outputin, progress, includeContours)
 
 if nargin < 4 || isempty(includeContours)
     includeContours = true;
+end
+if nargin < 5
+    positionIdx = [];
 end
 
 output = outputin;
@@ -25,6 +28,13 @@ end
 if isfield(timeLapse, 'position') && isfield(timeLapse.position, 'list')
     disp(['There are ' num2str(numel(timeLapse.position.list)) ' positions available in this timeLapse project']);
     npos = 1:numel(timeLapse.position.list);
+    if ~isempty(positionIdx)
+        positionIdx = double(positionIdx(:)');
+        positionIdx = positionIdx(isfinite(positionIdx) & positionIdx >= 1 & positionIdx <= numel(timeLapse.position.list));
+        if ~isempty(positionIdx)
+            npos = unique(round(positionIdx), 'stable');
+        end
+    end
 else
     disp('There are no positions available in this timeLapse project; Quitting...')
     output.comments = 'No image files available!';
@@ -32,12 +42,13 @@ else
 end
 
 cc = 1;
-for i = npos
-    info = ['Processing position: ' num2str(i) '/' num2str(numel(npos))];
+for posCounter = 1:numel(npos)
+    i = npos(posCounter);
+    info = ['Processing position: ' num2str(i) ' (' num2str(posCounter) '/' num2str(numel(npos)) ')'];
     disp(info);
     if numel(progress)
         progress.Message = info;
-        progress.Value = min(1, 0.67 + 0.33 * (i-1) / max(1, numel(npos)));
+        progress.Value = min(1, 0.67 + 0.33 * (posCounter-1) / max(1, numel(npos)));
     end
     detecdiv_check_cancel(progress, info);
 

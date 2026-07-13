@@ -16,6 +16,16 @@ function ctx = process(ctx)
     if isfield(ctx,'path') && ~isempty(ctx.path)
         p.path = ctx.path;
     end
+    if isfield(ctx,'projectPath') && ~isempty(ctx.projectPath)
+        p.projectPath = char(string(ctx.projectPath));
+    elseif isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'projectPath') && ~isempty(ctx.run.projectPath)
+        p.projectPath = char(string(ctx.run.projectPath));
+    elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'projectPath') && ~isempty(ctx.io.projectPath)
+        p.projectPath = char(string(ctx.io.projectPath));
+    end
+    if isfield(ctx,'projectName') && ~isempty(ctx.projectName)
+        p.projectName = char(string(ctx.projectName));
+    end
     if ~isfield(p,'write'), p.write = true; end
     if ~isfield(p,'interactive'), p.interactive = false; end
     try
@@ -89,8 +99,18 @@ function ctx = process(ctx)
         if isfield(p,'stackFilter') && ~isempty(p.stackFilter)
             args = [args {'stackfilter'} {p.stackFilter}];
         end
+        if isfield(p,'positionIdx') && ~isempty(p.positionIdx)
+            args = [args {'phylocellpositionidx'} {p.positionIdx}];
+        end
         if isfield(p,'progress') && ~isempty(p.progress)
             args = [args {'progress'} {p.progress}];
+        end
+        if isfield(p,'phyloCellIncludeContours') && ~isempty(p.phyloCellIncludeContours)
+            args = [args {'phylocellcontours'} {logical(p.phyloCellIncludeContours)}];
+        elseif isfield(p,'includeContours') && ~isempty(p.includeContours)
+            args = [args {'phylocellcontours'} {logical(p.includeContours)}];
+        else
+            args = [args {'phylocellcontours'} {false}];
         end
         tokenFile = cancelTokenFileFromCtx(ctx);
         if ~isempty(tokenFile)
@@ -101,7 +121,13 @@ function ctx = process(ctx)
         detecdiv_check_cancel(ctx, 'dataLoader after parseInputData');
     end
 
-    if isfield(p,'positionIdx') && ~isempty(p.positionIdx) && isfield(out,'pos') && ~isempty(out.pos)
+    positionSelectionAlreadyApplied = false;
+    try
+        positionSelectionAlreadyApplied = isfield(out, 'datatype') && strcmpi(out.datatype, 'phylocell');
+    catch
+    end
+    if isfield(p,'positionIdx') && ~isempty(p.positionIdx) && isfield(out,'pos') && ~isempty(out.pos) && ...
+            ~positionSelectionAlreadyApplied
         detecdiv_check_cancel(ctx, 'dataLoader before position selection');
         idx = p.positionIdx(:)';
         idx = idx(idx >= 1 & idx <= numel(out.pos));
@@ -126,6 +152,13 @@ function ctx = process(ctx)
 
     if ~isfield(ctx,'shallow') || isempty(ctx.shallow)
         ctx.shallow = shallow();
+        [projectFolder, projectName] = projectTargetFromParams(p, 'detecdiv_project');
+        if ~isempty(projectFolder) && ~isempty(projectName)
+            if exist(projectFolder, 'dir') ~= 7
+                mkdir(projectFolder);
+            end
+            ctx.shallow.setPath(projectFolder, projectName);
+        end
     end
 
     ctx.shallow.addData(out);
@@ -168,6 +201,33 @@ function ctx = process(ctx)
         end
         rp.dataloading.dataLoader = p;
         ctx.shallow.runProfiles = rp;
+    end
+end
+
+function [projectFolder, projectName] = projectTargetFromParams(p, defaultName)
+    projectFolder = '';
+    projectName = '';
+    if nargin < 2 || isempty(defaultName)
+        defaultName = 'detecdiv_project';
+    end
+
+    if isfield(p, 'projectName') && ~isempty(p.projectName)
+        projectName = char(string(p.projectName));
+    end
+    if isfield(p, 'projectPath') && ~isempty(p.projectPath)
+        target = char(string(p.projectPath));
+        [pth, name, ext] = fileparts(target);
+        if strcmpi(ext, '.mat')
+            projectFolder = pth;
+            if isempty(projectName)
+                projectName = name;
+            end
+        else
+            projectFolder = target;
+        end
+    end
+    if isempty(projectName)
+        projectName = defaultName;
     end
 end
 

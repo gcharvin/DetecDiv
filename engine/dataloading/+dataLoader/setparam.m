@@ -7,9 +7,12 @@ function param = setparam(ctx)
     param.channelFilter  = {};
     param.stackFilter    = {};
     param.label          = '';
+    param.projectPath    = '';
+    param.projectName    = '';
     param.write          = true;
     param.interactive    = false;
     param.useExistingProjectSources = false;
+    param.phyloCellIncludeContours = false;
 
     if nargin < 1 || isempty(ctx)
         return;

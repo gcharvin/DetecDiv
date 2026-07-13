@@ -130,7 +130,11 @@ nodeType = lower(char(string(getFieldLocal(node, 'type', ''))));
 pkg = char(string(getFieldLocal(node, 'pkg', '')));
 switch nodeType
     case 'dataloader'
-        fun = 'dataLoader.process';
+        if ~isempty(pkg) && ~strcmpi(pkg, 'dataLoader') && ~isempty(which([pkg '.process']))
+            fun = [pkg '.process'];
+        else
+            fun = 'dataLoader.process';
+        end
     case {'roipattern','roiidentify'}
         fun = 'roiPattern.process';
     case 'roimanual'

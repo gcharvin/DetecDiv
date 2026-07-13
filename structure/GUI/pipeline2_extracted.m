@@ -1215,18 +1215,43 @@ classdef pipeline2 < matlab.apps.AppBase
                 'roiTracked', 'roiTracked', '', 'Tracked/mobile ROI definition'; ...
                 'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
                 };
+            seen = {};
             for i = 1:size(preferred, 1)
                 pkgDir = fullfile(dlDir, ['+' preferred{i,1}]);
                 if isfolder(pkgDir)
                     rows(end+1,:) = preferred(i,:); %#ok<AGROW>
+                    seen{end+1} = preferred{i,1}; %#ok<AGROW>
                 end
             end
-            if isempty(rows) && isfolder(dlDir)
+            if isfolder(dlDir)
                 dirs = packageDirs(app, dlDir);
                 for i = 1:numel(dirs)
                     name = dirs{i};
-                    rows(end+1,:) = {name, name, '', ['Dataloading module: ' name]}; %#ok<AGROW>
+                    if any(strcmpi(seen, name))
+                        continue;
+                    end
+                    nodeType = dataloadingNodeTypeForPackage(app, name);
+                    rows(end+1,:) = {name, nodeType, name, moduleDescription(app, nodeType, name)}; %#ok<AGROW>
                 end
+            end
+        end
+
+        function nodeType = dataloadingNodeTypeForPackage(app, pkg) %#ok<INUSD>
+            switch lower(char(string(pkg)))
+                case {'dataloader','phylocellloader'}
+                    nodeType = 'dataLoader';
+                case {'roipattern','roiidentify'}
+                    nodeType = 'roiPattern';
+                case 'roimanual'
+                    nodeType = 'roiManual';
+                case 'roigrid'
+                    nodeType = 'roiGrid';
+                case 'roitracked'
+                    nodeType = 'roiTracked';
+                case 'roiextract'
+                    nodeType = 'roiExtract';
+                otherwise
+                    nodeType = char(string(pkg));
             end
         end
 
@@ -1369,6 +1394,29 @@ classdef pipeline2 < matlab.apps.AppBase
             tf = strcmpi(char(string(mode)), 'classifier_rois');
         end
 
+        function tf = runtimeProjectPathUsable(app, projectPath, allowCreate) %#ok<INUSD>
+            projectPath = strtrim(char(string(projectPath)));
+            tf = false;
+            if isempty(projectPath)
+                return;
+            end
+            if exist(projectPath, 'dir') == 7 || exist(projectPath, 'file') == 2
+                tf = true;
+                return;
+            end
+            if nargin < 3 || ~allowCreate
+                return;
+            end
+            [parentFolder, ~, ext] = fileparts(projectPath);
+            if strcmpi(ext, '.mat')
+                targetFolder = parentFolder;
+                parentFolder = fileparts(targetFolder);
+            else
+                targetFolder = projectPath; %#ok<NASGU>
+            end
+            tf = ~isempty(parentFolder) && exist(parentFolder, 'dir') == 7;
+        end
+
         function tf = hasLoadedRuntimeProject(app)
             tf = ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow');
         end
@@ -1496,6 +1544,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     if ~isempty(pkg)
                         items{end+1} = pkg; %#ok<AGROW>
                     end
+                elseif strcmpi(nodeType, 'dataLoader')
+                    if ~isempty(pkg)
+                        items{end+1} = pkg; %#ok<AGROW>
+                    else
+                        items{end+1} = nodeType; %#ok<AGROW>
+                    end
                 else
                     items{end+1} = nodeType; %#ok<AGROW>
                 end
@@ -1514,7 +1568,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             moduleType = app.AvailableModules{row,2};
             pkg = app.AvailableModules{row,3};
-            if any(strcmp(moduleType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
+            if strcmpi(moduleType, 'dataLoader')
+                app.TypeDropDown.Value = 'dataLoader';
+                updateSubtypeChoices(app);
+                if any(strcmp(app.SubtypeDropDown.Items, pkg))
+                    app.SubtypeDropDown.Value = pkg;
+                end
+            elseif any(strcmp(moduleType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 app.TypeDropDown.Value = 'ROI definition';
                 updateSubtypeChoices(app);
                 app.SubtypeDropDown.Value = moduleType;
@@ -1711,6 +1771,11 @@ classdef pipeline2 < matlab.apps.AppBase
             subtype = char(string(app.SubtypeDropDown.Value));
             pkg = '';
             switch lower(typeLabel)
+                case 'dataloader'
+                    nodeType = 'dataLoader';
+                    if ~isempty(subtype) && ~strcmpi(subtype, 'dataLoader')
+                        pkg = subtype;
+                    end
                 case 'roi definition'
                     nodeType = subtype;
                 case 'processor'
@@ -2222,7 +2287,11 @@ classdef pipeline2 < matlab.apps.AppBase
             pkg = canonicalModulePackageName(app, nodeType, pkg);
             switch lower(char(string(nodeType)))
                 case 'dataloader'
-                    f = 'dataLoader.process';
+                    if ~isempty(pkg) && ~strcmpi(char(string(pkg)), 'dataLoader') && ~isempty(which([char(string(pkg)) '.process']))
+                        f = [char(string(pkg)) '.process'];
+                    else
+                        f = 'dataLoader.process';
+                    end
                 case {'roipattern','roiidentify'}
                     f = 'roiPattern.process';
                 case 'roimanual'
@@ -2246,7 +2315,13 @@ classdef pipeline2 < matlab.apps.AppBase
             pkg = canonicalModulePackageName(app, nodeType, pkg);
             switch lower(char(string(nodeType)))
                 case 'dataloader'
-                    g = 'dataLoader.ui';
+                    if ~isempty(pkg) && ~strcmpi(char(string(pkg)), 'dataLoader') && ~isempty(which([char(string(pkg)) '.ui']))
+                        g = [char(string(pkg)) '.ui'];
+                    elseif isempty(pkg) || strcmpi(char(string(pkg)), 'dataLoader')
+                        g = 'dataLoader.ui';
+                    else
+                        g = '';
+                    end
                 case {'roipattern','roiidentify'}
                     g = 'roiPattern.ui';
                 case 'roimanual'
@@ -2269,7 +2344,11 @@ classdef pipeline2 < matlab.apps.AppBase
             ctxArg = struct();
             switch lower(char(string(nodeType)))
                 case 'dataloader'
-                    candidates = {'dataLoader.setparam'};
+                    if ~isempty(pkg) && ~strcmpi(char(string(pkg)), 'dataLoader')
+                        candidates = {[char(string(pkg)) '.setparam'], 'dataLoader.setparam'};
+                    else
+                        candidates = {'dataLoader.setparam'};
+                    end
                 case {'roipattern','roiidentify'}
                     candidates = {'roiPattern.setparam'};
                 case 'roimanual'
@@ -3149,7 +3228,13 @@ classdef pipeline2 < matlab.apps.AppBase
         function selectTypeControlsForNode(app, node)
             nodeType = char(string(getField(app, node, 'type', '')));
             pkg = char(string(getField(app, node, 'pkg', '')));
-            if any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
+            if strcmpi(nodeType, 'dataLoader')
+                app.TypeDropDown.Value = 'dataLoader';
+                updateSubtypeChoices(app);
+                if any(strcmp(app.SubtypeDropDown.Items, pkg))
+                    app.SubtypeDropDown.Value = pkg;
+                end
+            elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 app.TypeDropDown.Value = 'ROI definition';
                 updateSubtypeChoices(app);
                 app.SubtypeDropDown.Value = nodeType;
@@ -5404,11 +5489,12 @@ classdef pipeline2 < matlab.apps.AppBase
             try, app.SmokeTestButton.Enable = 'on'; catch, end
 
             projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
-            projectPathOk = ~isempty(projectPath) && (exist(projectPath, 'dir') == 7 || exist(projectPath, 'file') == 2);
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
             rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
             startsFromProject = runtimeStartsFromExistingProject(app);
             startsFromClassifier = runtimeStartsFromClassifier(app);
+            allowProjectCreation = ~startsFromProject && ~startsFromClassifier;
+            projectPathOk = runtimeProjectPathUsable(app, projectPath, allowProjectCreation);
             loadedProjectOk = startsFromProject && hasLoadedRuntimeProject(app);
             projectOk = projectPathOk || loadedProjectOk;
 
@@ -5470,7 +5556,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeButtonEnabled(app, 'channels', false);
                 end
             elseif ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
-                markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                if startsFromProject
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                else
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project target parent folder must exist or be creatable.');
+                end
             end
 
             if startsFromClassifier
@@ -13847,10 +13937,11 @@ classdef pipeline2 < matlab.apps.AppBase
             issues = {};
             projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
-            projectPathOk = ~isempty(projectPath) && (exist(projectPath, 'dir') == 7 || exist(projectPath, 'file') == 2);
             rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
             startsFromProject = runtimeStartsFromExistingProject(app);
             startsFromClassifier = runtimeStartsFromClassifier(app);
+            allowProjectCreation = ~startsFromProject && ~startsFromClassifier;
+            projectPathOk = runtimeProjectPathUsable(app, projectPath, allowProjectCreation);
             loadedProjectOk = startsFromProject && hasLoadedRuntimeProject(app);
             projectOk = projectPathOk || loadedProjectOk;
             rawStartNodeIds = selectedRunNodeIdsByType(app, {'dataloader','roigrid','roiidentify','roimanual','roipattern','roiextract'});
@@ -13862,8 +13953,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             if ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
-                issues{end+1} = ['Project path does not exist: ' projectPath]; %#ok<AGROW>
-                markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                if startsFromProject
+                    issues{end+1} = ['Project path does not exist: ' projectPath]; %#ok<AGROW>
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                else
+                    issues{end+1} = ['Project target cannot be created: ' projectPath]; %#ok<AGROW>
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project target parent folder must exist or be creatable.');
+                end
             end
 
             if startsFromProject
