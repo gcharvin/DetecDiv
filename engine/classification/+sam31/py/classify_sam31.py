@@ -727,8 +727,32 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         candidate_masks[:, :, frame_idx] = candidate.astype(np.uint8)
         stats = dict(output.get("frame_stats") or {})
         stats["frame_index"] = frame_idx
+        stats["output_debug"] = output_debug_summary(output)
         stats["num_candidate_pixels"] = int(candidate_masks[:, :, frame_idx].sum())
         stats_by_frame.append(stats)
+
+    future_pixels = int(candidate_masks[:, :, 1:].sum()) if raw.shape[3] > 1 else 0
+    if future_pixels == 0 and bool_value(cfg.get("fallback_text_track"), True):
+        fallback_masks, fallback_stats = fallback_text_track_candidates(
+            predictor=predictor,
+            image_dir=image_dir,
+            num_frames=raw.shape[3],
+            seed_mask=seed_mask,
+            min_score=min_score,
+            fallback_shape=(height, width),
+            cancel_path=cancel_path,
+            prompt=str(cfg.get("prompt", "cell")),
+            min_seed_iou=scalar_number(cfg.get("fallback_min_seed_iou"), 0.02, "fallback_min_seed_iou", minimum=0.0),
+        )
+        if fallback_masks is not None and int(fallback_masks[:, :, 1:].sum()) > 0:
+            candidate_masks = fallback_masks
+            stats_by_frame.append(
+                {
+                    "frame_index": -1,
+                    "fallback_text_track": True,
+                    "fallback_stats": fallback_stats,
+                }
+            )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     savemat(
@@ -743,6 +767,74 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         json.dumps({"frames": int(raw.shape[3]), "stats_by_frame": stats_by_frame}, indent=2, default=str),
         encoding="utf-8",
     )
+
+
+def fallback_text_track_candidates(
+    predictor,
+    image_dir: Path,
+    num_frames: int,
+    seed_mask: np.ndarray,
+    min_score: float,
+    fallback_shape: tuple[int, int],
+    cancel_path: Path | None,
+    prompt: str = "cell",
+    min_seed_iou: float = 0.02,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    labels_by_frame, text_stats = run_sam31_text_movie(
+        predictor=predictor,
+        image_dir=image_dir,
+        num_frames=num_frames,
+        prompt=prompt,
+        min_score=min_score,
+        fallback_shape=fallback_shape,
+        chunk_size=0,
+        chunk_overlap=0,
+        cancel_path=cancel_path,
+    )
+    seed_labels = resize_labels_nearest(labels_by_frame[0], seed_mask.shape)
+    best_label = 0
+    best_iou = 0.0
+    for label in [int(v) for v in np.unique(seed_labels) if v != 0]:
+        mask = seed_labels == label
+        iou = label_iou(mask, seed_mask)
+        if iou > best_iou:
+            best_iou = iou
+            best_label = label
+    stats = {
+        "best_seed_label": int(best_label),
+        "best_seed_iou": float(best_iou),
+        "text_stats_by_frame": text_stats,
+    }
+    if best_label == 0 or best_iou < min_seed_iou:
+        stats["reason"] = "no_text_track_overlaps_seed"
+        return None, stats
+
+    masks = np.zeros((fallback_shape[0], fallback_shape[1], num_frames), dtype=np.uint8)
+    for frame_idx, labels in enumerate(labels_by_frame):
+        labels = resize_labels_nearest(labels, fallback_shape)
+        masks[:, :, frame_idx] = (labels == best_label).astype(np.uint8)
+    stats["candidate_pixels_by_frame"] = masks.sum(axis=(0, 1)).astype(int).tolist()
+    return masks, stats
+
+
+def output_debug_summary(output: dict[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    for key in ("out_obj_ids", "out_probs", "removed_obj_ids", "suppressed_obj_ids", "unconfirmed_obj_ids"):
+        if key in output:
+            summary[key] = np.asarray(output[key]).reshape(-1).tolist()
+    masks = output.get("out_binary_masks")
+    if masks is not None:
+        if hasattr(masks, "detach"):
+            masks = masks.detach().cpu().numpy()
+        masks_arr = np.asarray(masks)
+        if masks_arr.ndim == 4 and masks_arr.shape[1] == 1:
+            masks_arr = masks_arr[:, 0]
+        if masks_arr.ndim == 3:
+            summary["raw_mask_pixels"] = masks_arr.astype(bool).sum(axis=(1, 2)).astype(int).tolist()
+            summary["raw_mask_shape"] = list(masks_arr.shape)
+        else:
+            summary["raw_mask_shape"] = list(masks_arr.shape)
+    return summary
 
 
 def run(config_path: str | Path) -> None:
