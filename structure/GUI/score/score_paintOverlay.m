@@ -226,7 +226,7 @@ end
             uint16(~croppedBrush).*roi.image(yRange,xRange,pix,frm) + ...
             uint16(croppedBrush)*paintValue;
 
-        drawnow;
+        drawnow limitrate nocallbacks;
     end
 
   function wbucb(~, ~)
@@ -237,7 +237,7 @@ end
     % --- NEW: fin de trait -> on libère l'ID/couleur verrouillés
     paintValue_locked = [];
     paintColor_locked = [];
-    drawnow;
+    drawnow limitrate nocallbacks;
 end
 
 end
@@ -434,7 +434,7 @@ app.SelectedObjectRectangle.UIContextMenu = cm;
 
 %h = getOverlayImageHandle(app);
 %if ~isempty(h) && isgraphics(h), h.UIContextMenu = cm; end
-drawnow;
+drawnow limitrate nocallbacks;
 end
 
 % function onRectMouseDown(srcRect, ~, fig, app, roi, chIdx, pix, frm)
@@ -664,7 +664,7 @@ storeSam31PropagationOptions(app, opts);
 
 try
     set(app.ImageFigure, 'Pointer', 'watch');
-    drawnow;
+    drawnow limitrate nocallbacks;
 catch
 end
 

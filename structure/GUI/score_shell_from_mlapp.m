@@ -4073,9 +4073,12 @@ end
 
 
     % --- vérifications de sélection dans les tables ----
-    if isempty(app.UIDataTable.Selection) || isempty(app.UISubDataTable.Selection)
-        uialert(app.ScoreAppUIFigure, 'No data are selected in the table.', 'Warning', ...
-            'Icon', 'warning');
+    if isempty(app.UIDataTable.Data) || isempty(app.UISubDataTable.Data) || ...
+            isempty(app.UIDataTable.Selection) || isempty(app.UISubDataTable.Selection)
+        try
+            app.SelecteddataLabel.Text = 'No data selected for class assignment';
+        catch
+        end
         return;
     end
 

@@ -186,8 +186,15 @@ app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.
 
 % --- Overlay lineage (fille→mère)
 try
-    ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
-    if isprop(app,'PaintButton') && app.PaintButton.Value && ~isempty(app.UIAnnotationTable.Selection)
+    shouldPrepareLineage = false;
+    if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
+        shouldPrepareLineage = shouldPrepareLineage || logical(app.DisplayBudPairingCheckBox.Value);
+    end
+    if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
+        shouldPrepareLineage = shouldPrepareLineage || logical(app.DisplayLineageCheckBox.Value);
+    end
+    if shouldPrepareLineage && isprop(app,'PaintButton') && app.PaintButton.Value && ~isempty(app.UIAnnotationTable.Selection)
+        ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
         sel = app.UIAnnotationTable.Selection;
         ann = app.UIAnnotationTable.Data{sel(1),2};
         cls = app.UIAnnotationTable.Data{sel(1),3};
@@ -390,4 +397,3 @@ try
 catch
 end
 end
-
