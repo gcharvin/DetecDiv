@@ -2133,6 +2133,18 @@ end
             % gather the test set.
 
             selectedfortest=find(cellfun(@(x) x==0,app.UITableData.Data(:,1)));
+            try
+                if strcmpi(char(string(classiObj.classifierPkg)), 'sam31') || ...
+                        strcmpi(char(string(classiObj.classifyFun)), 'sam31.classify')
+                    sam31.displayValidationRuns(classiObj, selectedfortest');
+                    return;
+                end
+            catch ME
+                uialert(app.ClassifierUIFigure, ...
+                    sprintf('Could not open SAM31 validation browser:\n%s', ME.message), ...
+                    'SAM31 validation runs', 'Icon', 'error');
+                return;
+            end
             classiObj.stats('Confusion','Classes','Rois',selectedfortest','Force');
         end
 
@@ -2313,6 +2325,28 @@ end
     elseif isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'framebankFrames')
         nExport = output.metrics.framebankFrames;
     end
+    formatNotes = {};
+    if isstruct(output) && isfield(output, 'metrics')
+        if isfield(output.metrics, 'skippedEmptyMaskFrames') && output.metrics.skippedEmptyMaskFrames > 0
+            formatNotes{end+1} = sprintf('%d frame(s) without GT masks were not exported.', ...
+                output.metrics.skippedEmptyMaskFrames); %#ok<AGROW>
+            if isfield(output.metrics, 'skippedEmptyMaskDetails') && ~isempty(output.metrics.skippedEmptyMaskDetails)
+                details = output.metrics.skippedEmptyMaskDetails;
+                if ischar(details) || isstring(details)
+                    details = cellstr(string(details));
+                end
+                maxDetails = min(numel(details), 12);
+                for ii = 1:maxDetails
+                    formatNotes{end+1} = [' - ' char(string(details{ii}))]; %#ok<AGROW>
+                end
+                if numel(details) > maxDetails
+                    formatNotes{end+1} = sprintf(' - ... %d more item(s)', numel(details) - maxDetails); %#ok<AGROW>
+                end
+            end
+        elseif isfield(output.metrics, 'skippedFrames') && output.metrics.skippedFrames > 0
+            formatNotes{end+1} = sprintf('%d frame(s) were not exported.', output.metrics.skippedFrames); %#ok<AGROW>
+        end
+    end
 
     if nExport > 0
         d.Message = [num2str(nExport) ' files/images were exported; The classifier is ready to be trained!'];
@@ -2321,6 +2355,9 @@ end
         d.Message = 'No file was exported; Check your trainingset!';
         strr = d.Message;
         pause(1);
+    end
+    if ~isempty(formatNotes)
+        strr = sprintf('%s\n\n%s', strr, strjoin(formatNotes, newline));
     end
 
     close(d);

@@ -11,6 +11,7 @@ p.addParameter('framebankName', '', @(s)ischar(s) || isstring(s));
 p.addParameter('Frames', [], @(x)isempty(x) || isnumeric(x) || islogical(x) || iscell(x) || isstruct(x));
 p.addParameter('writePreview', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('previewMaxFrames', 12, @(x)isnumeric(x) && isscalar(x) && x > 0);
+p.addParameter('skipEmptyMaskFrames', true, @(x)islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 foldername = char(string(p.Results.foldername));
@@ -51,10 +52,29 @@ annId = struct('train', 1, 'val', 1);
 videoId = struct('train', 1, 'val', 1);
 globalFrameIndex0 = 0;
 
-roiSpecs = collectRoiSpecs(cltmp, splits, channelNames{1}, p.Results.Frames);
+roiSpecs = collectRoiSpecs(cltmp, splits, channelNames{1}, p.Results.Frames, ...
+    classif, requiredChannels, logical(p.Results.skipEmptyMaskFrames));
 N = sum([roiSpecs.T]);
 if N == 0
     error('sam31:NoFramesExported', 'No frames were exported to the SAM31 framebank.');
+end
+for s = 1:size(splits, 1)
+    splitName = splits{s, 1};
+    if ~isempty(splits{s, 2}) && ~any(strcmp({roiSpecs.splitName}, splitName) & [roiSpecs.T] > 0)
+        error('sam31:EmptySplitAfterMaskFilter', ...
+            'SAM31 split "%s" has no frames with GT masks after filtering empty-mask frames.', splitName);
+    end
+end
+skippedEmptyMaskFrames = sum([roiSpecs.skippedEmptyMaskFrames]);
+skippedEmptyMaskDetails = {};
+for i = 1:numel(roiSpecs)
+    skippedEmptyMaskDetails = [skippedEmptyMaskDetails roiSpecs(i).skippedEmptyMaskDetails]; %#ok<AGROW>
+end
+if skippedEmptyMaskFrames > 0
+    fprintf('[SAM31 framebank] Skipped %d frame(s) with no GT mask pixels.\n', skippedEmptyMaskFrames);
+    for i = 1:numel(skippedEmptyMaskDetails)
+        fprintf('[SAM31 framebank]   skipped: %s\n', skippedEmptyMaskDetails{i});
+    end
 end
 H0 = roiSpecs(1).H;
 W0 = roiSpecs(1).W;
@@ -277,6 +297,8 @@ out.frames = N;
 out.height = H0;
 out.width = W0;
 out.layout = 'sam31_framebank_json';
+out.skippedEmptyMaskFrames = skippedEmptyMaskFrames;
+out.skippedEmptyMaskDetails = skippedEmptyMaskDetails;
 fprintf('[SAM31 framebank] Exported %d frames to %s\n', N, framebankPath);
 end
 
@@ -312,8 +334,9 @@ if isempty(names)
 end
 end
 
-function specs = collectRoiSpecs(cltmp, splits, channelName, framesSpec)
-specs = struct('splitName', {}, 'roiId', {}, 'H', {}, 'W', {}, 'T', {}, 'sourceFrames', {});
+function specs = collectRoiSpecs(cltmp, splits, channelName, framesSpec, classif, requiredChannels, skipEmptyMaskFrames)
+specs = struct('splitName', {}, 'roiId', {}, 'H', {}, 'W', {}, 'T', {}, ...
+    'sourceFrames', {}, 'skippedEmptyMaskFrames', {}, 'skippedEmptyMaskDetails', {});
 H0 = [];
 W0 = [];
 for s = 1:size(splits, 1)
@@ -333,14 +356,106 @@ for s = 1:size(splits, 1)
                 'First ROI was [%d %d], ROI %s is [%d %d].'], ...
                 H0, W0, roiObj.id, H, W);
         end
+        skippedEmpty = 0;
+        skippedDetails = {};
+        if skipEmptyMaskFrames && ~isempty(sourceFrames)
+            [sourceFrames, skippedEmpty, skippedDetails] = filterFramesWithMasks(roiObj, classif, requiredChannels, sourceFrames, splitName);
+        end
         specs(end+1) = struct( ... %#ok<AGROW>
             'splitName', splitName, ...
             'roiId', int32(roi_id), ...
             'H', double(H), ...
             'W', double(W), ...
             'T', double(numel(sourceFrames)), ...
-            'sourceFrames', double(sourceFrames(:).'));
+            'sourceFrames', double(sourceFrames(:).'), ...
+            'skippedEmptyMaskFrames', double(skippedEmpty), ...
+            'skippedEmptyMaskDetails', {skippedDetails});
     end
+end
+end
+
+function [sourceFrames, skippedEmpty, skippedDetails] = filterFramesWithMasks(roiObj, classif, requiredChannels, sourceFrames, splitName)
+originalFrames = sourceFrames;
+keep = false(size(sourceFrames));
+skippedDetails = {};
+try
+    roiObj.clear;
+catch
+    roiObj.image = [];
+end
+try
+    roiObj.load('Channel', requiredChannels, 'Data', false, 'Silent');
+catch
+    roiObj.load;
+end
+cleanup = onCleanup(@() safeClearRoi(roiObj));
+if isempty(roiObj.image)
+    sourceFrames = [];
+    skippedEmpty = numel(originalFrames);
+    skippedDetails = {formatSkippedFrameDetail(splitName, roiObj, originalFrames)};
+    return;
+end
+
+maskChannels = [];
+for kk = 1:numel(classif.classes)
+    chName = [classif.strid '_' classif.classes{kk}];
+    cc = roiObj.findChannelID(chName);
+    if iscell(cc), cc = cell2mat(cc); end
+    maskChannels = [maskChannels reshape(double(cc), 1, [])]; %#ok<AGROW>
+end
+maskChannels = unique(maskChannels(maskChannels >= 1), 'stable');
+if isempty(maskChannels)
+    warning('sam31:NoMaskChannelForRoi', ...
+        'ROI %s in split %s has no SAM31 GT mask channel; skipping %d frame(s).', ...
+        roiObj.id, splitName, numel(originalFrames));
+    sourceFrames = [];
+    skippedEmpty = numel(originalFrames);
+    skippedDetails = {formatSkippedFrameDetail(splitName, roiObj, originalFrames)};
+    clear cleanup;
+    return;
+end
+
+for i = 1:numel(sourceFrames)
+    f = sourceFrames(i);
+    if f < 1 || f > size(roiObj.image, 4)
+        continue;
+    end
+    frameHasMask = false;
+    for c = maskChannels
+        if any(roiObj.image(:, :, c, f) ~= 0, 'all')
+            frameHasMask = true;
+            break;
+        end
+    end
+    keep(i) = frameHasMask;
+end
+sourceFrames = sourceFrames(keep);
+skippedEmpty = nnz(~keep);
+if skippedEmpty > 0
+    skippedFrames = originalFrames(~keep);
+    skippedDetails = {formatSkippedFrameDetail(splitName, roiObj, skippedFrames)};
+    warning('sam31:EmptyMaskFramesSkipped', ...
+        'ROI %s in split %s: skipped %d/%d frame(s) with no GT mask pixels: %s.', ...
+        roiObj.id, splitName, skippedEmpty, numel(originalFrames), frameListText(skippedFrames));
+end
+clear cleanup;
+end
+
+function txt = formatSkippedFrameDetail(splitName, roiObj, frames)
+txt = sprintf('%s / ROI %s / frames %s', splitName, char(string(roiObj.id)), frameListText(frames));
+end
+
+function txt = frameListText(frames)
+frames = unique(round(double(frames(:)')), 'stable');
+if isempty(frames)
+    txt = '';
+elseif numel(frames) <= 20
+    txt = strjoin(cellstr(string(frames)), ',');
+else
+    txt = sprintf('%s,...,%s (%d frames)', ...
+        strjoin(cellstr(string(frames(1:10))), ','), ...
+        strjoin(cellstr(string(frames(end-4:end))), ','), ...
+        numel(frames));
 end
 end
 

@@ -9,6 +9,7 @@ function tp = defaultTrainingParam()
 spec = {
     'resolution',                    {'140','280','560','1008','280'}, 'SAM3.1 working resolution. 140/280/560 are yeast-friendly modes; 1008 is the original heavy SAM3.1 size.'
     'trainModules',                  {'semantic segmentation','instance segmentation','video memory','instance + video memory','all','instance + video memory'}, 'Training module preset.'
+    'validationFraction',            0.2,         'Fraction of training ROIs held out as SAM31 validation when no explicit validation split exists. Test ROIs are never used for this.'
     'epochs',                        20,          'Training epochs.'
     'saveFreq',                      100000,      'Checkpoint save frequency in optimizer steps.'
     'clipLength',                    8,           'Number of frames per video-memory training clip.'
