@@ -659,7 +659,7 @@ for k = 1:numel(keysD)
     daughterID = int32(keysD{k});
     motherID = double(source.motherOf(daughterID));
     geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
-        daughterID, motherID, "genealogy", fallbackColor, 1.25, '--');
+        daughterID, motherID, "genealogy", fallbackColor, 1.25, '-');
 end
 end
 
