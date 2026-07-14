@@ -616,7 +616,8 @@ if remaining <= 0
 end
 
 defaults = defaultSam31PropagationOptions(roi, pix, frm);
-defaultFrames = min(20, remaining);
+defaults = mergeStoredSam31PropagationOptions(app, defaults, remaining);
+defaultFrames = min(defaults.maxFrames, remaining);
 answer = inputdlg( ...
     {'Following frames to update:', 'Resolution:', 'Object slots:', 'Collision overlap threshold (0-1):', 'Runner (external/session):'}, ...
     'SAM31 propagate selected track', ...
@@ -659,6 +660,7 @@ opts.resolution = resolution;
 opts.maxNumObjects = maxObjects;
 opts.collisionThreshold = collisionThreshold;
 opts.runnerMode = runnerMode;
+storeSam31PropagationOptions(app, opts);
 
 try
     set(app.ImageFigure, 'Pointer', 'watch');
@@ -731,6 +733,62 @@ if isempty(opts.inputPix)
     opts.inputPix = defaultSam31InputPix(roi, annotationPix);
 end
 opts.startFrame = frm;
+end
+
+function opts = mergeStoredSam31PropagationOptions(app, opts, remaining)
+stored = struct();
+try
+    if isprop(app, 'DisplaySettings') && isstruct(app.DisplaySettings) && ...
+            isfield(app.DisplaySettings, 'SAM31Propagation') && ...
+            isstruct(app.DisplaySettings.SAM31Propagation)
+        stored = app.DisplaySettings.SAM31Propagation;
+    end
+catch
+end
+
+opts.maxFrames = min(20, remaining);
+opts = copyStoredNumericOption(opts, stored, 'maxFrames');
+opts = copyStoredNumericOption(opts, stored, 'resolution');
+opts = copyStoredNumericOption(opts, stored, 'maxNumObjects');
+opts = copyStoredNumericOption(opts, stored, 'collisionThreshold');
+try
+    if isfield(stored, 'runnerMode') && ~isempty(stored.runnerMode)
+        runnerMode = lower(strtrim(char(string(stored.runnerMode))));
+        if any(strcmp(runnerMode, {'external','session'}))
+            opts.runnerMode = runnerMode;
+        end
+    end
+catch
+end
+opts.maxFrames = min(max(1, round(opts.maxFrames)), remaining);
+end
+
+function opts = copyStoredNumericOption(opts, stored, name)
+try
+    if isfield(stored, name) && ~isempty(stored.(name))
+        value = str2double(char(string(stored.(name))));
+        if isfinite(value)
+            opts.(name) = value;
+        end
+    end
+catch
+end
+end
+
+function storeSam31PropagationOptions(app, opts)
+stored = struct( ...
+    'maxFrames', opts.maxFrames, ...
+    'resolution', opts.resolution, ...
+    'maxNumObjects', opts.maxNumObjects, ...
+    'collisionThreshold', opts.collisionThreshold, ...
+    'runnerMode', opts.runnerMode);
+try
+    if isprop(app, 'DisplaySettings') && isstruct(app.DisplaySettings)
+        app.DisplaySettings.SAM31Propagation = stored;
+        assignin('base', 'DisplaySettings', app.DisplaySettings);
+    end
+catch
+end
 end
 
 function opts = mergeSam31ClassifDefaults(opts, classif)
