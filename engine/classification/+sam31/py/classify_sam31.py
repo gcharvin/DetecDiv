@@ -657,6 +657,7 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
     )
 
     from sam31_ctc_benchmark.sam31_runner import mark_seed_frame_ready, output_to_label_mask, propagate_in_video
+    import torch
 
     prompt_margin = scalar_number(cfg.get("prompt_margin"), 4, "prompt_margin", integer=True, minimum=0.0)
     prompt_obj_id = scalar_number(cfg.get("prompt_obj_id"), 0, "prompt_obj_id", integer=True, minimum=0.0)
@@ -680,6 +681,28 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
                 "output_prob_thresh": min_score,
             }
         )
+        inference_state = predictor._all_inference_states[session_id]["state"]
+        mask_tensor = torch.from_numpy(seed_mask.astype(np.float32)[None]).to(predictor.model.device)
+        obj_ids = [int(prompt_obj_id)]
+        tracker_states = predictor.model._get_sam2_inference_states_by_obj_ids(inference_state, obj_ids)
+        if len(tracker_states) == 1:
+            predictor.model.tracker.add_new_masks(
+                tracker_states[0],
+                frame_idx=0,
+                obj_ids=obj_ids,
+                masks=mask_tensor,
+            )
+        elif len(tracker_states) == len(obj_ids):
+            for tracker_state, obj_id, mask in zip(tracker_states, obj_ids, mask_tensor):
+                predictor.model.tracker.add_new_masks(
+                    tracker_state,
+                    frame_idx=0,
+                    obj_ids=[obj_id],
+                    masks=mask[None],
+                )
+        else:
+            raise RuntimeError(f"Expected one tracker state or one per object, got {len(tracker_states)}")
+        predictor.model.add_action_history(inference_state, "refine", frame_idx=0, obj_ids=obj_ids)
         mark_seed_frame_ready(predictor, session_id, 0)
         check_cancel(cancel_path, "before correction propagation")
         outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)

@@ -687,6 +687,9 @@ score_display(app,'fast');
 safeClearSelection(app, roi, frm);
 msg = sprintf('SAM31 propagation applied to %d/%d frames.', ...
     summary.appliedFrames, summary.totalTargetFrames);
+if summary.appliedFrames == 0 && summary.emptyCandidateFrames == summary.totalTargetFrames
+    msg = sprintf('%s\nSAM31 produced no candidate mask after the seed frame.', msg);
+end
 if summary.clippedFrames > 0 || summary.skippedFrames > 0
     msg = sprintf('%s\nClipped: %d frame(s). Skipped on collision: %d frame(s).', ...
         msg, summary.clippedFrames, summary.skippedFrames);
@@ -836,7 +839,7 @@ if ndims(masks) == 2
 end
 
 summary = struct('totalTargetFrames', 0, 'appliedFrames', 0, ...
-    'clippedFrames', 0, 'skippedFrames', 0);
+    'clippedFrames', 0, 'skippedFrames', 0, 'emptyCandidateFrames', 0);
 for k = 1:numel(frames)
     f = frames(k);
     if f <= opts.startFrame || f < 1 || f > size(roi.image,4)
@@ -845,6 +848,7 @@ for k = 1:numel(frames)
     summary.totalTargetFrames = summary.totalTargetFrames + 1;
     candidate = masks(:,:,k) > 0;
     if ~any(candidate(:))
+        summary.emptyCandidateFrames = summary.emptyCandidateFrames + 1;
         continue;
     end
     M = roi.image(:,:,pix,f);
