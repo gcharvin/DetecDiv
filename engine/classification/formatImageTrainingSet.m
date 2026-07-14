@@ -1,8 +1,13 @@
-function output=formatImageTrainingSet(foldername,classif,rois)
+function output=formatImageTrainingSet(foldername,classif,rois,varargin)
 
 % optional argument provides the numbers associaed with reach image in case
 % of a regression
 output=0;
+
+p = inputParser;
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -61,8 +66,11 @@ for i=rois
     reverseStr = '';
     
     
+    frameList = normalizeTrainingFrameSelection(framesSpec, size(im,4), ...
+        'RoiId', i, 'RoiPosition', find(rois == i, 1, 'first'));
+
     if   strcmp(classif.category{1},'Image')
-        for j=1:size(im,4)
+        for j=frameList
 
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);
@@ -93,7 +101,7 @@ for i=rois
         % image regression
       %  tmp=zeros(size(im,1),size(im,2),3,size(im,4));
         
-        for j=1:size(im,4)
+        for j=frameList
             % tmp(:,:,:j)=im(:,:,:,j);
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);

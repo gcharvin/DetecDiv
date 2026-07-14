@@ -22,7 +22,16 @@ if isfield(ctx, 'params') && isstruct(ctx.params) && ...
     foldername = char(string(ctx.params.foldername));
 end
 
-outputCount = formatPixelTrainingSet(foldername, classif, rois);
+frames = [];
+if isfield(ctx, 'sel') && isstruct(ctx.sel) && isfield(ctx.sel, 'frames')
+    frames = ctx.sel.frames;
+elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'Frames')
+    frames = ctx.params.Frames;
+elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'frames')
+    frames = ctx.params.frames;
+end
+
+outputCount = formatPixelTrainingSet(foldername, classif, rois, 'Frames', frames);
 
 out.metrics.outputCount = outputCount;
 out.status = "OK";

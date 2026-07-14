@@ -42,6 +42,15 @@ if isfield(ctx,'params') && isstruct(ctx.params) && isfield(ctx.params,'folderna
     foldername = char(string(ctx.params.foldername));
 end
 
+frames = [];
+if isfield(ctx, 'sel') && isstruct(ctx.sel) && isfield(ctx.sel, 'frames')
+    frames = ctx.sel.frames;
+elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'Frames')
+    frames = ctx.params.Frames;
+elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'frames')
+    frames = ctx.params.frames;
+end
+
 internal = sam31.utils.internalDefaults();
 writeLegacyCtc = logical(sam31.utils.getParam(internal, 'writeLegacyCtc', false));
 if isfield(ctx,'params') && isstruct(ctx.params) && isfield(ctx.params,'writeLegacyCtc')
@@ -56,6 +65,7 @@ ctcSubfolder = char(string(ctcSubfolder));
 
 framebankOut = sam31.exportFramebankDataset(classif, trainrois, valrois, ...
     'foldername', foldername, ...
+    'Frames', frames, ...
     'writePreview', true);
 
 out.status = "OK";

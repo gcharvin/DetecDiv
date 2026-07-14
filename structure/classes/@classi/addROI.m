@@ -358,6 +358,8 @@ for ii = 1:length(rois)
         if reuseGT && ~isempty(ioMap) && isstruct(ioMap)
             syncCellInformationLineageChannel(classif.roi(cc+1), classif, ioMap, outName);
         end
+
+        selectClassifierDisplayChannels(classif.roi(cc+1), classif, outName);
     end
 
     % ============================================================
@@ -754,9 +756,79 @@ end
             end
 
             if ~isempty(idxGT)
-                roiObj.display.channel{idxGT} = outName;
-                reuseGT = true;
-                break
+                idxOut = find(matches(chNames, outName), 1);
+                if ~isempty(idxOut) && idxOut ~= idxGT
+                    pixSrc = roiObj.findChannelID(chNames{idxGT});
+                    pixOut = roiObj.findChannelID(outName);
+                    if ~isempty(pixSrc) && ~isempty(pixOut) && numel(pixSrc) == numel(pixOut)
+                        roiObj.image(:,:,pixOut,:) = roiObj.image(:,:,pixSrc,:);
+                        copyDisplayStyleForLogicalChannel(roiObj, idxGT, idxOut, pixSrc, pixOut);
+                        reuseGT = true;
+                        break
+                    end
+                else
+                    roiObj.display.channel{idxGT} = outName;
+                    reuseGT = true;
+                    break
+                end
+            end
+        end
+    end
+
+    function copyDisplayStyleForLogicalChannel(roiObj, srcLogical, dstLogical, pixSrc, pixDst)
+        if isempty(roiObj.display) || ~isstruct(roiObj.display)
+            return
+        end
+
+        vectorFields = {'indexed','contour','alpha','width'};
+        for ff = 1:numel(vectorFields)
+            nm = vectorFields{ff};
+            if isfield(roiObj.display, nm) && numel(roiObj.display.(nm)) >= max(srcLogical, dstLogical)
+                roiObj.display.(nm)(dstLogical) = roiObj.display.(nm)(srcLogical);
+            end
+        end
+
+        rowFields = {'rgb','intensity'};
+        for ff = 1:numel(rowFields)
+            nm = rowFields{ff};
+            if isfield(roiObj.display, nm) && size(roiObj.display.(nm),1) >= max(srcLogical, dstLogical)
+                roiObj.display.(nm)(dstLogical,:) = roiObj.display.(nm)(srcLogical,:);
+            end
+        end
+
+        if isfield(roiObj.display, 'displaylim') && size(roiObj.display.displaylim,2) >= max([pixSrc(:); pixDst(:)])
+            roiObj.display.displaylim(:, pixDst) = roiObj.display.displaylim(:, pixSrc);
+        end
+        if isfield(roiObj.display, 'selectedchannel') && numel(roiObj.display.selectedchannel) >= dstLogical
+            roiObj.display.selectedchannel(dstLogical) = true;
+        end
+    end
+
+    function selectClassifierDisplayChannels(roiObj, classifObj, outName)
+        if isempty(roiObj.display) || ~isstruct(roiObj.display) || ...
+                ~isfield(roiObj.display, 'channel') || isempty(roiObj.display.channel)
+            return
+        end
+
+        chNames = roiObj.display.channel;
+        if ischar(chNames), chNames = {chNames}; end
+        if isstring(chNames), chNames = cellstr(chNames); end
+        if ~iscell(chNames), return; end
+
+        roiObj.display.selectedchannel = false(1, numel(chNames));
+
+        inputNames = {};
+        if isprop(classifObj, 'channelName') && ~isempty(classifObj.channelName)
+            inputNames = cellstr(string(classifObj.channelName));
+        end
+        visibleNames = [inputNames(:); {outName}];
+
+        for kk = 1:numel(visibleNames)
+            nm = char(string(visibleNames{kk}));
+            if isempty(nm), continue; end
+            hit = find(strcmp(chNames, nm), 1);
+            if ~isempty(hit)
+                roiObj.display.selectedchannel(hit) = true;
             end
         end
     end

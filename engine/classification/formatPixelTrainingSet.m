@@ -1,4 +1,4 @@
-function output=formatPixelTrainingSet(foldername,classif,rois)
+function output=formatPixelTrainingSet(foldername,classif,rois,varargin)
 
 % formats training set as tif images if number of channels is smaller or
 % equal than 3, otherwise as multidemensionnal .mat file
@@ -13,6 +13,11 @@ function output=formatPixelTrainingSet(foldername,classif,rois)
 %out{4} = data.masks;        % HxWxN logical mask arrays
 
 output=0;
+
+p = inputParser;
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 mkdir([classif.path '/' foldername],'images');
 mkdir([classif.path '/' foldername],'labels');
@@ -198,7 +203,10 @@ for i=1:numel(rois)
     end
     reverseStr = '';
 
-    for j=1:size(im,4) %time
+    frameList = normalizeTrainingFrameSelection(framesSpec, size(im,4), ...
+        'RoiId', rois(i), 'RoiPosition', i);
+
+    for j=frameList %time
         if strcmp(classif.description{1},'Image pixel regression')
             tmplab = [];
             hasLabeledPixels = true;

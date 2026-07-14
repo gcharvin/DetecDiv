@@ -19,8 +19,17 @@ if isfield(params,'foldername') && ~isempty(params.foldername)
     foldername = params.foldername;
 end
 
+frames = [];
+if isfield(ctx, 'sel') && isstruct(ctx.sel) && isfield(ctx.sel, 'frames')
+    frames = ctx.sel.frames;
+elseif isfield(params, 'Frames')
+    frames = params.Frames;
+elseif isfield(params, 'frames')
+    frames = params.frames;
+end
+
 out = cnn.utils.outInitSafe('cnn.format');
-outputCount = formatImageTrainingSet(foldername, classif, rois);
+outputCount = formatImageTrainingSet(foldername, classif, rois, 'Frames', frames);
 out.metrics.outputCount = outputCount;
 out.status = "OK";
 end

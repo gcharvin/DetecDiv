@@ -1,4 +1,4 @@
-function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, valrois)
+function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, valrois, varargin)
 % formatPixelTrainingSetCPSAM  Build a Cellpose/CellposeSAM training set
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
 %
@@ -23,6 +23,11 @@ function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, va
 
 output = 0;
 warning('off','all');  %#ok<WNOFF>
+
+p = inputParser;
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 % -------------------------------------------------------------------------
 % 1) Chemin de base du framebank (pourra être modifié plus bas)
@@ -182,7 +187,10 @@ for ii = 1:numel(all_rois)
         roiName = sprintf('ROI_%d', roi_id);
     end
 
-    for jj = 1:T
+    frameList = normalizeTrainingFrameSelection(framesSpec, T, ...
+        'RoiId', roi_id, 'RoiPosition', ii);
+
+    for jj = frameList
         instMask    = zeros(H, W, 'uint16');
         instCounter = uint16(0);
 
@@ -529,12 +537,8 @@ for ii = 1:numel(all_rois)
         continue;
     end
 
-    for jj = 1:T
+    for jj = reshape(frames_for_roi, 1, [])
         % Ne traiter que les frames explicitement retenus à la 1ère passe
-        if ~ismember(jj, frames_for_roi)
-            continue;
-        end
-
         instMask    = zeros(H, W, 'uint16');
         instCounter = uint16(0);
 

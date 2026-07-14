@@ -1,6 +1,10 @@
-function output=formatObjectTrainingSet(foldername,classif,rois)
+function output=formatObjectTrainingSet(foldername,classif,rois,varargin)
 
 output=0;
+p = inputParser;
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
         if ~isfolder([classif.path '/' foldername '/images'])
             mkdir([classif.path '/' foldername], 'images');
         end
@@ -60,7 +64,10 @@ parfor i=rois
 
     
     
-    for j=1:size(im,4)
+    frameList = normalizeTrainingFrameSelection(framesSpec, size(im,4), ...
+        'RoiId', i, 'RoiPosition', find(rois == i, 1, 'first'));
+
+    for j=frameList
         tmp=im(:,:,:,j);
         
         if numel(pix)==1

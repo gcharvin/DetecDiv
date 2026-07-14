@@ -34,6 +34,7 @@ p.addParameter('qa_out_subdir', "_QA", @(s)ischar(s) || isstring(s));
 p.addParameter('runCocoConversion', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('writeOverlayMovies', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('datasetSubfolder', "moma", @(s)ischar(s) || isstring(s));
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
 
 p.parse(varargin{:});
 %mergeBudN = uint32(p.Results.mergeBudN);
@@ -49,6 +50,7 @@ qa_out_subdir  = string(p.Results.qa_out_subdir);
 runCocoConversion = p.Results.runCocoConversion;
 writeOverlayMovies = p.Results.writeOverlayMovies;
 datasetSubfolder = strtrim(string(p.Results.datasetSubfolder));
+framesSpec = p.Results.Frames;
 
 
 if ~ismember(layoutMode, ["ctc_root","split_root"])
@@ -144,6 +146,8 @@ for s = 1:size(splits,1)
         end
 
         T = size(im,4); H = size(im,1); W = size(im,2);
+        frameList = normalizeTrainingFrameSelection(framesSpec, T, ...
+            'RoiId', roi_id, 'RoiPosition', rr, 'SplitName', splitName);
 
         % === Tables & Maps de suivi
         trackTable = [];
@@ -161,8 +165,9 @@ for s = 1:size(splits,1)
       
 % ==== BOUCLE FRAMES ====
 
-for jj = 1:T
-    frame0 = uint32(jj-1);  % 0-index CTC
+for ff = 1:numel(frameList)
+    jj = frameList(ff);
+    frame0 = uint32(ff-1);  % compact 0-index CTC
     output = output + 1;
     maxid=uint16(0);
 

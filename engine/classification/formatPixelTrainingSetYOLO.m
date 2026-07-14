@@ -1,7 +1,12 @@
-function output = formatPixelTrainingSetYOLO(foldername, classif, trainrois, valrois)
+function output = formatPixelTrainingSetYOLO(foldername, classif, trainrois, valrois, varargin)
 % Formats training set for YOLOv8/YOLOv11 instance segmentation.
 
 output = 0;
+
+p = inputParser;
+p.addParameter('Frames', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || ischar(x) || isstring(x) || iscell(x) || isstruct(x));
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 % Create necessary directories for images and labels
 mkdir([classif.path '/' foldername], 'images/train');
@@ -34,7 +39,10 @@ for i = 1:numel(all_rois)
         pix = cell2mat(pix);
     end
 
-    for j = 1:size(im, 4) % Loop through time frames
+    frameList = normalizeTrainingFrameSelection(framesSpec, size(im, 4), ...
+        'RoiId', roi_id, 'RoiPosition', i);
+
+    for j = frameList % Loop through time frames
 
         masklist=false(size(im,1),size(im,2),0);
         vlist=[];

@@ -2274,10 +2274,10 @@ end
     end
 
     % Prompt
-    prompt = {'Frames to be processed (0 = all)'};
+    prompt = {'Frames to export: all / 0 / 1:10:200 / 1,5,8,20'};
     dlgtitle = 'Input formatting parameters';
     dims = [1 100];
-    definput = {'0'};
+    definput = {'all'};
     answer = inputdlg(prompt, dlgtitle, dims, definput);
 
     if isempty(answer)
@@ -2285,9 +2285,10 @@ end
     end
 
     % Parse
-    framesToProcess = str2double(answer{1});
-    if isnan(framesToProcess) || framesToProcess < 0
-        uialert(app.ClassifierUIFigure,'Frames must be 0 or a positive number.','Error');
+    try
+        framesToProcess = parseTrainingFrameSelection(app, answer{1});
+    catch ME
+        uialert(app.ClassifierUIFigure, ME.message, 'Invalid frame selection');
         return;
     end
 
@@ -2309,6 +2310,8 @@ end
         nExport = output;
     elseif isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'outputCount')
         nExport = output.metrics.outputCount;
+    elseif isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'framebankFrames')
+        nExport = output.metrics.framebankFrames;
     end
 
     if nExport > 0
@@ -2327,6 +2330,26 @@ end
 
 
 
+        end
+
+        function frames = parseTrainingFrameSelection(app, txt) %#ok<INUSD>
+            txt = strtrim(char(string(txt)));
+            if isempty(txt) || any(strcmpi(txt, {'all','0','-1'}))
+                frames = [];
+                return;
+            end
+
+            txt = strrep(txt, ',', ' ');
+            frames = str2num(txt); %#ok<ST2NM>
+            if isempty(frames) || ~isnumeric(frames)
+                error('Enter frames as all, 0, 1:200, 1:10:200, or 1,5,8,20.');
+            end
+
+            frames = unique(round(double(frames(:).')), 'stable');
+            frames = frames(isfinite(frames));
+            if isempty(frames) || any(frames < 1)
+                error('Frame numbers must be positive integers, or use all/0.');
+            end
         end
 
         % Menu selected function: TrainClassifierMenu

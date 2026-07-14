@@ -178,7 +178,7 @@ switch category
     case {'Image', 'Image Regression'}
         % (pour l'instant je ne forwarde pas extraArgs aux formats Image,
         %  mais on peut le faire si tu veux y brancher le crop, etc.)
-        output = formatImageTrainingSet(foldername, classif, rois);
+        output = formatImageTrainingSet(foldername, classif, rois, 'Frames', Frames);
 
     case 'LSTM'
 
@@ -188,25 +188,25 @@ switch category
         if isprop(classif, 'description')
             if (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'YOLO instance segmentation')) || ...
                     (ischar(classif.description{1}) && strcmp(classif.description{1},     'YOLO instance segmentation'))
-                output = formatPixelTrainingSetYOLO(foldername, classif, rois, valrois);
+                output = formatPixelTrainingSetYOLO(foldername, classif, rois, valrois, 'Frames', Frames);
 
             elseif (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'CellposeSAM')) || ...
                     (ischar(classif.description{1}) && strcmp(classif.description{1},     'CellposeSAM'))
-                output = formatPixelTrainingSetCPSAM(foldername, classif, rois, valrois);
+                output = formatPixelTrainingSetCPSAM(foldername, classif, rois, valrois, 'Frames', Frames);
 
             elseif (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'Cell-TRACKTR')) || ...
                     (ischar(classif.description{1}) && strcmp(classif.description{1},     'Cell-TRACKTR'))
-                output = formatPixelTrainingSetCellTracktr(foldername, classif, rois, valrois);
+                output = formatPixelTrainingSetCellTracktr(foldername, classif, rois, valrois, 'Frames', Frames);
 
             else
-                output = formatPixelTrainingSet(foldername, classif, rois);
+                output = formatPixelTrainingSet(foldername, classif, rois, 'Frames', Frames);
             end
         else
-            output = formatPixelTrainingSet(foldername, classif, rois);
+            output = formatPixelTrainingSet(foldername, classif, rois, 'Frames', Frames);
         end
 
     case 'Object'
-        output = formatObjectTrainingSet(foldername, classif, rois);
+        output = formatObjectTrainingSet(foldername, classif, rois, 'Frames', Frames);
 
     case 'Pedigree'
         output = formatDeltaPedigreeTrainingSet(foldername, classif, rois);
