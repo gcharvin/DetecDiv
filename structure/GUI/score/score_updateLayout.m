@@ -2,8 +2,13 @@ function layoutOut=score_updateLayout(layoutOptions,roiobj)
 
  roitmp = roiobj(1);
 score_applyDefaultChannelSelection(roitmp);
+score_loadChannelsForDisplay(roitmp, []);
 if numel(roitmp.image) == 0
-    score_loadChannelsForDisplay(roitmp, []);
+    try
+        roitmp.load('Data', false, 'Silent');
+    catch
+        roitmp.load;
+    end
 end
 
 
@@ -57,6 +62,7 @@ if ~isempty(selCh)
     % Pour chaque channel, construire un vecteur numérique [low high]
     levels = cell(1, numel(selCh));
     displayLevels = cell(1, numel(selCh));
+    keepCh = true(1, numel(selCh));
     for i = 1:numel(selCh)
         idx = selCh(i);
 
@@ -64,10 +70,32 @@ if ~isempty(selCh)
 
         % map logical channel -> first sub-channel index
         subIdx = find(roitmp.channelid == idx, 1, 'first');
-        if isempty(subIdx)
-            subIdx = idx; % fallback
+        if isempty(subIdx) || subIdx > size(roitmp.image, 3)
+            try
+                score_loadChannelsForDisplay(roitmp, dsC.channel(idx));
+                dsC = normalizeChannelSelectionForScore(roitmp.display);
+                dsC = normalizeChannelScaleForScore(dsC);
+                subIdx = find(roitmp.channelid == idx, 1, 'first');
+            catch
+                subIdx = [];
+            end
         end
-        lims = dsC.displaylim(:, subIdx);
+        if isempty(subIdx) || subIdx > size(roitmp.image, 3)
+            keepCh(i) = false;
+            continue;
+        end
+        if ~isfield(dsC,'displaylim') || isempty(dsC.displaylim) || size(dsC.displaylim, 2) < subIdx
+            try
+                roitmp.computeDisplaylim('Channel', subIdx);
+                dsC = roitmp.display;
+            catch
+            end
+        end
+        if ~isfield(dsC,'displaylim') || isempty(dsC.displaylim) || size(dsC.displaylim, 2) < subIdx
+            lims = [0; 1];
+        else
+            lims = dsC.displaylim(:, subIdx);
+        end
         if ~dsC.indexed(idx) && isDefaultDisplayLim(lims)
             [lowVal, highVal] = autoDisplayLevelsFromImage(roitmp, subIdx);
         else
@@ -91,6 +119,11 @@ if ~isempty(selCh)
             displayLevels{i} = score_decodeChannelValues(roitmp, idx, [lowVal, highVal]);
         end
     end
+    selCh = selCh(keepCh);
+    levels = levels(keepCh);
+    displayLevels = displayLevels(keepCh);
+    channels = channels(keepCh);
+    channelLabels = channelLabels(keepCh);
 
     % Construire pour chaque channel le vecteur RGB
     colors = cell(1, numel(selCh));

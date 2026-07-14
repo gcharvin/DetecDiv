@@ -16,7 +16,7 @@ grid = uigridlayout(fig, [5 1]);
 grid.RowHeight = {28, '1x', 28, 180, 42};
 grid.ColumnWidth = {'1x'};
 
-header = uilabel(grid, 'Text', headerText(classif), 'FontWeight', 'bold');
+header = uilabel(grid, 'Text', headerText(classif, state), 'FontWeight', 'bold');
 header.Layout.Row = 1;
 
 runTable = uitable(grid);
@@ -51,7 +51,7 @@ refreshTables();
         state = refreshState(classif, selectedRois);
         runTable.Data = runsToCell(state.runs);
         ckptTable.Data = checkpointsToCell(state.checkpoints);
-        header.Text = headerText(classif);
+        header.Text = headerText(classif, state);
     end
 
     function openSelectedRun()
@@ -227,16 +227,17 @@ if exist(root, 'dir') ~= 7
     return;
 end
 files = dir(fullfile(root, '**', 'checkpoint*.pt'));
-activePath = '';
+explicitPath = '';
 try
-    activePath = char(string(classif.executionParam.detectorCheckpointPath));
+    explicitPath = char(string(classif.executionParam.detectorCheckpointPath));
 catch
 end
 for i = 1:numel(files)
     p = fullfile(files(i).folder, files(i).name);
     item = defaultCheckpointStruct();
     item.path = p;
-    item.active = samePath(p, activePath);
+    item.active = false;
+    item.activeLabel = '';
     item.resolution = inferResolutionFromPath(p);
     item.modified = char(string(files(i).date));
     item.modifiedDatenum = files(i).datenum;
@@ -250,6 +251,24 @@ end
 if ~isempty(checkpoints)
     [~, order] = sort([checkpoints.modifiedDatenum], 'descend');
     checkpoints = checkpoints(order);
+    if ~isempty(explicitPath)
+        for i = 1:numel(checkpoints)
+            if samePath(checkpoints(i).path, explicitPath)
+                checkpoints(i).active = true;
+                checkpoints(i).activeLabel = 'explicit';
+                break;
+            end
+        end
+    else
+        activePath = autoDetectorCheckpointPath(classif, checkpoints);
+        for i = 1:numel(checkpoints)
+            if samePath(checkpoints(i).path, activePath)
+                checkpoints(i).active = true;
+                checkpoints(i).activeLabel = 'auto';
+                break;
+            end
+        end
+    end
 end
 end
 
@@ -272,7 +291,7 @@ function data = checkpointsToCell(checkpoints)
 data = cell(numel(checkpoints), 5);
 for i = 1:numel(checkpoints)
     if checkpoints(i).active
-        data{i, 1} = 'yes';
+        data{i, 1} = checkpoints(i).activeLabel;
     else
         data{i, 1} = '';
     end
@@ -341,16 +360,64 @@ catch ME
 end
 end
 
-function txt = headerText(classif)
+function txt = headerText(classif, state)
+[active, mode] = activeDetectorCheckpointText(classif, state);
+if isempty(active)
+    active = '(none found)';
+end
+txt = sprintf('Classifier: %s     Active detector checkpoint (%s): %s', safeClassifierName(classif), mode, active);
+end
+
+function [active, mode] = activeDetectorCheckpointText(classif, state)
 active = '';
+mode = 'explicit';
 try
     active = char(string(classif.executionParam.detectorCheckpointPath));
 catch
 end
 if isempty(active)
-    active = '(auto checkpoint)';
+    mode = 'auto';
+    try
+        active = autoDetectorCheckpointPath(classif, state.checkpoints);
+    catch
+        active = '';
+    end
 end
-txt = sprintf('Classifier: %s     Active detector checkpoint: %s', safeClassifierName(classif), active);
+end
+
+function pathStr = autoDetectorCheckpointPath(classif, checkpoints)
+pathStr = '';
+if isempty(checkpoints)
+    return;
+end
+resolution = activeResolutionText(classif);
+if ~isempty(resolution)
+    idx = find(strcmp(string({checkpoints.resolution}), string(resolution)), 1, 'first');
+    if ~isempty(idx)
+        pathStr = checkpoints(idx).path;
+        return;
+    end
+end
+pathStr = checkpoints(1).path;
+end
+
+function resolution = activeResolutionText(classif)
+resolution = '';
+try
+    if isprop(classif, 'executionParam') && isstruct(classif.executionParam) && ...
+            isfield(classif.executionParam, 'resolution') && ~isempty(classif.executionParam.resolution)
+        resolution = char(string(classif.executionParam.resolution));
+        return;
+    end
+catch
+end
+try
+    if isprop(classif, 'trainingParam') && isstruct(classif.trainingParam) && ...
+            isfield(classif.trainingParam, 'resolution') && ~isempty(classif.trainingParam.resolution)
+        resolution = char(string(classif.trainingParam.resolution));
+    end
+catch
+end
 end
 
 function name = safeClassifierName(classif)
@@ -490,12 +557,12 @@ end
 
 function s = emptyCheckpointStruct()
 s = struct('active', {}, 'resolution', {}, 'modified', {}, 'modifiedDatenum', {}, ...
-    'sizeMb', {}, 'path', {});
+    'sizeMb', {}, 'path', {}, 'activeLabel', {});
 end
 
 function s = defaultCheckpointStruct()
 s = struct('active', false, 'resolution', '', 'modified', '', 'modifiedDatenum', 0, ...
-    'sizeMb', 0, 'path', '');
+    'sizeMb', 0, 'path', '', 'activeLabel', '');
 end
 
 function out = truncateText(in, n)

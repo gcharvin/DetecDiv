@@ -545,6 +545,7 @@ end
             % 2) If mapped to a classifier INPUT: force rename to ioCh
             if ~isempty(ioCh) && ~isempty(classifObj.channelName) && any(strcmp(classifObj.channelName, ioCh))
                 roiObj.display.channel{idx} = ioCh;
+                resetInputChannelDisplayStyle(roiObj, idx);
                 chNames{idx} = ioCh;
                 continue
             end
@@ -555,6 +556,51 @@ end
                 chNames{idx} = dest;
             end
         end
+
+        % Defensive pass: whatever the source metadata was, classifier input
+        % channels are raw image channels and must not appear as annotation masks.
+        if isprop(classifObj, 'channelName') && ~isempty(classifObj.channelName)
+            inputNames = cellstr(string(classifObj.channelName));
+            for kk = 1:numel(inputNames)
+                idx = find(strcmp(chNames, inputNames{kk}), 1);
+                if ~isempty(idx)
+                    resetInputChannelDisplayStyle(roiObj, idx);
+                end
+            end
+        end
+    end
+
+    function resetInputChannelDisplayStyle(roiObj, idx)
+        if isempty(roiObj.display) || ~isstruct(roiObj.display) || isempty(idx)
+            return
+        end
+        nLog = max(idx, numel(roiObj.display.channel));
+        roiObj.display = ensureDisplayVectorLocal(roiObj.display, 'indexed', nLog, 0);
+        roiObj.display = ensureDisplayVectorLocal(roiObj.display, 'contour', nLog, 0);
+        roiObj.display = ensureDisplayVectorLocal(roiObj.display, 'alpha', nLog, 1);
+        roiObj.display = ensureDisplayVectorLocal(roiObj.display, 'width', nLog, 1);
+        roiObj.display.indexed(idx) = 0;
+        roiObj.display.contour(idx) = 0;
+        roiObj.display.alpha(idx) = 1;
+        roiObj.display.width(idx) = 1;
+        if isfield(roiObj.display, 'intensity') && size(roiObj.display.intensity, 1) >= idx && ...
+                all(double(roiObj.display.intensity(idx, :)) == 0)
+            roiObj.display.intensity(idx, :) = [1 1 1];
+        end
+    end
+
+    function display = ensureDisplayVectorLocal(display, fieldName, nLog, fillValue)
+        if isfield(display, fieldName) && ~isempty(display.(fieldName))
+            value = display.(fieldName)(:).';
+        else
+            value = [];
+        end
+        if numel(value) < nLog
+            value(end+1:nLog) = fillValue;
+        elseif numel(value) > nLog
+            value = value(1:nLog);
+        end
+        display.(fieldName) = value;
     end
 
     function applyConvertClassMapping(roiObj, classifObj, convertSpec)

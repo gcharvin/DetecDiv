@@ -80,26 +80,41 @@ def latest_checkpoint(classifier_root: Path | None, image_size: int, kind: str) 
         direct = artifacts / f"moma_sam31_image_instance_prompt_scoring_encoder_{image_size}" / "checkpoints" / "checkpoint.pt"
         patterns = [
             f"moma_sam31_image_instance*_{image_size}/checkpoints/checkpoint.pt",
-            "moma_sam31_image_instance*/checkpoints/checkpoint.pt",
         ]
+        fallback_patterns = ["moma_sam31_image_instance*/checkpoints/checkpoint.pt"]
     elif kind == "tracker":
         direct = artifacts / f"moma_sam31_tracklet_len8_head_only_{image_size}" / "checkpoints" / "checkpoint.pt"
         patterns = [
             f"moma_sam31_tracklet*_{image_size}/checkpoints/checkpoint.pt",
-            "moma_sam31_tracklet*/checkpoints/checkpoint.pt",
         ]
+        fallback_patterns = ["moma_sam31_tracklet*/checkpoints/checkpoint.pt"]
     else:
         raise ValueError(f"Unknown checkpoint kind: {kind}")
 
-    candidates = [direct]
+    exact_candidates = [direct]
     for pattern in patterns:
-        candidates.extend(artifacts.glob(pattern))
-    return newest_existing(candidates)
+        exact_candidates.extend(artifacts.glob(pattern))
+    resolved = newest_existing(exact_candidates)
+    if resolved is not None:
+        return resolved
+
+    fallback_candidates: list[Path] = []
+    for pattern in fallback_patterns:
+        fallback_candidates.extend(artifacts.glob(pattern))
+    resolved = newest_existing(fallback_candidates)
+    if resolved is not None:
+        print(
+            f"[SAM31 classify] warning: no {kind} checkpoint found for image_size={image_size}; "
+            f"falling back to {resolved}",
+            flush=True,
+        )
+    return resolved
 
 
 def resolve_checkpoint(value: str | None, output_dir: Path, image_size: int, kind: str) -> Path | None:
     explicit = optional_path(value)
     if explicit is not None:
+        print(f"[SAM31 classify] using explicit {kind} checkpoint: {explicit}", flush=True)
         return explicit
     resolved = latest_checkpoint(classifier_root_from_output_dir(output_dir), image_size, kind)
     if resolved is not None:
