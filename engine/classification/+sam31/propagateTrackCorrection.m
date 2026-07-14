@@ -40,7 +40,7 @@ tp.videoScoreThreshold = opts.videoScoreThreshold;
 tp.videoNewDetThreshold = opts.videoNewDetThreshold;
 tp.videoDetNmsThreshold = opts.videoDetNmsThreshold;
 tp.videoAssocIouThreshold = opts.videoAssocIouThreshold;
-tp.sam31Runner = 'session';
+tp.sam31Runner = 'external';
 
 cfg = struct();
 cfg.task = 'track_correction';
@@ -60,7 +60,7 @@ cfg.video_score_threshold = opts.videoScoreThreshold;
 cfg.video_new_det_threshold = opts.videoNewDetThreshold;
 cfg.video_det_nms_threshold = opts.videoDetNmsThreshold;
 cfg.video_assoc_iou_threshold = opts.videoAssocIouThreshold;
-cfg.runner_mode = 'session';
+cfg.runner_mode = 'external';
 cfg.prompt_obj_id = 0;
 cfg.prompt_margin = 4;
 

@@ -656,7 +656,7 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         video_kwargs=video_kwargs,
     )
 
-    from sam31_ctc_benchmark.sam31_runner import output_to_label_mask, propagate_in_video
+    from sam31_ctc_benchmark.sam31_runner import mark_seed_frame_ready, output_to_label_mask, propagate_in_video
 
     prompt_margin = scalar_number(cfg.get("prompt_margin"), 4, "prompt_margin", integer=True, minimum=0.0)
     prompt_obj_id = scalar_number(cfg.get("prompt_obj_id"), 0, "prompt_obj_id", integer=True, minimum=0.0)
@@ -680,6 +680,7 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
                 "output_prob_thresh": min_score,
             }
         )
+        mark_seed_frame_ready(predictor, session_id, 0)
         check_cancel(cancel_path, "before correction propagation")
         outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)
         check_cancel(cancel_path, "after correction propagation")
