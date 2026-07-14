@@ -745,6 +745,11 @@ try
     end
 catch
 end
+try
+    userprefs = detecdiv_prefs_load();
+    stored = mergeSam31PropagationPrefs(stored, userprefs);
+catch
+end
 
 opts.maxFrames = min(20, remaining);
 opts = copyStoredNumericOption(opts, stored, 'maxFrames');
@@ -761,6 +766,28 @@ try
 catch
 end
 opts.maxFrames = min(max(1, round(opts.maxFrames)), remaining);
+end
+
+function stored = mergeSam31PropagationPrefs(stored, userprefs)
+if ~isstruct(stored)
+    stored = struct();
+end
+mapping = { ...
+    'sam31_propagation_max_frames', 'maxFrames'; ...
+    'sam31_propagation_resolution', 'resolution'; ...
+    'sam31_propagation_max_num_objects', 'maxNumObjects'; ...
+    'sam31_propagation_collision_threshold', 'collisionThreshold'; ...
+    'sam31_propagation_runner_mode', 'runnerMode'};
+for i = 1:size(mapping, 1)
+    prefName = mapping{i, 1};
+    optName = mapping{i, 2};
+    try
+        if isstruct(userprefs) && isfield(userprefs, prefName) && ~isempty(userprefs.(prefName))
+            stored.(optName) = userprefs.(prefName);
+        end
+    catch
+    end
+end
 end
 
 function opts = copyStoredNumericOption(opts, stored, name)
@@ -787,6 +814,16 @@ try
         app.DisplaySettings.SAM31Propagation = stored;
         assignin('base', 'DisplaySettings', app.DisplaySettings);
     end
+catch
+end
+try
+    userprefs = detecdiv_prefs_load();
+    userprefs.sam31_propagation_max_frames = stored.maxFrames;
+    userprefs.sam31_propagation_resolution = stored.resolution;
+    userprefs.sam31_propagation_max_num_objects = stored.maxNumObjects;
+    userprefs.sam31_propagation_collision_threshold = stored.collisionThreshold;
+    userprefs.sam31_propagation_runner_mode = stored.runnerMode;
+    detecdiv_prefs_save(userprefs);
 catch
 end
 end
