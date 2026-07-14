@@ -40,7 +40,7 @@ tp.videoScoreThreshold = opts.videoScoreThreshold;
 tp.videoNewDetThreshold = opts.videoNewDetThreshold;
 tp.videoDetNmsThreshold = opts.videoDetNmsThreshold;
 tp.videoAssocIouThreshold = opts.videoAssocIouThreshold;
-tp.sam31Runner = 'external';
+tp.sam31Runner = opts.runnerMode;
 
 cfg = struct();
 cfg.task = 'track_correction';
@@ -60,7 +60,7 @@ cfg.video_score_threshold = opts.videoScoreThreshold;
 cfg.video_new_det_threshold = opts.videoNewDetThreshold;
 cfg.video_det_nms_threshold = opts.videoDetNmsThreshold;
 cfg.video_assoc_iou_threshold = opts.videoAssocIouThreshold;
-cfg.runner_mode = 'external';
+cfg.runner_mode = opts.runnerMode;
 cfg.prompt_obj_id = 0;
 cfg.prompt_margin = 4;
 
@@ -102,7 +102,8 @@ defaults = struct( ...
     'videoScoreThreshold', 0.40, ...
     'videoNewDetThreshold', 0.40, ...
     'videoDetNmsThreshold', 0.10, ...
-    'videoAssocIouThreshold', 0.50);
+    'videoAssocIouThreshold', 0.50, ...
+    'runnerMode', 'external');
 opts = mergeStruct(defaults, opts);
 
 opts.label = round(double(opts.label));
@@ -117,6 +118,7 @@ opts.videoScoreThreshold = double(opts.videoScoreThreshold);
 opts.videoNewDetThreshold = double(opts.videoNewDetThreshold);
 opts.videoDetNmsThreshold = double(opts.videoDetNmsThreshold);
 opts.videoAssocIouThreshold = double(opts.videoAssocIouThreshold);
+opts.runnerMode = lower(strtrim(char(string(opts.runnerMode))));
 
 if ~isfinite(opts.label) || opts.label < 1
     error('sam31:CorrectionBadLabel', 'A positive label is required.');
@@ -147,6 +149,9 @@ if any(strcmp(opts.backend, {'linux','wsl'}))
     opts.backend = 'wsl';
 else
     opts.backend = 'local';
+end
+if ~any(strcmp(opts.runnerMode, {'external','session'}))
+    opts.runnerMode = 'external';
 end
 end
 

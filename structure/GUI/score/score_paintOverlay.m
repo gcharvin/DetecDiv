@@ -618,11 +618,11 @@ end
 defaults = defaultSam31PropagationOptions(roi, pix, frm);
 defaultFrames = min(20, remaining);
 answer = inputdlg( ...
-    {'Following frames to update:', 'Resolution:', 'Object slots:', 'Collision overlap threshold (0-1):'}, ...
+    {'Following frames to update:', 'Resolution:', 'Object slots:', 'Collision overlap threshold (0-1):', 'Runner (external/session):'}, ...
     'SAM31 propagate selected track', ...
     [1 42], ...
     {num2str(defaultFrames), num2str(defaults.resolution), ...
-    num2str(defaults.maxNumObjects), num2str(defaults.collisionThreshold)});
+    num2str(defaults.maxNumObjects), num2str(defaults.collisionThreshold), defaults.runnerMode});
 if isempty(answer)
     return;
 end
@@ -631,6 +631,7 @@ nFrames = round(str2double(answer{1}));
 resolution = round(str2double(answer{2}));
 maxObjects = round(str2double(answer{3}));
 collisionThreshold = str2double(answer{4});
+runnerMode = lower(strtrim(char(string(answer{5}))));
 if ~isfinite(nFrames) || nFrames < 1
     warndlg('Frame count must be a positive integer.','SAM31 propagation'); return;
 end
@@ -643,6 +644,9 @@ end
 if ~isfinite(collisionThreshold) || collisionThreshold < 0 || collisionThreshold > 1
     warndlg('Collision overlap threshold must be between 0 and 1.','SAM31 propagation'); return;
 end
+if ~any(strcmp(runnerMode, {'external','session'}))
+    warndlg('Runner must be either external or session.','SAM31 propagation'); return;
+end
 nFrames = min(nFrames, remaining);
 
 opts = defaults;
@@ -654,6 +658,7 @@ opts.maxFrames = nFrames;
 opts.resolution = resolution;
 opts.maxNumObjects = maxObjects;
 opts.collisionThreshold = collisionThreshold;
+opts.runnerMode = runnerMode;
 
 try
     set(app.ImageFigure, 'Pointer', 'watch');
@@ -700,6 +705,7 @@ opts.videoNewDetThreshold = 0.40;
 opts.videoDetNmsThreshold = 0.10;
 opts.videoAssocIouThreshold = 0.50;
 opts.collisionThreshold = 0.35;
+opts.runnerMode = 'external';
 opts.inputPix = defaultSam31InputPix(roi, annotationPix);
 opts.classif = [];
 
