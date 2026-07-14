@@ -7,7 +7,7 @@ function tp = defaultTrainingParam()
 % not exposed in classifierGUI.
 
 spec = {
-    'resolution',                    {'280','1008','280'}, 'SAM3.1 working resolution. 280 is the yeast-friendly mode; 1008 is the original heavy SAM3.1 size.'
+    'resolution',                    {'140','280','560','1008','280'}, 'SAM3.1 working resolution. 140/280/560 are yeast-friendly modes; 1008 is the original heavy SAM3.1 size.'
     'trainModules',                  {'semantic segmentation','instance segmentation','video memory','instance + video memory','all','instance + video memory'}, 'Training module preset.'
     'epochs',                        20,          'Training epochs.'
     'saveFreq',                      100000,      'Checkpoint save frequency in optimizer steps.'

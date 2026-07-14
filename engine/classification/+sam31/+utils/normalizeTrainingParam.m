@@ -38,7 +38,7 @@ function selected = normalizeEnumSelection(key, selected)
 txt = lower(strtrim(char(string(selected))));
 switch lower(key)
     case 'resolution'
-        if any(strcmp(txt, {'280','1008'}))
+        if any(strcmp(txt, {'140','280','560','1008'}))
             selected = txt;
         else
             selected = '280';

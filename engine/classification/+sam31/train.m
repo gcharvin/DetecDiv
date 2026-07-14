@@ -70,6 +70,7 @@ if ~hasSam31DirectSplits(datasetRoot) && ~hasCtcSplits(datasetRoot)
 end
 
 cfg = struct();
+cfg.backend = sam31TrainingBackend(tp, internal, ctx);
 cfg.repo_root = strrep(repoRoot, '\', '/');
 cfg.sam3_repo = strrep(sam3Repo, '\', '/');
 cfg.artifacts_root = strrep(artifactsRoot, '\', '/');
@@ -209,6 +210,40 @@ if any(strcmpi(policy, {'restart','fresh','replace','reset'}))
     policy = 'restart';
 else
     policy = 'resume';
+end
+end
+
+function backend = sam31TrainingBackend(tp, internal, ctx)
+backend = char(string(runtimeParam(tp, internal, 'backend')));
+try
+    if isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params) ...
+            && isfield(ctx.params, 'backend') && ~isempty(ctx.params.backend)
+        backend = char(string(ctx.params.backend));
+    end
+catch
+end
+try
+    if isempty(strtrim(backend)) && isstruct(ctx) && isfield(ctx, 'exec') && isstruct(ctx.exec) ...
+            && isfield(ctx.exec, 'python') && isstruct(ctx.exec.python) ...
+            && isfield(ctx.exec.python, 'backend') && ~isempty(ctx.exec.python.backend)
+        backend = char(string(ctx.exec.python.backend));
+    end
+catch
+end
+try
+    if isempty(strtrim(backend)) && isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) ...
+            && isfield(ctx.run, 'executionTarget') && ~isempty(ctx.run.executionTarget)
+        backend = char(string(ctx.run.executionTarget));
+    end
+catch
+end
+backend = lower(strtrim(backend));
+backend = strrep(backend, '-', '_');
+backend = strrep(backend, ' ', '_');
+if any(strcmp(backend, {'local_wsl','wsl','localwsl','local_linux','local/wsl','linux'}))
+    backend = 'wsl';
+else
+    backend = 'local';
 end
 end
 
