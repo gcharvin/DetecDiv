@@ -468,6 +468,10 @@ uimenu(cm,'Text','Relabel (all frames)...', ...
     'MenuSelectedFcn', @(~,~) openRelabelDialog(app, roi, chIdx, pix, frm, 'all-frames'));
 uimenu(cm,'Separator','on','Text','Split object (watershed)', ...
     'MenuSelectedFcn', @(~,~) splitSelectedObjectWatershed(app, roi, chIdx, pix, frm));
+uimenu(cm,'Text','SAM31 propagate this track...', ...
+    'MenuSelectedFcn', @(~,~) propagateSelectedObjectSam31(app, roi, chIdx, pix, frm));
+uimenu(cm,'Text','Repair ID continuity (IoU)...', ...
+    'MenuSelectedFcn', @(~,~) repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm));
 % --- Delete actions ---
 uimenu(cm,'Separator','on','Text','Delete object (this frame)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectFrame(app, roi, pix, frm));
@@ -476,6 +480,386 @@ uimenu(cm,'Text','Delete object (all frames)', ...
 
 end
 
+
+function repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm)
+oldLab = app.SelectedObjectLabelCell;
+if isempty(oldLab) || isnan(oldLab) || oldLab <= 0
+    warndlg('No object is currently selected.','Repair ID continuity'); return;
+end
+
+M = roi.image(:,:,pix,frm);
+if ~any(M(:) == oldLab)
+    warndlg('Selected object is not present on this frame.','Repair ID continuity'); return;
+end
+
+nf = size(roi.image,4);
+remaining = nf - frm;
+if remaining <= 0
+    warndlg('There is no following frame to scan.','Repair ID continuity'); return;
+end
+
+chName = roi.display.channel{chIdx};
+answer = inputdlg( ...
+    {'Forward frames to scan:', 'Minimum IoU:', 'Max consecutive unmatched frames:'}, ...
+    sprintf('Repair ID #%d continuity on %s', oldLab, chName), ...
+    [1 44], ...
+    {num2str(min(50, remaining)), '0.20', '3'});
+if isempty(answer)
+    return;
+end
+
+maxFrames = round(str2double(answer{1}));
+minIou = str2double(answer{2});
+maxGap = round(str2double(answer{3}));
+if ~isfinite(maxFrames) || maxFrames < 1
+    warndlg('Frame count must be a positive integer.','Repair ID continuity'); return;
+end
+if ~isfinite(minIou) || minIou < 0 || minIou > 1
+    warndlg('Minimum IoU must be between 0 and 1.','Repair ID continuity'); return;
+end
+if ~isfinite(maxGap) || maxGap < 0
+    warndlg('Max consecutive unmatched frames must be zero or positive.','Repair ID continuity'); return;
+end
+
+opts = struct('maxFrames', min(maxFrames, remaining), ...
+    'minIou', minIou, ...
+    'maxGap', maxGap);
+summary = repairIdentityContinuityByIoU(roi, pix, frm, oldLab, opts);
+
+score_display(app,'fast');
+safeClearSelection(app, roi, frm);
+if summary.repairedFrames == 0
+    msg = sprintf('No ID continuity repair applied for #%d.\nScanned %d frame(s); best IoU seen: %.3f.', ...
+        oldLab, summary.scannedFrames, summary.bestIouSeen);
+else
+    idsText = strjoin(cellstr(string(unique(summary.replacedLabels))), ', ');
+    msg = sprintf('Repaired #%d on %d frame(s).\nScanned %d frame(s); replaced ID(s): %s; best IoU: %.3f.', ...
+        oldLab, summary.repairedFrames, summary.scannedFrames, idsText, summary.bestIouSeen);
+end
+helpdlg(msg, 'Repair ID continuity');
+end
+
+function summary = repairIdentityContinuityByIoU(roi, pix, frm, oldLab, opts)
+nf = size(roi.image,4);
+lastFrame = min(nf, frm + opts.maxFrames);
+refMask = roi.image(:,:,pix,frm) == oldLab;
+gap = 0;
+summary = struct('scannedFrames', 0, ...
+    'repairedFrames', 0, ...
+    'replacedLabels', [], ...
+    'bestIouSeen', 0);
+
+for f = (frm + 1):lastFrame
+    summary.scannedFrames = summary.scannedFrames + 1;
+    M = roi.image(:,:,pix,f);
+
+    if any(M(:) == oldLab)
+        refMask = (M == oldLab);
+        gap = 0;
+        continue;
+    end
+
+    [bestLab, bestIou] = bestOverlappingLabelByIoU(M, refMask, oldLab);
+    summary.bestIouSeen = max(summary.bestIouSeen, bestIou);
+    if bestLab > 0 && bestIou >= opts.minIou
+        M(M == bestLab) = oldLab;
+        roi.image(:,:,pix,f) = M;
+        refMask = (M == oldLab);
+        gap = 0;
+        summary.repairedFrames = summary.repairedFrames + 1;
+        summary.replacedLabels(end+1) = bestLab;
+    else
+        gap = gap + 1;
+        if gap > opts.maxGap
+            break;
+        end
+    end
+end
+end
+
+function [bestLab, bestIou] = bestOverlappingLabelByIoU(M, refMask, oldLab)
+labels = unique(M(:));
+labels(labels == 0 | labels == oldLab) = [];
+bestLab = 0;
+bestIou = 0;
+for i = 1:numel(labels)
+    lab = labels(i);
+    candidate = (M == lab);
+    inter = nnz(candidate & refMask);
+    if inter == 0
+        continue;
+    end
+    unionCount = nnz(candidate | refMask);
+    iou = inter / max(1, unionCount);
+    if iou > bestIou
+        bestIou = iou;
+        bestLab = double(lab);
+    end
+end
+end
+
+function propagateSelectedObjectSam31(app, roi, chIdx, pix, frm)
+oldLab = app.SelectedObjectLabelCell;
+if isempty(oldLab) || isnan(oldLab) || oldLab <= 0
+    warndlg('No object is currently selected.','SAM31 propagation'); return;
+end
+
+M = roi.image(:,:,pix,frm);
+if ~any(M(:) == oldLab)
+    warndlg('Selected object is not present on this frame.','SAM31 propagation'); return;
+end
+
+nf = size(roi.image,4);
+remaining = nf - frm;
+if remaining <= 0
+    warndlg('There is no following frame to propagate into.','SAM31 propagation'); return;
+end
+
+defaults = defaultSam31PropagationOptions(roi, pix, frm);
+defaultFrames = min(20, remaining);
+answer = inputdlg( ...
+    {'Following frames to update:', 'Resolution:', 'Object slots:', 'Collision overlap threshold (0-1):'}, ...
+    'SAM31 propagate selected track', ...
+    [1 42], ...
+    {num2str(defaultFrames), num2str(defaults.resolution), ...
+    num2str(defaults.maxNumObjects), num2str(defaults.collisionThreshold)});
+if isempty(answer)
+    return;
+end
+
+nFrames = round(str2double(answer{1}));
+resolution = round(str2double(answer{2}));
+maxObjects = round(str2double(answer{3}));
+collisionThreshold = str2double(answer{4});
+if ~isfinite(nFrames) || nFrames < 1
+    warndlg('Frame count must be a positive integer.','SAM31 propagation'); return;
+end
+if ~isfinite(resolution) || resolution < 1
+    warndlg('Resolution must be a positive integer.','SAM31 propagation'); return;
+end
+if ~isfinite(maxObjects) || maxObjects < 1
+    warndlg('Object slots must be a positive integer.','SAM31 propagation'); return;
+end
+if ~isfinite(collisionThreshold) || collisionThreshold < 0 || collisionThreshold > 1
+    warndlg('Collision overlap threshold must be between 0 and 1.','SAM31 propagation'); return;
+end
+nFrames = min(nFrames, remaining);
+
+opts = defaults;
+opts.label = double(oldLab);
+opts.annotationPix = pix;
+opts.annotationChannelName = roi.display.channel{chIdx};
+opts.startFrame = frm;
+opts.maxFrames = nFrames;
+opts.resolution = resolution;
+opts.maxNumObjects = maxObjects;
+opts.collisionThreshold = collisionThreshold;
+
+try
+    set(app.ImageFigure, 'Pointer', 'watch');
+    drawnow;
+catch
+end
+
+try
+    result = sam31.propagateTrackCorrection(roi, opts);
+catch ME
+    try
+        set(app.ImageFigure, 'Pointer', 'arrow');
+    catch
+    end
+    errordlg(sprintf('SAM31 propagation failed:\n%s', ME.message), 'SAM31 propagation');
+    return;
+end
+
+try
+    set(app.ImageFigure, 'Pointer', 'arrow');
+catch
+end
+
+summary = applySam31TrackPropagationResult(roi, pix, oldLab, result, opts);
+score_display(app,'fast');
+safeClearSelection(app, roi, frm);
+msg = sprintf('SAM31 propagation applied to %d/%d frames.', ...
+    summary.appliedFrames, summary.totalTargetFrames);
+if summary.clippedFrames > 0 || summary.skippedFrames > 0
+    msg = sprintf('%s\nClipped: %d frame(s). Skipped on collision: %d frame(s).', ...
+        msg, summary.clippedFrames, summary.skippedFrames);
+end
+helpdlg(msg, 'SAM31 propagation');
+end
+
+function opts = defaultSam31PropagationOptions(roi, annotationPix, frm)
+opts = struct();
+opts.backend = 'wsl';
+opts.resolution = 560;
+opts.maxNumObjects = 120;
+opts.minScore = 0;
+opts.videoScoreThreshold = 0.40;
+opts.videoNewDetThreshold = 0.40;
+opts.videoDetNmsThreshold = 0.10;
+opts.videoAssocIouThreshold = 0.50;
+opts.collisionThreshold = 0.35;
+opts.inputPix = defaultSam31InputPix(roi, annotationPix);
+opts.classif = [];
+
+try
+    if isa(roi.parent, 'classi')
+        opts.classif = roi.parent;
+        opts = mergeSam31ClassifDefaults(opts, roi.parent);
+    end
+catch
+end
+
+try
+    if ispc && (~isfield(opts,'backend') || isempty(opts.backend) || strcmpi(string(opts.backend), "local"))
+        opts.backend = 'wsl';
+    end
+catch
+end
+
+if isempty(opts.inputPix)
+    opts.inputPix = defaultSam31InputPix(roi, annotationPix);
+end
+opts.startFrame = frm;
+end
+
+function opts = mergeSam31ClassifDefaults(opts, classif)
+sources = {};
+try
+    if isprop(classif, 'trainingParam') && isstruct(classif.trainingParam)
+        sources{end+1} = classif.trainingParam;
+    end
+catch
+end
+try
+    if isprop(classif, 'executionParam') && isstruct(classif.executionParam)
+        sources{end+1} = classif.executionParam;
+    end
+catch
+end
+for s = 1:numel(sources)
+    src = sources{s};
+    opts = copyNumericField(opts, src, 'resolution');
+    opts = copyNumericField(opts, src, 'maxNumObjects');
+    opts = copyNumericField(opts, src, 'minScore');
+    opts = copyNumericField(opts, src, 'videoScoreThreshold');
+    opts = copyNumericField(opts, src, 'videoNewDetThreshold');
+    opts = copyNumericField(opts, src, 'videoDetNmsThreshold');
+    opts = copyNumericField(opts, src, 'videoAssocIouThreshold');
+    if isfield(src, 'backend') && ~isempty(src.backend)
+        opts.backend = char(string(src.backend));
+    end
+end
+try
+    if isprop(classif, 'channelName') && ~isempty(classif.channelName)
+        pix = roiChannelFromName(classif.channelName, classif);
+        if ~isempty(pix)
+            opts.inputPix = pix;
+        end
+    end
+catch
+end
+end
+
+function opts = copyNumericField(opts, src, name)
+try
+    if isfield(src, name) && ~isempty(src.(name))
+        value = str2double(char(string(src.(name))));
+        if isfinite(value)
+            opts.(name) = value;
+        end
+    end
+catch
+end
+end
+
+function pix = roiChannelFromName(channelName, classif)
+pix = [];
+try
+    if isprop(classif, 'roi') && ~isempty(classif.roi)
+        r = classif.roi;
+        if iscell(r), r = r{1}; end
+        names = cellstr(string(channelName));
+        for i = 1:numel(names)
+            candidate = r.findChannelID(names{i});
+            if ~isempty(candidate)
+                pix = candidate(1);
+                return;
+            end
+        end
+    end
+catch
+end
+end
+
+function pix = defaultSam31InputPix(roi, annotationPix)
+pix = [];
+try
+    if isa(roi.parent, 'classi') && isprop(roi.parent, 'channelName') && ~isempty(roi.parent.channelName)
+        names = cellstr(string(roi.parent.channelName));
+        for i = 1:numel(names)
+            candidate = roi.findChannelID(names{i});
+            if ~isempty(candidate)
+                pix = candidate(1);
+                return;
+            end
+        end
+    end
+catch
+end
+
+try
+    nChannels = size(roi.image,3);
+    candidates = setdiff(1:nChannels, annotationPix, 'stable');
+    if ~isempty(candidates)
+        pix = candidates(1);
+    end
+catch
+end
+end
+
+function summary = applySam31TrackPropagationResult(roi, pix, oldLab, result, opts)
+frames = double(result.frames(:)');
+masks = result.candidateMasks;
+if ndims(masks) == 4
+    masks = squeeze(masks(:,:,1,:));
+end
+if ndims(masks) == 2
+    masks = reshape(masks, size(masks,1), size(masks,2), 1);
+end
+
+summary = struct('totalTargetFrames', 0, 'appliedFrames', 0, ...
+    'clippedFrames', 0, 'skippedFrames', 0);
+for k = 1:numel(frames)
+    f = frames(k);
+    if f <= opts.startFrame || f < 1 || f > size(roi.image,4)
+        continue;
+    end
+    summary.totalTargetFrames = summary.totalTargetFrames + 1;
+    candidate = masks(:,:,k) > 0;
+    if ~any(candidate(:))
+        continue;
+    end
+    M = roi.image(:,:,pix,f);
+    selfMask = (M == oldLab);
+    otherMask = (M > 0) & (M ~= oldLab);
+    overlap = candidate & otherMask;
+    overlapFraction = nnz(overlap) / max(1, nnz(candidate));
+    if overlapFraction > opts.collisionThreshold
+        summary.skippedFrames = summary.skippedFrames + 1;
+        continue;
+    end
+    if any(overlap(:))
+        candidate(overlap) = false;
+        summary.clippedFrames = summary.clippedFrames + 1;
+    end
+    M(selfMask) = 0;
+    M(candidate) = oldLab;
+    roi.image(:,:,pix,f) = M;
+    summary.appliedFrames = summary.appliedFrames + 1;
+end
+end
 
 function openRelabelDialog(app, roi, chIdx, pix, frm, mode)
 % mode: 'frame-only' (default), 'to-last', 'all-frames'

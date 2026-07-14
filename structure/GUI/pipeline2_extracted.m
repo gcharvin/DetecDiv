@@ -12493,6 +12493,12 @@ classdef pipeline2 < matlab.apps.AppBase
             keyLower = lower(char(string(key)));
             enableState = ternary(app, editable, 'on', 'off');
 
+            if isBooleanParamKey(app, node, key) && isEmptyParamValue(app, value)
+                defaults = defaultNodeParams(app, nodeType, getField(app, node, 'pkg', ''));
+                if isstruct(defaults) && isfield(defaults, key)
+                    value = normalizeMissingParamValue(app, defaults.(key));
+                end
+            end
             valueText = safeScalarText(app, value);
             if islogical(value) || any(strcmpi(valueText, {'true','false'})) || isBooleanParamKey(app, node, key)
                 ctrl = uicheckbox(parent, 'Text', '');
@@ -12577,6 +12583,17 @@ classdef pipeline2 < matlab.apps.AppBase
             ctrl.Value = paramValueToDisplay(app, node, key, value);
             ctrl.Enable = enableState;
             ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+        end
+
+        function tf = isEmptyParamValue(app, value)
+            value = normalizeMissingParamValue(app, value);
+            if isempty(value)
+                tf = true;
+            elseif ischar(value) || (isstring(value) && isscalar(value))
+                tf = isempty(strtrim(char(string(value))));
+            else
+                tf = false;
+            end
         end
 
         function tf = paramUsesFolderBrowser(app, node, key, value, scope) %#ok<INUSD>
