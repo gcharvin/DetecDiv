@@ -12,6 +12,22 @@ from pathlib import Path
 import classify_sam31
 
 
+class StreamingCapture:
+    def __init__(self, handler: "Sam31RequestHandler", sink: io.StringIO) -> None:
+        self.handler = handler
+        self.sink = sink
+
+    def write(self, text: str) -> int:
+        if not text:
+            return 0
+        self.sink.write(text)
+        self.handler._write({"stream": text})
+        return len(text)
+
+    def flush(self) -> None:
+        self.handler.wfile.flush()
+
+
 class Sam31RequestHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         raw = self.rfile.readline()
@@ -30,9 +46,11 @@ class Sam31RequestHandler(socketserver.StreamRequestHandler):
             if not config_path:
                 raise ValueError("Missing config path")
             output = io.StringIO()
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            stream = StreamingCapture(self, output)
+            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
                 classify_sam31.run(config_path)
-            self._write({"status": 0, "output": output.getvalue()})
+            stream.flush()
+            self._write({"status": 0, "output": ""})
         except BaseException as exc:  # noqa: BLE001 - propagate error details to MATLAB.
             self._write(
                 {

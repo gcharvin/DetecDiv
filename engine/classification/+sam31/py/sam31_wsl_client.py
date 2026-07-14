@@ -27,21 +27,21 @@ def main() -> int:
         sock.settimeout(args.timeout)
         payload = (json.dumps(request) + "\n").encode("utf-8")
         sock.sendall(payload)
-        response = b""
-        while not response.endswith(b"\n"):
-            chunk = sock.recv(65536)
-            if not chunk:
-                break
-            response += chunk
+        with sock.makefile("r", encoding="utf-8") as reader:
+            for line in reader:
+                if not line:
+                    break
+                result = json.loads(line)
+                if "stream" in result:
+                    print(str(result.get("stream", "")), end="", flush=True)
+                    continue
+                output = str(result.get("output", ""))
+                if output:
+                    print(output, end="" if output.endswith("\n") else "\n", flush=True)
+                return int(result.get("status", 1))
 
-    if not response:
-        print("SAM31 WSL server returned no response.", file=sys.stderr)
-        return 1
-    result = json.loads(response.decode("utf-8"))
-    output = str(result.get("output", ""))
-    if output:
-        print(output, end="" if output.endswith("\n") else "\n")
-    return int(result.get("status", 1))
+    print("SAM31 WSL server returned no response.", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import platform
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +176,82 @@ def is_cancel_requested(cancel_path: Path | None) -> bool:
 def check_cancel(cancel_path: Path | None, where: str) -> None:
     if is_cancel_requested(cancel_path):
         raise SystemExit(f"DetecDiv run cancelled during SAM31 classify ({where}).")
+
+
+def output_object_counts(output: dict[str, Any], min_score: float = 0.0) -> tuple[int, int]:
+    obj_ids = output.get("out_obj_ids")
+    if obj_ids is None:
+        return 0, 0
+    if hasattr(obj_ids, "detach"):
+        obj_ids = obj_ids.detach().cpu().numpy()
+    obj_ids_arr = np.asarray(obj_ids).reshape(-1)
+    raw_count = int(obj_ids_arr.size)
+
+    scores = output.get("out_probs")
+    if scores is None:
+        return raw_count, raw_count
+    if hasattr(scores, "detach"):
+        scores = scores.detach().cpu().numpy()
+    scores_arr = np.asarray(scores, dtype=np.float32).reshape(-1)
+    if scores_arr.size != raw_count:
+        return raw_count, raw_count
+    kept_count = int(np.count_nonzero(scores_arr >= float(min_score)))
+    return raw_count, kept_count
+
+
+def stream_propagate_in_video(
+    predictor,
+    session_id: str,
+    *,
+    total_frames: int,
+    min_score: float,
+    cancel_path: Path | None = None,
+    prefix: str = "[SAM31 PY]",
+) -> dict[int, dict]:
+    outputs_per_frame: dict[int, dict] = {}
+    start_time = time.time()
+    last_log = 0.0
+    seen = 0
+    print(f"{prefix} Propagation start ({total_frames} frames)", flush=True)
+    for response in predictor.handle_stream_request(
+        request={
+            "type": "propagate_in_video",
+            "session_id": session_id,
+            "output_prob_thresh": min_score,
+        }
+    ):
+        check_cancel(cancel_path, f"propagate frame {seen + 1}/{total_frames}")
+        frame_idx = int(response["frame_index"])
+        output = response["outputs"]
+        outputs_per_frame[frame_idx] = output
+        seen += 1
+
+        raw_count, kept_count = output_object_counts(output, min_score=min_score)
+        elapsed = max(time.time() - start_time, 1e-6)
+        fps = seen / elapsed
+        remaining = max(total_frames - seen, 0)
+        eta = remaining / fps if fps > 0 else float("nan")
+        now = time.time()
+        should_log = (
+            seen == 1
+            or seen == total_frames
+            or seen % 5 == 0
+            or now - last_log >= 5.0
+        )
+        if should_log:
+            print(
+                f"{prefix} Frame {seen}/{total_frames} done "
+                f"(frame_index={frame_idx + 1}, objects={kept_count}, raw_objects={raw_count}, "
+                f"{fps:.2f} frame/s, ETA {eta:.1f}s)",
+                flush=True,
+            )
+            last_log = now
+    elapsed = max(time.time() - start_time, 1e-6)
+    print(
+        f"{prefix} Propagation done ({seen}/{total_frames} frames, {seen / elapsed:.2f} frame/s)",
+        flush=True,
+    )
+    return outputs_per_frame
 
 
 def robust_u8(image: np.ndarray) -> np.ndarray:
@@ -356,7 +433,7 @@ def run_sam31_text_movie_once(
     fallback_shape: tuple[int, int],
     cancel_path: Path | None = None,
 ):
-    from sam31_ctc_benchmark.sam31_runner import output_to_label_mask, propagate_in_video
+    from sam31_ctc_benchmark.sam31_runner import output_to_label_mask
 
     check_cancel(cancel_path, "before start_session")
     response = predictor.handle_request(request={"type": "start_session", "resource_path": str(image_dir)})
@@ -374,10 +451,18 @@ def run_sam31_text_movie_once(
             }
         )
         check_cancel(cancel_path, "before propagation")
-        outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)
+        outputs = stream_propagate_in_video(
+            predictor,
+            session_id,
+            total_frames=num_frames,
+            min_score=min_score,
+            cancel_path=cancel_path,
+            prefix="[SAM31 PY]",
+        )
         check_cancel(cancel_path, "after propagation")
         labels_by_frame: list[np.ndarray] = []
         stats_by_frame: list[dict] = []
+        final_counts: list[int] = []
         for frame_idx in range(num_frames):
             if frame_idx % 10 == 0:
                 check_cancel(cancel_path, f"label frame {frame_idx + 1}/{num_frames}")
@@ -385,13 +470,23 @@ def run_sam31_text_movie_once(
             if output is None:
                 labels_by_frame.append(np.zeros(fallback_shape, dtype=np.uint16))
                 stats_by_frame.append({"frame_index": frame_idx, "missing_output": True})
+                final_counts.append(0)
                 continue
             labels = output_to_label_mask(output, min_score=min_score)
             labels_by_frame.append(labels)
+            final_count = len([label for label in np.unique(labels) if label != 0])
+            final_counts.append(int(final_count))
             stats = dict(output.get("frame_stats") or {})
             stats["frame_index"] = frame_idx
-            stats["num_output_objects"] = int(labels.max())
+            stats["num_output_objects"] = int(final_count)
             stats_by_frame.append(stats)
+        if final_counts:
+            print(
+                "[SAM31 PY] Final mask objects per frame: "
+                f"min={min(final_counts)}, median={float(np.median(final_counts)):.1f}, "
+                f"max={max(final_counts)}, first={final_counts[0]}, last={final_counts[-1]}",
+                flush=True,
+            )
         return labels_by_frame, stats_by_frame
     finally:
         predictor.handle_request(request={"type": "close_session", "session_id": session_id})
@@ -671,7 +766,7 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         video_kwargs=video_kwargs,
     )
 
-    from sam31_ctc_benchmark.sam31_runner import mark_seed_frame_ready, output_to_label_mask, propagate_in_video
+    from sam31_ctc_benchmark.sam31_runner import mark_seed_frame_ready, output_to_label_mask
     import torch
 
     prompt_margin = scalar_number(cfg.get("prompt_margin"), 4, "prompt_margin", integer=True, minimum=0.0)
@@ -720,7 +815,14 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         predictor.model.add_action_history(inference_state, "refine", frame_idx=0, obj_ids=obj_ids)
         mark_seed_frame_ready(predictor, session_id, 0)
         check_cancel(cancel_path, "before correction propagation")
-        outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)
+        outputs = stream_propagate_in_video(
+            predictor,
+            session_id,
+            total_frames=raw.shape[3],
+            min_score=min_score,
+            cancel_path=cancel_path,
+            prefix="[SAM31 correction PY]",
+        )
         check_cancel(cancel_path, "after correction propagation")
     finally:
         predictor.handle_request(request={"type": "close_session", "session_id": session_id})
