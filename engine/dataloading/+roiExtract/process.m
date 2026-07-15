@@ -96,6 +96,7 @@ function ctx = process(ctx)
         p.roiList = normalizeRoiSelectionParam(p.roiList);
     end
     p = normalizeScaleBinningParams(p);
+    validateManualRoiContextForExtraction(shallowObj, fovIdx, ctx, p);
 
     existingPolicy = resolveExistingPolicy(ctx, p);
     switch existingPolicy
@@ -383,6 +384,163 @@ function policy = resolveExistingPolicy(ctx, p)
         case {'replace','append','skip','error','upsert'}
         otherwise
             policy = 'replace';
+    end
+end
+
+function validateManualRoiContextForExtraction(shallowObj, fovIdx, ctx, p)
+    if isempty(shallowObj) || ~isstruct(ctx)
+        return;
+    end
+
+    records = manualRoiRecordsFromContext(ctx);
+    if isempty(records)
+        return;
+    end
+
+    for fovNumber = fovIdx(:)'
+        expected = records([records.fovIndex] == double(fovNumber));
+        if isempty(expected) || fovNumber < 1 || fovNumber > numel(shallowObj.fov)
+            continue;
+        end
+
+        rois = shallowObj.fov(fovNumber).roi;
+        if isempty(rois)
+            error('roiExtract:ManualRoiMismatch', ...
+                'Manual ROI specification expects %d ROI(s) for FOV %d, but the project currently has none.', ...
+                numel(expected), fovNumber);
+        end
+
+        selectedRois = 1:numel(rois);
+        if isstruct(p) && isfield(p, 'roiList') && ~isempty(p.roiList)
+            selectedRois = intersect(selectedRois, p.roiList, 'stable');
+        end
+        if isempty(selectedRois)
+            continue;
+        end
+
+        expectedRects = reshape([expected.rect], 4, []).';
+        for k = selectedRois(:)'
+            actualRect = roiRectForValidation(rois(k));
+            if isempty(actualRect) || ~anyRectMatches(expectedRects, actualRect)
+                error('roiExtract:ManualRoiMismatch', ...
+                    ['Selected ROI %d in FOV %d has rectangle %s, which does not match the manual ROI specification %s. ' ...
+                     'Run the manual ROI node with output policy replace before extraction.'], ...
+                    k, fovNumber, formatRectForValidation(actualRect), formatRectsForValidation(expectedRects));
+            end
+        end
+
+        if ~isstruct(p) || ~isfield(p, 'roiList') || isempty(p.roiList)
+            for k = 1:size(expectedRects, 1)
+                if ~anySelectedRoiMatches(rois, selectedRois, expectedRects(k, :))
+                    error('roiExtract:ManualRoiMismatch', ...
+                        ['Manual ROI specification for FOV %d includes rectangle %s, ' ...
+                         'but selected project ROIs are %s. Run the manual ROI node with output policy replace before extraction.'], ...
+                        fovNumber, mat2str(expectedRects(k, :)), summarizeSelectedRoiRects(rois, selectedRois));
+                end
+            end
+        end
+    end
+end
+
+function records = manualRoiRecordsFromContext(ctx)
+    records = struct('fovIndex', {}, 'rect', {});
+    if isfield(ctx, 'roiManual') && isstruct(ctx.roiManual) && ...
+            isfield(ctx.roiManual, 'manualRois') && ~isempty(ctx.roiManual.manualRois)
+        records = appendManualRoiRecords(records, ctx.roiManual.manualRois);
+    end
+    try
+        if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'nodeParams') && isstruct(ctx.run.nodeParams)
+            keys = fieldnames(ctx.run.nodeParams);
+            for i = 1:numel(keys)
+                params = ctx.run.nodeParams.(keys{i});
+                if isstruct(params) && isfield(params, 'manualRois') && ~isempty(params.manualRois)
+                    records = appendManualRoiRecords(records, params.manualRois);
+                end
+            end
+        end
+    catch
+    end
+end
+
+function records = appendManualRoiRecords(records, manualRois)
+    for i = 1:numel(manualRois)
+        rec = manualRois(i);
+        if ~isstruct(rec) || ~isfield(rec, 'fovIndex') || isempty(rec.fovIndex)
+            continue;
+        end
+        rect = [];
+        if isfield(rec, 'rect') && ~isempty(rec.rect)
+            rect = rec.rect;
+        elseif isfield(rec, 'position') && ~isempty(rec.position)
+            rect = rec.position;
+        end
+        if ~isnumeric(rect) || numel(rect) < 4
+            continue;
+        end
+        records(end+1).fovIndex = double(rec.fovIndex); %#ok<AGROW>
+        records(end).rect = double(rect(1:4));
+    end
+end
+
+function rect = roiRectForValidation(r)
+    rect = [];
+    try
+        if isprop(r, 'value') && ~isempty(r.value) && isnumeric(r.value) && numel(r.value) >= 4
+            rect = double(r.value(1:4));
+        end
+    catch
+        rect = [];
+    end
+end
+
+function tf = anyRectMatches(expectedRects, actualRect)
+    tf = false;
+    if isempty(expectedRects) || isempty(actualRect)
+        return;
+    end
+    actualRect = double(actualRect(1:4));
+    for i = 1:size(expectedRects, 1)
+        if all(abs(double(expectedRects(i, 1:4)) - actualRect) <= 1)
+            tf = true;
+            return;
+        end
+    end
+end
+
+function tf = anySelectedRoiMatches(rois, selectedRois, expectedRect)
+    tf = false;
+    for i = selectedRois(:)'
+        if anyRectMatches(expectedRect, roiRectForValidation(rois(i)))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function txt = summarizeSelectedRoiRects(rois, selectedRois)
+    parts = cell(1, numel(selectedRois));
+    for i = 1:numel(selectedRois)
+        parts{i} = sprintf('ROI %d: %s', selectedRois(i), formatRectForValidation(roiRectForValidation(rois(selectedRois(i)))));
+    end
+    txt = strjoin(parts, '; ');
+    if strlength(string(txt)) > 300
+        txt = [char(extractBefore(string(txt), 298)) '...'];
+    end
+end
+
+function txt = formatRectsForValidation(rects)
+    parts = cell(1, size(rects, 1));
+    for i = 1:size(rects, 1)
+        parts{i} = mat2str(rects(i, :));
+    end
+    txt = strjoin(parts, '; ');
+end
+
+function txt = formatRectForValidation(rect)
+    if isempty(rect)
+        txt = '[]';
+    else
+        txt = mat2str(double(rect(1:4)));
     end
 end
 

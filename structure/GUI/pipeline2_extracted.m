@@ -17504,6 +17504,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.RuntimeValues.runId = suggested;
             catch
             end
+            try
+                app.ResumeoptionsDropDown.Value = 'Restart from scratch';
+                app.RuntimeValues.outputPolicyUserChosen = false;
+                applyRecommendedOutputPolicyForResume(app);
+            catch
+            end
             app.RunButton.Text = 'Run !';
         end
 
@@ -19107,6 +19113,18 @@ classdef pipeline2 < matlab.apps.AppBase
                 [runObj, msg] = pipelineRunLoad(fullfile(pth, file));
                 if isempty(runObj)
                     error('pipeline2:RunLoadFailed', '%s', msg);
+                end
+                [pipeFromRun, resolveMsg] = resolvePipelineFromRunForUi(app, runObj);
+                if isempty(pipeFromRun)
+                    if ~isempty(resolveMsg)
+                        uialert(app.UIFigure, resolveMsg, 'Load run', 'Icon', 'warning');
+                    end
+                else
+                    loadPipelineFromObject(app, pipeFromRun, false);
+                    try
+                        addRecentPipelinePath(app, fullfile(pipeFromRun.path, 'pipeline.json'));
+                    catch
+                    end
                 end
                 loadRunIntoUi(app, runObj);
             catch ME
