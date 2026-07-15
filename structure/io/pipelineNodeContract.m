@@ -274,7 +274,7 @@ function contract = defaultContractForNode(node)
                 selectors.framesParam = 'frames';
                 selectors.outputNameParam = 'outputName';
                 parameters.run = {'frames','outputName'};
-                parameters.static = {'cellChannelName','nucleusChannelName','createCellMasks','createNucleusMasks','createLineage','segmentationFile'};
+                parameters.static = {'cellChannelName','nucleusChannelName','createCellMasks','createNucleusMasks','createLineage'};
                 requirements.roi.required = true;
                 requirements.roi.channelsMin = 0;
                 requirements.params.optional = [{'pkg','outputName'}, parameters.static];
@@ -288,7 +288,7 @@ function contract = defaultContractForNode(node)
                 binding.mode = 'annotationImport';
                 binding.selectorKeys = {};
                 binding.resolveAt = 'run';
-                resources.in = resourceDef('annotation', 'phyloCell_segmentation', 'phyloCell_segmentation', 'segmentationFile', 'annotations', 'segmentationFile', true, '');
+                resources.in = resourceDef('annotation', 'phyloCell_segmentation', 'phyloCell_segmentation', '', 'annotations', '', true, '');
                 resources.out = [ ...
                     resourceDef('channel', 'cell_mask', 'phyloCell_cells', 'cellChannelName', 'channels', 'cellChannelName', false, 'roiMasks'), ...
                     resourceDef('channel', 'nucleus_mask', 'phyloCell_nuclei', 'nucleusChannelName', 'channels', 'nucleusChannelName', false, 'roiMasks'), ...

@@ -208,7 +208,6 @@
         "createCellMasks": true,
         "createNucleusMasks": true,
         "createLineage": true,
-        "segmentationFile": "",
         "existingPolicy": "replace",
         "frames": [],
         "tip": [

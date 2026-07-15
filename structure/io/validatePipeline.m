@@ -144,7 +144,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             if ~isempty(pathWarnings)
                 report.warnings = [report.warnings, pathWarnings]; %#ok<AGROW>
             end
-            [phyloErrors, phyloWarnings] = phyloCellAnnotationIssues(node, ctx);
+            [phyloErrors, phyloWarnings] = phyloCellAnnotationIssues(node, ctx, nodes, edges);
             if ~isempty(phyloErrors)
                 ok = false;
                 report.errors = [report.errors, phyloErrors]; %#ok<AGROW>
@@ -2022,9 +2022,16 @@ for i = 1:numel(outputKeys)
 end
 end
 
-function [errors, warnings] = phyloCellAnnotationIssues(node, ctx)
+function [errors, warnings] = phyloCellAnnotationIssues(node, ctx, nodes, edges)
 errors = {};
 warnings = {};
+
+if nargin < 3
+    nodes = struct([]);
+end
+if nargin < 4
+    edges = struct([]);
+end
 
 if ~isNodeEnabledForValidation(node)
     return;
@@ -2044,9 +2051,20 @@ end
 nodeId = char(string(getField(node, 'id', '')));
 if isstruct(p) && isfield(p, 'segmentationFile') && ~isempty(p.segmentationFile)
     segFile = char(string(p.segmentationFile));
-    if exist(segFile, 'file') ~= 2
+    if isPhyloSegmentationBindingToken(segFile)
+        % Legacy templates may contain a symbolic resource binding here
+        % (for example "load_phylocell"). The real annotation file is
+        % stored on each FOV by the phyloCell loader, so continue below.
+    elseif exist(segFile, 'file') ~= 2
         errors{end+1} = sprintf('Node %s requires phyloCell segmentation file "%s", but the file does not exist.', nodeId, segFile);
+        return;
+    else
+        return;
     end
+end
+
+[hasLoader, loaderReusesProject] = hasUpstreamPhyloCellAnnotationLoader(node, nodes, edges, ctx);
+if hasLoader && ~loaderReusesProject
     return;
 end
 
@@ -2073,10 +2091,18 @@ for ii = reshape(fovIndex, 1, [])
 end
 
 if ~isempty(missing)
-    errors{end+1} = sprintf(['Node %s requires phyloCell segmentation annotations, but no ' ...
-        'fov.contours.phyloCell.segmentationFile is available for FOV(s): %s. ' ...
-        'Enable load_phylocell to import annotation links, or disable convert_phylocell_annotations ' ...
-        'when only redefining/extracting raw ROIs.'], nodeId, mat2str(missing));
+    if hasLoader && loaderReusesProject
+        errors{end+1} = sprintf(['Node %s requires phyloCell segmentation annotations, but load_phylocell ' ...
+            'is configured to reuse existing project image sources and will not parse the phyloCell raw project. ' ...
+            'No fov.contours.phyloCell.segmentationFile is available for FOV(s): %s. Switch Input mode to ' ...
+            '"Parse raw images into project" to import annotation links, or disable convert_phylocell_annotations.'], ...
+            nodeId, mat2str(missing));
+    else
+        errors{end+1} = sprintf(['Node %s requires phyloCell segmentation annotations, but no ' ...
+            'fov.contours.phyloCell.segmentationFile is available for FOV(s): %s. ' ...
+            'Enable load_phylocell to import annotation links, or disable convert_phylocell_annotations ' ...
+            'when only redefining/extracting raw ROIs.'], nodeId, mat2str(missing));
+    end
 end
 if ~isempty(missingFiles)
     errors{end+1} = sprintf(['Node %s requires phyloCell segmentation annotations, but these linked ' ...
@@ -2141,6 +2167,91 @@ try
 catch
     segFile = '';
 end
+end
+
+function [hasLoader, reusesProjectSources] = hasUpstreamPhyloCellAnnotationLoader(node, nodes, edges, ctx)
+hasLoader = false;
+reusesProjectSources = false;
+targetId = char(string(getField(node, 'id', '')));
+if isempty(targetId) || isempty(nodes) || isempty(edges)
+    return;
+end
+
+for i = 1:numel(edges)
+    if ~strcmp(char(string(getField(edges(i), 'to', ''))), targetId)
+        continue;
+    end
+    fromPort = lower(char(string(getField(edges(i), 'fromPort', ''))));
+    toPort = lower(char(string(getField(edges(i), 'toPort', ''))));
+    if ~isempty(fromPort) && ~contains(fromPort, 'annotation') && ...
+            ~isempty(toPort) && ~contains(toPort, 'annotation')
+        continue;
+    end
+    sourceId = char(string(getField(edges(i), 'from', '')));
+    sourceNode = findNodeByIdLocal(nodes, sourceId);
+    if isempty(sourceNode)
+        continue;
+    end
+    if isPhyloCellLoaderNode(sourceNode) && isNodeEnabledForValidation(sourceNode)
+        hasLoader = true;
+        reusesProjectSources = phyloCellLoaderReusesProjectSources(sourceNode, ctx);
+        return;
+    end
+end
+end
+
+function tf = isPhyloCellLoaderNode(node)
+nodeType = lower(char(string(getField(node, 'type', ''))));
+pkgName = lower(char(string(getField(node, 'pkg', ''))));
+funcName = lower(char(string(getField(node, 'func', ''))));
+tf = strcmp(nodeType, 'dataloader') && ...
+    (strcmp(pkgName, 'phylocellloader') || contains(funcName, 'phylocellloader'));
+end
+
+function tf = phyloCellLoaderReusesProjectSources(node, ctx)
+tf = false;
+try
+    if isfield(ctx, 'dataLoader') && isstruct(ctx.dataLoader) && ...
+            isfield(ctx.dataLoader, 'useExistingProjectSources') && ~isempty(ctx.dataLoader.useExistingProjectSources)
+        tf = logical(ctx.dataLoader.useExistingProjectSources);
+        return;
+    end
+catch
+end
+try
+    if isfield(ctx, 'run') && isstruct(ctx.run) && ...
+            isfield(ctx.run, 'useExistingProjectSources') && ~isempty(ctx.run.useExistingProjectSources)
+        tf = logical(ctx.run.useExistingProjectSources);
+        return;
+    end
+catch
+end
+params = getField(node, 'params', struct());
+if isstruct(params) && isfield(params, 'useExistingProjectSources') && ~isempty(params.useExistingProjectSources)
+    tf = logical(params.useExistingProjectSources);
+end
+end
+
+function tf = isPhyloSegmentationBindingToken(value)
+txt = strtrim(char(string(value)));
+if isempty(txt)
+    tf = false;
+    return;
+end
+if startsWith(txt, '<') && endsWith(txt, '>')
+    tf = true;
+    return;
+end
+if startsWith(txt, '@')
+    tf = true;
+    return;
+end
+if looksLikeWindowsAbsPathLocal(txt) || startsWith(strrep(txt, '\', '/'), '/') || ...
+        contains(txt, '/') || contains(txt, '\') || endsWith(lower(txt), '.mat')
+    tf = false;
+    return;
+end
+tf = ~isempty(regexp(txt, '^[A-Za-z_]\w*$', 'once'));
 end
 
 function [errors, warnings, report] = pluginPackageIssues(node, ctx)

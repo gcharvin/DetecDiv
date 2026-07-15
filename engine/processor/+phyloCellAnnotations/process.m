@@ -805,8 +805,11 @@ end
 function segFile = resolveSegmentationFile(roiobj, paramout)
 segFile = '';
 if isfield(paramout, 'segmentationFile') && ~isempty(paramout.segmentationFile)
-    segFile = char(string(paramout.segmentationFile));
-    return;
+    configured = char(string(paramout.segmentationFile));
+    if ~isSegmentationBindingToken(configured)
+        segFile = configured;
+        return;
+    end
 end
 try
     fovObj = roiobj.parent;
@@ -818,6 +821,29 @@ try
 catch
     segFile = '';
 end
+end
+
+function tf = isSegmentationBindingToken(value)
+txt = strtrim(char(string(value)));
+if isempty(txt)
+    tf = false;
+    return;
+end
+if startsWith(txt, '<') && endsWith(txt, '>')
+    tf = true;
+    return;
+end
+if startsWith(txt, '@')
+    tf = true;
+    return;
+end
+if ~isempty(regexp(txt, '^[A-Za-z]:[\\/]', 'once')) || startsWith(txt, '\\') || ...
+        startsWith(strrep(txt, '\', '/'), '/') || contains(txt, '/') || ...
+        contains(txt, '\') || endsWith(lower(txt), '.mat')
+    tf = false;
+    return;
+end
+tf = ~isempty(regexp(txt, '^[A-Za-z_]\w*$', 'once'));
 end
 
 function frames = resolveFrames(ctx, paramout, nFrames)
