@@ -7,10 +7,44 @@ import numpy as np
 import h5py
 import torch
 import matplotlib
+import builtins
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from cellpose import io, train, models
+
+BASE_PRINT = builtins.print
+TEE_LOG_PATH = None
+TEE_LOG_HANDLE = None
+
+
+def install_log_tee(log_path):
+    global TEE_LOG_PATH, TEE_LOG_HANDLE
+    if not log_path:
+        return
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_path = os.path.abspath(log_path)
+
+    if TEE_LOG_PATH == log_path and TEE_LOG_HANDLE is not None:
+        return
+
+    if TEE_LOG_HANDLE is not None:
+        try:
+            TEE_LOG_HANDLE.close()
+        except OSError:
+            pass
+
+    TEE_LOG_HANDLE = open(log_path, "a", encoding="utf-8", buffering=1)
+    TEE_LOG_PATH = log_path
+
+    def tee_print(*args, **kwargs):
+        kwargs.setdefault("flush", True)
+        BASE_PRINT(*args, **kwargs)
+        file_kwargs = dict(kwargs)
+        file_kwargs["file"] = TEE_LOG_HANDLE
+        BASE_PRINT(*args, **file_kwargs)
+
+    builtins.print = tee_print
 
 
 def cuda_memory_info():
@@ -222,6 +256,7 @@ def train_model():
     save_path = cfg["save_path"]
     model_name = cfg["model_name"]
     status_path = cfg.get("status_path", "")
+    install_log_tee(cfg.get("log_path", ""))
     seed = int(cfg.get("seed", 12345))
     use_pretrained = bool(cfg.get("use_pretrained", True))
     verbose = bool(cfg.get("verbose", True))

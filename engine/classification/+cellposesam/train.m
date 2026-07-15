@@ -115,6 +115,7 @@ cfg.learning_rate  = trainingParam.learning_rate;
 cfg.n_epochs       = trainingParam.n_epochs;
 cfg.batch_size     = trainingParam.batch_size;
 cfg.cancel_path    = cancelTokenFileFromCtx(ctx);
+cfg.log_path       = strrep(fullfile(classif.path, 'train_cellposesam_live.log'), '\\', '/');
 
 cfg.min_train_masks = 0;
 if isfield(trainingParam, 'min_train_masks') && ~isempty(trainingParam.min_train_masks)
@@ -212,9 +213,9 @@ try
     cancelPath = cancelTokenFileFromCtx(ctx);
     detecdiv_check_cancel(ctx, 'cellposesam train before Python');
     if ~isempty(cancelPath) && ~ispc
-        runPythonTrainingProcessWithCancel(char(python_env.Executable), scriptPath, configPath, classif.path, cancelPath);
+        runPythonTrainingProcessWithCancel(char(python_env.Executable), scriptPath, configPath, classif.path, cancelPath, cfg.log_path);
     else
-        runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif, statusPath);
+        runPythonTrainingWithCudaRecovery(char(python_env.Executable), scriptPath, configPath, selectArgs, classif, statusPath);
     end
     detecdiv_check_cancel(ctx, 'cellposesam train after Python');
     disp('[OK] CellposeSAM training finished successfully.');
@@ -225,11 +226,11 @@ catch ME
 end
 end
 
-function runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif, statusPath)
+function runPythonTrainingWithCudaRecovery(pythonExe, scriptPath, configPath, selectArgs, classif, statusPath)
 % Retry once after stale MATLAB/Python CUDA contexts have been released.
 for attempt = 1:2
     try
-        pyrunfile(scriptPath);
+        runPythonTrainingEcho(pythonExe, scriptPath, configPath, classif.path, statusPath);
         return;
     catch ME
         if isPythonTerminatedAfterCompletedTraining(ME, statusPath)
@@ -254,7 +255,48 @@ for attempt = 1:2
 end
 end
 
-function runPythonTrainingProcessWithCancel(pythonExe, scriptPath, configPath, workDir, cancelPath)
+function runPythonTrainingEcho(pythonExe, scriptPath, configPath, workDir, statusPath)
+stdoutPath = fullfile(workDir, 'train_cellposesam_stdout.txt');
+stderrPath = fullfile(workDir, 'train_cellposesam_stderr.txt');
+liveLogPath = fullfile(workDir, 'train_cellposesam_live.log');
+deleteIfExistsLocal(stdoutPath);
+deleteIfExistsLocal(stderrPath);
+deleteIfExistsLocal(liveLogPath);
+
+setenv('CPSAM_CONFIG', configPath);
+if ispc
+    cmd = sprintf('"%s" -u "%s" 2>&1', pythonExe, scriptPath);
+else
+    cmd = sprintf('%s -u %s 2>&1', shellQuoteLocal(pythonExe), shellQuoteLocal(scriptPath));
+end
+
+try
+    [exitCode, runnerOut] = system(cmd, '-echo');
+catch
+    [exitCode, runnerOut] = system(cmd);
+end
+
+try
+    fid = fopen(stdoutPath, 'w');
+    if fid ~= -1
+        fwrite(fid, runnerOut, 'char');
+        fclose(fid);
+    end
+catch
+end
+
+if exitCode ~= 0 && trainingStatusShowsSuccess(statusPath)
+    disp('[WARN] Python runner returned a non-zero exit code after CellposeSAM saved the trained model.');
+    disp('[WARN] Training is considered complete because train_cellposesam_status.json reports success.');
+    return;
+end
+
+if exitCode ~= 0
+    raiseTrainingProcessError(exitCode, stdoutPath, stderrPath);
+end
+end
+
+function runPythonTrainingProcessWithCancel(pythonExe, scriptPath, configPath, workDir, cancelPath, liveLogPath)
 stdoutPath = fullfile(workDir, 'train_cellposesam_stdout.txt');
 stderrPath = fullfile(workDir, 'train_cellposesam_stderr.txt');
 statusPath = fullfile(workDir, 'train_cellposesam_runner_status.txt');
@@ -263,6 +305,7 @@ deleteIfExistsLocal(stdoutPath);
 deleteIfExistsLocal(stderrPath);
 deleteIfExistsLocal(statusPath);
 deleteIfExistsLocal(scriptRunnerPath);
+deleteIfExistsLocal(liveLogPath);
 
 if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
     error('runPipeline:Cancelled', 'Pipeline run cancelled by user before CellposeSAM training.');
@@ -298,12 +341,14 @@ if isempty(pid) || isnan(str2double(pid))
     error('cellposesam:RunnerLaunchFailed', 'CellposeSAM training runner did not return a valid PID: %s', launchOut);
 end
 
+printedBytes = 0;
 while true
     if exist(statusPath, 'file') == 2
         code = readExitCodeLocal(statusPath);
         if code ~= 0
             raiseTrainingProcessError(code, stdoutPath, stderrPath);
         end
+        flushTrainingLogLocal(liveLogPath, printedBytes);
         return;
     end
 
@@ -313,6 +358,7 @@ while true
         if code ~= 0
             raiseTrainingProcessError(code, stdoutPath, stderrPath);
         end
+        flushTrainingLogLocal(liveLogPath, printedBytes);
         return;
     end
 
@@ -321,6 +367,8 @@ while true
         error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM training.');
     end
 
+    flushTrainingLogLocal(liveLogPath, printedBytes);
+    printedBytes = localFileBytesLocal(liveLogPath);
     pause(2);
 end
 end
@@ -493,6 +541,35 @@ try
     pause(5);
     if processExistsLocal(pid)
         system(sprintf('kill -KILL -- -%s 2>/dev/null', pgid));
+    end
+catch
+end
+end
+
+function flushTrainingLogLocal(logPath, alreadyPrintedBytes)
+try
+    if isempty(logPath) || exist(logPath, 'file') ~= 2
+        return;
+    end
+    txt = fileread(logPath);
+    n = numel(txt);
+    startIdx = max(1, alreadyPrintedBytes + 1);
+    if n >= startIdx
+        delta = txt(startIdx:n);
+        if ~isempty(delta)
+            fprintf('%s', delta);
+        end
+    end
+catch
+end
+end
+
+function n = localFileBytesLocal(pathValue)
+n = 0;
+try
+    info = dir(pathValue);
+    if ~isempty(info)
+        n = info.bytes;
     end
 catch
 end
