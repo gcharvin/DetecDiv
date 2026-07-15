@@ -46,9 +46,10 @@ createdChannels = {};
 roiRect = double(roiobj.value);
 coordinateScale = resolveCoordinateScale(paramout, roiRect, width, height);
 useVirtualChannels = isempty(roiobj.image);
+filterToRoiBounds = logical(getField(paramout, 'filterToRoiBounds', true));
 
 if logical(getField(paramout, 'createCellMasks', true)) && isfield(segmentation, 'cells1')
-    mask = rasterizePhyloObjects(segmentation.cells1, height, width, nFrames, frames, roiRect, coordinateScale);
+    mask = rasterizePhyloObjects(segmentation.cells1, height, width, nFrames, frames, roiRect, coordinateScale, filterToRoiBounds);
     if any(mask(:))
         roiobj = writeAnnotationChannel(roiobj, mask, paramout.cellChannelName, [1 0.35 0.05], useVirtualChannels);
         createdChannels{end+1} = paramout.cellChannelName; %#ok<AGROW>
@@ -56,7 +57,7 @@ if logical(getField(paramout, 'createCellMasks', true)) && isfield(segmentation,
 end
 
 if logical(getField(paramout, 'createNucleusMasks', true)) && isfield(segmentation, 'nucleus')
-    mask = rasterizePhyloObjects(segmentation.nucleus, height, width, nFrames, frames, roiRect, coordinateScale);
+    mask = rasterizePhyloObjects(segmentation.nucleus, height, width, nFrames, frames, roiRect, coordinateScale, filterToRoiBounds);
     if any(mask(:))
         roiobj = writeAnnotationChannel(roiobj, mask, paramout.nucleusChannelName, [0.1 0.45 1], useVirtualChannels);
         createdChannels{end+1} = paramout.nucleusChannelName; %#ok<AGROW>
@@ -64,9 +65,11 @@ if logical(getField(paramout, 'createNucleusMasks', true)) && isfield(segmentati
 end
 
 if logical(getField(paramout, 'createLineage', true))
-    [lineageDs, lineageTable] = buildLineageDataseries(segmentation, paramout.outputName, safeRoiId(roiobj), segFile);
+    [lineageDs, lineageTable] = buildLineageDataseries(segmentation, paramout.outputName, safeRoiId(roiobj), segFile, roiRect, frames, filterToRoiBounds);
     try
         lineageDs.userData.coordinateScale = coordinateScale;
+        lineageDs.userData.filterToRoiBounds = filterToRoiBounds;
+        lineageDs.userData.roiRect = roiRect;
     catch
     end
     roiobj.data = replaceDataseriesGroup(roiobj.data, paramout.outputName, lineageDs);
@@ -466,13 +469,16 @@ for i = 1:numel(arr)
 end
 end
 
-function mask = rasterizePhyloObjects(objects, height, width, nFrames, frames, roiRect, coordinateScale)
+function mask = rasterizePhyloObjects(objects, height, width, nFrames, frames, roiRect, coordinateScale, filterToRoiBounds)
 mask = zeros(height, width, 1, nFrames, 'uint16');
 if isempty(objects) || ~isobject(objects)
     return;
 end
 if nargin < 7 || isempty(coordinateScale)
     coordinateScale = [1 1];
+end
+if nargin < 8 || isempty(filterToRoiBounds)
+    filterToRoiBounds = true;
 end
 coordinateScale = sanitizeCoordinateScale(coordinateScale);
 
@@ -485,6 +491,9 @@ for f = frameSet
     for i = 1:numel(objs)
         obj = objs(i);
         if ~isLivePhyloObject(obj)
+            continue;
+        end
+        if filterToRoiBounds && ~objectOverlapsRoiRect(obj, roiRect)
             continue;
         end
         x = (double(obj.x(:)) - roiRect(1)) .* coordinateScale(1) + 1;
@@ -505,6 +514,30 @@ for f = frameSet
         plane(sub2ind([height width], rows, cols)) = label;
         mask(:, :, 1, f) = plane;
     end
+end
+end
+
+function tf = objectOverlapsRoiRect(obj, roiRect)
+tf = false;
+try
+    if numel(roiRect) < 4 || roiRect(3) <= 0 || roiRect(4) <= 0
+        return;
+    end
+    x = double(obj.x(:));
+    y = double(obj.y(:));
+    valid = isfinite(x) & isfinite(y);
+    x = x(valid);
+    y = y(valid);
+    if isempty(x) || isempty(y)
+        return;
+    end
+    roiX1 = double(roiRect(1));
+    roiY1 = double(roiRect(2));
+    roiX2 = roiX1 + double(roiRect(3)) - 1;
+    roiY2 = roiY1 + double(roiRect(4)) - 1;
+    tf = max(x) >= roiX1 && min(x) <= roiX2 && max(y) >= roiY1 && min(y) <= roiY2;
+catch
+    tf = false;
 end
 end
 
@@ -576,10 +609,19 @@ rows = rr + ymin - 1;
 cols = cc + xmin - 1;
 end
 
-function [ds, tbl] = buildLineageDataseries(segmentation, outputName, roiId, segFile)
+function [ds, tbl] = buildLineageDataseries(segmentation, outputName, roiId, segFile, roiRect, frames, filterToRoiBounds)
+if nargin < 5
+    roiRect = [];
+end
+if nargin < 6
+    frames = [];
+end
+if nargin < 7 || isempty(filterToRoiBounds)
+    filterToRoiBounds = true;
+end
 rows = {};
-rows = [rows; lineageRows(getField(segmentation, 'tcells1', []), 'cell')]; %#ok<AGROW>
-rows = [rows; lineageRows(getField(segmentation, 'tnucleus', []), 'nucleus')]; %#ok<AGROW>
+rows = [rows; lineageRows(getField(segmentation, 'tcells1', []), 'cell', roiRect, frames, filterToRoiBounds)]; %#ok<AGROW>
+rows = [rows; lineageRows(getField(segmentation, 'tnucleus', []), 'nucleus', roiRect, frames, filterToRoiBounds)]; %#ok<AGROW>
 
 if isempty(rows)
     tbl = table(string.empty(0,1), zeros(0,1), zeros(0,1), cell(0,1), zeros(0,1), zeros(0,1), ...
@@ -597,6 +639,7 @@ ds = dataseries(tbl, tbl.Properties.VariableNames, ...
     'class', 'processing', 'type', 'other');
 ds.description = 'Imported phyloCell lineage/object metadata.';
 ds.userData = struct('source', 'phyloCell', 'segmentationFile', segFile, ...
+    'filterToRoiBounds', logical(filterToRoiBounds), ...
     'lineage_semantics', 'ObjectID values match the indexed mask labels when phyloCell provided matching object ids.');
 end
 
@@ -752,14 +795,26 @@ if isempty(pix)
 end
 end
 
-function rows = lineageRows(trackObjects, objectType)
+function rows = lineageRows(trackObjects, objectType, roiRect, frames, filterToRoiBounds)
 rows = {};
 if isempty(trackObjects) || ~isobject(trackObjects)
     return;
 end
+if nargin < 3
+    roiRect = [];
+end
+if nargin < 4
+    frames = [];
+end
+if nargin < 5 || isempty(filterToRoiBounds)
+    filterToRoiBounds = true;
+end
 
 for i = 1:numel(trackObjects)
     tr = trackObjects(i);
+    if filterToRoiBounds && ~trackOverlapsRoiRect(tr, roiRect, frames)
+        continue;
+    end
     objectId = getNumericProp(tr, 'N', i);
     if objectId <= 0
         objectId = i;
@@ -777,6 +832,54 @@ for i = 1:numel(trackObjects)
 
     rows(end+1, :) = {string(objectType), double(objectId), double(motherId), daughters, ...
         double(birthFrame), double(detectionFrame), double(lastFrame), divisionFrames, budFrames}; %#ok<AGROW>
+end
+end
+
+function tf = trackOverlapsRoiRect(trackObj, roiRect, frames)
+tf = false;
+if numel(roiRect) < 4 || roiRect(3) <= 0 || roiRect(4) <= 0
+    return;
+end
+
+try
+    if isLivePhyloObject(trackObj) && objectFrameInSet(trackObj, frames) && objectOverlapsRoiRect(trackObj, roiRect)
+        tf = true;
+        return;
+    end
+catch
+end
+
+try
+    if isprop(trackObj, 'Obj') && ~isempty(trackObj.Obj) && isobject(trackObj.Obj)
+        objs = trackObj.Obj;
+        for i = 1:numel(objs)
+            try
+                obj = objs(i);
+                if isLivePhyloObject(obj) && objectFrameInSet(obj, frames) && objectOverlapsRoiRect(obj, roiRect)
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+        end
+    end
+catch
+end
+end
+
+function tf = objectFrameInSet(obj, frames)
+tf = true;
+if nargin < 2 || isempty(frames)
+    return;
+end
+try
+    f = getNumericProp(obj, 'image', NaN);
+    if ~isfinite(f) || f <= 0
+        return;
+    end
+    tf = any(double(frames(:)) == double(round(f)));
+catch
+    tf = true;
 end
 end
 

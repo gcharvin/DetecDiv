@@ -14097,9 +14097,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 elseif ~isempty(rawDataPath) && ~rawOk
                     issues{end+1} = ['Raw data folder does not exist: ' rawDataPath]; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw data must be an existing folder.');
-                elseif rawOk && rawParserIsCurrent(app, rawDataPath) && rawParserHasNoChannels(app) && selectedRunNeedsChannels(app)
-                    issues{end+1} = 'Raw parser did not detect any channel, but selected modules need image/ROI channels.'; %#ok<AGROW>
-                    markRuntimeField(app, 'rawDataPath', 'warning', 'The raw parser is the channel authority in raw data mode. Check parser filters or raw metadata before running channel-dependent modules.');
+                elseif rawOk
+                    if ~rawParserIsCurrent(app, rawDataPath)
+                        parseRuntimeRawDataPath(app, rawDataPath);
+                    end
+                    if rawParserIsCurrent(app, rawDataPath) && rawParserHasNoChannels(app) && selectedRunNeedsChannels(app)
+                        issues{end+1} = 'Raw parser did not detect any channel, but selected modules need image/ROI channels.'; %#ok<AGROW>
+                        markRuntimeField(app, 'rawDataPath', 'warning', 'The raw parser is the channel authority in raw data mode. Check parser filters or raw metadata before running channel-dependent modules.');
+                    elseif ~rawParserIsCurrent(app, rawDataPath)
+                        msg = '';
+                        if isfield(app.RuntimeParseInfo, 'message')
+                            msg = char(string(app.RuntimeParseInfo.message));
+                        end
+                        issues{end+1} = ['Raw parser did not resolve FOV/frame/channel inventory before launch' ternary(app, isempty(msg), '.', [': ' msg])]; %#ok<AGROW>
+                        markRuntimeField(app, 'rawDataPath', 'missing', 'Raw data inventory must be parsed before launching this run.');
+                    end
                 end
                 if rawOk && rawParserIsCurrent(app, rawDataPath) && isfield(app.RuntimeParseInfo, 'fovCount') && app.RuntimeParseInfo.fovCount > 0
                     selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
@@ -15699,6 +15711,11 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.projectPath = projectPath;
             ctx.run.useExistingProjectSources = useProjectSources;
             ctx.dataLoader = struct('path', rawDataPath, 'useExistingProjectSources', useProjectSources);
+            inventory = runtimeInventorySnapshot(app, rawDataPath);
+            if isstruct(inventory) && isfield(inventory, 'ok') && logical(inventory.ok)
+                ctx.run.runtimeInventory = inventory;
+                ctx.runtimeInventory = inventory;
+            end
 
             updateRunSaveProgress(app, progressDlg, 'Preparing run: building pipeline snapshot...', 0.80);
             ctx.pipelineSpec = buildPipelineStruct(app);
@@ -15721,6 +15738,53 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(projectRawPath)
                     rawDataPath = projectRawPath;
                 end
+            end
+        end
+
+        function info = runtimeInventorySnapshot(app, rawDataPath)
+            if nargin < 2
+                rawDataPath = effectiveRuntimeRawDataPath(app);
+            end
+            rawDataPath = strtrim(char(string(rawDataPath)));
+            info = struct('path', rawDataPath, 'ok', true, 'message', '', ...
+                'datatype', '', 'fovCount', 0, 'fovNames', {{}}, 'maxFrame', [], 'channels', {{}});
+
+            if isfield(app.RuntimeParseInfo, 'ok') && logical(app.RuntimeParseInfo.ok)
+                parsed = normalizeRuntimeInventoryInfo(app, app.RuntimeParseInfo);
+                if isempty(rawDataPath) || isempty(parsed.path) || strcmp(char(string(parsed.path)), rawDataPath)
+                    info = parsed;
+                    if isempty(info.path)
+                        info.path = rawDataPath;
+                    end
+                    return;
+                end
+            end
+
+            if runtimeStartsFromExistingProject(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                projectInfo = summarizeExistingProjectRuntime(app);
+                if isfield(projectInfo, 'fovCount') && projectInfo.fovCount > 0
+                    info.fovCount = projectInfo.fovCount;
+                    info.fovNames = projectInfo.fovNames;
+                end
+                if isfield(projectInfo, 'maxFrame') && ~isempty(projectInfo.maxFrame)
+                    info.maxFrame = projectInfo.maxFrame;
+                end
+            else
+                selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                if ~isempty(selectedFovs)
+                    info.fovCount = max(selectedFovs(:));
+                    info.fovNames = arrayfun(@(k)sprintf('FOV %d', k), 1:info.fovCount, 'UniformOutput', false);
+                end
+                selectedFrames = parseIndexSelection(app, getRuntimeValue(app, 'frames'));
+                if ~isempty(selectedFrames)
+                    info.maxFrame = max(selectedFrames(:));
+                end
+            end
+
+            info.channels = runtimeConcreteChannels(app);
+            if isempty(info.channels) && info.fovCount <= 0 && isempty(info.maxFrame)
+                info.ok = false;
+                info.message = 'No runtime inventory available at save time.';
             end
         end
 
@@ -18374,6 +18438,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 bindProjectFromPath(app, [runObj.projectPath '.mat'], false);
             end
             app.RuntimeInventoryRefreshSuspended = wasSuspended;
+            hydrateRuntimeInventoryFromRunContext(app, ctx);
             if ~wasSuspended
                 updateRuntimeResourceInventory(app);
             end
@@ -18403,6 +18468,161 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
                 app.RunButton.Text = 'Run !';
+            end
+        end
+
+        function hydrateRuntimeInventoryFromRunContext(app, ctx)
+            if ~isstruct(ctx)
+                return;
+            end
+
+            savedSelections = struct( ...
+                'fovs', getRuntimeValue(app, 'fovs'), ...
+                'frames', getRuntimeValue(app, 'frames'), ...
+                'rois', getRuntimeValue(app, 'rois'));
+            cleanupObj = onCleanup(@()restoreRuntimeSelectionText(app, savedSelections)); %#ok<NASGU>
+
+            info = runtimeInventoryFromRunContext(app, ctx);
+            if isstruct(info) && isfield(info, 'ok') && logical(info.ok)
+                app.RuntimeParseInfo = info;
+                applyRuntimeParseInfo(app, info);
+            end
+
+            mode = runtimeInputModeFromRunContext(app, ctx);
+            if isempty(mode)
+                mode = getRuntimeValue(app, 'inputSourceMode');
+            end
+            if ~strcmpi(mode, 'raw_dataloader')
+                return;
+            end
+
+            rawDataPath = '';
+            if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'rawDataPath')
+                rawDataPath = strtrim(char(string(ctx.run.rawDataPath)));
+            end
+            if isempty(rawDataPath) && isfield(ctx, 'rawDataPath')
+                rawDataPath = strtrim(char(string(ctx.rawDataPath)));
+            end
+            if isempty(rawDataPath) || ~(exist(rawDataPath, 'dir') == 7 || exist(rawDataPath, 'file') == 2)
+                return;
+            end
+
+            if ~rawParserIsCurrent(app, rawDataPath)
+                parseRuntimeRawDataPath(app, rawDataPath);
+            end
+        end
+
+        function restoreRuntimeSelectionText(app, savedSelections)
+            if ~isstruct(savedSelections)
+                return;
+            end
+            keys = {'fovs','frames','rois'};
+            for i = 1:numel(keys)
+                key = keys{i};
+                if isfield(savedSelections, key)
+                    value = strtrim(char(string(savedSelections.(key))));
+                    if ~isempty(value)
+                        setRuntimeValuePreserveParse(app, key, value);
+                    end
+                end
+            end
+        end
+
+        function info = runtimeInventoryFromRunContext(app, ctx) %#ok<INUSD>
+            info = struct();
+            if ~isstruct(ctx)
+                return;
+            end
+
+            candidates = {};
+            if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'runtimeInventory')
+                candidates{end+1} = ctx.run.runtimeInventory; %#ok<AGROW>
+            end
+            if isfield(ctx, 'runtimeInventory')
+                candidates{end+1} = ctx.runtimeInventory; %#ok<AGROW>
+            end
+            for i = 1:numel(candidates)
+                candidate = normalizeRuntimeInventoryInfo(app, candidates{i});
+                if isstruct(candidate) && isfield(candidate, 'ok') && logical(candidate.ok)
+                    info = candidate;
+                    return;
+                end
+            end
+
+            rawDataPath = '';
+            if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'rawDataPath')
+                rawDataPath = strtrim(char(string(ctx.run.rawDataPath)));
+            end
+            if isempty(rawDataPath) && isfield(ctx, 'rawDataPath')
+                rawDataPath = strtrim(char(string(ctx.rawDataPath)));
+            end
+
+            channels = {};
+            if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'availableChannels')
+                channels = normalizeChannelCellText(app, ctx.run.availableChannels);
+            end
+            if isempty(channels) && isfield(ctx, 'channels')
+                channels = normalizeChannelCellText(app, ctx.channels);
+            end
+            if isempty(channels) && isfield(ctx, 'roiChannels')
+                channels = normalizeChannelCellText(app, ctx.roiChannels);
+            end
+
+            fovCount = [];
+            maxFrame = [];
+            if isfield(ctx, 'sel') && isstruct(ctx.sel)
+                if isfield(ctx.sel, 'fovs') && isnumeric(ctx.sel.fovs) && ~isempty(ctx.sel.fovs)
+                    fovCount = max(ctx.sel.fovs(:));
+                end
+                if isfield(ctx.sel, 'frames') && isnumeric(ctx.sel.frames) && ~isempty(ctx.sel.frames)
+                    maxFrame = max(ctx.sel.frames(:));
+                end
+            end
+            if isempty(fovCount) && isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'fovIndex') && isnumeric(ctx.run.fovIndex) && ~isempty(ctx.run.fovIndex)
+                fovCount = max(ctx.run.fovIndex(:));
+            end
+            if isempty(maxFrame) && isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'frames') && isnumeric(ctx.run.frames) && ~isempty(ctx.run.frames)
+                maxFrame = max(ctx.run.frames(:));
+            end
+
+            if isempty(channels) && isempty(fovCount) && isempty(maxFrame)
+                return;
+            end
+            info = struct('path', rawDataPath, 'ok', true, 'message', 'Restored from run snapshot.', ...
+                'datatype', '', 'fovCount', 0, 'fovNames', {{}}, 'maxFrame', [], 'channels', {channels});
+            if ~isempty(fovCount) && isfinite(double(fovCount)) && double(fovCount) > 0
+                info.fovCount = round(double(fovCount));
+                info.fovNames = arrayfun(@(k)sprintf('FOV %d', k), 1:info.fovCount, 'UniformOutput', false);
+            end
+            if ~isempty(maxFrame) && isfinite(double(maxFrame)) && double(maxFrame) > 0
+                info.maxFrame = round(double(maxFrame));
+            end
+        end
+
+        function info = normalizeRuntimeInventoryInfo(app, value) %#ok<INUSD>
+            info = struct();
+            if ~isstruct(value)
+                return;
+            end
+            info = struct('path', '', 'ok', true, 'message', '', ...
+                'datatype', '', 'fovCount', 0, 'fovNames', {{}}, 'maxFrame', [], 'channels', {{}});
+            if isfield(value, 'path'), info.path = char(string(value.path)); end
+            if isfield(value, 'ok'), info.ok = logical(value.ok); end
+            if isfield(value, 'message'), info.message = char(string(value.message)); end
+            if isfield(value, 'datatype'), info.datatype = char(string(value.datatype)); end
+            if isfield(value, 'fovCount') && ~isempty(value.fovCount)
+                info.fovCount = round(double(value.fovCount(1)));
+            end
+            if isfield(value, 'fovNames') && ~isempty(value.fovNames)
+                info.fovNames = cellstr(string(value.fovNames(:)'));
+            elseif info.fovCount > 0
+                info.fovNames = arrayfun(@(k)sprintf('FOV %d', k), 1:info.fovCount, 'UniformOutput', false);
+            end
+            if isfield(value, 'maxFrame') && ~isempty(value.maxFrame)
+                info.maxFrame = round(double(value.maxFrame(1)));
+            end
+            if isfield(value, 'channels')
+                info.channels = normalizeChannelCellText(app, value.channels);
             end
         end
 
