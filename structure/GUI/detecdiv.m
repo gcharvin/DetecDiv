@@ -4385,9 +4385,13 @@ end
     % --- Normaliser input -> string scalar
     projectPath = string(projectPath);
     projectPath = projectPath(1);
+    projectPath = string(app.resolveRecentProjectPath(projectPath));
+    if strlength(projectPath) == 0
+        return;
+    end
 
     % --- Purge + normaliser liste existante -> string colonne
-    app.cleanRecentProjectsList();
+    app.cleanRecentProjectsList(false);
 
     old = app.RecentProjects;
     if isempty(old)
@@ -4410,13 +4414,7 @@ end
 
     app.RecentProjects = newList;
 
-    % --- Sauver sur disque
-    try
-        RecentProjects = app.RecentProjects; %#ok<NASGU>
-        save(app.RecentProjectsFile, 'RecentProjects');
-    catch ME
-        warning('Could not save recent projects list: %s', ME.message);
-    end
+    app.saveRecentProjectsList();
 
     % --- Refresh menu
     app.refreshRecentProjectsMenu();
@@ -4681,13 +4679,17 @@ function openRecentProjectCallback(app, projectPath)
         projectPathChar = projectPath; % déjà char
     end
 
+    originalProjectPathChar = projectPathChar;
+    projectPathChar = app.resolveRecentProjectPath(projectPathChar);
+
     if ~isfile(projectPathChar)
         uialert(app.DetecDivUIFigure, ...
-            sprintf('Project not found:\n%s\nIt will be removed from recent list.', projectPathChar), ...
+            sprintf('Project not found:\n%s\nIt will be removed from recent list.', originalProjectPathChar), ...
             'Missing project', ...
             'Icon','warning');
 
-        app.cleanRecentProjectsList();
+        app.cleanRecentProjectsList(true);
+        app.saveRecentProjectsList();
         app.refreshRecentProjectsMenu();
         return;
     end
@@ -4827,15 +4829,23 @@ function cleanRecentPipelinesList(app)
 end
 
 
-         function cleanRecentProjectsList(app)
+         function cleanRecentProjectsList(app, validateExisting)
+        if nargin < 2 || isempty(validateExisting)
+            validateExisting = true;
+        end
         rp = string(app.RecentProjects(:));
         rp = rp(rp ~= "");
 
-        keep = false(size(rp));
+        out = strings(0,1);
         for k = 1:numel(rp)
-            keep(k) = isfile(rp(k)); % le .mat doit exister encore
+            resolved = string(app.resolveRecentProjectPath(rp(k)));
+            if strlength(resolved) > 0
+                out(end+1,1) = resolved; %#ok<AGROW>
+            elseif ~validateExisting
+                out(end+1,1) = rp(k); %#ok<AGROW>
+            end
         end
-        rp = rp(keep);
+        rp = out;
 
         % unicité en préservant l'ordre
      [~, ia] = unique(rp, 'stable');
@@ -4848,6 +4858,61 @@ rp = rp(ia);
         end
 
         app.RecentProjects = rp;
+         end
+
+         function projectPath = resolveRecentProjectPath(app, projectPath) %#ok<INUSD>
+             projectPath = char(string(projectPath));
+             projectPath = strtrim(projectPath);
+             if isempty(projectPath)
+                 return;
+             end
+
+             [pth, nam, ext] = fileparts(projectPath);
+             if strcmpi(ext, '.mat')
+                 jsonCandidate = fullfile(pth, [nam '.json']);
+                 if isfile(jsonCandidate)
+                     projectPath = jsonCandidate;
+                     return;
+                 end
+             elseif isempty(ext)
+                 jsonCandidate = fullfile(pth, [nam '.json']);
+                 if isfile(jsonCandidate)
+                     projectPath = jsonCandidate;
+                     return;
+                 end
+                 matCandidate = fullfile(pth, [nam '.mat']);
+                 if isfile(matCandidate)
+                     projectPath = matCandidate;
+                     return;
+                 end
+             end
+
+             if isfolder(projectPath)
+                 [parentDir, folderName] = fileparts(projectPath);
+                 jsonCandidate = fullfile(parentDir, [folderName '.json']);
+                 if isfile(jsonCandidate)
+                     projectPath = jsonCandidate;
+                     return;
+                 end
+                 matCandidate = fullfile(parentDir, [folderName '.mat']);
+                 if isfile(matCandidate)
+                     projectPath = matCandidate;
+                     return;
+                 end
+             end
+
+             if ~isfile(projectPath)
+                 projectPath = '';
+             end
+         end
+
+         function saveRecentProjectsList(app)
+             try
+                 RecentProjects = app.RecentProjects; %#ok<NASGU>
+                 save(app.RecentProjectsFile, 'RecentProjects');
+             catch ME
+                 warning('Could not save recent projects list: %s', ME.message);
+             end
          end
 
    function clearRecentClassifiers(app)
@@ -4965,7 +5030,8 @@ end
     end
 
     % Nettoyer / rafra?chir menus
-    app.cleanRecentProjectsList();
+    app.cleanRecentProjectsList(false);
+    app.saveRecentProjectsList();
     app.refreshRecentProjectsMenu();
 
     app.cleanRecentClassifiersList();

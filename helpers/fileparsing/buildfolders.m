@@ -220,7 +220,7 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
       output.pos(i).channels=numel(output.pos(i).binning);
       if isempty(output.pos(i).binning)
           warning('buildfolders:NoReadableChannels', ...
-              'No readable image channel was found in folder "%s"; skipping binning normalization.', list(i).folder);
+              'No readable image channel was found in folder "%s"; skipping binning normalization.', realfolders{i});
           output.pos(i).binning = 1;
           output.pos(i).interval = 1;
       else
@@ -271,7 +271,8 @@ end
 
 function tf = localIsIgnoredPositionFolder(name)
 name = lower(char(string(name)));
-tf = strcmp(name, '.detecdiv-previews') || startsWith(name, '.detecdiv-');
+tf = strcmp(name, '.appledouble') || strcmp(name, '__macosx') || ...
+    strcmp(name, '.detecdiv-previews') || startsWith(name, '.detecdiv-');
 end
     
 

@@ -15543,6 +15543,23 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
+            if runtimeStartsFromExistingProject(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                try
+                    projectFovs = app.CurrentProject.fov;
+                    fovIdx = ctx.sel.fovs;
+                    if isempty(fovIdx)
+                        fovIdx = 1:numel(projectFovs);
+                    else
+                        fovIdx = fovIdx(fovIdx >= 1 & fovIdx <= numel(projectFovs));
+                    end
+                    if ~isempty(fovIdx)
+                        ctx.fovList = projectFovs(fovIdx);
+                        ctx.images = ctx.fovList;
+                    end
+                catch
+                end
+            end
+
             updateRunSaveProgress(app, progressDlg, 'Preparing run: scanning available channels...', 0.36);
             sourceRuntimeChannels = runtimeSourceChannels(app);
             if hubExecution

@@ -61,6 +61,9 @@ usesOMEZarr = localShouldUseOMEZarr(obj, thisEntry, channel);
 usesMultiTiff = isprop(obj,'isMultiTiff') && obj.isMultiTiff;
 usesStackSeries = isprop(obj,'isStackSeries') && obj.isStackSeries;
 
+if ~(usesNDTiff || usesOMEZarr || usesMultiTiff || usesStackSeries)
+    obj = localEnsureFileSrclist(obj, channel);
+end
 if ~(usesNDTiff || usesOMEZarr || usesMultiTiff || usesStackSeries) && (channel > numel(obj.srclist) || isempty(obj.srclist{channel}))
     disp('Channel has no srclist entry; quitting !');
     return;
@@ -922,4 +925,52 @@ try
     end
 catch
 end
+end
+
+function obj = localEnsureFileSrclist(obj, channel)
+if channel <= numel(obj.srclist) && ~isempty(obj.srclist{channel})
+    return;
+end
+if ~iscell(obj.srcpath) || channel > numel(obj.srcpath) || isempty(obj.srcpath{channel})
+    return;
+end
+folder = char(string(obj.srcpath{channel}));
+if ~isfolder(folder)
+    return;
+end
+files = localListImageFiles(folder);
+if isempty(files)
+    return;
+end
+if numel(obj.srclist) < channel
+    obj.srclist{channel} = [];
+end
+obj.srclist{channel} = files;
+if numel(obj.frames) < channel || isempty(obj.frames(channel)) || obj.frames(channel) <= 0
+    if isempty(obj.frames)
+        obj.frames = zeros(1, max(channel, numel(obj.srcpath)));
+    elseif numel(obj.frames) < channel
+        obj.frames(end+1:channel) = 0;
+    end
+    obj.frames(channel) = numel(files);
+end
+end
+
+function files = localListImageFiles(folder)
+patterns = {'*.tif','*.tiff','*.jpg','*.jpeg','*.png'};
+files = struct('name', {}, 'folder', {}, 'date', {}, 'bytes', {}, 'isdir', {}, 'datenum', {});
+for i = 1:numel(patterns)
+    files = [files; dir(fullfile(folder, patterns{i}))]; %#ok<AGROW>
+end
+if isempty(files)
+    return;
+end
+names = {files.name};
+keep = ~startsWith(names, '._') & ~strcmp(names, '.DS_Store');
+files = files(keep);
+if isempty(files)
+    return;
+end
+[~, idx] = sort(lower({files.name}));
+files = files(idx);
 end

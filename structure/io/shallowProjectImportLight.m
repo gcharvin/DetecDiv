@@ -110,9 +110,61 @@ for i = 1:numel(items)
     if isfield(item, 'raw') && isstruct(item.raw)
         f = localApplyRawFields(f, item.raw, projectDir);
     end
+    f = localEnsureFovSourceLists(f);
     f.roi = localBuildRois(item, f, projectDir);
     fovs(end + 1) = f; %#ok<AGROW>
 end
+end
+
+function f = localEnsureFovSourceLists(f)
+usesVirtualSource = (isprop(f, 'isMultiTiff') && f.isMultiTiff) || ...
+    (isprop(f, 'isNDTiff') && f.isNDTiff) || ...
+    (isprop(f, 'isOMEZarr') && f.isOMEZarr) || ...
+    (isprop(f, 'isStackSeries') && f.isStackSeries);
+if usesVirtualSource || ~iscell(f.srcpath) || isempty(f.srcpath)
+    return;
+end
+for ch = 1:numel(f.srcpath)
+    if ch <= numel(f.srclist) && ~isempty(f.srclist{ch})
+        continue;
+    end
+    folder = char(string(f.srcpath{ch}));
+    if ~isfolder(folder)
+        continue;
+    end
+    files = localListImageFiles(folder);
+    if isempty(files)
+        continue;
+    end
+    f.srclist{ch} = files;
+    if numel(f.frames) < ch || isempty(f.frames(ch)) || f.frames(ch) <= 0
+        if isempty(f.frames)
+            f.frames = zeros(1, numel(f.srcpath));
+        elseif numel(f.frames) < ch
+            f.frames(end+1:ch) = 0;
+        end
+        f.frames(ch) = numel(files);
+    end
+end
+end
+
+function files = localListImageFiles(folder)
+patterns = {'*.tif','*.tiff','*.jpg','*.jpeg','*.png'};
+files = struct('name', {}, 'folder', {}, 'date', {}, 'bytes', {}, 'isdir', {}, 'datenum', {});
+for i = 1:numel(patterns)
+    files = [files; dir(fullfile(folder, patterns{i}))]; %#ok<AGROW>
+end
+if isempty(files)
+    return;
+end
+names = {files.name};
+keep = ~startsWith(names, '._') & ~strcmp(names, '.DS_Store');
+files = files(keep);
+if isempty(files)
+    return;
+end
+[~, idx] = sort(lower({files.name}));
+files = files(idx);
 end
 
 function f = localApplyRawFields(f, raw, projectDir)

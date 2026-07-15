@@ -4226,6 +4226,10 @@ function available = initialAvailablePorts(ctx)
     if any(strcmp(available, 'roiChannels')) && ~any(strcmp(available, 'channels'))
         available{end+1} = 'channels'; %#ok<AGROW>
     end
+    if ((any(strcmp(available, 'fovList')) || any(strcmp(available, 'shallow')) || any(strcmp(available, 'shallowObj'))) && ...
+            ~any(strcmp(available, 'images')))
+        available{end+1} = 'images'; %#ok<AGROW>
+    end
     if validationStartsFromExistingProject(ctx) && ~any(strcmp(available, 'roiList'))
         available{end+1} = 'roiList'; %#ok<AGROW>
     end

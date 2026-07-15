@@ -131,7 +131,7 @@ else
     end
     list=dir(pathdir);
 end
-list = list(~startsWith({list.name}, '._')); % remove ._ files in mac os .
+list = list(~localIsIgnoredFilesystemArtifact({list.name})); % remove macOS and hidden filesystem artifacts
 
 % --- detect NDTiff dataset(s) ---
 ndtiffDirs = {};
@@ -348,6 +348,14 @@ end
 function tf = localHasZarrRootMetadata(pathstr)
 tf = exist(fullfile(pathstr,'zarr.json'), 'file') == 2 || ...
     (exist(fullfile(pathstr,'.zattrs'), 'file') == 2 && exist(fullfile(pathstr,'.zgroup'), 'file') == 2);
+end
+
+function tf = localIsIgnoredFilesystemArtifact(names)
+names = cellstr(string(names));
+tf = startsWith(names, '._') | ...
+    strcmp(names, '.AppleDouble') | ...
+    strcmp(names, '.DS_Store') | ...
+    strcmp(names, '__MACOSX');
 end
 
 
