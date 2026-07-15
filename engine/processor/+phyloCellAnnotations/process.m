@@ -22,7 +22,7 @@ if height <= 0 || width <= 0 || nFrames <= 0
         'Cannot determine ROI "%s" image geometry. Run roiExtract before phyloCellAnnotations.', safeRoiId(roiobj));
 end
 
-segFile = resolveSegmentationFile(roiobj, paramout);
+segFile = resolveSegmentationFile(roiobj, paramout, ctx);
 if isempty(segFile) || exist(segFile, 'file') ~= 2
     error('phyloCellAnnotations:NoSegmentation', ...
         'No phyloCell segmentation file found for ROI "%s".', safeRoiId(roiobj));
@@ -802,8 +802,11 @@ catch
 end
 end
 
-function segFile = resolveSegmentationFile(roiobj, paramout)
+function segFile = resolveSegmentationFile(roiobj, paramout, ctx)
 segFile = '';
+if nargin < 3 || isempty(ctx) || ~isstruct(ctx)
+    ctx = struct();
+end
 if isfield(paramout, 'segmentationFile') && ~isempty(paramout.segmentationFile)
     configured = char(string(paramout.segmentationFile));
     if ~isSegmentationBindingToken(configured)
@@ -816,6 +819,88 @@ try
     if ~isempty(fovObj) && isprop(fovObj, 'contours') && isstruct(fovObj.contours) && ...
             isfield(fovObj.contours, 'phyloCell') && isstruct(fovObj.contours.phyloCell) && ...
             isfield(fovObj.contours.phyloCell, 'segmentationFile')
+        segFile = char(string(fovObj.contours.phyloCell.segmentationFile));
+    end
+catch
+    segFile = '';
+end
+if isempty(segFile) || exist(segFile, 'file') ~= 2
+    segFile = resolveSegmentationFileFromContext(roiobj, ctx);
+end
+end
+
+function segFile = resolveSegmentationFileFromContext(roiobj, ctx)
+segFile = '';
+fovList = [];
+try
+    if isfield(ctx, 'fovList') && ~isempty(ctx.fovList)
+        fovList = ctx.fovList;
+    elseif isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
+        fovList = ctx.shallow.fov;
+    elseif isfield(ctx, 'shallowObj') && isa(ctx.shallowObj, 'shallow')
+        fovList = ctx.shallowObj.fov;
+    end
+catch
+    fovList = [];
+end
+if isempty(fovList)
+    return;
+end
+
+roiId = safeRoiId(roiobj);
+for ii = 1:numel(fovList)
+    try
+        fovObj = fovList(ii);
+        if ~roiBelongsToFov(roiobj, roiId, fovObj)
+            continue;
+        end
+        segFile = segmentationFileFromFov(fovObj);
+        if ~isempty(segFile)
+            return;
+        end
+    catch
+    end
+end
+end
+
+function tf = roiBelongsToFov(roiobj, roiId, fovObj)
+tf = false;
+fovId = '';
+try
+    if isprop(fovObj, 'id') && ~isempty(fovObj.id)
+        fovId = char(string(fovObj.id));
+    end
+catch
+    fovId = '';
+end
+if ~isempty(fovId) && (strcmp(roiId, fovId) || startsWith(roiId, [fovId '_']))
+    tf = true;
+    return;
+end
+try
+    if isprop(fovObj, 'roi') && ~isempty(fovObj.roi)
+        fovRois = fovObj.roi;
+        for jj = 1:numel(fovRois)
+            if isequal(fovRois(jj), roiobj)
+                tf = true;
+                return;
+            end
+            if isprop(fovRois(jj), 'id') && strcmp(char(string(fovRois(jj).id)), roiId)
+                tf = true;
+                return;
+            end
+        end
+    end
+catch
+end
+end
+
+function segFile = segmentationFileFromFov(fovObj)
+segFile = '';
+try
+    if isprop(fovObj, 'contours') && isstruct(fovObj.contours) && ...
+            isfield(fovObj.contours, 'phyloCell') && isstruct(fovObj.contours.phyloCell) && ...
+            isfield(fovObj.contours.phyloCell, 'segmentationFile') && ~isempty(fovObj.contours.phyloCell.segmentationFile)
         segFile = char(string(fovObj.contours.phyloCell.segmentationFile));
     end
 catch
