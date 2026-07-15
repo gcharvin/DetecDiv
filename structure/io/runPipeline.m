@@ -1186,6 +1186,10 @@ function tf = shouldUseRoiMajorExecution(report, nodeMap, ctx)
             tf = false;
             return;
         end
+        if hasClassifierTrainingIntent(report, nodeMap, ctx)
+            tf = false;
+            return;
+        end
         activeTypes = {};
         for i = 1:numel(ids)
             node = nodeMap(ids{i});
@@ -1202,6 +1206,36 @@ function tf = shouldUseRoiMajorExecution(report, nodeMap, ctx)
             return;
         end
         tf = all(ismember(activeTypes, {'classifier','processor'}));
+    catch
+        tf = false;
+    end
+end
+
+function tf = hasClassifierTrainingIntent(report, nodeMap, ctx)
+    tf = false;
+    try
+        ids = report.order;
+        if isempty(ids)
+            return;
+        end
+        for i = 1:numel(ids)
+            nodeId = ids{i};
+            if ~isKey(nodeMap, nodeId) || shouldSkipByRunSelection(ctx, nodeId)
+                continue;
+            end
+            node = applyRunNodeOverride(nodeMap(nodeId), ctx, nodeId);
+            if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
+                continue;
+            end
+            if ~strcmpi(char(string(getfielddefault(node,'type',''))), 'classifier')
+                continue;
+            end
+            p = getRuntimeNodeParams(ctx, node, 'classifier');
+            if strcmp(classifierRunIntent(ctx, p), 'train')
+                tf = true;
+                return;
+            end
+        end
     catch
         tf = false;
     end
