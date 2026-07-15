@@ -8512,13 +8512,13 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(idx)
                 return;
             end
-            [editorProject, ok, msg] = resolveRoiEditorProject(app);
+            node = app.Data.nodes(idx);
+            [editorProject, ok, msg] = resolveRoiEditorProject(app, node);
             if ~ok
                 uialert(app.UIFigure, msg, 'ROI editor', 'Icon', 'warning');
                 return;
             end
 
-            node = app.Data.nodes(idx);
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             ctx = buildRoiDefinitionEditorContext(app, node);
             ctx.shallow = editorProject;
@@ -8553,13 +8553,13 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(idx)
                 return;
             end
-            [editorProject, ok, msg] = resolveRoiEditorProject(app);
+            node = app.Data.nodes(idx);
+            [editorProject, ok, msg] = resolveRoiEditorProject(app, node);
             if ~ok
                 uialert(app.UIFigure, msg, 'ROI workflow', 'Icon', 'warning');
                 return;
             end
 
-            node = app.Data.nodes(idx);
             focus = lower(char(string(getField(app, node, 'type', ''))));
             switch focus
                 case 'roiidentify'
@@ -8613,14 +8613,26 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function [editorProject, ok, msg] = resolveRoiEditorProject(app)
+        function [editorProject, ok, msg] = resolveRoiEditorProject(app, node)
             editorProject = [];
             ok = false;
             msg = '';
 
+            if nargin < 2
+                node = struct();
+            end
+
             mode = getRuntimeValue(app, 'inputSourceMode');
             if isempty(mode)
                 mode = 'existing_rois';
+            end
+
+            requiredFovCount = roiEditorRequiredFovCount(app, node);
+            if (~strcmpi(char(string(mode)), 'raw_dataloader') || requiredFovCount > 0) && ...
+                    currentProjectCanServeRoiEditor(app, requiredFovCount)
+                editorProject = app.CurrentProject;
+                ok = true;
+                return;
             end
 
             if ~strcmpi(char(string(mode)), 'raw_dataloader')
@@ -8643,13 +8655,71 @@ classdef pipeline2 < matlab.apps.AppBase
 
             try
                 editorProject = buildWorkflowProjectFromRawData(app, rawDataPath);
+                if requiredFovCount > 0 && numel(editorProject.fov) < requiredFovCount && ...
+                        currentProjectCanServeRoiEditor(app, requiredFovCount)
+                    editorProject = app.CurrentProject;
+                end
                 ok = ~isempty(editorProject) && isa(editorProject, 'shallow') && ...
-                    ~isempty(editorProject.fov) && ~isempty(editorProject.fov(1).srcpath);
+                        ~isempty(editorProject.fov) && ~isempty(editorProject.fov(1).srcpath);
                 if ~ok
                     msg = 'Raw data were parsed, but no displayable FOV was created.';
+                elseif requiredFovCount > 0 && numel(editorProject.fov) < requiredFovCount
+                    msg = sprintf(['The ROI editor project only exposes %d FOV(s), but this manual ROI ' ...
+                        'definition references FOV %d. Relink the project raw data or choose a raw/project ' ...
+                        'path that covers all selected FOVs.'], numel(editorProject.fov), requiredFovCount);
+                    ok = false;
                 end
             catch ME
                 msg = ['Could not create a temporary ROI workflow project from raw data: ' ME.message];
+            end
+        end
+
+        function tf = currentProjectCanServeRoiEditor(app, requiredFovCount)
+            tf = false;
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            try
+                if isempty(app.CurrentProject.fov)
+                    return;
+                end
+                if nargin >= 2 && ~isempty(requiredFovCount) && requiredFovCount > 0 && ...
+                        numel(app.CurrentProject.fov) < requiredFovCount
+                    return;
+                end
+                tf = projectHasFovImageSources(app, app.CurrentProject);
+            catch
+                tf = false;
+            end
+        end
+
+        function n = roiEditorRequiredFovCount(app, node) %#ok<INUSD>
+            n = 0;
+            params = getField(app, node, 'params', struct());
+            if ~isstruct(params) || isempty(params)
+                return;
+            end
+            fovIdx = [];
+            if isfield(params, 'manualRois') && isstruct(params.manualRois) && ~isempty(params.manualRois)
+                for i = 1:numel(params.manualRois)
+                    try
+                        if isfield(params.manualRois(i), 'fovIndex') && ~isempty(params.manualRois(i).fovIndex)
+                            fovIdx(end+1) = round(double(params.manualRois(i).fovIndex(1))); %#ok<AGROW>
+                        end
+                    catch
+                    end
+                end
+            end
+            if isempty(fovIdx) && isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                try
+                    fovIdx = reshape(round(double(params.fovIndex)), 1, []);
+                catch
+                    fovIdx = [];
+                end
+            end
+            fovIdx = fovIdx(isfinite(fovIdx) & fovIdx >= 1);
+            if ~isempty(fovIdx)
+                n = max(fovIdx);
             end
         end
 
