@@ -112,6 +112,8 @@ classdef workflow2 < matlab.apps.AppBase
 
         PendingManualRect double = zeros(0,4)
 
+        ManualRoiRecords struct = repmat(struct('fovIndex', [], 'rect', []), 0, 1)
+
         RoiCandidateRects double = zeros(0,4)
 
         RoiCandidateSelected logical = false(0,1)
@@ -249,6 +251,14 @@ classdef workflow2 < matlab.apps.AppBase
             end
 
             app.configureWorkflow2Module();
+
+            if strcmpi(app.getSelectedRoiMode(), 'roiManual')
+                idxManual = app.findNodeIndex('roiManual');
+                if ~isempty(idxManual)
+                    app.initializeManualRoiRecordsFromParams(app.Pipeline.nodes(idxManual).params);
+                    app.loadManualRoisForSelectedFov();
+                end
+            end
 
             app.refreshAll();
 
@@ -926,6 +936,7 @@ classdef workflow2 < matlab.apps.AppBase
                 app.SelectedCandidateRow = row;
                 app.SelectedRoi = [];
                 app.SelectedRoiRows = zeros(1,0);
+                app.storeManualRoisForSelectedFov();
 
                 if ~isempty(app.RoiEditHandle)
 
@@ -2083,6 +2094,165 @@ classdef workflow2 < matlab.apps.AppBase
 
         end
 
+        function storeManualRoisForFov(app, fovIdx)
+
+            if nargin < 2 || isempty(fovIdx) || ~isfinite(double(fovIdx))
+                return;
+            end
+            fovIdx = round(double(fovIdx(1)));
+            if fovIdx < 1
+                return;
+            end
+
+            rects = app.manualCandidateRects();
+            rects = app.validManualRectRows(rects);
+            keep = true(1, numel(app.ManualRoiRecords));
+            for ii = 1:numel(app.ManualRoiRecords)
+                try
+                    keep(ii) = round(double(app.ManualRoiRecords(ii).fovIndex)) ~= fovIdx;
+                catch
+                    keep(ii) = true;
+                end
+            end
+            app.ManualRoiRecords = app.ManualRoiRecords(keep);
+
+            for ii = 1:size(rects,1)
+                app.ManualRoiRecords(end+1,1) = struct('fovIndex', fovIdx, 'rect', round(double(rects(ii,1:4)))); %#ok<AGROW>
+            end
+
+        end
+
+        function storeManualRoisForSelectedFov(app)
+
+            if strcmpi(app.getSelectedRoiMode(), 'roiManual') && ~isempty(app.SelectedFov)
+                app.storeManualRoisForFov(app.SelectedFov);
+            end
+
+        end
+
+        function loadManualRoisForSelectedFov(app)
+
+            if ~strcmpi(app.getSelectedRoiMode(), 'roiManual') || isempty(app.SelectedFov)
+                return;
+            end
+            fovIdx = round(double(app.SelectedFov(1)));
+            rects = zeros(0,4);
+            for ii = 1:numel(app.ManualRoiRecords)
+                try
+                    if round(double(app.ManualRoiRecords(ii).fovIndex)) == fovIdx
+                        rects(end+1,1:4) = round(double(app.ManualRoiRecords(ii).rect(1:4))); %#ok<AGROW>
+                    end
+                catch
+                end
+            end
+            app.PendingManualRect = app.validManualRectRows(rects);
+            if isempty(app.PendingManualRect)
+                app.SelectedCandidateRow = NaN;
+            else
+                app.SelectedCandidateRow = 1;
+            end
+            app.RoiCandidateRects = zeros(0,4);
+            app.RoiCandidateSelected = false(0,1);
+            app.RoiCandidateSource = {};
+            app.SelectedRoi = [];
+            app.SelectedRoiRows = zeros(1,0);
+
+        end
+
+        function rects = validManualRectRows(app, rects) %#ok<INUSD>
+
+            if isempty(rects)
+                rects = zeros(0,4);
+                return;
+            end
+            rects = double(rects);
+            if isvector(rects) && numel(rects) >= 4
+                rects = reshape(rects(1:4), 1, 4);
+            elseif size(rects,2) < 4 && size(rects,1) >= 4
+                rects = rects';
+            end
+            if size(rects,2) < 4
+                rects = zeros(0,4);
+                return;
+            end
+            rects = round(double(rects(:,1:4)));
+            keep = all(isfinite(rects), 2) & rects(:,3) > 0 & rects(:,4) > 0;
+            rects = rects(keep,:);
+
+        end
+
+        function records = currentManualRoiRecords(app)
+
+            app.storeManualRoisForSelectedFov();
+            records = app.ManualRoiRecords;
+            if isempty(records)
+                rects = app.validManualRectRows(app.manualCandidateRects());
+                if ~isempty(rects)
+                    fovIdx = app.SelectedFov;
+                    if isempty(fovIdx) || ~isfinite(double(fovIdx))
+                        fovIdx = 1;
+                    end
+                    for ii = 1:size(rects,1)
+                        records(end+1,1) = struct('fovIndex', round(double(fovIdx(1))), 'rect', rects(ii,1:4)); %#ok<AGROW>
+                    end
+                end
+            end
+
+        end
+
+        function initializeManualRoiRecordsFromParams(app, params)
+
+            app.ManualRoiRecords = repmat(struct('fovIndex', [], 'rect', []), 0, 1);
+            if ~isstruct(params) || isempty(params)
+                return;
+            end
+            if isfield(params, 'manualRois') && isstruct(params.manualRois) && ~isempty(params.manualRois)
+                for ii = 1:numel(params.manualRois)
+                    rec = params.manualRois(ii);
+                    rect = [];
+                    if isfield(rec, 'rect') && ~isempty(rec.rect)
+                        rect = rec.rect;
+                    elseif isfield(rec, 'position') && ~isempty(rec.position)
+                        rect = rec.position;
+                    elseif isfield(rec, 'value') && ~isempty(rec.value)
+                        rect = rec.value;
+                    end
+                    if numel(rect) < 4
+                        continue;
+                    end
+                    fovIdx = app.SelectedFov;
+                    if isfield(rec, 'fovIndex') && ~isempty(rec.fovIndex)
+                        fovIdx = round(double(rec.fovIndex(1)));
+                    end
+                    if isempty(fovIdx) || ~isfinite(double(fovIdx)) || fovIdx < 1
+                        fovIdx = 1;
+                    end
+                    rect = app.validManualRectRows(double(rect(1:4)));
+                    if ~isempty(rect)
+                        app.ManualRoiRecords(end+1,1) = struct('fovIndex', fovIdx, 'rect', rect(1,1:4)); %#ok<AGROW>
+                    end
+                end
+                return;
+            end
+
+            rects = app.extractManualRects(params);
+            rects = app.validManualRectRows(rects);
+            if isempty(rects)
+                return;
+            end
+            fovIdx = app.SelectedFov;
+            if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                fovIdx = round(double(params.fovIndex(1)));
+            end
+            if isempty(fovIdx) || ~isfinite(double(fovIdx)) || fovIdx < 1
+                fovIdx = 1;
+            end
+            for ii = 1:size(rects,1)
+                app.ManualRoiRecords(end+1,1) = struct('fovIndex', fovIdx, 'rect', rects(ii,1:4)); %#ok<AGROW>
+            end
+
+        end
+
         function drawManualCandidateOverlays(app)
 
             if ~strcmpi(app.getSelectedRoiMode(), 'roiManual') || isempty(app.PendingManualRect)
@@ -2247,6 +2417,7 @@ classdef workflow2 < matlab.apps.AppBase
                 end
                 app.SelectedRoi = [];
                 app.SelectedRoiRows = zeros(1,0);
+                app.storeManualRoisForSelectedFov();
             end
 
         end
@@ -2267,6 +2438,7 @@ classdef workflow2 < matlab.apps.AppBase
                     elseif isnan(app.SelectedCandidateRow) || app.SelectedCandidateRow < 1 || app.SelectedCandidateRow > size(rects,1)
                         app.SelectedCandidateRow = 1;
                     end
+                    app.storeManualRoisForSelectedFov();
             end
 
         end
@@ -5863,6 +6035,7 @@ classdef workflow2 < matlab.apps.AppBase
                     row = size(app.PendingManualRect,1);
                 end
                 app.SelectedCandidateRow = row;
+                app.storeManualRoisForSelectedFov();
                 app.refreshManualRectEditField();
                 app.refreshRoiCandidateTable();
 
@@ -5989,6 +6162,7 @@ classdef workflow2 < matlab.apps.AppBase
                     app.PendingManualRect(row,:) = pos;
                 end
                 app.SelectedCandidateRow = row;
+                app.storeManualRoisForSelectedFov();
 
                 app.markDirty(true);
 
@@ -6238,9 +6412,13 @@ classdef workflow2 < matlab.apps.AppBase
 
             end
 
+            app.storeManualRoisForSelectedFov();
+
             app.SelectedFov = event.Selection(1);
 
             app.PreviewRoiPositions = zeros(0,4);
+
+            app.loadManualRoisForSelectedFov();
 
             app.refreshAll();
 
@@ -6258,9 +6436,13 @@ classdef workflow2 < matlab.apps.AppBase
 
             if logical(event.NewData)
 
+                app.storeManualRoisForSelectedFov();
+
                 app.SelectedFov = event.Indices(1);
 
                 app.PreviewRoiPositions = zeros(0,4);
+
+                app.loadManualRoisForSelectedFov();
 
             end
 
@@ -6585,6 +6767,7 @@ classdef workflow2 < matlab.apps.AppBase
                     app.SelectedRoi = [];
                     app.SelectedRoiRows = zeros(1,0);
                     app.SelectedCandidateRow = row;
+                    app.storeManualRoisForSelectedFov();
                     app.markDirty(true);
                     app.refreshManualRectEditField();
                     app.refreshRoiCandidateTable();
@@ -6835,9 +7018,9 @@ classdef workflow2 < matlab.apps.AppBase
 
                     case 'roimanual'
 
-                        srcPos = app.getSelectedRoiPositionOrDefault();
+                        records = app.currentManualRoiRecords();
 
-                        if isempty(srcPos)
+                        if isempty(records)
 
                             uialert(app.UIFigure,'Draw or select one ROI first.','Manual ROI','Icon','warning');
 
@@ -6845,15 +7028,59 @@ classdef workflow2 < matlab.apps.AppBase
 
                         end
 
-                        for ff = reshape(fovIndex,1,[])
+                        if numel(records) == 1
 
-                            if ~keepExisting
+                            srcPos = round(double(records(1).rect(1:4)));
 
-                                app.Project.fov(ff).roi = roi;
+                            for ff = reshape(fovIndex,1,[])
+
+                                if ~keepExisting
+
+                                    app.Project.fov(ff).roi = roi;
+
+                                end
+
+                                app.Project.fov(ff).addROI(uint16(srcPos), app.Project.fov(ff).id);
 
                             end
 
-                            app.Project.fov(ff).addROI(uint16(round(srcPos)), app.Project.fov(ff).id);
+                        else
+
+                            missingFovs = [];
+                            for ff = reshape(fovIndex,1,[])
+                                hasFovRecord = false;
+                                for rr = 1:numel(records)
+                                    if round(double(records(rr).fovIndex)) == ff
+                                        hasFovRecord = true;
+                                        break;
+                                    end
+                                end
+                                if ~hasFovRecord
+                                    missingFovs(end+1) = ff; %#ok<AGROW>
+                                end
+                            end
+                            if ~isempty(missingFovs)
+                                uialert(app.UIFigure, ...
+                                    sprintf('Manual ROI definition is missing for FOV(s): %s.', mat2str(missingFovs)), ...
+                                    'Manual ROI', 'Icon', 'warning');
+                                return;
+                            end
+
+                            for ff = reshape(fovIndex,1,[])
+
+                                if ~keepExisting
+
+                                    app.Project.fov(ff).roi = roi;
+
+                                end
+
+                                for rr = 1:numel(records)
+                                    if round(double(records(rr).fovIndex)) == ff
+                                        app.Project.fov(ff).addROI(uint16(round(double(records(rr).rect(1:4)))), app.Project.fov(ff).id);
+                                    end
+                                end
+
+                            end
 
                         end
 
@@ -6863,7 +7090,7 @@ classdef workflow2 < matlab.apps.AppBase
 
                         end
 
-                        app.PendingManualRect = zeros(0,4);
+                        app.loadManualRoisForSelectedFov();
 
                         app.markDirty(true);
 
@@ -7747,26 +7974,61 @@ classdef workflow2 < matlab.apps.AppBase
                 case 'roimanual'
 
                     app.syncCandidateStateFromCurrentMode();
-                    posList = app.selectedCandidateRects();
-                    if isempty(posList)
-                        pos = app.getSelectedRoiPositionOrDefault();
-                        if ~isempty(pos)
-                            posList = round(double(pos(1,1:4)));
+                    records = app.currentManualRoiRecords();
+                    if isempty(records)
+                        posList = app.selectedCandidateRects();
+                        if isempty(posList)
+                            pos = app.getSelectedRoiPositionOrDefault();
+                            if ~isempty(pos)
+                                posList = round(double(pos(1,1:4)));
+                            end
+                        end
+                        posList = app.validManualRectRows(posList);
+                        if ~isempty(posList)
+                            fovIdx = app.SelectedFov;
+                            if isempty(fovIdx) || ~isfinite(double(fovIdx))
+                                fovIdx = 1;
+                            end
+                            for rr = 1:size(posList,1)
+                                records(end+1,1) = struct('fovIndex', round(double(fovIdx(1))), 'rect', posList(rr,1:4)); %#ok<AGROW>
+                            end
                         end
                     end
 
-                    if ~isempty(posList)
+                    if isempty(records)
 
-                        rec = repmat(struct('fovIndex', app.SelectedFov, 'frame', app.SelectedFrame, ...
-                            'channelIndex', chanIdx, 'channel', chanName, 'rect', [], 'position', []), size(posList,1), 1);
-                        for rr = 1:size(posList,1)
-                            rec(rr).rect = round(double(posList(rr,1:4)));
+                        params.manualRois = repmat(struct('fovIndex', [], 'frame', [], ...
+                            'channelIndex', [], 'channel', '', 'rect', [], 'position', []), 0, 1);
+                        params.manualRects = zeros(0,4);
+
+                    else
+
+                        rec = repmat(struct('fovIndex', [], 'frame', app.SelectedFrame, ...
+                            'channelIndex', chanIdx, 'channel', chanName, 'rect', [], 'position', []), numel(records), 1);
+                        currentRects = zeros(0,4);
+                        selectedFov = app.SelectedFov;
+                        if isempty(selectedFov) || ~isfinite(double(selectedFov))
+                            selectedFov = [];
+                        else
+                            selectedFov = round(double(selectedFov(1)));
+                        end
+                        for rr = 1:numel(records)
+                            rec(rr).fovIndex = round(double(records(rr).fovIndex));
+                            rec(rr).rect = round(double(records(rr).rect(1:4)));
                             rec(rr).position = rec(rr).rect;
+                            if ~isempty(selectedFov) && rec(rr).fovIndex == selectedFov
+                                currentRects(end+1,1:4) = rec(rr).rect; %#ok<AGROW>
+                            end
+                        end
+                        if isempty(currentRects) && numel(rec) == 1
+                            currentRects = rec(1).rect;
                         end
 
                         params.manualRois = rec;
-                        params.manualRects = round(double(posList(:,1:4)));
-                        app.PendingManualRect = params.manualRects(1,:);
+                        params.manualRects = round(double(currentRects(:,1:4)));
+                        if ~isempty(params.manualRects)
+                            app.PendingManualRect = params.manualRects(1,:);
+                        end
 
                     end
 
@@ -7906,16 +8168,7 @@ classdef workflow2 < matlab.apps.AppBase
 
                 case 'roimanual'
 
-                    rects = app.extractManualRects(params);
-
-                    if ~isempty(rects)
-
-                        app.PendingManualRect = round(double(rects(:,1:4)));
-                        app.SelectedCandidateRow = 1;
-                        app.SelectedRoi = [];
-                        app.SelectedRoiRows = zeros(1,0);
-
-                    end
+                    app.initializeManualRoiRecordsFromParams(params);
 
                     if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
 
@@ -7962,6 +8215,8 @@ classdef workflow2 < matlab.apps.AppBase
                         end
 
                     end
+
+                    app.loadManualRoisForSelectedFov();
 
                     app.refreshAll();
 
