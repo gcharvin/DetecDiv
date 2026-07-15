@@ -28,6 +28,8 @@ ROISelect      = [];         % [] => toutes (par FOV), numeric ou cell array
 PadExtraChannels = false;    % append zeros for extra ROI channels (seg masks, etc.)
 MemoryOnly        = false;   % keep extracted ROI images in memory; do not touch H5/MAT files
 CancelTokenFile   = '';      % cooperative cancellation token written by Hub / pipeline runner
+ProgressFOVIndex  = [];
+ProgressFOVTotal  = [];
 
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
@@ -168,6 +170,10 @@ for i = 1:2:numel(varargin)
             MemoryOnly = logical(varargin{i+1});
         case {"canceltokenfile","cancel_token_file"}
             CancelTokenFile = char(string(varargin{i+1}));
+        case {"progressfovindex","displayfovindex"}
+            ProgressFOVIndex = varargin{i+1};
+        case {"progressfovtotal","displayfovtotal"}
+            ProgressFOVTotal = varargin{i+1};
     end
 end
 checkExtractionCancellation(CancelTokenFile, hprogressbar, 'startup');
@@ -225,6 +231,14 @@ fprintf('  → FOV to process: %s\n', mat2str(FOVIndex));
 
 % ----------------- NORMALISATION ARGS PAR FOV -----------------
 nF = numel(FOVIndex);
+if isempty(ProgressFOVTotal) || ~isscalar(ProgressFOVTotal) || ~isfinite(double(ProgressFOVTotal))
+    ProgressFOVTotal = nF;
+end
+if isempty(ProgressFOVIndex) || ~isscalar(ProgressFOVIndex) || ~isfinite(double(ProgressFOVIndex))
+    ProgressFOVIndex = [];
+else
+    ProgressFOVIndex = double(ProgressFOVIndex);
+end
 
 % 1) Channels → ChannelsPerFOV (1xNfov cell ; chaque entrée = cellstr des noms ou [])
 ChannelsPerFOV = cell(1, nF);
@@ -327,7 +341,13 @@ end
 pbFOV = makeConsolePB('FOV', numel(FOVIndex), 'Indent',0);
 
 for kF = 1:numel(FOVIndex)
-    checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('before FOV %d/%d', kF, numel(FOVIndex)));
+    displayFOVIndex = kF;
+    if ~isempty(ProgressFOVIndex)
+        displayFOVIndex = ProgressFOVIndex + kF - 1;
+    end
+    displayFOVTotal = double(ProgressFOVTotal);
+
+    checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('before FOV %d/%d', displayFOVIndex, displayFOVTotal));
     iFov  = FOVIndex(kF);
     fovObj = shallowObj.fov(iFov);
 
@@ -344,13 +364,13 @@ for kF = 1:numel(FOVIndex)
     % --- restreindre la liste selon ROISelect pour CE FOV ---
     selIdx = resolveROISelectionForFOV(roiList, ROISelect, kF, FOVIndex);
     if isempty(selIdx)
-        fprintf('\n▶ FOV %d/%d — no selected ROI, skipped.\n', kF, numel(FOVIndex));
+        fprintf('\n▶ FOV %d/%d — no selected ROI, skipped.\n', displayFOVIndex, displayFOVTotal);
         continue;
     end
     roiList = roiList(selIdx);
 
     if isempty(roiList)
-        fprintf('\n▶ FOV %d/%d — no ROI, skipped.\n', kF, numel(FOVIndex));
+        fprintf('\n▶ FOV %d/%d — no ROI, skipped.\n', displayFOVIndex, displayFOVTotal);
         continue;
     end
 
@@ -391,7 +411,7 @@ for kF = 1:numel(FOVIndex)
         end
         idx = idx(isHit);
         if isempty(idx)
-            fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', kF, numel(FOVIndex));
+            fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', displayFOVIndex, displayFOVTotal);
             continue;
         end
         chanSelIdx   = idx(:)';
@@ -427,14 +447,14 @@ for kF = 1:numel(FOVIndex)
     fovId     = safeStr(getprop(fovObj,'id',sprintf('FOV_%d',iFov)));
     fovOutDir = getFOVOutputPath(shallowObj, fovObj, fovId);
     fprintf('\n▶ FOV %d/%d (%s) — %d frame(s) × %d channel(s) [selected %d]\n', ...
-        kF, numel(FOVIndex), fovId, nFramesThisRun, nChannels, Csel);
+        displayFOVIndex, displayFOVTotal, fovId, nFramesThisRun, nChannels, Csel);
     fprintf('   Output dir: %s\n', fovOutDir);
     if MemoryOnly
         fprintf('   MemoryOnly: extracted ROI images stay in memory; H5/MAT files are not modified.\n');
     end
 
     % UI PB update
-    pbUpdateUI(hprogressbar, (kF-1)/max(1,numel(FOVIndex)), sprintf('FOV %d/%d', kF, numel(FOVIndex)));
+    pbUpdateUI(hprogressbar, (displayFOVIndex-1)/max(1,displayFOVTotal), sprintf('FOV %d/%d', displayFOVIndex, displayFOVTotal));
 
     % -------- Préparer les ROI --------
     nROI = numel(roiList);
@@ -450,8 +470,8 @@ for kF = 1:numel(FOVIndex)
 
         r.path = fovOutDir;
 
-        v = getprop(r,'value',[]);
-        if isempty(v) || size(v,2) < 4
+        v = normalizeRoiValueForExtraction(getprop(r,'value',[]));
+        if isempty(v)
             ROI(rIdx).bbox = []; ROI(rIdx).h = 0; ROI(rIdx).w = 0;
             ROI(rIdx).mobile = false;
             ROI(rIdx).bboxPerFrame = [];
@@ -569,7 +589,7 @@ for kF = 1:numel(FOVIndex)
     fprintf('   RAM avail ~ %.1f GB → Tblock=%d (H=%d,W=%d,Csel=%d,class=%s)\n', ...
         double(availBytes)/1e9, Tblock_auto, H, W, Csel, sampleClass);
 
-    pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', kF, numel(FOVIndex)), nBlocks, 'Indent',2);
+    pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', displayFOVIndex, displayFOVTotal), nBlocks, 'Indent',2);
 
     
     % --------- Boucle bloc par bloc ---------
@@ -591,8 +611,8 @@ for kF = 1:numel(FOVIndex)
         checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('after block %d/%d load', ib, nBlocks));
 
         % UI update
-        fracGlobal = ((kF-1) + (ib-1)/max(1,nBlocks)) / max(1,numel(FOVIndex));
-        pbUpdateUI(hprogressbar, fracGlobal, sprintf('FOV %d/%d - bloc %d/%d', kF, numel(FOVIndex), ib, nBlocks));
+        fracGlobal = ((displayFOVIndex-1) + (ib-1)/max(1,nBlocks)) / max(1,displayFOVTotal);
+        pbUpdateUI(hprogressbar, fracGlobal, sprintf('FOV %d/%d - bloc %d/%d', displayFOVIndex, displayFOVTotal, ib, nBlocks));
 
 
         % =========================================================
@@ -961,6 +981,11 @@ for kF = 1:numel(FOVIndex)
                     r.setExtractionStatus('stale');
                 catch
                 end
+                expectedH5 = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
+                error('extractAllROICrops:ROISaveNoOutput', ...
+                    ['ROI extraction computed a crop but did not write the expected H5 output.\n' ...
+                     'FOV: %s\nROI: %s\nExpected H5: %s\nChannels: %s\nFrames in block: %d'], ...
+                    fovId, r.id, expectedH5, strjoin(chanSelNames, ', '), Tblock);
             else
                 fprintf('.');
                 try
@@ -981,7 +1006,7 @@ for kF = 1:numel(FOVIndex)
     end
 
     pbBlk.close();
-    pbFOV.update(kF, sprintf('FOV %d/%d terminé', kF, numel(FOVIndex)));
+    pbFOV.update(kF, sprintf('FOV %d/%d terminé', displayFOVIndex, displayFOVTotal));
 end
 pbFOV.close();
 
@@ -1007,6 +1032,33 @@ if row>H/2, row=row-H; end
 if col>W/2, col=col-W; end
 end
 
+function v = normalizeRoiValueForExtraction(v)
+if isempty(v)
+    v = [];
+    return;
+end
+try
+    v = double(v);
+catch
+    v = [];
+    return;
+end
+if isvector(v)
+    if numel(v) < 4
+        v = [];
+    else
+        v = reshape(v(1:4), 1, 4);
+    end
+    return;
+end
+if size(v, 2) >= 4
+    v = v(:, 1:4);
+elseif size(v, 1) >= 4 && size(v, 2) == 1
+    v = reshape(v(1:4), 1, 4);
+else
+    v = [];
+end
+end
 
 function img = toGray(img)
 if ndims(img)==3 && size(img,3)==3

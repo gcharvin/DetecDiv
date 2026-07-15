@@ -1749,6 +1749,7 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.shallowObj = getfielddefault(ctx, 'shallowObj', procCtx.shallow);
     procCtx.fovList = getfielddefault(ctx, 'fovList', []);
     procCtx.roiList = rois;
+    procCtx.annotations = getfielddefault(ctx, 'annotations', struct());
     procCtx.io = getfielddefault(ctx, 'io', struct());
     procCtx.io.requiredChannels = mergeChannelLists( ...
         getfielddefault(procCtx.io, 'requiredChannels', {}), ...

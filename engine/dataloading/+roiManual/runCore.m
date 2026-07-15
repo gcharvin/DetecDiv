@@ -126,7 +126,7 @@ rect = [];
 for key = {'rect','position','value'}
     k = key{1};
     if isfield(rec, k) && isnumeric(rec.(k)) && numel(rec.(k)) >= 4
-        rect = round(double(rec.(k)(1:4)));
+        rect = reshape(round(double(rec.(k)(1:4))), 1, 4);
         if all(isfinite(rect)) && rect(3) > 0 && rect(4) > 0
             return;
         end

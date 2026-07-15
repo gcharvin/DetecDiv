@@ -24,7 +24,7 @@ function ctx = process(ctx)
     elseif isfield(ctx,'fovList') && ~isempty(ctx.fovList)
         fovList = ctx.fovList;
     else
-        error('roiExtract.process:NoFOV','No shallow or fovList provided.');
+        error('roiExtract:NoFOV','No shallow or fovList provided.');
     end
 
     if isempty(fovList)
@@ -107,6 +107,9 @@ function ctx = process(ctx)
 
     resume = true;
     if isfield(ctx,'resume'), resume = logical(ctx.resume); end
+    if strcmp(existingPolicy, 'replace')
+        resume = false;
+    end
     saveProgress = true;
     if isfield(ctx,'saveProgress'), saveProgress = logical(ctx.saveProgress); end
     persistOutputs = true;
@@ -129,7 +132,8 @@ function ctx = process(ctx)
     end
 
     % loop per fov for ROI-granularity
-    for i = fovIdx
+    for fovPos = 1:numel(fovIdx)
+        i = fovIdx(fovPos);
         checkRoiExtractCancellation(ctx, sprintf('before FOV %d', i));
         if i > numel(fovList)
             continue;
@@ -157,7 +161,7 @@ function ctx = process(ctx)
 
         [todo, existingTodo] = filterTodoByExistingPolicy(f.roi, todo, existingPolicy);
         if strcmp(existingPolicy, 'error') && ~isempty(existingTodo)
-            error('roiExtract.process:ExistingOutputs', ...
+            error('roiExtract:ExistingOutputs', ...
                 'ROI extraction outputs already exist for FOV %d, ROI(s) %s.', ...
                 i, mat2str(existingTodo));
         end
@@ -165,6 +169,8 @@ function ctx = process(ctx)
         if isempty(todo)
             continue;
         end
+
+        preflightRoiExtractionForFov(shallowObj, fovList, i, todo, p, persistOutputs);
 
         if ~isempty(progressDlg)
             try
@@ -178,6 +184,7 @@ function ctx = process(ctx)
 
         args = buildExtractArgs(p, progressDlg, ctx);
         args = [args {'FOVIndex'} {i} {'ROISelect'} {todo}];
+        args = [args {'ProgressFOVIndex'} {fovPos} {'ProgressFOVTotal'} {numel(fovIdx)}];
         if ~persistOutputs
             args = [args {'MemoryOnly'} {true}]; %#ok<AGROW>
         end
@@ -201,15 +208,16 @@ function ctx = process(ctx)
                 catch
                 end
             end
-            validateExtractedRoisForFov(fovList, i, todo, persistOutputs);
+            validateExtractedRoisForFov(fovList, i, todo, persistOutputs, p, shallowObj);
             prog = progressMark(shallowObj, ctx, 'roiExtract', i, todo);
             if persistOutputs && saveProgress && ~isempty(shallowObj)
                 try, shallowSave(shallowObj); catch, end
             end
         catch ME
+            errText = formatExceptionForProgress(ME);
             prog = ensureProgressErrorsField(prog);
-            prog.errors{end+1} = ME.message; %#ok<AGROW>
-            ctx.errors{end+1} = ME.message; %#ok<AGROW>
+            prog.errors{end+1} = errText; %#ok<AGROW>
+            ctx.errors{end+1} = errText; %#ok<AGROW>
             if ~isempty(shallowObj)
                 try
                     rp = shallowObj.runProfiles;
@@ -508,6 +516,94 @@ end
 
 % ---------------- helpers ----------------
 
+function preflightRoiExtractionForFov(shallowObj, fovList, fovIdx, roiSel, p, requirePersistedOutput)
+    if isempty(fovList) || fovIdx < 1 || fovIdx > numel(fovList) || isempty(roiSel)
+        return;
+    end
+
+    issues = {};
+    f = fovList(fovIdx);
+    fovLabel = fovLabelLocal(f, fovIdx);
+    rois = [];
+    try
+        rois = f.roi;
+    catch
+        rois = [];
+    end
+
+    if isempty(rois)
+        issues{end+1} = sprintf('%s has no ROI to extract.', fovLabel); %#ok<AGROW>
+    end
+
+    [channelIdx, channelIssues] = resolvePreflightChannels(f, p);
+    issues = [issues channelIssues]; %#ok<AGROW>
+
+    sampleFrame = resolvePreflightFrame(f, p);
+    sampleSize = [];
+    if isempty(channelIdx)
+        sampleChannel = 1;
+    else
+        sampleChannel = channelIdx(1);
+    end
+    try
+        im = f.readImage(sampleFrame, sampleChannel);
+        if isempty(im)
+            issues{end+1} = sprintf('%s source image is empty for frame %d channel %d.', ...
+                fovLabel, sampleFrame, sampleChannel); %#ok<AGROW>
+        else
+            sampleSize = size(im);
+            if numel(sampleSize) >= 2
+                sampleSize = sampleSize(1:2);
+            else
+                sampleSize = [];
+            end
+        end
+    catch ME
+        issues{end+1} = sprintf('%s cannot read source image before extraction (frame %d, channel %d): %s', ...
+            fovLabel, sampleFrame, sampleChannel, messageOrIdentifier(ME)); %#ok<AGROW>
+    end
+
+    for k = 1:numel(roiSel)
+        idx = roiSel(k);
+        if idx < 1 || idx > numel(rois)
+            issues{end+1} = sprintf('%s ROI index %d is outside available ROI range 1:%d.', ...
+                fovLabel, idx, numel(rois)); %#ok<AGROW>
+            continue;
+        end
+        r = rois(idx);
+        rect = roiRectLocal(r);
+        roiLabel = roiLabelLocal(r, idx);
+        if isempty(rect)
+            issues{end+1} = sprintf('%s %s has no valid rectangle [x y w h].', ...
+                fovLabel, roiLabel); %#ok<AGROW>
+            continue;
+        end
+        if rect(3) <= 0 || rect(4) <= 0
+            issues{end+1} = sprintf('%s %s has non-positive size: %s.', ...
+                fovLabel, roiLabel, mat2str(rect)); %#ok<AGROW>
+        end
+        if ~isempty(sampleSize) && rectHasNoImageOverlap(rect, sampleSize)
+            issues{end+1} = sprintf('%s %s rectangle %s does not overlap source image size [%d %d].', ...
+                fovLabel, roiLabel, mat2str(rect), sampleSize(1), sampleSize(2)); %#ok<AGROW>
+        end
+    end
+
+    if requirePersistedOutput
+        outDir = expectedFovOutputDirLocal(shallowObj, f, fovIdx);
+        [ok, msg] = ensureWritableDirectoryLocal(outDir);
+        if ~ok
+            issues{end+1} = sprintf('%s output directory is not writable: %s (%s).', ...
+                fovLabel, outDir, msg); %#ok<AGROW>
+        end
+    end
+
+    if ~isempty(issues)
+        error('roiExtract:InvalidExtractionInputs', ...
+            'ROI extraction preflight failed for %s before launching extraction:%s- %s', ...
+            fovLabel, newline, strjoin(issues, [newline '- ']));
+    end
+end
+
 function done = getDoneForFov(prog, fovIdx)
     done = [];
     if isempty(prog) || ~isfield(prog,'fovIds') || ~isfield(prog,'done')
@@ -520,9 +616,15 @@ function done = getDoneForFov(prog, fovIdx)
     end
 end
 
-function validateExtractedRoisForFov(fovList, fovIdx, roiSel, requirePersistedOutput)
+function validateExtractedRoisForFov(fovList, fovIdx, roiSel, requirePersistedOutput, p, shallowObj)
     if nargin < 4 || isempty(requirePersistedOutput)
         requirePersistedOutput = true;
+    end
+    if nargin < 5
+        p = struct();
+    end
+    if nargin < 6
+        shallowObj = [];
     end
     if isempty(fovList) || fovIdx < 1 || fovIdx > numel(fovList) || isempty(roiSel)
         return;
@@ -536,14 +638,15 @@ function validateExtractedRoisForFov(fovList, fovIdx, roiSel, requirePersistedOu
         end
     end
     if ~isempty(missing)
+        details = missingExtractionDetails(fovList, fovIdx, rois, missing, requirePersistedOutput, p, shallowObj);
         if requirePersistedOutput
-            error('roiExtract.process:MissingExtractedOutputs', ...
-                'ROI extraction did not materialize H5 outputs for FOV %d ROI(s) %s.', ...
-                fovIdx, mat2str(missing));
+            error('roiExtract:MissingExtractedOutputs', ...
+                'ROI extraction finished but did not materialize expected H5 outputs for FOV %d ROI(s) %s.%s%s', ...
+                fovIdx, mat2str(missing), newline, details);
         else
-            error('roiExtract.process:MissingExtractedOutputs', ...
-                'ROI extraction did not materialize in-memory outputs for FOV %d ROI(s) %s.', ...
-                fovIdx, mat2str(missing));
+            error('roiExtract:MissingExtractedOutputs', ...
+                'ROI extraction finished but did not materialize in-memory outputs for FOV %d ROI(s) %s.%s%s', ...
+                fovIdx, mat2str(missing), newline, details);
         end
     end
 end
@@ -568,6 +671,381 @@ function tf = roiExtractionMaterialized(r, requirePersistedOutput)
             any(strcmpi(char(string(r.extraction.status)), {'extracted','memory'}));
     catch
         tf = false;
+    end
+end
+
+function details = missingExtractionDetails(fovList, fovIdx, rois, missing, requirePersistedOutput, p, shallowObj)
+    if nargin < 6
+        p = struct();
+    end
+    if nargin < 7
+        shallowObj = [];
+    end
+
+    lines = {};
+    f = fovList(fovIdx);
+    fovLabel = fovLabelLocal(f, fovIdx);
+    outDir = expectedFovOutputDirLocal(shallowObj, f, fovIdx);
+    [channelIdx, channelIssues] = resolvePreflightChannels(f, p);
+    if isempty(channelIdx)
+        channelText = '<none resolved>';
+    else
+        channelText = mat2str(channelIdx);
+    end
+    lines{end+1} = sprintf('FOV: %s', fovLabel); %#ok<AGROW>
+    lines{end+1} = sprintf('Expected output directory: %s', outDir); %#ok<AGROW>
+    lines{end+1} = sprintf('Resolved channel indices: %s', channelText); %#ok<AGROW>
+    for i = 1:numel(channelIssues)
+        lines{end+1} = sprintf('Channel issue: %s', channelIssues{i}); %#ok<AGROW>
+    end
+
+    for k = 1:numel(missing)
+        idx = missing(k);
+        if idx < 1 || idx > numel(rois)
+            lines{end+1} = sprintf('ROI index %d is outside current ROI list.', idx); %#ok<AGROW>
+            continue;
+        end
+        r = rois(idx);
+        roiLabel = roiLabelLocal(r, idx);
+        rect = roiRectLocal(r);
+        roiPath = roiPathLocal(r);
+        roiId = roiIdLocal(r, idx);
+        if isempty(roiPath)
+            roiPath = outDir;
+        end
+        candidates = roiExtractOutputPathCandidates(roiPath, roiId);
+        if isempty(candidates)
+            candidates = {fullfile(outDir, ['im_' roiId '.h5'])};
+        end
+        status = roiExtractionStatusLocal(r);
+        if isempty(status)
+            status = '<none>';
+        end
+        existsText = cell(1, numel(candidates));
+        for c = 1:numel(candidates)
+            existsText{c} = sprintf('%s exists=%d', candidates{c}, isfile(candidates{c}));
+        end
+        if requirePersistedOutput
+            lines{end+1} = sprintf('%s missing persisted H5. rect=%s status=%s path=%s expected={%s}', ...
+                roiLabel, mat2str(rect), status, roiPath, strjoin(existsText, '; ')); %#ok<AGROW>
+        else
+            hasImage = false;
+            try
+                hasImage = isprop(r, 'image') && ~isempty(r.image);
+            catch
+            end
+            lines{end+1} = sprintf('%s missing in-memory image. rect=%s status=%s hasImage=%d', ...
+                roiLabel, mat2str(rect), status, hasImage); %#ok<AGROW>
+        end
+    end
+
+    details = strjoin(lines, newline);
+end
+
+function msg = formatExceptionForProgress(ME)
+    msg = messageOrIdentifier(ME);
+    try
+        if ~isempty(ME.stack)
+            top = ME.stack(1);
+            msg = sprintf('%s @ %s:%d', msg, top.name, top.line);
+        end
+    catch
+    end
+end
+
+function msg = messageOrIdentifier(ME)
+    msg = '';
+    try
+        msg = char(string(ME.message));
+    catch
+        msg = '';
+    end
+    try
+        id = char(string(ME.identifier));
+    catch
+        id = '';
+    end
+    if isempty(strtrim(msg))
+        msg = id;
+    elseif ~isempty(id) && ~contains(msg, id)
+        msg = sprintf('%s [%s]', msg, id);
+    end
+    if isempty(strtrim(msg))
+        msg = '<unknown error>';
+    end
+end
+
+function [idx, issues] = resolvePreflightChannels(f, p)
+    issues = {};
+    names = inferFovChannels(f);
+    nChannels = numel(names);
+    if nChannels == 0
+        nChannels = 1;
+        names = {'channel_001'};
+        issues{end+1} = 'FOV has no channel inventory; assuming channel index 1 for the source read check.'; %#ok<AGROW>
+    end
+
+    spec = [];
+    if isstruct(p) && isfield(p, 'channels') && ~isempty(p.channels)
+        spec = p.channels;
+    end
+    if isempty(spec) || isAllChannelSelector(spec)
+        idx = 1:nChannels;
+        return;
+    end
+
+    if isnumeric(spec) || islogical(spec)
+        if islogical(spec)
+            idx = find(spec);
+        else
+            idx = double(spec(:)');
+        end
+        bad = idx(~isfinite(idx) | idx < 1 | idx > nChannels);
+        idx = idx(isfinite(idx) & idx >= 1 & idx <= nChannels);
+        if ~isempty(bad)
+            issues{end+1} = sprintf('Requested channel index outside 1:%d: %s.', nChannels, mat2str(bad)); %#ok<AGROW>
+        end
+        idx = unique(round(idx), 'stable');
+        return;
+    end
+
+    requested = normalizeChannelListLocal(spec);
+    if isempty(requested)
+        idx = 1:nChannels;
+        return;
+    end
+    [hit, loc] = ismember(requested, names);
+    if any(~hit)
+        issues{end+1} = sprintf('Requested channel(s) not found: %s. Available: %s.', ...
+            strjoin(requested(~hit), ', '), strjoin(names, ', ')); %#ok<AGROW>
+    end
+    idx = loc(hit);
+    idx = unique(idx(:)', 'stable');
+end
+
+function frame = resolvePreflightFrame(f, p)
+    frame = 1;
+    spec = [];
+    if isstruct(p) && isfield(p, 'frames') && ~isempty(p.frames)
+        spec = p.frames;
+    end
+    if isempty(spec)
+        return;
+    end
+    if ischar(spec) || (isstring(spec) && isscalar(spec))
+        txt = strtrim(char(string(spec)));
+        if isempty(txt) || any(strcmpi(txt, {'all', '*', ':'}))
+            return;
+        end
+        try
+            spec = str2num(txt); %#ok<ST2NM>
+        catch
+            spec = [];
+        end
+    end
+    if iscell(spec)
+        try
+            spec = [spec{:}];
+        catch
+            spec = [];
+        end
+    end
+    if islogical(spec)
+        spec = find(spec);
+    end
+    try
+        vals = double(spec(:)');
+        vals = vals(isfinite(vals) & vals >= 1);
+        if ~isempty(vals)
+            frame = round(vals(1));
+        end
+    catch
+        frame = 1;
+    end
+    try
+        if isprop(f, 'frames') && ~isempty(f.frames)
+            maxFrame = max(double(f.frames(:)));
+            frame = min(max(1, frame), maxFrame);
+        end
+    catch
+    end
+end
+
+function label = fovLabelLocal(f, idx)
+    id = '';
+    try
+        if isprop(f, 'id') && ~isempty(f.id)
+            id = char(string(f.id));
+        end
+    catch
+        id = '';
+    end
+    if isempty(id)
+        label = sprintf('FOV %d', idx);
+    else
+        label = sprintf('FOV %d (%s)', idx, id);
+    end
+end
+
+function label = roiLabelLocal(r, idx)
+    id = roiIdLocal(r, idx);
+    label = sprintf('ROI %d (%s)', idx, id);
+end
+
+function id = roiIdLocal(r, idx)
+    id = '';
+    try
+        if isprop(r, 'id') && ~isempty(r.id)
+            id = char(string(r.id));
+        end
+    catch
+        id = '';
+    end
+    if isempty(id)
+        id = sprintf('ROI_%d', idx);
+    end
+end
+
+function rect = roiRectLocal(r)
+    rect = [];
+    try
+        if isprop(r, 'value') && ~isempty(r.value)
+            v = double(r.value);
+            if isvector(v) && numel(v) >= 4
+                rect = reshape(v(1:4), 1, 4);
+            elseif size(v, 2) >= 4
+                rect = v(1, 1:4);
+            elseif size(v, 1) >= 4 && size(v, 2) == 1
+                rect = reshape(v(1:4), 1, 4);
+            end
+        end
+    catch
+        rect = [];
+    end
+    if ~isempty(rect)
+        rect = round(rect);
+        if numel(rect) ~= 4 || any(~isfinite(rect))
+            rect = [];
+        end
+    end
+end
+
+function tf = rectHasNoImageOverlap(rect, imageSize)
+    tf = false;
+    if isempty(rect) || numel(imageSize) < 2
+        return;
+    end
+    h = imageSize(1);
+    w = imageSize(2);
+    x1 = rect(1);
+    y1 = rect(2);
+    x2 = rect(1) + rect(3) - 1;
+    y2 = rect(2) + rect(4) - 1;
+    tf = x2 < 1 || y2 < 1 || x1 > w || y1 > h;
+end
+
+function path = roiPathLocal(r)
+    path = '';
+    try
+        if isprop(r, 'path') && ~isempty(r.path)
+            path = char(string(r.path));
+        end
+    catch
+        path = '';
+    end
+end
+
+function status = roiExtractionStatusLocal(r)
+    status = '';
+    try
+        if isprop(r, 'extraction') && isstruct(r.extraction) && ...
+                isfield(r.extraction, 'status') && ~isempty(r.extraction.status)
+            status = char(string(r.extraction.status));
+        end
+    catch
+        status = '';
+    end
+end
+
+function outDir = expectedFovOutputDirLocal(shallowObj, f, fovIdx)
+    root = '';
+    try
+        if ~isempty(shallowObj) && isprop(shallowObj, 'io') && isstruct(shallowObj.io)
+            if isfield(shallowObj.io, 'path') && ~isempty(shallowObj.io.path) && ...
+                    isfield(shallowObj.io, 'file') && ~isempty(shallowObj.io.file)
+                root = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+            end
+        end
+    catch
+        root = '';
+    end
+    if isempty(root)
+        try
+            if ~isempty(shallowObj) && ismethod(shallowObj, 'getPath')
+                [pth, name] = shallowObj.getPath;
+                if ~isempty(pth) && ~isempty(name)
+                    root = fullfile(pth, name);
+                elseif ~isempty(pth)
+                    root = pth;
+                end
+            end
+        catch
+            root = '';
+        end
+    end
+    if isempty(root)
+        try
+            r = f.roi;
+            if ~isempty(r) && isprop(r(1), 'path') && ~isempty(r(1).path)
+                root = fileparts(char(string(r(1).path)));
+            end
+        catch
+            root = '';
+        end
+    end
+    if isempty(root)
+        root = pwd;
+    end
+
+    fovId = sprintf('FOV_%d', fovIdx);
+    try
+        if isprop(f, 'id') && ~isempty(f.id)
+            fovId = char(string(f.id));
+        end
+    catch
+    end
+    outDir = fullfile(root, fovId);
+end
+
+function [ok, msg] = ensureWritableDirectoryLocal(outDir)
+    ok = false;
+    msg = '';
+    try
+        if isempty(outDir)
+            msg = 'empty path';
+            return;
+        end
+        if ~exist(outDir, 'dir')
+            mkdir(outDir);
+        end
+        token = fullfile(outDir, ['.detecdiv_write_test_' char(java.util.UUID.randomUUID)]);
+        fid = fopen(token, 'w');
+        if fid < 0
+            msg = 'fopen returned an invalid file id';
+            return;
+        end
+        fprintf(fid, 'ok');
+        fclose(fid);
+        delete(token);
+        ok = true;
+    catch ME
+        msg = messageOrIdentifier(ME);
+        try
+            if exist('fid', 'var') && fid > 0
+                fclose(fid);
+            end
+        catch
+        end
     end
 end
 
@@ -675,7 +1153,7 @@ function p = normalizeScaleBinningParams(p)
         if isfield(p, 'scale') && ~isempty(p.scale)
             currentScale = p.scale;
         end
-        warning('roiExtract.process:InvalidBinning', ...
+        warning('roiExtract:InvalidBinning', ...
             'Invalid binning=%s -> keeping scale=%s', mat2str(p.binning), mat2str(currentScale));
         return;
     end

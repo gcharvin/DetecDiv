@@ -162,6 +162,7 @@ function ctx = process(ctx)
     end
 
     ctx.shallow.addData(out);
+    ctx.shallow = syncPhyloCellAnnotationsFromParsed(ctx.shallow, out);
     detecdiv_check_cancel(ctx, 'dataLoader after addData');
     if p.write
         try
@@ -171,6 +172,7 @@ function ctx = process(ctx)
     end
 
     ctx.fovList = ctx.shallow.fov;
+    ctx.annotations = annotationInventoryFromParsed(ctx.shallow, out);
     % Keep a contract-level alias used by pipeline contracts.
     ctx.images = ctx.fovList;
     if ~isempty(ctx.fovList)
@@ -229,6 +231,196 @@ function [projectFolder, projectName] = projectTargetFromParams(p, defaultName)
     if isempty(projectName)
         projectName = defaultName;
     end
+end
+
+function shallowObj = syncPhyloCellAnnotationsFromParsed(shallowObj, out)
+    if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ~isfield(out, 'pos') || isempty(out.pos)
+        return;
+    end
+
+    for i = 1:numel(out.pos)
+        pos = out.pos(i);
+        segFile = segmentationFileFromParsedPos(pos);
+        if isempty(segFile)
+            continue;
+        end
+        idx = findMatchingFovForParsedPos(shallowObj, pos, i);
+        if isempty(idx) || idx < 1 || idx > numel(shallowObj.fov)
+            continue;
+        end
+        try
+            contours = shallowObj.fov(idx).contours;
+            if ~isstruct(contours)
+                contours = struct();
+            end
+            if ~isfield(contours, 'phyloCell') || ~isstruct(contours.phyloCell)
+                contours.phyloCell = struct();
+            end
+            parsedPhylo = struct();
+            if isfield(pos, 'contours') && isstruct(pos.contours) && ...
+                    isfield(pos.contours, 'phyloCell') && isstruct(pos.contours.phyloCell)
+                parsedPhylo = pos.contours.phyloCell;
+            end
+            contours.phyloCell = mergeStructOverride(contours.phyloCell, parsedPhylo);
+            contours.phyloCell.segmentationFile = segFile;
+            shallowObj.fov(idx).contours = contours;
+        catch
+        end
+    end
+end
+
+function annotations = annotationInventoryFromParsed(shallowObj, out)
+    annotations = struct();
+    annotations.phyloCell = struct('segmentationFiles', {{}}, 'fovIndex', [], 'fovIds', {{}});
+    if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ~isfield(out, 'pos') || isempty(out.pos)
+        return;
+    end
+
+    files = {};
+    fovIndex = [];
+    fovIds = {};
+    for i = 1:numel(out.pos)
+        pos = out.pos(i);
+        segFile = segmentationFileFromParsedPos(pos);
+        if isempty(segFile)
+            continue;
+        end
+        idx = findMatchingFovForParsedPos(shallowObj, pos, i);
+        if isempty(idx)
+            continue;
+        end
+        files{end+1} = segFile; %#ok<AGROW>
+        fovIndex(end+1) = idx; %#ok<AGROW>
+        try
+            fovIds{end+1} = char(string(shallowObj.fov(idx).id)); %#ok<AGROW>
+        catch
+            fovIds{end+1} = sprintf('FOV_%d', idx); %#ok<AGROW>
+        end
+    end
+
+    annotations.phyloCell.segmentationFiles = files;
+    annotations.phyloCell.fovIndex = fovIndex;
+    annotations.phyloCell.fovIds = fovIds;
+end
+
+function segFile = segmentationFileFromParsedPos(pos)
+    segFile = '';
+    try
+        if isfield(pos, 'contours') && isstruct(pos.contours) && ...
+                isfield(pos.contours, 'phyloCell') && isstruct(pos.contours.phyloCell) && ...
+                isfield(pos.contours.phyloCell, 'segmentationFile') && ~isempty(pos.contours.phyloCell.segmentationFile)
+            segFile = char(string(pos.contours.phyloCell.segmentationFile));
+        end
+    catch
+        segFile = '';
+    end
+end
+
+function idx = findMatchingFovForParsedPos(shallowObj, pos, fallbackIdx)
+    idx = [];
+    parsedKey = parsedPosSourceKey(pos);
+    if ~isempty(parsedKey)
+        for k = 1:numel(shallowObj.fov)
+            if strcmp(parsedKey, fovSourceKey(shallowObj.fov(k)))
+                idx = k;
+                return;
+            end
+        end
+    end
+
+    parsedName = '';
+    try
+        if isfield(pos, 'name') && ~isempty(pos.name)
+            parsedName = char(string(pos.name));
+        end
+    catch
+        parsedName = '';
+    end
+    if ~isempty(parsedName)
+        for k = 1:numel(shallowObj.fov)
+            try
+                fovId = char(string(shallowObj.fov(k).id));
+                if strcmp(fovId, parsedName) || startsWith(fovId, [parsedName '_'])
+                    idx = k;
+                    return;
+                end
+            catch
+            end
+        end
+    end
+
+    if nargin >= 3 && fallbackIdx >= 1 && fallbackIdx <= numel(shallowObj.fov)
+        idx = fallbackIdx;
+    end
+end
+
+function key = parsedPosSourceKey(pos)
+    key = '';
+    try
+        if isfield(pos, 'pathlist') && ~isempty(pos.pathlist)
+            pathVal = firstNonEmptyCellLocal(pos.pathlist);
+            fileVal = '';
+            if isfield(pos, 'filelist') && ~isempty(pos.filelist)
+                fileVal = firstFileNameFromListLocal(pos.filelist);
+            end
+            key = lower([normalizePathLocal(pathVal) '|' normalizePathLocal(fileVal)]);
+        end
+    catch
+        key = '';
+    end
+end
+
+function key = fovSourceKey(f)
+    key = '';
+    try
+        pathVal = firstNonEmptyCellLocal(f.srcpath);
+        fileVal = firstFileNameFromListLocal(f.srclist);
+        key = lower([normalizePathLocal(pathVal) '|' normalizePathLocal(fileVal)]);
+    catch
+        key = '';
+    end
+end
+
+function value = firstNonEmptyCellLocal(values)
+    value = '';
+    if ischar(values) || isstring(values)
+        value = char(string(values));
+        return;
+    end
+    if ~iscell(values)
+        return;
+    end
+    for i = 1:numel(values)
+        if ~isempty(values{i})
+            value = char(string(values{i}));
+            return;
+        end
+    end
+end
+
+function name = firstFileNameFromListLocal(filelist)
+    name = '';
+    try
+        if iscell(filelist)
+            item = filelist{1};
+        else
+            item = filelist(1);
+        end
+        if isstruct(item) && isfield(item, 'name') && ~isempty(item(1).name)
+            name = char(string(item(1).name));
+        elseif ischar(item) || isstring(item)
+            name = char(string(item));
+        end
+    catch
+        name = '';
+    end
+end
+
+function p = normalizePathLocal(p)
+    p = char(string(p));
+    p = strrep(p, '\', '/');
+    p = regexprep(p, '/+', '/');
+    p = regexprep(p, '/$', '');
 end
 
 function tokenFile = cancelTokenFileFromCtx(ctx)

@@ -843,23 +843,25 @@ try
 catch
     fovList = [];
 end
-if isempty(fovList)
-    return;
+roiId = safeRoiId(roiobj);
+if ~isempty(fovList)
+    for ii = 1:numel(fovList)
+        try
+            fovObj = fovList(ii);
+            if ~roiBelongsToFov(roiobj, roiId, fovObj)
+                continue;
+            end
+            segFile = segmentationFileFromFov(fovObj);
+            if ~isempty(segFile)
+                return;
+            end
+        catch
+        end
+    end
 end
 
-roiId = safeRoiId(roiobj);
-for ii = 1:numel(fovList)
-    try
-        fovObj = fovList(ii);
-        if ~roiBelongsToFov(roiobj, roiId, fovObj)
-            continue;
-        end
-        segFile = segmentationFileFromFov(fovObj);
-        if ~isempty(segFile)
-            return;
-        end
-    catch
-    end
+if isempty(segFile) || exist(segFile, 'file') ~= 2
+    segFile = resolveSegmentationFileFromAnnotations(roiobj, ctx);
 end
 end
 
@@ -892,6 +894,92 @@ try
         end
     end
 catch
+end
+end
+
+function segFile = resolveSegmentationFileFromAnnotations(roiobj, ctx)
+segFile = '';
+try
+    if ~isfield(ctx, 'annotations') || ~isstruct(ctx.annotations) || ...
+            ~isfield(ctx.annotations, 'phyloCell') || ~isstruct(ctx.annotations.phyloCell)
+        return;
+    end
+    ann = ctx.annotations.phyloCell;
+    if ~isfield(ann, 'segmentationFiles') || isempty(ann.segmentationFiles)
+        return;
+    end
+    files = ann.segmentationFiles;
+    if ischar(files) || isstring(files)
+        files = cellstr(string(files));
+    end
+    roiId = safeRoiId(roiobj);
+    fovIdx = fovIndexFromRoiId(roiId, ctx);
+    if ~isempty(fovIdx) && isfield(ann, 'fovIndex') && ~isempty(ann.fovIndex)
+        idx = find(double(ann.fovIndex(:)') == double(fovIdx), 1);
+        if ~isempty(idx) && idx <= numel(files)
+            candidate = char(string(files{idx}));
+            if exist(candidate, 'file') == 2
+                segFile = candidate;
+                return;
+            end
+        end
+    end
+    fovId = fovIdFromRoiId(roiId, ctx);
+    if ~isempty(fovId) && isfield(ann, 'fovIds') && ~isempty(ann.fovIds)
+        fovIds = ann.fovIds;
+        if ischar(fovIds) || isstring(fovIds)
+            fovIds = cellstr(string(fovIds));
+        end
+        idx = find(strcmp(cellstr(string(fovIds)), fovId), 1);
+        if ~isempty(idx) && idx <= numel(files)
+            candidate = char(string(files{idx}));
+            if exist(candidate, 'file') == 2
+                segFile = candidate;
+                return;
+            end
+        end
+    end
+catch
+    segFile = '';
+end
+end
+
+function idx = fovIndexFromRoiId(roiId, ctx)
+idx = [];
+fovId = fovIdFromRoiId(roiId, ctx);
+if isempty(fovId)
+    return;
+end
+try
+    if isfield(ctx, 'fovList') && ~isempty(ctx.fovList)
+        for i = 1:numel(ctx.fovList)
+            if isprop(ctx.fovList(i), 'id') && strcmp(char(string(ctx.fovList(i).id)), fovId)
+                idx = i;
+                return;
+            end
+        end
+    end
+catch
+end
+end
+
+function fovId = fovIdFromRoiId(roiId, ctx)
+fovId = '';
+try
+    if isfield(ctx, 'fovList') && ~isempty(ctx.fovList)
+        for i = 1:numel(ctx.fovList)
+            candidate = char(string(ctx.fovList(i).id));
+            if strcmp(roiId, candidate) || startsWith(roiId, [candidate '_'])
+                fovId = candidate;
+                return;
+            end
+        end
+    end
+catch
+end
+parts = regexp(char(string(roiId)), '^(.*)_\d+$', 'tokens', 'once');
+if ~isempty(parts)
+    fovId = parts{1};
 end
 end
 
