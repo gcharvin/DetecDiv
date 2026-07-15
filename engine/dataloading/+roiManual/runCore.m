@@ -68,12 +68,34 @@ end
 function fovIdx = resolveFovIndexLocal(ctx, p, nFov)
 if isfield(ctx, 'fovIndex') && ~isempty(ctx.fovIndex)
     fovIdx = reshape(double(ctx.fovIndex), 1, []);
-elseif ~isempty(p.fovIndex)
-    fovIdx = reshape(double(p.fovIndex), 1, []);
 else
-    fovIdx = 1:nFov;
+    manualFovIdx = manualRecordFovIndicesLocal(p);
+    if ~isempty(manualFovIdx)
+        fovIdx = manualFovIdx;
+    elseif ~isempty(p.fovIndex)
+        fovIdx = reshape(double(p.fovIndex), 1, []);
+    else
+        fovIdx = 1:nFov;
+    end
 end
 fovIdx = unique(fovIdx(isfinite(fovIdx) & fovIdx >= 1 & fovIdx <= nFov));
+end
+
+function fovIdx = manualRecordFovIndicesLocal(p)
+fovIdx = [];
+if ~isfield(p, 'manualRois') || ~isstruct(p.manualRois) || isempty(p.manualRois)
+    return;
+end
+for i = 1:numel(p.manualRois)
+    rec = p.manualRois(i);
+    if isfield(rec, 'fovIndex') && ~isempty(rec.fovIndex)
+        idx = round(double(rec.fovIndex(1)));
+        if isfinite(idx) && idx >= 1
+            fovIdx(end+1) = idx; %#ok<AGROW>
+        end
+    end
+end
+fovIdx = unique(fovIdx, 'stable');
 end
 
 function records = manualRecordsLocal(p, fovIdx)
