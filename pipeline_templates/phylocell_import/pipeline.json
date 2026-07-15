@@ -39,120 +39,25 @@
     },
     {
       "id": "create_fullframe_rois",
-      "type": "roiManual",
-      "func": "roiManual.process",
-      "pkg": "",
+      "type": "roiGrid",
+      "func": "roiGrid.process",
+      "pkg": "roiGrid",
       "params": {
-        "manualRois": [
-          {
-            "fovIndex": 1,
-            "frame": 100,
-            "channelIndex": 1,
-            "channel": "ch1-PH",
-            "rect": [
-              257,
-              304,
-              1120,
-              1120
-            ],
-            "position": [
-              257,
-              304,
-              1120,
-              1120
-            ]
-          },
-          {
-            "fovIndex": 2,
-            "frame": 100,
-            "channelIndex": 1,
-            "channel": "ch1-PH",
-            "rect": [
-              431,
-              286,
-              1120,
-              1120
-            ],
-            "position": [
-              431,
-              286,
-              1120,
-              1120
-            ]
-          },
-          {
-            "fovIndex": 3,
-            "frame": 100,
-            "channelIndex": 1,
-            "channel": "ch1-PH",
-            "rect": [
-              319,
-              523,
-              1120,
-              1120
-            ],
-            "position": [
-              319,
-              523,
-              1120,
-              1120
-            ]
-          },
-          {
-            "fovIndex": 4,
-            "frame": 100,
-            "channelIndex": 1,
-            "channel": "ch1-PH",
-            "rect": [
-              387,
-              578,
-              1120,
-              1120
-            ],
-            "position": [
-              387,
-              578,
-              1120,
-              1120
-            ]
-          },
-          {
-            "fovIndex": 5,
-            "frame": 100,
-            "channelIndex": 1,
-            "channel": "ch1-PH",
-            "rect": [
-              262,
-              549,
-              1120,
-              1120
-            ],
-            "position": [
-              262,
-              549,
-              1120,
-              1120
-            ]
-          }
-        ],
-        "manualRects": [
-          262,
-          549,
-          1120,
-          1120
-        ],
+        "fovIndex": [],
+        "mode": "fullframe",
+        "gridCount": 1,
+        "referenceFrame": 1,
+        "channelIndex": [],
+        "channel": "",
+        "gridRects": [],
         "candidateRects": [],
         "previewRects": [],
         "keepExisting": false,
         "skipExisting": false,
-        "errorOnExisting": false,
-        "openFirstOnly": true,
-        "referenceFrame": 100,
-        "channelIndex": 1,
-        "channel": "ch1-PH"
+        "errorOnExisting": false
       },
       "paramRequired": [],
-      "gui": "roiManual.ui",
+      "gui": "roiGrid.ui",
       "guiMode": "replace",
       "layout": [
         2,
@@ -266,5 +171,5 @@
   "runState": {},
   "runProfiles": {},
   "createdAt": "",
-  "updatedAt": "15-Jul-2026 09:13:06"
+  "updatedAt": "15-Jul-2026 15:53:07"
 }
