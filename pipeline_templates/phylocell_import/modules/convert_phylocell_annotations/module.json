@@ -23,7 +23,10 @@
       "Create lineage/object dataseries from tcells1/tnucleus metadata"
     ]
   },
-  "inputs": [],
+  "inputs": [
+    "roiList",
+    "annotations"
+  ],
   "outputs": [],
-  "updatedAt": "13-Jul-2026 19:47:35"
+  "updatedAt": "15-Jul-2026 09:13:06"
 }

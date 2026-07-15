@@ -27,7 +27,7 @@ n1.paramRequired = {'path'};
 n1.gui = '';
 n1.guiMode = 'replace';
 n1.inputs = {};
-n1.outputs = {'shallow','fovList','channels'};
+    n1.outputs = {'shallow','fovList','channels','annotations'};
 
 n2 = blankNode();
 n2.id = 'create_fullframe_rois';
@@ -62,14 +62,16 @@ n4.params = phyloCellAnnotations.setparam(struct());
 n4.paramRequired = {};
 n4.gui = '';
 n4.guiMode = '';
-n4.inputs = {'roiList'};
+    n4.inputs = {'roiList','annotations'};
 n4.outputs = {'roiList','channels','dataSeries'};
 
 pipe.nodes = [n1 n2 n3 n4];
 pipe.edges = struct( ...
-    'from', {'load_phylocell','create_fullframe_rois','extract_raw_channels'}, ...
-    'to',   {'create_fullframe_rois','extract_raw_channels','convert_phylocell_annotations'}, ...
-    'condition', {'','',''} ...
+    'from', {'load_phylocell','load_phylocell','create_fullframe_rois','extract_raw_channels'}, ...
+    'to',   {'create_fullframe_rois','convert_phylocell_annotations','extract_raw_channels','convert_phylocell_annotations'}, ...
+    'fromPort', {'images','annotations','roiList','roiList'}, ...
+    'toPort', {'images','annotations','roiList','roiList'}, ...
+    'condition', {'','','',''} ...
     );
 end
 

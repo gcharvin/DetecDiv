@@ -2104,7 +2104,7 @@ classdef workflow2 < matlab.apps.AppBase
                 return;
             end
 
-            rects = app.manualCandidateRects();
+            rects = app.PendingManualRect;
             rects = app.validManualRectRows(rects);
             keep = true(1, numel(app.ManualRoiRecords));
             for ii = 1:numel(app.ManualRoiRecords)
@@ -2130,11 +2130,16 @@ classdef workflow2 < matlab.apps.AppBase
 
         end
 
-        function loadManualRoisForSelectedFov(app)
+        function loadManualRoisForSelectedFov(app, fallbackRects)
 
             if ~strcmpi(app.getSelectedRoiMode(), 'roiManual') || isempty(app.SelectedFov)
                 return;
             end
+            if nargin < 2
+                fallbackRects = zeros(0,4);
+            end
+            fallbackRects = app.validManualRectRows(fallbackRects);
+            app.clearRoiEditor();
             fovIdx = round(double(app.SelectedFov(1)));
             rects = zeros(0,4);
             for ii = 1:numel(app.ManualRoiRecords)
@@ -2144,6 +2149,10 @@ classdef workflow2 < matlab.apps.AppBase
                     end
                 catch
                 end
+            end
+            inheritedFromPreviousFov = isempty(rects) && ~isempty(fallbackRects);
+            if inheritedFromPreviousFov
+                rects = fallbackRects;
             end
             app.PendingManualRect = app.validManualRectRows(rects);
             if isempty(app.PendingManualRect)
@@ -2156,6 +2165,9 @@ classdef workflow2 < matlab.apps.AppBase
             app.RoiCandidateSource = {};
             app.SelectedRoi = [];
             app.SelectedRoiRows = zeros(1,0);
+            if inheritedFromPreviousFov
+                app.storeManualRoisForFov(fovIdx);
+            end
 
         end
 
@@ -2261,6 +2273,9 @@ classdef workflow2 < matlab.apps.AppBase
             rects = round(double(app.PendingManualRect(:,1:4)));
             selectedRow = app.SelectedCandidateRow;
             for ii = 1:size(rects,1)
+                if ~isnan(selectedRow) && ii == selectedRow
+                    continue;
+                end
                 pos = rects(ii,:);
                 if any(~isfinite(pos)) || pos(3) <= 0 || pos(4) <= 0
                     continue;
@@ -2435,6 +2450,7 @@ classdef workflow2 < matlab.apps.AppBase
                     app.PendingManualRect = rects;
                     if isempty(rects)
                         app.SelectedCandidateRow = NaN;
+                        app.clearRoiEditor();
                     elseif isnan(app.SelectedCandidateRow) || app.SelectedCandidateRow < 1 || app.SelectedCandidateRow > size(rects,1)
                         app.SelectedCandidateRow = 1;
                     end
@@ -6412,13 +6428,17 @@ classdef workflow2 < matlab.apps.AppBase
 
             end
 
+            fallbackRects = app.validManualRectRows(app.PendingManualRect);
+
             app.storeManualRoisForSelectedFov();
+
+            app.clearRoiEditor();
 
             app.SelectedFov = event.Selection(1);
 
             app.PreviewRoiPositions = zeros(0,4);
 
-            app.loadManualRoisForSelectedFov();
+            app.loadManualRoisForSelectedFov(fallbackRects);
 
             app.refreshAll();
 
@@ -6436,13 +6456,17 @@ classdef workflow2 < matlab.apps.AppBase
 
             if logical(event.NewData)
 
+                fallbackRects = app.validManualRectRows(app.PendingManualRect);
+
                 app.storeManualRoisForSelectedFov();
+
+                app.clearRoiEditor();
 
                 app.SelectedFov = event.Indices(1);
 
                 app.PreviewRoiPositions = zeros(0,4);
 
-                app.loadManualRoisForSelectedFov();
+                app.loadManualRoisForSelectedFov(fallbackRects);
 
             end
 

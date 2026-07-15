@@ -87,6 +87,10 @@ function contract = defaultContractForNode(node)
             binding.resolveAt = 'run';
             binding.transfer = 'sourceInventory';
             resources.out = resourceDef('channel', 'source', 'channels', 'channelFilter', 'channels', 'channelFilter', false, 'sourceInventory');
+            if strcmp(p, 'phylocellloader') || contains(f, 'phylocellloader')
+                out(end+1) = portDef('annotations', 'annotationSet', false, 'edge');
+                resources.out(end+1) = resourceDef('annotation', 'phyloCell_segmentation', 'phyloCell_segmentation', 'segmentationFile', 'annotations', 'segmentationFile', false, 'sourceInventory');
+            end
             summary = 'Loads positions/FOVs and exposes source image channels.';
 
         case {'roiidentify','roipattern'}
@@ -266,6 +270,7 @@ function contract = defaultContractForNode(node)
                     ];
                 summary = 'Detrends computeMetrics fluorescence traces and extracts cell-cycle oscillation summaries from classification labels.';
             elseif strcmp(p, 'phylocellannotations') || contains(f, 'phylocellannotations')
+                in(end+1) = portDef('annotations', 'annotationSet', true, 'edge');
                 selectors.framesParam = 'frames';
                 selectors.outputNameParam = 'outputName';
                 parameters.run = {'frames','outputName'};
@@ -283,7 +288,7 @@ function contract = defaultContractForNode(node)
                 binding.mode = 'annotationImport';
                 binding.selectorKeys = {};
                 binding.resolveAt = 'run';
-                resources.in = resourceDef();
+                resources.in = resourceDef('annotation', 'phyloCell_segmentation', 'phyloCell_segmentation', 'segmentationFile', 'annotations', 'segmentationFile', true, '');
                 resources.out = [ ...
                     resourceDef('channel', 'cell_mask', 'phyloCell_cells', 'cellChannelName', 'channels', 'cellChannelName', false, 'roiMasks'), ...
                     resourceDef('channel', 'nucleus_mask', 'phyloCell_nuclei', 'nucleusChannelName', 'channels', 'nucleusChannelName', false, 'roiMasks'), ...

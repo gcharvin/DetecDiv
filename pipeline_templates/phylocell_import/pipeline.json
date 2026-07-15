@@ -39,24 +39,120 @@
     },
     {
       "id": "create_fullframe_rois",
-      "type": "roiGrid",
-      "func": "roiGrid.process",
-      "pkg": "roiGrid",
+      "type": "roiManual",
+      "func": "roiManual.process",
+      "pkg": "",
       "params": {
-        "mode": "fullframe",
-        "gridCount": 1,
-        "referenceFrame": 1,
-        "channelIndex": [],
-        "channel": "",
-        "gridRects": [],
+        "manualRois": [
+          {
+            "fovIndex": 1,
+            "frame": 100,
+            "channelIndex": 1,
+            "channel": "ch1-PH",
+            "rect": [
+              257,
+              304,
+              1120,
+              1120
+            ],
+            "position": [
+              257,
+              304,
+              1120,
+              1120
+            ]
+          },
+          {
+            "fovIndex": 2,
+            "frame": 100,
+            "channelIndex": 1,
+            "channel": "ch1-PH",
+            "rect": [
+              431,
+              286,
+              1120,
+              1120
+            ],
+            "position": [
+              431,
+              286,
+              1120,
+              1120
+            ]
+          },
+          {
+            "fovIndex": 3,
+            "frame": 100,
+            "channelIndex": 1,
+            "channel": "ch1-PH",
+            "rect": [
+              319,
+              523,
+              1120,
+              1120
+            ],
+            "position": [
+              319,
+              523,
+              1120,
+              1120
+            ]
+          },
+          {
+            "fovIndex": 4,
+            "frame": 100,
+            "channelIndex": 1,
+            "channel": "ch1-PH",
+            "rect": [
+              387,
+              578,
+              1120,
+              1120
+            ],
+            "position": [
+              387,
+              578,
+              1120,
+              1120
+            ]
+          },
+          {
+            "fovIndex": 5,
+            "frame": 100,
+            "channelIndex": 1,
+            "channel": "ch1-PH",
+            "rect": [
+              262,
+              549,
+              1120,
+              1120
+            ],
+            "position": [
+              262,
+              549,
+              1120,
+              1120
+            ]
+          }
+        ],
+        "manualRects": [
+          262,
+          549,
+          1120,
+          1120
+        ],
         "candidateRects": [],
         "previewRects": [],
         "keepExisting": false,
         "skipExisting": false,
-        "errorOnExisting": false
+        "errorOnExisting": false,
+        "openFirstOnly": true,
+        "referenceFrame": 100,
+        "channelIndex": 1,
+        "channel": "ch1-PH"
       },
       "paramRequired": [],
-      "gui": "roiGrid.ui",
+      "gui": "roiManual.ui",
       "guiMode": "replace",
       "layout": [
         2,
@@ -142,21 +238,34 @@
     {
       "from": "load_phylocell",
       "to": "create_fullframe_rois",
+      "fromPort": "images",
+      "toPort": "images",
+      "condition": ""
+    },
+    {
+      "from": "load_phylocell",
+      "to": "convert_phylocell_annotations",
+      "fromPort": "annotations",
+      "toPort": "annotations",
       "condition": ""
     },
     {
       "from": "create_fullframe_rois",
       "to": "extract_raw_channels",
+      "fromPort": "roiList",
+      "toPort": "roiList",
       "condition": ""
     },
     {
       "from": "extract_raw_channels",
       "to": "convert_phylocell_annotations",
+      "fromPort": "roiList",
+      "toPort": "roiList",
       "condition": ""
     }
   ],
   "runState": {},
   "runProfiles": {},
   "createdAt": "",
-  "updatedAt": "13-Jul-2026 19:47:35"
+  "updatedAt": "15-Jul-2026 09:13:06"
 }
