@@ -844,7 +844,11 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
         else
             roiobj.save;   % sauvegarde tout
         end
-        if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+        flushAfterSave = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal);
+        if flushAfterSave
+            roiobj.clear;
+            disp('[DEBUG] ROIManagement: roi.save done, classifier output cache flushed for HDF5 reload.');
+        elseif shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
             roiobj.image = imageCache;
             roiobj.data = dataCache;
             disp('[DEBUG] ROIManagement: roi.save done, ROI kept in memory.');
@@ -928,7 +932,10 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
             safeRoiIdLocal(roiobj));
     end
 
-    if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+    flushAfterSave = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal);
+    if flushAfterSave
+        roiobj.clear;
+    elseif shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
         if isempty(roiobj.image) && ~isempty(imageCache)
             roiobj.image = imageCache;
         end
@@ -936,7 +943,7 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
         roiobj.clear;
     end
 
-    if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+    if ~flushAfterSave && shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
         if hasDataPatch
             % roi.save('data') clears data; keep the patched data in memory
             % when the caller had already loaded ROI data.
@@ -1281,6 +1288,53 @@ function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
             tf = logical(hadImageBefore || hadDataBefore);
         otherwise
             tf = false;
+    end
+end
+
+function tf = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal)
+    tf = false;
+    policy = char(string(cachePolicyLocal));
+    if strcmpi(policy, 'memory')
+        return;
+    end
+    try
+        tf = localIsInstanceSegmentationClassifier(classiobj);
+    catch
+        tf = false;
+    end
+end
+
+function tf = localIsInstanceSegmentationClassifier(classiobj)
+    tf = false;
+    try
+        if isprop(classiobj,'classifierPkg')
+            pkg = char(string(classiobj.classifierPkg));
+            if any(strcmpi(pkg, {'sam31','cellposesam'}))
+                tf = true;
+                return;
+            end
+        end
+    catch
+    end
+    try
+        if isprop(classiobj,'classifyFun')
+            fun = lower(char(string(classiobj.classifyFun)));
+            if contains(fun, 'sam31.classify') || contains(fun, 'cellposesam.classify') || contains(fun, 'classifycpsamfun')
+                tf = true;
+                return;
+            end
+        end
+    catch
+    end
+    try
+        if isprop(classiobj,'description') && ~isempty(classiobj.description)
+            desc = lower(string(classiobj.description));
+            tf = any(contains(desc, 'sam31')) || any(contains(desc, 'sam3')) || ...
+                any(contains(desc, 'cellpose')) || any(contains(desc, 'yolo instance segmentation')) || ...
+                any(contains(desc, 'cell-tracktr'));
+        end
+    catch
+        tf = false;
     end
 end
 
