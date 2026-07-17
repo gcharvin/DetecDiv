@@ -744,6 +744,7 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         "new_det_thresh": scalar_number(cfg.get("video_new_det_threshold"), 0.40, "video_new_det_threshold", minimum=0.0),
         "det_nms_thresh": scalar_number(cfg.get("video_det_nms_threshold"), 0.10, "video_det_nms_threshold", minimum=0.0),
         "assoc_iou_thresh": scalar_number(cfg.get("video_assoc_iou_threshold"), 0.50, "video_assoc_iou_threshold", minimum=0.0),
+        "hotstart_unmatch_thresh": scalar_number(cfg.get("hotstart_unmatch_thresh"), 3, "hotstart_unmatch_thresh", integer=True, minimum=1.0),
         "max_num_objects": scalar_number(cfg.get("max_num_objects"), 120, "max_num_objects", integer=True, minimum=1.0),
     }
     image_size = scalar_number(cfg.get("image_size"), 560, "image_size", integer=True, minimum=1.0)
@@ -1014,6 +1015,7 @@ def run(config_path: str | Path) -> None:
         "new_det_thresh": scalar_number(cfg.get("video_new_det_threshold"), 0.40, "video_new_det_threshold", minimum=0.0),
         "det_nms_thresh": scalar_number(cfg.get("video_det_nms_threshold"), 0.10, "video_det_nms_threshold", minimum=0.0),
         "assoc_iou_thresh": scalar_number(cfg.get("video_assoc_iou_threshold"), 0.50, "video_assoc_iou_threshold", minimum=0.0),
+        "hotstart_unmatch_thresh": scalar_number(cfg.get("hotstart_unmatch_thresh"), 3, "hotstart_unmatch_thresh", integer=True, minimum=1.0),
         "max_num_objects": scalar_number(cfg.get("max_num_objects"), 40, "max_num_objects", integer=True, minimum=1.0),
     }
     video_kwargs = {k: v for k, v in video_kwargs.items() if v is not None}
@@ -1036,6 +1038,19 @@ def run(config_path: str | Path) -> None:
         image_size=image_size,
         video_kwargs=video_kwargs,
     )
+    applied_builder_kwargs = dict(getattr(predictor, "sam31_builder_kwargs", {}))
+    applied_video_kwargs = dict(getattr(predictor, "sam31_applied_video_kwargs", {}))
+    ignored_video_kwargs = dict(getattr(predictor, "sam31_ignored_video_kwargs", {}))
+    print(
+        "[SAM31 classify PY] requested tracker params: "
+        f"max_num_objects={video_kwargs['max_num_objects']} "
+        f"hotstart_unmatch_thresh={video_kwargs['hotstart_unmatch_thresh']}; "
+        f"applied hotstart_unmatch_thresh="
+        f"{applied_video_kwargs.get('hotstart_unmatch_thresh', 'model-default')}",
+        flush=True,
+    )
+    chunk_size = scalar_number(cfg.get("chunk_size"), 0, "chunk_size", integer=True, minimum=0.0)
+    chunk_overlap = scalar_number(cfg.get("chunk_overlap"), 0, "chunk_overlap", integer=True, minimum=0.0)
     labels_by_frame, stats_by_frame = run_sam31_text_movie(
         predictor=predictor,
         image_dir=image_dir,
@@ -1043,8 +1058,8 @@ def run(config_path: str | Path) -> None:
         prompt=str(cfg.get("prompt", "cell")),
         min_score=scalar_number(cfg.get("min_score"), 0.0, "min_score", minimum=0.0),
         fallback_shape=(raw.shape[0], raw.shape[1]),
-        chunk_size=scalar_number(cfg.get("chunk_size"), 0, "chunk_size", integer=True, minimum=0.0),
-        chunk_overlap=scalar_number(cfg.get("chunk_overlap"), 0, "chunk_overlap", integer=True, minimum=0.0),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
         cancel_path=cancel_path,
     )
     if not infer_cell_tracking:
@@ -1069,7 +1084,20 @@ def run(config_path: str | Path) -> None:
         do_compression=True,
     )
     (output_dir / "sam31_stats.json").write_text(
-        json.dumps({"frames": len(labels_by_frame), "stats_by_frame": stats_by_frame}, indent=2, default=str),
+        json.dumps(
+            {
+                "frames": len(labels_by_frame),
+                "requested_video_kwargs": video_kwargs,
+                "applied_builder_kwargs": applied_builder_kwargs,
+                "applied_video_kwargs": applied_video_kwargs,
+                "ignored_video_kwargs": ignored_video_kwargs,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "stats_by_frame": stats_by_frame,
+            },
+            indent=2,
+            default=str,
+        ),
         encoding="utf-8",
     )
 

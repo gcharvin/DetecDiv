@@ -31,6 +31,7 @@ The generic SAM3.1 repository remains independent from DetecDiv:
 - `detectorCheckpointPath`: instance detector checkpoint for inference.
 - `trackerCheckpointPath`: video memory/tracker checkpoint for inference.
 - `maxNumObjects`, `chunkSize`, `chunkOverlap`, `videoScoreThreshold`, `videoNewDetThreshold`, `videoDetNmsThreshold`, `videoAssocIouThreshold`: full-model inference controls. `chunkSize`/`chunkOverlap` split long movies into temporal chunks to reduce VRAM pressure on dense fields of view.
+- `hotstartUnmatchThreshold`: number of frames an unmatched hot-start track remains active. The SAM3 default is 3; larger values are exposed for controlled dense-movie experiments but are not recommended defaults.
 - `inferInstanceSegmentation`: run the instance segmentation stage and write/update the result label channel.
 - `inferCellTracking`: keep object IDs coherent over time. This requires `inferInstanceSegmentation=true`; when disabled, output labels are frame-local instance masks.
 - `inferBudPairing`: after inference, write inferred bud-mother links; enabled by default.

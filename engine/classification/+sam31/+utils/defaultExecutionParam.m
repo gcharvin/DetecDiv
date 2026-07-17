@@ -17,6 +17,7 @@ p.videoScoreThreshold = 0.40;
 p.videoNewDetThreshold = 0.40;
 p.videoDetNmsThreshold = 0.10;
 p.videoAssocIouThreshold = 0.50;
+p.hotstartUnmatchThreshold = 3;
 p.sam31Runner = 'session';
 p.inferInstanceSegmentation = true;
 p.inferCellTracking = true;

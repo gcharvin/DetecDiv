@@ -40,6 +40,7 @@ tp.videoScoreThreshold = opts.videoScoreThreshold;
 tp.videoNewDetThreshold = opts.videoNewDetThreshold;
 tp.videoDetNmsThreshold = opts.videoDetNmsThreshold;
 tp.videoAssocIouThreshold = opts.videoAssocIouThreshold;
+tp.hotstartUnmatchThreshold = opts.hotstartUnmatchThreshold;
 tp.sam31Runner = opts.runnerMode;
 
 cfg = struct();
@@ -60,6 +61,7 @@ cfg.video_score_threshold = opts.videoScoreThreshold;
 cfg.video_new_det_threshold = opts.videoNewDetThreshold;
 cfg.video_det_nms_threshold = opts.videoDetNmsThreshold;
 cfg.video_assoc_iou_threshold = opts.videoAssocIouThreshold;
+cfg.hotstart_unmatch_thresh = opts.hotstartUnmatchThreshold;
 cfg.runner_mode = opts.runnerMode;
 cfg.prompt_obj_id = 0;
 cfg.prompt_margin = 4;
@@ -103,6 +105,7 @@ defaults = struct( ...
     'videoNewDetThreshold', 0.40, ...
     'videoDetNmsThreshold', 0.10, ...
     'videoAssocIouThreshold', 0.50, ...
+    'hotstartUnmatchThreshold', 3, ...
     'runnerMode', 'external');
 opts = mergeStruct(defaults, opts);
 
@@ -118,6 +121,7 @@ opts.videoScoreThreshold = double(opts.videoScoreThreshold);
 opts.videoNewDetThreshold = double(opts.videoNewDetThreshold);
 opts.videoDetNmsThreshold = double(opts.videoDetNmsThreshold);
 opts.videoAssocIouThreshold = double(opts.videoAssocIouThreshold);
+opts.hotstartUnmatchThreshold = round(double(opts.hotstartUnmatchThreshold));
 opts.runnerMode = lower(strtrim(char(string(opts.runnerMode))));
 
 if ~isfinite(opts.label) || opts.label < 1
@@ -143,6 +147,10 @@ if opts.resolution < 1
 end
 if opts.maxNumObjects < 1
     error('sam31:CorrectionBadMaxObjects', 'maxNumObjects must be positive.');
+end
+if ~isfinite(opts.hotstartUnmatchThreshold) || opts.hotstartUnmatchThreshold < 1
+    error('sam31:CorrectionBadUnmatchThreshold', ...
+        'hotstartUnmatchThreshold must be a positive integer.');
 end
 opts.backend = lower(strtrim(char(string(opts.backend))));
 if any(strcmp(opts.backend, {'linux','wsl'}))
