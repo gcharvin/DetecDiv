@@ -131,6 +131,15 @@ end
 % Initialisation du debug global pour ce fichier
 debugPrintf('init', DEBUG);
 
+[repairedPath, pathWasRepaired] = localRepairPathFromProject( ...
+    obj, wantImages, wantData, forceLegacy);
+if pathWasRepaired
+    obj.path = repairedPath;
+    if ~silent
+        fprintf('[loadROI] ROI path relinked to: %s\n', obj.path);
+    end
+end
+
 % ================== CHEMINS & PRÉ-CHECK ==================
 
 if isempty(obj.path)
@@ -336,6 +345,64 @@ end
 
 
 % ==================== H E L P E R S ====================
+function [pathOut, repaired] = localRepairPathFromProject(obj, wantImages, wantData, forceLegacy)
+% Recover a stale Hub/drive ROI path from roi -> fov -> shallow.io.
+pathOut = '';
+repaired = false;
+try
+    pathOut = char(string(obj.path));
+catch
+end
+
+if localRoiFilesSatisfyLoad(pathOut, obj.id, wantImages, wantData, forceLegacy)
+    return;
+end
+
+try
+    fovObj = obj.parent;
+    if isempty(fovObj) || ~isprop(fovObj, 'parent') || isempty(fovObj.parent)
+        return;
+    end
+    shallowObj = fovObj.parent;
+    if ~isa(shallowObj, 'shallow') || ~isprop(shallowObj, 'io') || ~isstruct(shallowObj.io)
+        return;
+    end
+    if ~isfield(shallowObj.io, 'path') || isempty(shallowObj.io.path) || ...
+            ~isfield(shallowObj.io, 'file') || isempty(shallowObj.io.file) || ...
+            ~isprop(fovObj, 'id') || isempty(fovObj.id)
+        return;
+    end
+
+    projectFile = char(string(shallowObj.io.file));
+    [~, projectName, projectExt] = fileparts(projectFile);
+    if isempty(projectExt)
+        projectName = projectFile;
+    end
+    candidate = fullfile(char(string(shallowObj.io.path)), ...
+        projectName, char(string(fovObj.id)));
+    if localRoiFilesSatisfyLoad(candidate, obj.id, wantImages, wantData, forceLegacy)
+        pathOut = candidate;
+        repaired = true;
+    end
+catch
+    repaired = false;
+end
+end
+
+function tf = localRoiFilesSatisfyLoad(folder, roiId, wantImages, wantData, forceLegacy)
+tf = false;
+if isempty(folder) || isempty(roiId)
+    return;
+end
+h5 = fullfile(folder, sprintf('im_%s.h5', roiId));
+legacy = fullfile(folder, sprintf('im_%s.mat', roiId));
+data = fullfile(folder, sprintf('data_%s.mat', roiId));
+imageReady = ~wantImages || (forceLegacy && isfile(legacy)) || ...
+    (~forceLegacy && (isfile(h5) || isfile(legacy)));
+dataReady = ~wantData || isfile(data) || imageReady;
+tf = imageReady && dataReady;
+end
+
 function setProperties(obj, srcObj)
     allProps = intersect(properties(obj), properties(srcObj));
     exclude = {'path', 'id'};

@@ -62,7 +62,7 @@ classdef shallow < handle
                         % pathe
                         
                         
-                        obj.fov(i).roi(j).path=fixpath(fullfile(obj.fov(i).roi(j).path));
+                        obj.fov(i).roi(j).path=fixpath(obj.fov(i).roi(j).path);
                         
 %                         if ispc
 %                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
@@ -74,7 +74,7 @@ classdef shallow < handle
                         %       oldfullpath
                         % newpath
                         
-                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
+                        obj.fov(i).roi(j).path = rebasepath(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
 %                         if ispc
 %                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
@@ -95,7 +95,7 @@ classdef shallow < handle
         continue
     end
                 
-                obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
+                obj.processing.classification(i).path=fixpath(obj.processing.classification(i).path);
                 
             %    bb=obj.processing.classification(i).path;
                 
@@ -107,7 +107,7 @@ classdef shallow < handle
 %                 end
                 
                 
-                obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
+                obj.processing.classification(i).path = rebasepath(obj.processing.classification(i).path,oldfullpath,newpath);
                 
                 
              %   bb=obj.processing.classification(i).path
@@ -116,7 +116,7 @@ classdef shallow < handle
                 for j=1:numel(obj.processing.classification(i).roi)
                     
                     
-                    obj.processing.classification(i).roi(j).path=fixpath(fullfile(obj.processing.classification(i).roi(j).path));
+                    obj.processing.classification(i).roi(j).path=fixpath(obj.processing.classification(i).roi(j).path);
                     
                     
 %                     if ispc
@@ -126,7 +126,7 @@ classdef shallow < handle
 %                     end
                     
                     
-                    obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
+                    obj.processing.classification(i).roi(j).path = rebasepath(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                     
 %                     if ispc
 %                         obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'/','\');
@@ -138,16 +138,16 @@ classdef shallow < handle
             end
             
             for i=1:numel(obj.processing.processor)
-                obj.processing.processor(i).path=fixpath(fullfile(obj.processing.processor(i).path));
-                obj.processing.processor(i).path = replace(obj.processing.processor(i).path,oldfullpath,newpath);
+                obj.processing.processor(i).path=fixpath(obj.processing.processor(i).path);
+                obj.processing.processor(i).path = rebasepath(obj.processing.processor(i).path,oldfullpath,newpath);
              end
 
              % pipeline run path update
              if isfield(obj.processing,'pipelineRun')
                  for i=1:numel(obj.processing.pipelineRun)
                      try
-                         obj.processing.pipelineRun(i).path=fixpath(fullfile(obj.processing.pipelineRun(i).path));
-                         obj.processing.pipelineRun(i).path = replace(obj.processing.pipelineRun(i).path,oldfullpath,newpath);
+                         obj.processing.pipelineRun(i).path=fixpath(obj.processing.pipelineRun(i).path);
+                         obj.processing.pipelineRun(i).path = rebasepath(obj.processing.pipelineRun(i).path,oldfullpath,newpath);
                      catch
                      end
                  end
@@ -156,20 +156,52 @@ classdef shallow < handle
                 
             
             function pathout=fixpath(pathin)
-                pathout=pathin;
-                if ~ispc
-                    
-                pathout(strfind(pathout,'\'))='/';
-                
-                else
-                    
-                pix=strfind(pathout,'\\');
-                
-                if numel(pix)
-                  pathout=pathout(pix+1:end);  
+                % Preserve the root while normalizing separators.  The old
+                % Windows branch sliced from the first backslash onward;
+                % repeated setPath calls therefore changed a server path
+                % such as /data/project into data\project.  Besides breaking
+                % ROI H5 lookup, that path could no longer be mapped back to
+                % the Hub/server root.
+                pathout=char(string(pathin));
+                if isempty(pathout)
+                    return
                 end
-                
-                pathout(strfind(pathout,'/'))='\';
+                if ~ispc
+                    pathout=strrep(pathout,'\','/');
+                elseif startsWith(pathout,'/')
+                    % A POSIX absolute path may legitimately be present in a
+                    % project returned by a Linux worker.  Keep it POSIX so
+                    % oldfullpath replacement/path mapping can recognize it.
+                    pathout=strrep(pathout,'\','/');
+                else
+                    % Drive-letter and UNC paths retain their drive/server
+                    % prefix; only their separators are normalized.
+                    pathout=strrep(pathout,'/','\');
+                end
+            end
+
+            function pathout=rebasepath(pathin,oldroot,newroot)
+                % Compare roots with neutral separators so a POSIX path
+                % returned by a Linux worker can be rebased to a Windows
+                % drive (and conversely) without first damaging its root.
+                pathout=fixpath(pathin);
+                current=regexprep(strrep(char(string(pathin)),'\','/'),'/+$','');
+                old=regexprep(strrep(char(string(oldroot)),'\','/'),'/+$','');
+                if isempty(current) || isempty(old)
+                    return
+                end
+                isUnderRoot=strcmpi(current,old) || ...
+                    (startsWith(current,old,'IgnoreCase',true) && ...
+                    numel(current)>numel(old) && current(numel(old)+1)=='/');
+                if ~isUnderRoot
+                    return
+                end
+                suffix=regexprep(current(numel(old)+1:end),'^/+','');
+                if isempty(suffix)
+                    pathout=fixpath(newroot);
+                else
+                    parts=regexp(suffix,'/+','split');
+                    pathout=fullfile(char(string(newroot)),parts{:});
                 end
             end
             

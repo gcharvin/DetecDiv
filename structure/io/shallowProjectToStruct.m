@@ -370,17 +370,57 @@ if isempty(rel) || isempty(baseDir)
     return;
 end
 try
-    absPath = char(java.io.File(rel).getCanonicalPath());
-    absBase = char(java.io.File(baseDir).getCanonicalPath());
-    if startsWith(lower(absPath), lower(absBase))
-        relCandidate = extractAfter(absPath, strlength(absBase));
-        relCandidate = regexprep(char(relCandidate), '^[\\/]+', '');
-        if ~isempty(relCandidate)
-            rel = relCandidate;
+    [pathParts, pathRooted] = localPathParts(rel);
+    [baseParts, baseRooted] = localPathParts(baseDir);
+
+    % First handle the normal case: both paths use the same filesystem
+    % root and the target is a descendant of the project directory.
+    if numel(pathParts) > numel(baseParts) && ...
+            all(strcmpi(pathParts(1:numel(baseParts)), baseParts)) && ...
+            (~pathRooted || ~baseRooted || localSamePathRoot(rel, baseDir))
+        rel = fullfile(pathParts{numel(baseParts)+1:end});
+        return;
+    end
+
+    % A lightweight project can be saved on Windows after a Linux Hub run.
+    % In that case the roots differ (Z:\... versus /data/...), but the
+    % project-relative suffix is still unambiguous.  Match the longest
+    % root-independent suffix of the project directory instead of dropping
+    % the leading slash or manufacturing a fake relative path.
+    maxMatch = min(numel(baseParts), numel(pathParts)-1);
+    for n = maxMatch:-1:2
+        baseTail = baseParts(end-n+1:end);
+        for startIdx = 1:(numel(pathParts)-n)
+            if all(strcmpi(pathParts(startIdx:startIdx+n-1), baseTail))
+                rel = fullfile(pathParts{startIdx+n:end});
+                return;
+            end
         end
     end
 catch
 end
+end
+
+function [parts, rooted] = localPathParts(pathText)
+text = strtrim(char(string(pathText)));
+rooted = ~isempty(regexp(text, '^(?:[A-Za-z]:[\\/]|[\\/]{1,2})', 'once'));
+text = regexprep(text, '^[A-Za-z]:', '');
+text = regexprep(text, '^[\\/]+', '');
+parts = regexp(text, '[\\/]+', 'split');
+parts = parts(~cellfun('isempty', parts));
+end
+
+function tf = localSamePathRoot(pathA, pathB)
+a = char(string(pathA));
+b = char(string(pathB));
+driveA = regexp(a, '^[A-Za-z]:', 'match', 'once');
+driveB = regexp(b, '^[A-Za-z]:', 'match', 'once');
+if ~isempty(driveA) || ~isempty(driveB)
+    tf = strcmpi(driveA, driveB);
+    return;
+end
+tf = startsWith(a, '/') == startsWith(b, '/') || ...
+    startsWith(a, '\\') == startsWith(b, '\\');
 end
 
 function txt = localNowText()
