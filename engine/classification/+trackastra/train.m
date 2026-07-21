@@ -1,5 +1,5 @@
 function out = train(classif, ctx)
-% trackastra.train  Export classifier ROIs and launch upstream training.
+% trackastra.train  Train from an existing Trackastra CTC export.
 
 if nargin < 2 || isempty(ctx), ctx = struct(); end
 if (ischar(ctx) || (isstring(ctx) && isscalar(ctx))) && strcmpi(strtrim(char(string(ctx))),'init')
@@ -12,9 +12,7 @@ end
 if isempty(classif.executionParam)
     classif.executionParam = trackastra.utils.defaultExecutionParam();
 end
-if isfield(ctx,'params') && isstruct(ctx.params)
-    classif.trainingParam = trackastra.utils.applyParamOverrides(classif.trainingParam, ctx.params);
-end
+classif.trainingParam = applyExplicitTrainingOverrides(classif.trainingParam, ctx);
 trackastra.ensureClassMetadata(classif);
 if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
     out.refs.trainingParam = classif.trainingParam;
@@ -24,6 +22,7 @@ if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
 end
 
 detecdiv_check_cancel(ctx, 'trackastra train start');
+dataset = loadFormattedDataset(classif);
 explicitPython = '';
 try
     if isprop(classif,'executionParam') && isstruct(classif.executionParam) && ...
@@ -41,15 +40,8 @@ if exist(trainScript,'file') ~= 2
         'Pinned Trackastra source has no scripts/train.py: %s', sourceRoot);
 end
 
-rois = [];
-try, rois = classif.dataset.split.train; catch, end
-if isempty(rois), rois = classif.trainingset; end
-formatOut = trackastra.format(classif, rois, ctx);
-trainSeq = formatOut.artifacts.trainSequences;
-valSeq = formatOut.artifacts.validationSequences;
-if isempty(trainSeq) || isempty(valSeq)
-    error('trackastra:IncompleteDataset', 'Trackastra training requires train and validation sequences.');
-end
+trainSeq = dataset.trainSequences;
+valSeq = dataset.validationSequences;
 
 tp = classif.trainingParam;
 modelName = safeName(getField(tp,'modelName','trackastra_detecdiv'));
@@ -88,7 +80,7 @@ writeJson(configPath, cfg);
 
 fprintf('[Trackastra train] source=%s\n', sourceRoot);
 fprintf('[Trackastra train] dataset=%s train=%d val=%d model=%s\n', ...
-    formatOut.artifacts.datasetRoot, numel(trainSeq), numel(valSeq), modelName);
+    dataset.datasetRoot, numel(trainSeq), numel(valSeq), modelName);
 cmd = sprintf('"%s" "%s" --config "%s"', pythonExe, trainScript, configPath);
 [status,msg] = system(cmd,'-echo');
 if status ~= 0
@@ -100,12 +92,138 @@ modelFolder = fullfile(modelsRoot, modelName);
 classif.executionParam.modelSource = 'custom';
 classif.executionParam.customModelPath = fullfile('models',modelName);
 out.status = "OK";
-out.artifacts.datasetRoot = formatOut.artifacts.datasetRoot;
+out.artifacts.datasetRoot = dataset.datasetRoot;
+out.artifacts.manifest = dataset.manifest;
 out.artifacts.config = configPath;
 out.artifacts.modelFolder = modelFolder;
 out.artifacts.upstreamSource = sourceRoot;
 out.refs.executionParam = struct('modelSource','custom', ...
     'customModelPath',fullfile('models',modelName));
+end
+
+function tp = applyExplicitTrainingOverrides(tp, ctx)
+% Inference node parameters live at ctx.params and deliberately do not
+% override training parameters. Training overrides must be namespaced.
+patch = [];
+if isstruct(ctx) && isfield(ctx,'trainingParam') && isstruct(ctx.trainingParam)
+    patch = ctx.trainingParam;
+elseif isstruct(ctx) && isfield(ctx,'params') && isstruct(ctx.params) && ...
+        isfield(ctx.params,'trainingParam') && isstruct(ctx.params.trainingParam)
+    patch = ctx.params.trainingParam;
+end
+if ~isempty(patch)
+    tp = trackastra.utils.applyParamOverrides(tp, patch);
+end
+end
+
+function dataset = loadFormattedDataset(classif)
+tp = classif.trainingParam;
+folderName = scalarText(getField(tp,'foldername','trainingdataset'));
+if isempty(folderName), folderName = 'trainingdataset'; end
+datasetRoot = fullfile(classif.path, folderName);
+manifest = fullfile(datasetRoot, 'trackastra_dataset_manifest.json');
+if exist(manifest,'file') ~= 2
+    error('trackastra:MissingTrainingExport', ...
+        ['Trackastra CTC dataset manifest was not found: %s\n' ...
+         'Run trackastra.format (Format training set) before training.'], manifest);
+end
+try
+    payload = jsondecode(fileread(manifest));
+catch ME
+    error('trackastra:InvalidTrainingManifest', ...
+        'Unable to read Trackastra CTC manifest %s: %s. Run trackastra.format again.', ...
+        manifest, ME.message);
+end
+if ~isstruct(payload) || ~isfield(payload,'format') || ...
+        ~strcmp(char(string(payload.format)), 'ctc_trackastra_v1') || ...
+        ~isfield(payload,'sequences') || isempty(payload.sequences)
+    error('trackastra:InvalidTrainingManifest', ...
+        'Invalid Trackastra CTC manifest: %s. Run trackastra.format again.', manifest);
+end
+
+trainSeq = {};
+valSeq = {};
+rows = payload.sequences;
+for i = 1:numel(rows)
+    if ~isfield(rows(i),'split') || ~isfield(rows(i),'sequence')
+        error('trackastra:InvalidTrainingManifest', ...
+            'Manifest sequence %d has no split/sequence fields. Run trackastra.format again.', i);
+    end
+    splitName = lower(strtrim(char(string(rows(i).split))));
+    seqName = char(string(rows(i).sequence));
+    seqDir = fullfile(datasetRoot, splitName, seqName);
+    validateCtcSequence(seqDir);
+    switch splitName
+        case 'train'
+            trainSeq{end+1} = seqDir; %#ok<AGROW>
+        case {'val','validation'}
+            valSeq{end+1} = seqDir; %#ok<AGROW>
+    end
+end
+if isempty(trainSeq) || isempty(valSeq)
+    error('trackastra:IncompleteDataset', ...
+        ['Trackastra training requires at least one formatted train sequence and one ' ...
+         'formatted validation sequence. Run trackastra.format again.']);
+end
+dataset = struct('datasetRoot',datasetRoot,'manifest',manifest, ...
+    'trainSequences',{trainSeq},'validationSequences',{valSeq});
+end
+
+function validateCtcSequence(seqDir)
+if exist(seqDir,'dir') ~= 7
+    invalidExport('Image sequence folder is missing: %s', seqDir);
+end
+[splitRoot, seqName] = fileparts(seqDir);
+traDir = fullfile(splitRoot, [seqName '_GT'], 'TRA');
+trackPath = fullfile(traDir, 'man_track.txt');
+rawFiles = dir(fullfile(seqDir, 't*.tif'));
+maskFiles = dir(fullfile(traDir, 'man_track*.tif'));
+if isempty(rawFiles)
+    invalidExport('No tNNN.tif image was found in %s', seqDir);
+end
+if isempty(maskFiles)
+    invalidExport('No man_trackNNN.tif mask was found in %s', traDir);
+end
+if numel(rawFiles) ~= numel(maskFiles)
+    invalidExport('Image/mask frame counts differ for %s (%d images, %d masks)', ...
+        seqName, numel(rawFiles), numel(maskFiles));
+end
+if exist(trackPath,'file') ~= 2
+    invalidExport('CTC track table is missing: %s', trackPath);
+end
+try
+    tracks = readmatrix(trackPath, 'FileType', 'text');
+catch ME
+    invalidExport('Unable to read %s: %s', trackPath, ME.message);
+end
+if isempty(tracks) || size(tracks,2) < 4 || any(~isfinite(tracks(:,1:4)),'all')
+    invalidExport('CTC track table is empty or malformed: %s', trackPath);
+end
+tracks = double(tracks(:,1:4));
+ids = tracks(:,1);
+if any(ids < 1) || numel(unique(ids)) ~= numel(ids) || ...
+        any(tracks(:,2) < 0) || any(tracks(:,3) < tracks(:,2))
+    invalidExport('CTC track IDs or frame intervals are invalid: %s', trackPath);
+end
+for i = 1:size(tracks,1)
+    parent = tracks(i,4);
+    if parent == 0, continue; end
+    parentIndex = find(ids == parent, 1);
+    if isempty(parentIndex)
+        invalidExport('Track %u references missing parent %u in %s', ids(i), parent, trackPath);
+    end
+    if tracks(parentIndex,3) >= tracks(i,2)
+        invalidExport(['Track %u starts at t=%u while parent %u ends at t=%u in %s. ' ...
+            'This export predates the budding-lineage CTC fix'], ...
+            ids(i), tracks(i,2), parent, tracks(parentIndex,3), trackPath);
+    end
+end
+end
+
+function invalidExport(message, varargin)
+detail = sprintf(message, varargin{:});
+error('trackastra:InvalidFormattedDataset', ...
+    '%s. Run trackastra.format (Format training set) again before training.', detail);
 end
 
 function sourceRoot = resolveTrainingSource(classif, pythonExe)

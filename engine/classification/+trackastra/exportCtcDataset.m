@@ -46,8 +46,9 @@ fprintf('[Trackastra format] image=%s trackedGT=%s\n', imageName, gtName);
 datasetRoot = fullfile(classif.path, char(string(ip.Results.FolderName)));
 if exist(datasetRoot,'dir') ~= 7, mkdir(datasetRoot); end
 manifestRows = struct('split',{},'sequence',{},'roiId',{},'imageChannel',{}, ...
-    'groundTruthChannel',{},'frames',{},'tracklets',{});
+    'groundTruthChannel',{},'frames',{},'tracklets',{},'droppedParentEdges',{});
 frameCount = 0;
+droppedParentEdgeCount = 0;
 trainSequences = {};
 validationSequences = {};
 sequenceCounter = 0;
@@ -128,12 +129,34 @@ for s = 1:size(splits,1)
             end
             firstSeen = seenFrames(1);
             lastSeen = seenFrames(end);
+            tableRows(k,1:3) = double([id uint32(firstSeen) uint32(lastSeen)]);
+        end
+
+        droppedEdges = zeros(0,2);
+        for k = 1:numel(tracks)
+            id = tracks(k);
             parent = uint32(0);
             if isa(parentMap,'containers.Map')
                 parent = mapParentId(parentMap, id);
             end
-            if ~ismember(parent,tracks), parent = uint32(0); end
-            tableRows(k,:) = double([id uint32(firstSeen) uint32(lastSeen) parent]);
+            parentIndex = find(tracks == parent, 1);
+            if isempty(parentIndex)
+                parent = uint32(0);
+            elseif tableRows(parentIndex,3) >= tableRows(k,2)
+                % CTC division edges require the parent tracklet to end
+                % before its daughter starts. Budding lineages keep the
+                % mother alive, so preserve both tracks but omit this edge.
+                droppedEdges(end+1,:) = double([parent id]); %#ok<AGROW>
+                parent = uint32(0);
+            end
+            tableRows(k,4) = double(parent);
+        end
+        if ~isempty(droppedEdges)
+            droppedParentEdgeCount = droppedParentEdgeCount + size(droppedEdges,1);
+            warning('trackastra:DroppedOverlappingParentEdges', ...
+                ['ROI %d: omitted %d mother-daughter edge(s) incompatible with CTC because ' ...
+                 'the parent tracklet overlaps the daughter. Tracklets remain unchanged.'], ...
+                roiIndex, size(droppedEdges,1));
         end
         writeTrackTable(fullfile(traDir,'man_track.txt'), tableRows);
 
@@ -141,7 +164,8 @@ for s = 1:size(splits,1)
         try, roiId = char(string(roiobj.id)); catch, end
         row = struct('split',splitName,'sequence',seqName,'roiId',roiId, ...
             'imageChannel',imageName,'groundTruthChannel',gtName, ...
-            'frames',frameList,'tracklets',double(tracks(:)'));
+            'frames',frameList,'tracklets',double(tracks(:)'), ...
+            'droppedParentEdges',droppedEdges);
         manifestRows(end+1) = row; %#ok<AGROW>
         if strcmp(splitName,'train')
             trainSequences{end+1} = seqDir; %#ok<AGROW>
@@ -154,7 +178,8 @@ end
 manifest = fullfile(datasetRoot,'trackastra_dataset_manifest.json');
 writeJson(manifest, struct('format','ctc_trackastra_v1','sequences',manifestRows));
 report = struct('datasetRoot',datasetRoot,'trainSequences',{trainSequences}, ...
-    'validationSequences',{validationSequences},'manifest',manifest,'frameCount',frameCount);
+    'validationSequences',{validationSequences},'manifest',manifest,'frameCount',frameCount, ...
+    'droppedParentEdgeCount',droppedParentEdgeCount);
 end
 
 function idx = channelIndex(roiobj, name, role)

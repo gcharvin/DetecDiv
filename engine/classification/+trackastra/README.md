@@ -21,12 +21,25 @@ Tracking Challenge (CTC) layout. The upstream Trackastra training source is
 cached at the pinned version under the classifier folder when training first
 runs; it is not maintained as a second DetecDiv repository.
 
+Formatting and training are separate operations. `trackastra.train` never
+reloads ROI images or regenerates the CTC export; it validates and consumes the
+existing `trainingdataset/trackastra_dataset_manifest.json`. Missing, malformed,
+or CTC-incompatible exports fail early with an instruction to run
+`trackastra.format` first.
+
 The classifier input list is an inference binding: first the raw/intensity
 channel, then the frame-local instance-mask channel. For training export,
 `imageChannelName` defaults to that first selected input, while
 `groundTruthChannelName` defaults to the editable `<classifier id>_tracklet`
 annotation channel. The inference instance mask is not tracking ground truth
 unless its object IDs have explicitly been made stable through time.
+
+CTC parent-child edges require the parent tracklet to end before the child
+starts. DetecDiv budding lineages commonly keep the mother tracklet alive after
+bud emergence. The exporter preserves those mother and bud tracks but writes
+the overlapping parent edge as `0`, records the omitted edge in the manifest,
+and emits a warning. Consequently, the initial exporter trains temporal
+tracklet association but does not train persistent-mother/bud lineage pairing.
 
 Python resolution prefers an explicit `pythonExecutable`, then a pipeline
 runtime executable, then MATLAB `pyenv`. If none contains Trackastra, the
