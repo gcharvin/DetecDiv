@@ -170,6 +170,25 @@ if wantImages
             chId       = obj.channelid;
             dispStruct = obj.display;
 
+            % A partial image must use a compact mapping: one channelid
+            % entry for each plane actually present in obj.image. Older
+            % partial loads kept the complete logical mapping and made
+            % missing planes look like loaded zero-valued channels.
+            if isempty(img)
+                chId = [];
+            elseif numel(chId) ~= size(img,3)
+                if ~silent
+                    warning('loadROI:InvalidPartialChannelMapping', ...
+                        ['ROI "%s" has %d image plane(s) but %d channelid entries. ' ...
+                         'Reloading the requested channels with a compact mapping.'], ...
+                        obj.id, size(img,3), numel(chId));
+                end
+                img = [];
+                chId = [];
+            else
+                chId = reshape(chId, 1, []);
+            end
+
             for c = 1:numel(chanNames)
                 cname = chanNames{c};
                 [img, chId, dispStruct] = loadFromH5_single( ...
@@ -682,6 +701,20 @@ function [img, channelid, dispStruct] = loadFromH5_single(h5File, chanName, img0
 if nargin < 3, img0  = []; end
 if nargin < 4, chId0 = []; end
 if nargin < 5, disp0 = struct(); end
+
+if isempty(img0)
+    % display/channelid can still describe every H5 channel after the
+    % image cache has been cleared. None of those entries maps an image
+    % plane until the requested dataset is loaded below.
+    chId0 = [];
+else
+    chId0 = reshape(chId0, 1, []);
+    if numel(chId0) ~= size(img0,3)
+        error('loadFromH5_single:InvalidExistingChannelMapping', ...
+            'Existing image has %d plane(s), but channelid has %d entries.', ...
+            size(img0,3), numel(chId0));
+    end
+end
 
 info  = h5info(h5File);
 dsets = info.Datasets;

@@ -1,7 +1,13 @@
-function loaded = score_loadChannelsForDisplay(roiObj, channels)
+function loaded = score_loadChannelsForDisplay(roiObj, channels, varargin)
 % Load only the logical channels needed by score display/rendering.
 
 loaded = false;
+forceReload = false;
+for iArg = 1:2:numel(varargin)
+    if iArg < numel(varargin) && strcmpi(char(string(varargin{iArg})), 'Force')
+        forceReload = logical(varargin{iArg+1});
+    end
+end
 
 if isempty(roiObj) || ~ismethod(roiObj, 'load')
     return;
@@ -13,7 +19,7 @@ if isempty(names)
 end
 
 missing = names;
-if ~isempty(roiObj.image)
+if ~forceReload && ~isempty(roiObj.image)
     missing = {};
     for ii = 1:numel(names)
         pix = localFindChannelID(roiObj, names{ii});

@@ -318,6 +318,50 @@ classdef score < matlab.apps.AppBase
             end
         end
 
+        function roiobj = refreshROIIntensityChannelsFromDisk(app, roiobj) %#ok<INUSL>
+            % Score can receive an ROI handle whose image cache predates a
+            % pipeline save. Refresh continuous channels before the first
+            % table/render, while preserving in-memory indexed annotations.
+            if ~isa(roiobj, 'roi') || isempty(roiobj.path) || isempty(roiobj.id)
+                return;
+            end
+
+            h5File = fullfile(roiobj.path, sprintf('im_%s.h5', roiobj.id));
+            if ~isfile(h5File) || ~isstruct(roiobj.display) || ...
+                    ~isfield(roiobj.display, 'channel') || isempty(roiobj.display.channel)
+                return;
+            end
+
+            names = cellstr(string(roiobj.display.channel(:)));
+            indexed = false(1, numel(names));
+            if isfield(roiobj.display, 'indexed') && ~isempty(roiobj.display.indexed)
+                values = logical(roiobj.display.indexed(:)');
+                n = min(numel(indexed), numel(values));
+                indexed(1:n) = values(1:n);
+            end
+            names = names(~indexed);
+            names = names(~cellfun(@isempty, names));
+            if isempty(names)
+                return;
+            end
+
+            failed = strings(0,1);
+            for iName = 1:numel(names)
+                try
+                    score_loadChannelsForDisplay(roiobj, names(iName), 'Force', true);
+                catch
+                    % A stale display row can refer to a channel no longer
+                    % present in H5. Keep refreshing the remaining rows.
+                    failed(end+1,1) = string(names{iName}); %#ok<AGROW>
+                end
+            end
+            if ~isempty(failed)
+                warning('Score:RefreshROIImages', ...
+                    'Could not refresh channel(s) %s for ROI %s from %s.', ...
+                    strjoin(failed, ', '), roiobj.id, h5File);
+            end
+        end
+
         function handleROITableEdit(app, event)
       %   profile on
             % Callback pour s'assurer qu'une seule ROI est sélectionnée
@@ -1751,8 +1795,13 @@ end
             else
 
                 % Ajouter la ROI à la liste
+                loadedFullImage = false;
                 if numel(roiobj.image)==0
                     roiobj.load;
+                    loadedFullImage = ~isempty(roiobj.image);
+                end
+                if ~loadedFullImage
+                    roiobj = app.refreshROIIntensityChannelsFromDisk(roiobj);
                 end
                 roiobj = app.refreshROIDataFromDisk(roiobj);
 
@@ -3583,16 +3632,8 @@ end
             % Rendre visibles les panels souhaités
 
             % Ajouter la ROI à la liste
-            if numel(roiobj.image)==0
-                roiobj.load;
-            end
-            roiobj = app.refreshROIDataFromDisk(roiobj);
-
-            if numel(roiobj.image)==0
-                errordlg('ROI image is empty;  Maybe it has not been extracted.... Quitting!');
-                delete(app)
-                return;
-            end
+            % Loading is centralized in addROI so stale image caches are
+            % refreshed before the first channel table/render is created.
 
 
             checkOrCreateImageFigure(app);

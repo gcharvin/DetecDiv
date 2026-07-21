@@ -175,6 +175,14 @@ end
             H, W, C, T, h2, w2, k, t2);
     end
 
+    channelMap = reshape(obj.channelid, 1, []);
+    if numel(channelMap) ~= C
+        error('addChannel:InvalidChannelMapping', ...
+            ['Cannot append channel "%s": image has %d plane(s), but ' ...
+             'channelid has %d entries. Reload the ROI before adding a channel.'], ...
+            str, C, numel(channelMap));
+    end
+
     % Append du channel (k sous-canaux) sur la 3e dimension
     obj.image(:,:,C+(1:k),:) = matrix;
 
@@ -209,15 +217,11 @@ end
         obj.display.width(nNew) = 1.5;
     end
 
-    % channelid : on attribue un nouvel id logique pour ces k sous-canaux
-    if isempty(obj.channelid)
-        maxId = 0;
-    else
-        maxId = max(obj.channelid);
-        if isempty(maxId) || isnan(maxId), maxId = 0; end
-    end
-    newId = maxId + 1;
-    obj.channelid = [obj.channelid, newId * ones(1, k, 'like', k)];
+    % channelid maps image planes to rows in display.channel. With a
+    % compact partial load it can legitimately be sparse (for example
+    % [1 5]); max(channelid)+1 is therefore not the row appended above.
+    newId = nNew;
+    obj.channelid = [channelMap, newId * ones(1, k)];
 
     obj.log(sprintf('Added channel %d ("%s") to ROI', numel(obj.display.channel), str), 'Processing');
 end

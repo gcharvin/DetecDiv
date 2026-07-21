@@ -482,23 +482,38 @@ function [idxSets, hasImage] = localImageBackedChannelSets(obj, logicNames, C)
 idxSets = cell(1, numel(logicNames));
 hasImage = false(1, numel(logicNames));
 
+channelMap = [];
+try
+    channelMap = reshape(obj.channelid, 1, []);
+catch
+end
+
+% Never trust a stale partial-load mapping whose length differs from the
+% image C dimension. Preserving existing H5 datasets is safer than writing
+% placeholder zero planes.
+if ~isempty(channelMap) && numel(channelMap) ~= C
+    return;
+end
+
+mappingIsValid = ~isempty(channelMap) && ...
+    all(isfinite(double(channelMap))) && ...
+    all(double(channelMap) >= 1) && ...
+    all(double(channelMap) == round(double(channelMap))) && ...
+    all(double(channelMap) <= numel(logicNames));
+
 for iChan = 1:numel(logicNames)
     chanNameLogical = logicNames{iChan};
     idxSet = [];
-    try
-        idxSet = obj.findChannelID(chanNameLogical, 'exact');  % vector in obj.image C-space
-    catch
-        idxSet = [];
-    end
-    if isempty(idxSet)
+    if mappingIsValid
         try
-            idxSet = find(obj.channelid == iChan).';
+            idxSet = obj.findChannelID(chanNameLogical, 'exact');  % vector in obj.image C-space
         catch
             idxSet = [];
         end
-        if isempty(idxSet)
-            idxSet = iChan;
-        end
+    elseif isempty(channelMap) && C == numel(logicNames)
+        % Legacy sequential full images sometimes have no channelid. This
+        % is safe only with exactly one plane per logical channel.
+        idxSet = iChan;
     end
 
     idxSet = unique(idxSet(:).', 'stable');
