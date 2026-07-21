@@ -14163,6 +14163,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 return;
             end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'trackastra')
+                try
+                    spec = trackastraExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
+                return;
+            end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'deeplab_pixel_classification')
                 try
                     spec = deeplabPixelExecutionSpec(app);
@@ -16109,17 +16120,6 @@ classdef pipeline2 < matlab.apps.AppBase
         function rawDataPath = effectiveRuntimeRawDataPath(app)
             if runtimeStartsFromClassifier(app)
                 rawDataPath = '';
-                return;
-            end
-            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'trackastra')
-                try
-                    spec = trackastraExecutionSpec(app);
-                    if isfield(spec, 'tips') && isfield(spec.tips, key)
-                        txt = spec.tips.(key);
-                    end
-                catch
-                    txt = '';
-                end
                 return;
             end
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
