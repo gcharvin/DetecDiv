@@ -19,21 +19,10 @@ function released = detecdiv_hub_release_project_open(shallowObj, hub)
         released = localReleaseLease(ref, storedLockId, hub) || released;
     end
 
-    try
-        status = detecdiv_hub_project_locks(ref, hub);
-        locks = localLocks(status);
-        for i = 1:numel(locks)
-            lockId = localFieldText(locks(i), 'id', '');
-            if isempty(lockId) || strcmp(lockId, storedLockId)
-                continue;
-            end
-            if localIsOwnClientEditLease(locks(i), hub)
-                localStopHeartbeat(ref, lockId);
-                released = localReleaseLease(ref, lockId, hub) || released;
-            end
-        end
-    catch
-    end
+    % Never release additional leases merely because their user or host
+    % resembles the current client. Only the exact lease id retained by this
+    % shallow object is safe to release automatically. Ambiguous/stale leases
+    % must go through the explicit, informed unlock action in the GUI.
 
     if released
         localClearLeaseState(shallowObj);
@@ -87,106 +76,6 @@ function ok = localReleaseLease(ref, lockId, hub)
     try
         detecdiv_hub_release_project_lease(ref, lockId, hub);
         ok = true;
-    catch
-    end
-end
-
-function locks = localLocks(status)
-    locks = struct([]);
-    if ~isstruct(status)
-        return;
-    end
-    value = [];
-    try
-        if isfield(status, 'locks')
-            value = status.locks;
-        end
-    catch
-    end
-    locks = localAsStructArray(value);
-end
-
-function locks = localAsStructArray(value)
-    if isempty(value)
-        locks = struct([]);
-    elseif isstruct(value)
-        locks = value(:)';
-    elseif iscell(value)
-        locks = struct([]);
-        for i = 1:numel(value)
-            item = localAsStructArray(value{i});
-            if ~isempty(item)
-                locks = [locks item]; %#ok<AGROW>
-            end
-        end
-    else
-        locks = struct([]);
-    end
-end
-
-function tf = localIsOwnClientEditLease(lock, hub)
-    tf = false;
-    if ~strcmp(localFieldText(lock, 'lock_kind', ''), 'client_edit_lease')
-        return;
-    end
-    if ~localIsEmptyField(lock, 'job_id')
-        return;
-    end
-    holderHost = localFieldText(lock, 'holder_host', '');
-    localHost = localHostName();
-    if ~isempty(holderHost) && ~isempty(localHost) && strcmpi(holderHost, localHost)
-        tf = true;
-        return;
-    end
-    holderKey = localFieldText(lock, 'holder_key', '');
-    if isempty(holderKey) || ~strcmp(holderKey, localHolderKey(hub))
-        return;
-    end
-    tf = true;
-end
-
-function tf = localIsEmptyField(S, name)
-    tf = true;
-    try
-        if isstruct(S) && isfield(S, name)
-            tf = isempty(S.(name));
-        end
-    catch
-        tf = true;
-    end
-end
-
-function value = localFieldText(S, name, defaultValue)
-    value = defaultValue;
-    try
-        if isstruct(S) && isfield(S, name) && ~isempty(S.(name))
-            value = char(string(S.(name)));
-        end
-    catch
-        value = defaultValue;
-    end
-end
-
-function key = localHolderKey(hub)
-    key = '';
-    try
-        if isfield(hub, 'userKey') && ~isempty(hub.userKey)
-            key = char(string(hub.userKey));
-        end
-    catch
-    end
-    if isempty(key)
-        key = getenv('USERNAME');
-    end
-    if isempty(key)
-        key = 'matlab-client';
-    end
-end
-
-function host = localHostName()
-    host = '';
-    try
-        host = char(string(java.net.InetAddress.getLocalHost.getHostName));
     catch
     end
 end

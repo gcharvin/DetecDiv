@@ -2763,7 +2763,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 y1 = -(getLayoutRow(app, src) - 1) * (blockH + gapY) + blockH/2;
                 x2 = (getLayoutCol(app, dst) - 1) * (blockW + gapX);
                 y2 = -(getLayoutRow(app, dst) - 1) * (blockH + gapY) + blockH/2;
-                if explicitGraphEdgeExists(app, char(string(edges(i).from)), char(string(edges(i).to)))
+                overlapsExplicitEdge = explicitGraphEdgeExists(app, ...
+                    char(string(edges(i).from)), char(string(edges(i).to)));
+                if overlapsExplicitEdge
                     yOffset = blockH * 0.23;
                     y1 = y1 + yOffset;
                     y2 = y2 + yOffset;
@@ -2778,6 +2780,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     edgeWidth = 1.0;
                 end
                 lane = resourceBindingLaneForSource(app, edges, i);
+                if overlapsExplicitEdge
+                    % The first regular binding lane has a -0.26*blockH
+                    % offset, which almost cancels yOffset above and makes
+                    % the dashed resource edge overlap the solid execution
+                    % edge. Reserve the neutral/upper lanes when both
+                    % relationships connect the same pair of nodes.
+                    lane = min(5, lane + 2);
+                end
                 [hLine, hHead] = drawResourceBindingEdgeRoute(app, x1, y1, x2, y2, blockW, blockH, lane, edgeColor, edgeWidth);
                 app.EdgeHandles(end+1) = hLine; %#ok<AGROW>
                 app.EdgeHandles(end+1) = hHead; %#ok<AGROW>
@@ -18922,6 +18932,73 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function [job, runObj] = submitHubRunWithLockResolution(app, runObj, hub)
+            submitArgs = {'hub', hub, ...
+                'SaveProject', false, ...
+                'ProjectResolveInitialWaitSec', 0, ...
+                'ProjectResolveAttempts', 1, ...
+                'ProjectResolveIntervalSec', 0.5};
+            try
+                [job, runObj] = detecdiv_hub_submit_pipeline_run( ...
+                    runObj, app.CurrentProject, submitArgs{:});
+                return;
+            catch ME
+                if ~isHubProjectLockedException(app, ME)
+                    rethrow(ME);
+                end
+                originalError = ME;
+            end
+
+            % The first submission attempt releases this MATLAB session's own
+            % edit lease. Any remaining client lease therefore belongs to a
+            % different/stale session and can be presented explicitly.
+            summary = detecdiv_hub_project_lock_summary(app.CurrentProject, hub);
+            if summary.lock_count == 0
+                [job, runObj] = detecdiv_hub_submit_pipeline_run( ...
+                    runObj, app.CurrentProject, submitArgs{:});
+                return;
+            end
+
+            details = detecdiv_hub_format_project_lock_summary(summary);
+            lockKinds = string({summary.locks.kind});
+            if any(strcmpi(lockKinds, 'server_job'))
+                error('detecdiv_hub_submit_pipeline_run:ProjectLocked', '%s', ...
+                    [details newline newline ...
+                    'A running Hub job owns this lock. Cancel it from the Run Monitor or wait for it to finish before retrying.']);
+            end
+            if ~all(strcmpi(lockKinds, 'client_edit_lease'))
+                rethrow(originalError);
+            end
+
+            prompt = [details newline newline ...
+                'Release the listed client lease and submit this run?' newline ...
+                'Only continue if that DetecDiv session is closed or no longer writing. ' ...
+                'Forcing release while it is active can allow concurrent writes to the same project.'];
+            choice = uiconfirm(app.UIFigure, prompt, 'Hub project is locked', ...
+                'Options', {'Release lock and submit','Cancel'}, ...
+                'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+            if ~strcmp(choice, 'Release lock and submit')
+                rethrow(originalError);
+            end
+
+            for iLock = 1:numel(summary.locks)
+                lock = summary.locks(iLock);
+                if ~isempty(lock.id)
+                    detecdiv_hub_release_project_lease(app.CurrentProject, lock.id, hub);
+                end
+            end
+
+            remaining = detecdiv_hub_project_lock_summary(app.CurrentProject, hub);
+            if remaining.lock_count > 0
+                error('detecdiv_hub_submit_pipeline_run:ProjectLocked', '%s', ...
+                    [detecdiv_hub_format_project_lock_summary(remaining) newline newline ...
+                    'The Hub still reports an active lock after the release request.']);
+            end
+
+            [job, runObj] = detecdiv_hub_submit_pipeline_run( ...
+                runObj, app.CurrentProject, submitArgs{:});
+        end
+
         function hydrateRuntimeInventoryFromRunContext(app, ctx)
             if ~isstruct(ctx)
                 return;
@@ -20287,11 +20364,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     saveHubLocalSec = toc(saveHubLocalTimer);
                     updateRunSaveProgress(app, d, 'Hub launch: exporting bundle and creating job...', 0.76);
                     submitTimer = tic;
-                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
-                        'SaveProject', false, ...
-                        'ProjectResolveInitialWaitSec', 0, ...
-                        'ProjectResolveAttempts', 1, ...
-                        'ProjectResolveIntervalSec', 0.5);
+                    [job, runObj] = submitHubRunWithLockResolution(app, runObj, hub);
                     submitSec = toc(submitTimer);
                     runObj = annotateHubRunControl(app, runObj, job);
                     logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');

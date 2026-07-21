@@ -309,6 +309,9 @@ function msg = localLockHumanSummary(lockInfo)
     if ~isempty(lockInfo.reason)
         details{end+1} = ['Reason: ' lockInfo.reason]; %#ok<AGROW>
     end
+    if ~isempty(lockInfo.holderKey)
+        details{end+1} = ['User: ' lockInfo.holderKey]; %#ok<AGROW>
+    end
     if ~isempty(lockInfo.holderHost)
         details{end+1} = ['Host: ' lockInfo.holderHost]; %#ok<AGROW>
     end

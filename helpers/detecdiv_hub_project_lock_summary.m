@@ -12,7 +12,7 @@ function summary = detecdiv_hub_project_lock_summary(project, hub)
     end
 
     status = detecdiv_hub_project_locks(ref, hub);
-    locks = localAsStructArray(localField(status, 'locks', struct([])));
+    locks = localStatusLocks(status);
     summary = struct();
     summary.project_id = char(string(ref.project_id));
     summary.editable = localLogicalField(status, 'editable', isempty(locks));
@@ -29,7 +29,8 @@ end
 
 function locks = localNormalizeLocks(rawLocks)
     locks = repmat(struct('id', '', 'kind', '', 'holder', '', 'host', '', ...
-        'job_id', '', 'status', '', 'scope', '', 'expires_at', '', 'reason', ''), numel(rawLocks), 1);
+        'job_id', '', 'status', '', 'lock_scope', '', 'write_scope', '', ...
+        'heartbeat_at', '', 'expires_at', '', 'created_at', '', 'reason', ''), numel(rawLocks), 1);
     for i = 1:numel(rawLocks)
         lock = rawLocks(i);
         locks(i) = struct( ...
@@ -39,8 +40,11 @@ function locks = localNormalizeLocks(rawLocks)
             'host', localFirstText(lock, {'holder_host','host','requested_from_host'}), ...
             'job_id', localFirstText(lock, {'job_id','hub_job_id','pipeline_run_id'}), ...
             'status', localFirstText(lock, {'status','state'}), ...
-            'scope', localFirstText(lock, {'write_scope','scope'}), ...
+            'lock_scope', localFirstText(lock, {'lock_scope','scope'}), ...
+            'write_scope', localFirstText(lock, {'write_scope'}), ...
+            'heartbeat_at', localFirstText(lock, {'heartbeat_at','heartbeatAt'}), ...
             'expires_at', localFirstText(lock, {'expires_at','expiresAt','expires','ttl_expires_at'}), ...
+            'created_at', localFirstText(lock, {'created_at','createdAt'}), ...
             'reason', localFirstText(lock, {'reason','message','detail'}));
     end
 end
@@ -66,7 +70,9 @@ function localPrintSummary(summary)
         details = localAppendDetail(details, 'host', lock.host);
         details = localAppendDetail(details, 'job', lock.job_id);
         details = localAppendDetail(details, 'status', lock.status);
-        details = localAppendDetail(details, 'scope', lock.scope);
+        details = localAppendDetail(details, 'scope', lock.lock_scope);
+        details = localAppendDetail(details, 'write-scope', lock.write_scope);
+        details = localAppendDetail(details, 'heartbeat', lock.heartbeat_at);
         details = localAppendDetail(details, 'expires', lock.expires_at);
         if ~isempty(details)
             fprintf(' (%s)', strjoin(details, ', '));
@@ -75,6 +81,20 @@ function localPrintSummary(summary)
             fprintf(' - %s', lock.reason);
         end
         fprintf('\n');
+    end
+end
+
+function locks = localStatusLocks(status)
+    locks = struct([]);
+    if ~isstruct(status)
+        return;
+    end
+    % The current Hub contract calls this field active_locks. Keep the old
+    % locks name as a compatibility fallback for earlier deployments.
+    if isfield(status, 'active_locks')
+        locks = localAsStructArray(status.active_locks);
+    elseif isfield(status, 'locks')
+        locks = localAsStructArray(status.locks);
     end
 end
 

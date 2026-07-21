@@ -155,6 +155,17 @@ function shallowObj = localSetHubState(shallowObj, access)
     shallowObj.runProfiles.hub.reason = access.reason;
     shallowObj.runProfiles.hub.checked_at = char(datetime('now'));
     if isfield(access, 'lease') && isstruct(access.lease) && isfield(access.lease, 'id')
+        shallowObj.runProfiles.hub.active_locks = access.lease;
+    elseif isfield(access, 'status') && isstruct(access.status)
+        if isfield(access.status, 'active_locks')
+            shallowObj.runProfiles.hub.active_locks = access.status.active_locks;
+        elseif isfield(access.status, 'locks')
+            shallowObj.runProfiles.hub.active_locks = access.status.locks;
+        else
+            shallowObj.runProfiles.hub.active_locks = struct([]);
+        end
+    end
+    if isfield(access, 'lease') && isstruct(access.lease) && isfield(access.lease, 'id')
         shallowObj.runProfiles.hub.lease = access.lease;
     end
 end

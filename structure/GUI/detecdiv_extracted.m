@@ -107,7 +107,13 @@ classdef detecdiv < matlab.apps.AppBase
             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
             for i=1:numel(app.Data.Project)
-                h1(i)=uitreenode(app.ProjectsNode,'Text',app.Data.Project{i},'Tag','Project','UserData',i,'Icon',fullfile(pth,'detecDiv_logo.png'));
+                cmProject = uicontextmenu(app.DetecDivUIFigure);
+                m = uimenu(cmProject,'Text','Refresh Hub lock information');
+                m.MenuSelectedFcn = {@contextMenuRefreshProjectHubLockFcn,i,'Project'};
+                m = uimenu(cmProject,'Text','Release Hub lock and edit here...');
+                m.MenuSelectedFcn = {@contextMenuReleaseProjectHubLockFcn,i,'Project'};
+                h1(i)=uitreenode(app.ProjectsNode,'Text',app.Data.Project{i},'Tag','Project','UserData',i, ...
+                    'ContextMenu',cmProject,'Icon',fullfile(pth,'detecDiv_logo.png'));
 
 
                 for k=1:numel(app.Data.Projectclassi{i})
@@ -349,6 +355,136 @@ classdef detecdiv < matlab.apps.AppBase
 
                 runNode=uitreenode(parentNode,'Text',app.Data.ProjectpipelineRun{projIdx}{runIdx},'Tag','ProjectpipelineRun', ...
                     'UserData',[projIdx,runIdx],'ContextMenu',cm,'Icon',fullfile(pth,'pipeline_run.png'));
+            end
+
+            function contextMenuRefreshProjectHubLockFcn(~,~,projIdx,~)
+                try
+                    shallowObj = evalin('base', app.Data.Project{projIdx});
+                    summary = detecdiv_hub_project_lock_summary(shallowObj);
+                    applyProjectHubLockSummary(shallowObj, summary);
+                    refreshProjectInformationIfSelected(projIdx);
+                    uialert(app.DetecDivUIFigure, ...
+                        detecdiv_hub_format_project_lock_summary(summary), ...
+                        'Hub project lock', 'Icon', 'info');
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, ...
+                        'Cannot read Hub project lock', 'Icon', 'error');
+                end
+            end
+
+            function contextMenuReleaseProjectHubLockFcn(~,~,projIdx,~)
+                try
+                    shallowObj = evalin('base', app.Data.Project{projIdx});
+                    hub = detecdiv_hub_settings_get();
+                    summary = detecdiv_hub_project_lock_summary(shallowObj, hub);
+                    applyProjectHubLockSummary(shallowObj, summary);
+                    refreshProjectInformationIfSelected(projIdx);
+
+                    if summary.lock_count == 0
+                        [shallowObj, access] = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', hub);
+                        refreshProjectInformationIfSelected(projIdx);
+                        if access.editable
+                            uialert(app.DetecDivUIFigure, ...
+                                'No foreign lock was active. A local edit lease is now held by this MATLAB session.', ...
+                                'Hub project editable', 'Icon', 'success');
+                        else
+                            uialert(app.DetecDivUIFigure, access.reason, ...
+                                'Hub project remains read-only', 'Icon', 'warning');
+                        end
+                        return;
+                    end
+
+                    lockKinds = string({summary.locks.kind});
+                    if any(strcmpi(lockKinds, 'server_job'))
+                        msg = [detecdiv_hub_format_project_lock_summary(summary) newline newline ...
+                            'A running Hub job cannot be force-released here. Cancel it from the Run Monitor, or wait for it to finish.'];
+                        uialert(app.DetecDivUIFigure, msg, 'Hub job owns this project', 'Icon', 'warning');
+                        return;
+                    end
+
+                    msg = [detecdiv_hub_format_project_lock_summary(summary) newline newline ...
+                        'Release this lease and take a new edit lease on this computer?' newline ...
+                        'Only continue if the listed DetecDiv session is closed or no longer writing. ' ...
+                        'Forcing release while it is active can allow concurrent writes to the same project.'];
+                    choice = uiconfirm(app.DetecDivUIFigure, msg, 'Release Hub project lock?', ...
+                        'Options', {'Release and edit here','Cancel'}, ...
+                        'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                    if ~strcmp(choice, 'Release and edit here')
+                        return;
+                    end
+
+                    for iLock = 1:numel(summary.locks)
+                        lock = summary.locks(iLock);
+                        if strcmpi(lock.kind, 'client_edit_lease') && ~isempty(lock.id)
+                            detecdiv_hub_release_project_lease(shallowObj, lock.id, hub);
+                        end
+                    end
+
+                    remaining = detecdiv_hub_project_lock_summary(shallowObj, hub);
+                    if remaining.lock_count > 0
+                        applyProjectHubLockSummary(shallowObj, remaining);
+                        error('detecdiv:HubLockStillActive', ...
+                            'The Hub still reports an active lock after the release request.');
+                    end
+
+                    [shallowObj, access] = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', hub);
+                    refreshProjectInformationIfSelected(projIdx);
+                    if ~access.editable
+                        error('detecdiv:HubLeaseAcquireFailed', '%s', access.reason);
+                    end
+                    uialert(app.DetecDivUIFigure, ...
+                        'The previous lock was released. This MATLAB session now owns the project edit lease.', ...
+                        'Hub project unlocked', 'Icon', 'success');
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, ...
+                        'Cannot release Hub project lock', 'Icon', 'error');
+                end
+            end
+
+            function applyProjectHubLockSummary(shallowObj, summary)
+                if ~isprop(shallowObj, 'runProfiles') || ~isstruct(shallowObj.runProfiles)
+                    shallowObj.runProfiles = struct();
+                end
+                if ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+                    shallowObj.runProfiles.hub = struct();
+                end
+                hubState = shallowObj.runProfiles.hub;
+                hubState.hub_project_id = summary.project_id;
+                hubState.active_locks = summary.locks;
+                hubState.checked_at = summary.checked_at;
+                hubState.reason = summary.reason;
+                if summary.lock_count > 0
+                    ownLeaseId = '';
+                    try
+                        ownLeaseId = char(string(hubState.lease.id));
+                    catch
+                    end
+                    activeIds = string({summary.locks.id});
+                    ownsActiveLease = ~isempty(ownLeaseId) && any(strcmp(activeIds, string(ownLeaseId)));
+                    hubState.read_only = ~ownsActiveLease;
+                    if ownsActiveLease
+                        hubState.mode = 'lease_active';
+                    else
+                        hubState.mode = 'read_only';
+                    end
+                else
+                    hubState.read_only = true;
+                    hubState.mode = 'unlocked';
+                    if isfield(hubState, 'lease')
+                        hubState = rmfield(hubState, 'lease');
+                    end
+                end
+                shallowObj.runProfiles.hub = hubState;
+            end
+
+            function refreshProjectInformationIfSelected(projIdx)
+                try
+                    node = app.Tree.SelectedNodes;
+                    if numel(node) == 1 && strcmp(node.Tag, 'Project') && isequal(node.UserData, projIdx)
+                        TreeSelectionChanged(app, []);
+                    end
+                catch
+                end
             end
 
             function runNode = createClassifierPipelineRunTreeNode(parentNode, classifierIdx, runIdx, pth)
@@ -5699,6 +5835,7 @@ end
             elseif ~validateExisting
                 out(end+1,1) = rp(k); %#ok<AGROW>
             end
+
         end
         rp = out;
 
@@ -6474,7 +6611,7 @@ end
                     state = 'Hub-managed';
                 end
 
-                parts = cell(1, 4);
+                parts = cell(1, 12);
                 nParts = 1;
                 parts{nParts} = ['Hub project status: ' state];
                 if ~isempty(projectId)
@@ -6490,6 +6627,57 @@ end
                 if ~isempty(reason)
                     nParts = nParts + 1;
                     parts{nParts} = ['Hub note: ' reason];
+                end
+                locks = struct([]);
+                if isfield(hub, 'active_locks') && ~isempty(hub.active_locks)
+                    if isstruct(hub.active_locks)
+                        locks = hub.active_locks(:);
+                    elseif iscell(hub.active_locks)
+                        try
+                            locks = vertcat(hub.active_locks{:});
+                        catch
+                        end
+                    end
+                end
+                if ~isempty(locks)
+                    lock = locks(1);
+                    lockKind = app.hubTextField(lock, {'kind','lock_kind','type'});
+                    holder = app.hubTextField(lock, {'holder','holder_key','requested_by'});
+                    host = app.hubTextField(lock, {'host','holder_host','requested_from_host'});
+                    heartbeatAt = app.hubTextField(lock, {'heartbeat_at','heartbeatAt'});
+                    expiresAt = app.hubTextField(lock, {'expires_at','expiresAt'});
+                    if ~isempty(lockKind)
+                        nParts = nParts + 1;
+                        parts{nParts} = ['Hub lock type: ' lockKind];
+                    end
+                    if ~isempty(holder) || ~isempty(host)
+                        nParts = nParts + 1;
+                        ownerText = holder;
+                        if ~isempty(host)
+                            if isempty(ownerText)
+                                ownerText = host;
+                            else
+                                ownerText = [ownerText ' @ ' host];
+                            end
+                        end
+                        parts{nParts} = ['Hub lock owner: ' ownerText];
+                    end
+                    if ~isempty(heartbeatAt)
+                        nParts = nParts + 1;
+                        parts{nParts} = ['Hub lock heartbeat (UTC): ' heartbeatAt];
+                    end
+                    if ~isempty(expiresAt)
+                        nParts = nParts + 1;
+                        parts{nParts} = ['Hub lock expires (UTC): ' expiresAt];
+                    end
+                    if numel(locks) > 1
+                        nParts = nParts + 1;
+                        parts{nParts} = sprintf('Additional Hub locks: %d', numel(locks) - 1);
+                    end
+                    if isReadOnly
+                        nParts = nParts + 1;
+                        parts{nParts} = 'Hub action: right-click the project to inspect or release the lock.';
+                    end
                 end
                 txt = strjoin(parts(1:nParts), newline);
             catch
