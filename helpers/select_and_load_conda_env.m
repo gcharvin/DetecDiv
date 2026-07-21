@@ -609,6 +609,10 @@ try
     for i = 1:numel(recipe.requiredImports)
         py.importlib.import_module(recipe.requiredImports{i});
     end
+    % Top-level imports do not expose the Windows MKL/PyTorch OpenMP
+    % collision; importing the actual model modules does.
+    py.importlib.import_module('cellpose.models');
+    py.importlib.import_module('trackastra.model');
     cellposeVersion = string(metadata.version('cellpose'));
     trackastraVersion = string(metadata.version('trackastra'));
     tf = cellposeVersion == string(recipe.packages.cellposeVersion) && ...
@@ -1446,6 +1450,12 @@ function ensureDetecdivPackages(condaCmd, debug)
         end
     end
 
+    % Validate the import path used by the real runners. This also repairs
+    % legacy Windows environments containing both MKL's libiomp5md.dll and
+    % the copy bundled with pip PyTorch. Do not use KMP_DUPLICATE_LIB_OK:
+    % replacing MKL-backed NumPy/SciPy with OpenBLAS removes the conflict.
+    ensureWindowsCompatibleNumericRuntime(condaCmd, envName, recipe, debug);
+
     % --- final torch verification via conda run ---
     fprintf('[Detecdiv]   - Verifying torch execution...\n');
     [okTorch, outTorch] = verifyTorch(condaCmd, envName, debug);
@@ -1474,6 +1484,59 @@ function ensureDetecdivPackages(condaCmd, debug)
     end
 
     error('Torch verification failed:\n%s', outTorch);
+end
+
+function ensureWindowsCompatibleNumericRuntime(condaCmd, envName, recipe, debug)
+if ~ispc
+    return;
+end
+[okImports, importOut] = verifyCellposeTrackastraRunnerImports(condaCmd, envName, debug);
+if okImports
+    fprintf('[Detecdiv]   - CellposeSAM/Trackastra runner imports verified.\n');
+    return;
+end
+
+lowerOut = lower(string(importOut));
+isOpenMpConflict = contains(lowerOut, 'libiomp5md.dll') || ...
+    contains(lowerOut, 'omp: error #15');
+if ~isOpenMpConflict
+    error('Canonical CellposeSAM/Trackastra import verification failed:\n%s', importOut);
+end
+
+fprintf('[Detecdiv]   - Detected duplicate Windows OpenMP runtimes; switching NumPy/SciPy from MKL to OpenBLAS...\n');
+repair = recipe.windowsNumericRepair;
+quotedSpecs = cellfun(@(x) ['"' char(string(x)) '"'], repair.specs, ...
+    'UniformOutput', false);
+sub = sprintf('install -y -n %s -c %s %s', envName, ...
+    repair.channel, strjoin(quotedSpecs, ' '));
+[stRepair, outRepair] = runConda(sub, debug, condaCmd);
+if stRepair ~= 0
+    error('Unable to repair the Windows OpenMP runtime conflict:\n%s', outRepair);
+end
+
+[okAfter, outAfter] = verifyCellposeTrackastraRunnerImports(condaCmd, envName, debug);
+if ~okAfter
+    error('Windows OpenMP repair completed but runner imports still fail:\n%s', outAfter);
+end
+[stPipCheck, outPipCheck] = runConda("run -n " + envName + ...
+    " python -m pip check", debug, condaCmd);
+if stPipCheck ~= 0
+    error('Python dependency verification failed after OpenBLAS repair:\n%s', outPipCheck);
+end
+fprintf('[Detecdiv]   - OpenBLAS repair verified; CellposeSAM and Trackastra imports are healthy.\n');
+end
+
+function [ok, out] = verifyCellposeTrackastraRunnerImports(condaCmd, envName, debug)
+code = [ ...
+    'import numpy as np;' ...
+    'import scipy.io as sio;' ...
+    'import torch;' ...
+    'from cellpose import models;' ...
+    'from trackastra.model import Trackastra;' ...
+    'print(''RUNNER_IMPORTS_OK'')'];
+sub = sprintf('run -n %s python -c "%s"', envName, code);
+[st,out] = runConda(sub, debug, condaCmd);
+ok = st == 0 && contains(string(out), 'RUNNER_IMPORTS_OK');
 end
 
 function ok = canonicalCondaPackagesReady(condaCmd, envName, recipe, debug)
