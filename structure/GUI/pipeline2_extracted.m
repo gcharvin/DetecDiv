@@ -3401,12 +3401,13 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshSelectedModuleTable(app);
             refreshCommonControlsFromSelection(app);
             refreshGlobalRuntimeTable(app);
-            updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
-            redrawGraph(app);
             updateRuntimeProgress(app, d, 'Rebuilding module tabs...');
             refreshModuleTabs(app);
-            updateRuntimeProgress(app, d, 'Checking pipeline...');
-            refreshValidationReport(app, false);
+            updateRuntimeProgress(app, d, 'Checking pipeline and redrawing graph...');
+            % Resource-binding edges come from LastValidationReport. Draw
+            % only after refreshing that report so a newly loaded symbolic
+            % binding is visible immediately.
+            refreshValidationReport(app, true);
             updateRuntimeProgress(app, d, 'Updating controls...');
             updateCommonControlsEnableState(app);
             if markDirty
