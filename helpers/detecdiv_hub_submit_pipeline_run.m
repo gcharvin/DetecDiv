@@ -1910,7 +1910,7 @@ function paths = localBuildRunPaths(ctx, ref, hub)
     if ~isempty(paths.server_run_path)
         paths.run_path = paths.server_run_path;
     end
-    paths.path_mappings = localHubPathMappings(hub);
+    paths.path_mappings = localHubPathMappings(ref, hub);
 end
 
 function value = localTranslateValuePathsForServer(value, ref, hub)
@@ -1946,23 +1946,9 @@ function tf = localLooksLikePathText(value)
         contains(value, '\') || contains(value, '/');
 end
 
-function mappings = localHubPathMappings(hub)
-    raw = detecdiv_paths_module_mappings(localPathMappingCtx(struct(), hub));
-    mappings = struct('localRoot', {}, 'remoteRoot', {});
-    if isempty(raw)
-        return;
-    end
-    for i = 1:numel(raw)
-        try
-            remoteRoot = regexprep(strrep(char(string(raw(i).remoteRoot)), '\', '/'), '[\/]+$', '');
-            if isempty(remoteRoot) || ~localLooksLikeServerPath(remoteRoot)
-                continue;
-            end
-            mappings(end+1).localRoot = remoteRoot; %#ok<AGROW>
-            mappings(end).remoteRoot = remoteRoot;
-        catch
-        end
-    end
+function mappings = localHubPathMappings(ref, hub)
+    mappings = detecdiv_paths_run_payload_mappings( ...
+        localPathMappingCtx(ref, hub));
 end
 
 function ctx = localPathMappingCtx(ref, hub)
