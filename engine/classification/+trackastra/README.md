@@ -21,6 +21,13 @@ Tracking Challenge (CTC) layout. The upstream Trackastra training source is
 cached at the pinned version under the classifier folder when training first
 runs; it is not maintained as a second DetecDiv repository.
 
+The classifier input list is an inference binding: first the raw/intensity
+channel, then the frame-local instance-mask channel. For training export,
+`imageChannelName` defaults to that first selected input, while
+`groundTruthChannelName` defaults to the editable `<classifier id>_tracklet`
+annotation channel. The inference instance mask is not tracking ground truth
+unless its object IDs have explicitly been made stable through time.
+
 Python resolution prefers an explicit `pythonExecutable`, then a pipeline
 runtime executable, then MATLAB `pyenv`. If none contains Trackastra, the
 local `detecdiv_python` Conda environment is discovered without storing its

@@ -60,6 +60,7 @@ out.artifacts.manifest = report.manifest;
 out.metrics.trainingRois = numel(trainRois);
 out.metrics.validationRois = numel(valRois);
 out.metrics.frames = report.frameCount;
+out.metrics.outputCount = report.frameCount;
 end
 
 function rois = normalizeRois(rois, nRois)

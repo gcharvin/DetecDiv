@@ -2,8 +2,8 @@ function tp = defaultTrainingParam()
 % trackastra.utils.defaultTrainingParam  Trackastra training/export defaults.
 
 spec = {
-    'imageChannelName',        '',             'Raw/intensity channel exported as the Trackastra image sequence.'
-    'groundTruthChannelName',  '',             'Indexed GT channel whose labels are stable tracklet IDs.'
+    'imageChannelName',        '',             'Raw/intensity channel; empty uses the first selected classifier input.'
+    'groundTruthChannelName',  '',             'Indexed stable-tracklet GT; empty uses the classifier annotation channel.'
     'validationFraction',      0.2,            'Fraction of training ROIs held out when no validation split is defined.'
     'epochs',                  100,            'Number of Trackastra training epochs.'
     'warmupEpochs',            10,             'Linear learning-rate warmup epochs.'

@@ -3,7 +3,7 @@ function report = exportCtcDataset(classif, trainRois, valRois, varargin)
 %
 % Each ROI becomes one independent CTC sequence. Ground-truth labels must
 % already be temporally stable tracklet IDs. Parent IDs are read from the
-% active cell_information lineage source when available.
+% cell_information lineage source bound to that GT channel when available.
 
 ip = inputParser;
 ip.addParameter('FolderName','trainingdataset',@(x)ischar(x)||isstring(x));
@@ -14,17 +14,34 @@ tp = classif.trainingParam;
 imageName = scalarText(getField(tp,'imageChannelName',''));
 gtName = scalarText(getField(tp,'groundTruthChannelName',''));
 if isempty(imageName)
-    try, imageName = scalarText(classif.channelName); catch, end
+    selectedChannels = classifierInputChannels(classif);
+    if ~isempty(selectedChannels)
+        imageName = selectedChannels{1};
+    end
+end
+if isempty(gtName)
+    gtName = trackastra.annotationChannelName(classif);
 end
 if isempty(imageName)
     error('trackastra:MissingTrainingImageChannel', ...
-        'trainingParam.imageChannelName must identify the raw/intensity channel.');
+        ['trainingParam.imageChannelName must identify the raw/intensity channel. ' ...
+         'Alternatively, select the raw channel first in the classifier input list.']);
 end
 if isempty(gtName)
     error('trackastra:MissingGroundTruthChannel', ...
         ['trainingParam.groundTruthChannelName must identify an indexed channel ' ...
-         'whose labels are stable tracklet IDs.']);
+         'whose labels are stable tracklet IDs. No classifier annotation channel could be inferred.']);
 end
+if strcmp(imageName, gtName)
+    error('trackastra:AmbiguousTrainingChannels', ...
+        'The raw image channel and tracked ground-truth channel both resolve to "%s".', imageName);
+end
+
+% Persist resolved bindings so the training-parameter table and subsequent
+% runs expose the exact channels used by the exporter.
+classif.trainingParam.imageChannelName = imageName;
+classif.trainingParam.groundTruthChannelName = gtName;
+fprintf('[Trackastra format] image=%s trackedGT=%s\n', imageName, gtName);
 
 datasetRoot = fullfile(classif.path, char(string(ip.Results.FolderName)));
 if exist(datasetRoot,'dir') ~= 7, mkdir(datasetRoot); end
@@ -85,19 +102,32 @@ for s = 1:size(splits,1)
             frameCount = frameCount + 1;
         end
 
-        parentMap = lineageParentMap(roiobj);
+        if isempty(tracks)
+            error('trackastra:EmptyGroundTruthSequence', ...
+                ['Ground-truth channel "%s" contains no tracked object in ROI %d over the ' ...
+                 'selected frames. Annotate stable tracklet IDs before formatting.'], ...
+                gtName, roiIndex);
+        end
+
+        parentMap = lineageParentMap(roiobj, gtName);
         tableRows = zeros(numel(tracks),4);
         for k = 1:numel(tracks)
             id = tracks(k);
-            firstSeen = inf;
-            lastSeen = -inf;
+            seenFrames = [];
             for f = 1:numel(frameList)
                 mask = uint32(roiobj.image(:,:,gtIdx,frameList(f)));
                 if any(mask(:)==id)
-                    firstSeen = min(firstSeen,f-1);
-                    lastSeen = max(lastSeen,f-1);
+                    seenFrames(end+1) = f-1; %#ok<AGROW>
                 end
             end
+            if numel(seenFrames) > 1 && any(diff(seenFrames) ~= 1)
+                error('trackastra:NonContiguousTracklet', ...
+                    ['Tracklet ID %u in ROI %d disappears and later reappears. ' ...
+                     'Each CTC tracklet ID must occupy one contiguous frame interval.'], ...
+                    id, roiIndex);
+            end
+            firstSeen = seenFrames(1);
+            lastSeen = seenFrames(end);
             parent = uint32(0);
             if isa(parentMap,'containers.Map')
                 parent = mapParentId(parentMap, id);
@@ -203,7 +233,7 @@ else
 end
 end
 
-function map = lineageParentMap(roiobj)
+function map = lineageParentMap(roiobj, channelName)
 map = [];
 try
     if isempty(roiobj.data), roiobj.load('data'); end
@@ -212,9 +242,20 @@ try
     ud = roiobj.data(idx).userData;
     if ~isstruct(ud), return; end
     if isfield(ud,'lineageSources') && isstruct(ud.lineageSources)
+        sourceFields = fieldnames(ud.lineageSources);
+        for i = 1:numel(sourceFields)
+            candidate = ud.lineageSources.(sourceFields{i});
+            if isfield(candidate,'channelName') && ...
+                    strcmp(char(string(candidate.channelName)), channelName) && ...
+                    isfield(candidate,'motherOf') && isa(candidate.motherOf,'containers.Map')
+                map = candidate.motherOf;
+                break;
+            end
+        end
         key = '';
         if isfield(ud,'activeLineageSource'), key = char(string(ud.activeLineageSource)); end
-        if ~isempty(key) && isfield(ud.lineageSources,key) && isfield(ud.lineageSources.(key),'motherOf')
+        if isempty(map) && ~isempty(key) && isfield(ud.lineageSources,key) && ...
+                isfield(ud.lineageSources.(key),'motherOf')
             map = ud.lineageSources.(key).motherOf;
         end
     end
@@ -243,6 +284,23 @@ end
 function value = getField(s,name,fallback)
 value=fallback;
 if isstruct(s)&&isfield(s,name)&&~isempty(s.(name)), value=s.(name); end
+end
+
+function channels = classifierInputChannels(classif)
+channels = {};
+try
+    value = classif.channelName;
+    if ischar(value)
+        channels = {strtrim(value)};
+    elseif isstring(value)
+        channels = cellstr(value(:)');
+    elseif iscell(value)
+        channels = cellfun(@(x) strtrim(char(string(x))), value(:)', 'UniformOutput', false);
+    end
+catch
+    channels = {};
+end
+channels = channels(~cellfun(@isempty, channels));
 end
 
 function txt = scalarText(value)
