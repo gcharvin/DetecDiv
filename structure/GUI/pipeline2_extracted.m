@@ -4625,6 +4625,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 file = [file '.mat']; %#ok<NASGU>
             end
             projectFolder = fullfile(pth, name);
+            existingJson = fullfile(pth, [name '.json']);
+            existingMat = fullfile(pth, [name '.mat']);
+            if isfile(existingJson) || isfile(existingMat) || isfolder(projectFolder)
+                uialert(app.UIFigure, ...
+                    sprintf(['A project named "%s" already exists here.\n\n' ...
+                    'Use "Select project" / "Browse existing" to load it, or choose a new name.'], name), ...
+                    'Project already exists', 'Icon', 'warning');
+                return;
+            end
             if ~exist(projectFolder, 'dir')
                 mkdir(projectFolder);
             end
@@ -18860,7 +18869,24 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             if isempty(app.CurrentProject) && ~isempty(runObj.projectPath)
-                bindProjectFromPath(app, [runObj.projectPath '.mat'], false);
+                projectPath = char(string(runObj.projectPath));
+                localProjectPath = hubRemotePathToLocalPath(app, projectPath);
+                if ~isempty(localProjectPath)
+                    projectPath = localProjectPath;
+                elseif ~isempty(runObj.path)
+                    % A run folder is <project>/pipeline/<runId>; use it as
+                    % a local, authoritative fallback when the saved Hub
+                    % projectPath still points to /data or an unavailable
+                    % drive mapping.
+                    try
+                        projectFolder = fileparts(fileparts(char(string(runObj.path))));
+                        if isfolder(projectFolder)
+                            projectPath = projectFolder;
+                        end
+                    catch
+                    end
+                end
+                bindProjectFromPath(app, [regexprep(projectPath, '\.mat$', '') '.mat'], false);
             end
             app.RuntimeInventoryRefreshSuspended = wasSuspended;
             hydrateRuntimeInventoryFromRunContext(app, ctx);
