@@ -635,6 +635,54 @@ function classlist = appendPackageClassifiers(app, classlist, rootPath)
 end
 
 
+function label = classifierDropdownLabel(app, classiObj)
+% Reuse the package entry already present in classlist instead of adding
+% the classifier's human-readable title as a second dropdown entry.
+    label = '';
+    try
+        if iscell(classiObj.description) && ~isempty(classiObj.description)
+            label = classiObj.description{1};
+            while iscell(label) && numel(label) == 1
+                label = label{1};
+            end
+            label = char(string(label));
+        end
+    catch
+        label = '';
+    end
+
+    pkg = '';
+    try
+        pkg = lower(strtrim(char(string(classiObj.classifierPkg))));
+    catch
+    end
+    if isempty(pkg)
+        try
+            fun = char(string(classiObj.trainingFun));
+            dot = strfind(fun,'.');
+            if ~isempty(dot), pkg = lower(strtrim(fun(1:dot(1)-1))); end
+        catch
+        end
+    end
+    if isempty(pkg), return; end
+
+    try
+        for i = 1:size(app.Data.classlist,1)
+            candidate = app.Data.classlist{i,2};
+            while iscell(candidate) && numel(candidate) == 1
+                candidate = candidate{1};
+            end
+            candidate = char(string(candidate));
+            if strcmpi(strtrim(candidate),pkg)
+                label = candidate;
+                return;
+            end
+        end
+    catch
+    end
+end
+
+
  function refreshAll(app, varargin)
 % refreshAll(app) : refresh UI from app.Data.classiObj
 % refreshAll(app,'RebuildTrainingParam',true)
@@ -649,8 +697,7 @@ end
 
     % 1) Type dropdown
     if ~isempty(c.description) && ~isempty(c.description{1})
-        descr = c.description{1};
-        if iscell(descr), descr = descr{1}; end
+        descr = classifierDropdownLabel(app,c);
         if ~any(matches(app.TypeDropDown.Items, descr))
             app.TypeDropDown.Items = [app.TypeDropDown.Items, {descr}];
         end
@@ -732,11 +779,53 @@ end
                 app.Data.classiObj.trainingFun=classlist{pix,5}{1};
             end
 
-            if numel(find(matches(app.TypeDropDown.Items,app.Data.classiObj.description{1})))
-                app.TypeDropDown.Value=app.Data.classiObj.description{1};
+            % Package metadata may have evolved after a classifier was
+            % saved. Repair it before dereferencing the legacy description
+            % triplet used by this GUI.
+            try
+                pkg = lower(strtrim(char(string(classiObj.classifierPkg))));
+                trainFun = lower(strtrim(char(string(classiObj.trainingFun))));
+                classifyFun = lower(strtrim(char(string(classiObj.classifyFun))));
+                if strcmp(pkg,'trackastra') || startsWith(trainFun,'trackastra.') || ...
+                        startsWith(classifyFun,'trackastra.')
+                    trackastra.ensureClassMetadata(classiObj);
+                end
+            catch
+            end
+
+            % All legacy classifiers are expected to expose
+            % {type, user comment, package details}. Keep the GUI usable
+            % even when loading an older or partially initialized object.
+            description = classiObj.description;
+            if ~iscell(description)
+                description = {char(string(description))};
+            end
+            if numel(description) < 2
+                description{2} = '';
+            end
+            if numel(description) < 3
+                details = '';
+                try
+                    pix = classiObj.typeid;
+                    if isnumeric(pix) && isscalar(pix) && pix >= 1 && ...
+                            pix <= size(app.Data.classlist,1)
+                        details = app.Data.classlist{pix,3};
+                        while iscell(details) && numel(details) == 1
+                            details = details{1};
+                        end
+                    end
+                catch
+                end
+                description{3} = details;
+            end
+            classiObj.description = description;
+
+            dropdownLabel = classifierDropdownLabel(app,app.Data.classiObj);
+            if numel(find(matches(app.TypeDropDown.Items,dropdownLabel)))
+                app.TypeDropDown.Value=dropdownLabel;
             else
-                app.TypeDropDown.Items=[app.TypeDropDown.Items app.Data.classiObj.description{1}];
-                app.TypeDropDown.Value=app.Data.classiObj.description{1};
+                app.TypeDropDown.Items=[app.TypeDropDown.Items {dropdownLabel}];
+                app.TypeDropDown.Value=dropdownLabel;
             end
 
             % classi description
