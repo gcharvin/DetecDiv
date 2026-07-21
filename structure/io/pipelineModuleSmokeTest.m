@@ -109,6 +109,10 @@ function params = representativeParams(typeName, pkgName)
                 case 'cellposesam'
                     params.outputName = 'seg';
                     params.outputType = 'segmentation';
+                case 'trackastra'
+                    params.imageChannelName = 'TL';
+                    params.instanceChannelName = 'seg';
+                    params.outputName = 'trackastra';
                 case 'cnn_lstm'
                     params.outputMode = 'lstm_only';
                 case 'cnn'

@@ -143,6 +143,9 @@ classdef pipeline2 < matlab.apps.AppBase
         BatchPrototypeMode logical = false
         BatchPrototypeModal logical = false
         ExplicitRuntimeRoiList = []
+        RuntimeClassifierSource = []
+        RuntimeClassifierSourceRef = struct('key', '', 'label', '', 'kind', '', 'path', '', 'id', '')
+        RuntimeClassifierChoices = struct('key', {}, 'label', {}, 'kind', {}, 'path', {}, 'id', {}, 'object', {})
     end
 
     methods (Access = private)
@@ -2391,6 +2394,8 @@ classdef pipeline2 < matlab.apps.AppBase
                             p = applyCellposeExecutionDefaults(app, p, struct(), 'missing');
                         case 'sam31'
                             p = applySam31ExecutionDefaults(app, p, struct(), 'missing');
+                        case 'trackastra'
+                            p = applyTrackastraExecutionDefaults(app, p, struct(), 'missing');
                         case 'deeplab_pixel_classification'
                             p = applyDeeplabPixelExecutionDefaults(app, p, struct(), 'missing');
                         otherwise
@@ -4181,7 +4186,9 @@ classdef pipeline2 < matlab.apps.AppBase
         function runtimeButtonPushed(app, key)
             switch char(string(key))
                 case 'projectPath'
-                    if runtimeStartsFromExistingProject(app)
+                    if runtimeStartsFromClassifier(app)
+                        refreshProjectDropdown(app);
+                    elseif runtimeStartsFromExistingProject(app)
                         chooseExistingProject(app);
                     else
                         createNewProjectFromDialog(app);
@@ -4275,6 +4282,14 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function items = projectDropdownItems(app)
+            if runtimeStartsFromClassifier(app)
+                choices = collectRuntimeClassifierChoices(app);
+                items = {'Select source classifier...'};
+                if ~isempty(choices)
+                    items = [items {choices.label}]; %#ok<AGROW>
+                end
+                return;
+            end
             items = {'Select project...'};
             choices = workspaceShallowProjectChoices(app);
             for i = 1:size(choices, 1)
@@ -4317,8 +4332,23 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             dd = app.RuntimeFieldHandles.projectSource;
+            if runtimeStartsFromClassifier(app)
+                choices = collectRuntimeClassifierChoices(app);
+                app.RuntimeClassifierChoices = choices;
+                labels = {'Select source classifier...'};
+                if ~isempty(choices)
+                    labels = [labels {choices.label}]; %#ok<AGROW>
+                end
+                preferred = labels{1};
+                if isstruct(app.RuntimeClassifierSourceRef) && isfield(app.RuntimeClassifierSourceRef, 'label') && ...
+                        ~isempty(strtrim(char(string(app.RuntimeClassifierSourceRef.label))))
+                    preferred = char(string(app.RuntimeClassifierSourceRef.label));
+                end
+                setRuntimeDropDownItems(app, dd, labels, preferred);
+                return;
+            end
             old = char(string(dd.Value));
-            dd.Items = projectDropdownItems(app);
+            projectItems = projectDropdownItems(app);
             preferred = '';
             if ~isempty(app.CurrentProjectVarName)
                 choices = workspaceShallowProjectChoices(app);
@@ -4327,17 +4357,28 @@ classdef pipeline2 < matlab.apps.AppBase
                     preferred = choices{idx,1};
                 end
             end
-            if ~isempty(preferred) && any(strcmp(dd.Items, preferred))
-                dd.Value = preferred;
-            elseif any(strcmp(dd.Items, old))
-                dd.Value = old;
-            else
-                dd.Value = dd.Items{1};
+            if isempty(preferred) && any(strcmp(projectItems, old)), preferred = old; end
+            setRuntimeDropDownItems(app, dd, projectItems, preferred);
+        end
+
+        function setRuntimeDropDownItems(app, dd, items, preferred) %#ok<INUSD>
+            if nargin < 4 || isempty(preferred) || ~any(strcmp(items, preferred))
+                preferred = items{1};
             end
+            try, dd.ItemsData = {}; catch, end
+            currentItems = cellstr(string(dd.Items));
+            transitionItems = unique([currentItems(:)' items(:)'], 'stable');
+            dd.Items = transitionItems;
+            dd.Value = preferred;
+            dd.Items = items;
         end
 
         function projectDropdownChanged(app, value)
             value = char(string(value));
+            if runtimeStartsFromClassifier(app)
+                classifierSourceDropdownChanged(app, value);
+                return;
+            end
             if strcmp(value, 'Select project...')
                 return;
             elseif strcmp(value, 'Browse existing...')
@@ -4368,6 +4409,195 @@ classdef pipeline2 < matlab.apps.AppBase
                 uialert(app.UIFigure, ME.message, 'Project selection', 'Icon', 'warning');
             end
             closeRuntimeProgress(app, d);
+        end
+
+        function choices = collectRuntimeClassifierChoices(app)
+            choices = struct('key', {}, 'label', {}, 'kind', {}, 'path', {}, 'id', {}, 'object', {});
+            try
+                vars = evalin('base', 'whos');
+            catch
+                vars = struct('name', {}, 'class', {});
+            end
+            for i = 1:numel(vars)
+                varName = char(string(vars(i).name));
+                cls = lower(char(string(vars(i).class)));
+                if ~any(strcmp(cls, {'classi','shallow'}))
+                    continue;
+                end
+                try
+                    obj = evalin('base', varName);
+                catch
+                    continue;
+                end
+                if isa(obj, 'classi')
+                    for j = 1:numel(obj)
+                        choice = makeRuntimeClassifierChoice(app, obj(j), ...
+                            sprintf('workspace:%s:%d', varName, j), 'workspace_classi');
+                        choice.label = sprintf('%s / %s', varName, choice.label);
+                        choices(end+1) = choice; %#ok<AGROW>
+                    end
+                elseif isa(obj, 'shallow')
+                    for pj = 1:numel(obj)
+                        classList = projectClassifierList(app, obj(pj));
+                        for j = 1:numel(classList)
+                            choice = makeRuntimeClassifierChoice(app, classList(j), ...
+                                sprintf('project:%s:%d:%d', varName, pj, j), 'workspace_project');
+                            choice.label = sprintf('%s / %s', varName, choice.label);
+                            choices(end+1) = choice; %#ok<AGROW>
+                        end
+                    end
+                end
+            end
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow') && isempty(app.CurrentProjectVarName)
+                classList = projectClassifierList(app, app.CurrentProject);
+                for j = 1:numel(classList)
+                    choice = makeRuntimeClassifierChoice(app, classList(j), ...
+                        sprintf('current_project:%d', j), 'current_project');
+                    choice.label = ['current project / ' choice.label];
+                    choices(end+1) = choice; %#ok<AGROW>
+                end
+            end
+            currentKey = '';
+            if isstruct(app.RuntimeClassifierSourceRef) && isfield(app.RuntimeClassifierSourceRef, 'key')
+                currentKey = char(string(app.RuntimeClassifierSourceRef.key));
+            end
+            if ~isempty(app.RuntimeClassifierSource) && isa(app.RuntimeClassifierSource, 'classi') && ...
+                    ~isempty(currentKey) && (isempty(choices) || ~any(strcmp({choices.key}, currentKey)))
+                choice = makeRuntimeClassifierChoice(app, app.RuntimeClassifierSource, currentKey, ...
+                    char(string(app.RuntimeClassifierSourceRef.kind)));
+                choice.label = char(string(app.RuntimeClassifierSourceRef.label));
+                if isempty(choice.label)
+                    choice.label = classifierSourceLabel(app, app.RuntimeClassifierSource);
+                end
+                choices(end+1) = choice; %#ok<AGROW>
+            end
+            if ~isempty(choices)
+                signatures = cell(1, numel(choices));
+                for i = 1:numel(choices)
+                    signatures{i} = [lower(char(string(choices(i).path))) '|' lower(char(string(choices(i).id)))];
+                end
+                [~, keep] = unique(signatures, 'stable');
+                choices = choices(sort(keep));
+            end
+        end
+
+        function classList = projectClassifierList(app, shallowObj) %#ok<INUSD>
+            classList = [];
+            try
+                if isprop(shallowObj, 'processing') && isstruct(shallowObj.processing) && ...
+                        isfield(shallowObj.processing, 'classification')
+                    classList = shallowObj.processing.classification;
+                end
+            catch
+                classList = [];
+            end
+            try
+                keep = arrayfun(@(x) isa(x, 'classi') && isvalid(x), classList);
+                classList = classList(keep);
+            catch
+                classList = [];
+            end
+        end
+
+        function choice = makeRuntimeClassifierChoice(app, classiObj, key, kind)
+            choice = struct('key', char(string(key)), 'label', classifierSourceLabel(app, classiObj), ...
+                'kind', char(string(kind)), 'path', '', 'id', '', 'object', classiObj);
+            try, choice.path = char(string(classiObj.path)); catch, end
+            try, choice.id = char(string(classiObj.strid)); catch, end
+        end
+
+        function label = classifierSourceLabel(app, classiObj) %#ok<INUSD>
+            id = 'classifier';
+            nRoi = 0;
+            try
+                if ~isempty(classiObj.strid), id = char(string(classiObj.strid)); end
+            catch
+            end
+            try, nRoi = numel(usableClassifierRois(app, classiObj)); catch, end
+            label = sprintf('%s (%d ROI)', id, nRoi);
+        end
+
+        function classifierSourceDropdownChanged(app, value)
+            if isempty(value)
+                return;
+            end
+            choices = app.RuntimeClassifierChoices;
+            if isempty(choices)
+                return;
+            end
+            idx = find(strcmp({choices.label}, value), 1);
+            if isempty(idx)
+                return;
+            end
+            bindRuntimeClassifierSource(app, choices(idx).object, choices(idx));
+        end
+
+        function bindRuntimeClassifierSource(app, classiObj, choice)
+            if isempty(classiObj) || ~isa(classiObj, 'classi')
+                error('pipeline2:InvalidRoiSourceClassifier', 'The ROI source must be a classi object.');
+            end
+            if numel(classiObj) > 1
+                classiObj = classiObj(1);
+            end
+            app.RuntimeClassifierSource = classiObj;
+            ref = choice;
+            if isfield(ref, 'object'), ref = rmfield(ref, 'object'); end
+            app.RuntimeClassifierSourceRef = ref;
+            app.ExplicitRuntimeRoiList = usableClassifierRois(app, classiObj);
+            try, app.RuntimeFieldHandles.projectPath.Value = char(string(ref.label)); catch, end
+            if isempty(app.ExplicitRuntimeRoiList)
+                app.RuntimeValues.rois = '';
+                setRuntimeControlValue(app, 'rois', '');
+            else
+                app.RuntimeValues.rois = sprintf('1:%d', numel(app.ExplicitRuntimeRoiList));
+                setRuntimeControlValue(app, 'rois', app.RuntimeValues.rois);
+            end
+            channels = explicitRuntimeRoiChannels(app);
+            if isempty(channels)
+                if isfield(app.RuntimeParseInfo, 'channels')
+                    app.RuntimeParseInfo = rmfield(app.RuntimeParseInfo, 'channels');
+                end
+            else
+                app.RuntimeParseInfo.channels = channels;
+            end
+            clearRuntimeDataSeriesCache(app);
+            markRunDirty(app, true);
+            updateRuntimeResourceInventory(app);
+            updateRuntimeInputStates(app);
+            redrawGraph(app);
+            refreshValidationReport(app, false);
+            refreshModuleTabs(app);
+        end
+
+        function rois = usableClassifierRois(app, classiObj) %#ok<INUSD>
+            rois = [];
+            try, rois = classiObj.roi; catch, return; end
+            if numel(rois) == 1
+                isPlaceholder = false;
+                try
+                    isPlaceholder = isempty(rois.id) && isempty(rois.value) && ...
+                        isempty(rois.image) && isempty(rois.path);
+                catch
+                end
+                if isPlaceholder, rois = []; end
+            end
+        end
+
+        function channels = explicitRuntimeRoiChannels(app)
+            channels = {};
+            rois = app.ExplicitRuntimeRoiList;
+            maxRoi = min(numel(rois), 24);
+            for i = 1:maxRoi
+                try
+                    if isprop(rois(i), 'display') && isstruct(rois(i).display) && ...
+                            isfield(rois(i).display, 'channel')
+                        channels = [channels cellstr(string(rois(i).display.channel(:)'))]; %#ok<AGROW>
+                    end
+                catch
+                end
+            end
+            channels = cellfun(@(x) strtrim(char(string(x))), channels, 'UniformOutput', false);
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
         end
 
         function chooseExistingProject(app)
@@ -5178,15 +5408,32 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 channelText = getRuntimeValue(app, 'channels');
                 if isempty(strtrim(channelText))
-                    channelText = 'classifier default';
+                    sourceChannels = explicitRuntimeRoiChannels(app);
+                    if isempty(sourceChannels)
+                        channelText = 'classifier default';
+                    else
+                        channelText = strjoin(sourceChannels, ', ');
+                    end
+                end
+                sourceLabel = 'not selected';
+                if isstruct(app.RuntimeClassifierSourceRef) && isfield(app.RuntimeClassifierSourceRef, 'label') && ...
+                        ~isempty(strtrim(char(string(app.RuntimeClassifierSourceRef.label))))
+                    sourceLabel = char(string(app.RuntimeClassifierSourceRef.label));
+                elseif app.RuntimeInputModeLocked && ~isempty(app.ExplicitRuntimeRoiList)
+                    sourceLabel = 'classifierGUI launch context';
                 end
                 lines = {'Run summary: classifier attached ROIs'};
                 lines{end+1} = ['Intent: ' intent];
+                lines{end+1} = ['Source classifier: ' sourceLabel];
                 lines{end+1} = sprintf('Classifier ROI inventory: %d ROI(s)', numel(app.ExplicitRuntimeRoiList));
-                lines{end+1} = ['ROIs selected by classifierGUI: ' roiText];
+                lines{end+1} = ['Selected source ROIs: ' roiText];
                 lines{end+1} = ['Frames: ' frameText];
                 lines{end+1} = ['Channels: ' channelText];
-                lines{end+1} = 'Authority: classifierGUI train/test split';
+                if app.RuntimeInputModeLocked
+                    lines{end+1} = 'Authority: classifierGUI train/test split';
+                else
+                    lines{end+1} = 'Authority: selected source classifier (ROI container only)';
+                end
                 lines{end+1} = 'Execution target: select on the Runtime options tab';
                 app.RuntimeFieldHandles.availableResources.Value = lines;
                 return;
@@ -5500,18 +5747,32 @@ classdef pipeline2 < matlab.apps.AppBase
 
             try
                 if startsFromClassifier
-                    app.RuntimeFieldHandles.projectPath.Tooltip = 'Classifier mode: project selection is not used. The classifier attached ROIs are the runtime input.';
+                    try, app.RuntimeProjectTargetLabel.Text = 'Source classifier'; catch, end
+                    app.RuntimeFieldHandles.projectPath.Tooltip = 'Informational: classifier whose attached ROIs are the runtime dataset. It is independent from classifier models linked to pipeline nodes.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Classifier mode: raw data folder is not used. ROI image data already attached to the classifier are classified.';
-                    app.RuntimeFieldHandles.projectSource.Enable = 'off';
-                    app.RuntimeButtonHandles.projectPath.Text = 'Classifier';
-                    app.RuntimeButtonHandles.projectPath.Tooltip = 'The run is attached to the classifier folder.';
+                    app.RuntimeFieldHandles.projectSource.Enable = ternary(app, ~app.RuntimeInputModeLocked, 'on', 'off');
+                    app.RuntimeButtonHandles.projectPath.Text = 'Refresh classifiers';
+                    app.RuntimeButtonHandles.projectPath.Tooltip = 'Refresh classifiers currently loaded as independent objects or inside workspace projects.';
+                    if ~app.RuntimeInputModeLocked
+                        try, app.RuntimeFieldHandles.projectPath.Visible = 'off'; catch, end
+                        try, app.RuntimeFieldHandles.projectSource.Position = [110 367 496 22]; catch, end
+                        try, app.RuntimeButtonHandles.projectPath.Position = [616 367 190 22]; catch, end
+                    end
                 elseif startsFromProject
+                    try, app.RuntimeProjectTargetLabel.Text = 'Project'; catch, end
+                    try, app.RuntimeFieldHandles.projectPath.Visible = 'on'; catch, end
+                    try, app.RuntimeFieldHandles.projectSource.Position = [516 367 95 22]; catch, end
+                    try, app.RuntimeButtonHandles.projectPath.Position = [616 367 95 22]; catch, end
                     app.RuntimeFieldHandles.projectPath.Tooltip = 'Read mode: this project supplies existing FOVs, ROIs, channels and dataseries. Raw-image nodes also require usable FOV image sources saved in the project.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Informational only in project-input mode: raw source path inferred from saved project FOVs, when available.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'on';
                     app.RuntimeButtonHandles.projectPath.Text = 'Browse existing...';
                     app.RuntimeButtonHandles.projectPath.Tooltip = 'Load an existing shallow project .mat file.';
                 else
+                    try, app.RuntimeProjectTargetLabel.Text = 'Project'; catch, end
+                    try, app.RuntimeFieldHandles.projectPath.Visible = 'on'; catch, end
+                    try, app.RuntimeFieldHandles.projectSource.Position = [516 367 95 22]; catch, end
+                    try, app.RuntimeButtonHandles.projectPath.Position = [616 367 95 22]; catch, end
                     app.RuntimeFieldHandles.projectPath.Tooltip = 'Write target: dataloader, ROI modules and downstream outputs are written into this project.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Read source: raw parser supplies FOV/frame/channel inventory for this run.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'off';
@@ -5535,10 +5796,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             if startsFromClassifier
-                markRuntimeField(app, 'projectPath', 'blocked', 'Classifier mode uses the classifier object and its attached ROIs, not a shallow project.');
+                markRuntimeField(app, 'projectPath', 'blocked', 'The selected source classifier supplies ROIs only; pipeline-node classifier links still supply inference models.');
                 markRuntimeField(app, 'rawDataPath', 'blocked', 'Classifier mode uses classifier.roi image data, not a raw data folder.');
-                setRuntimeButtonEnabled(app, 'projectPath', false);
+                setRuntimeButtonEnabled(app, 'projectPath', ~app.RuntimeInputModeLocked);
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
+                if ~app.RuntimeInputModeLocked && isempty(app.RuntimeClassifierSource)
+                    markRuntimeField(app, 'projectSource', 'missing', 'Select the classifier whose attached ROIs will be processed. This does not select a model for pipeline nodes.');
+                end
                 if app.RuntimeInputModeLocked
                     classifierIntent = lower(strtrim(getRuntimeValue(app, 'intent')));
                     lockedMsg = 'Fixed by classifierGUI train/test selection for this classifier run.';
@@ -5949,12 +6213,30 @@ classdef pipeline2 < matlab.apps.AppBase
         function channels = classifierNodeInputChannels(app, node, classiObj)
             channels = {};
             p = getField(app, node, 'params', struct());
+            try
+                contract = pipelineNodeContract(node);
+                resources = getField(app, contract, 'resources', struct());
+                inputs = getField(app, resources, 'in', struct([]));
+                for i = 1:numel(inputs)
+                    if ~strcmpi(char(string(getField(app, inputs(i), 'type', ''))), 'channel')
+                        continue;
+                    end
+                    param = char(string(getField(app, inputs(i), 'param', '')));
+                    if isempty(param)
+                        param = char(string(getField(app, inputs(i), 'nameParam', '')));
+                    end
+                    if ~isempty(param) && isstruct(p) && isfield(p, param) && ~isempty(p.(param))
+                        channels = [channels normalizeChannelCellText(app, p.(param))]; %#ok<AGROW>
+                    end
+                end
+            catch
+            end
             if isstruct(p)
-                if isfield(p, 'channel') && ~isempty(p.channel)
+                if isempty(channels) && isfield(p, 'channel') && ~isempty(p.channel)
                     channels = normalizeChannelCellText(app, p.channel);
-                elseif isfield(p, 'channels') && ~isempty(p.channels)
+                elseif isempty(channels) && isfield(p, 'channels') && ~isempty(p.channels)
                     channels = normalizeChannelCellText(app, p.channels);
-                elseif isfield(p, 'channelName') && ~isempty(p.channelName)
+                elseif isempty(channels) && isfield(p, 'channelName') && ~isempty(p.channelName)
                     channels = normalizeChannelCellText(app, p.channelName);
                 end
             end
@@ -5970,7 +6252,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             skip = strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto') | ...
-                startsWith(lower(string(channels)), '<');
+                startsWith(lower(string(channels)), '<') | startsWith(string(channels), '@');
             channels = channels(~skip);
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
         end
@@ -7629,6 +7911,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params = copyDeeplabPixelStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 elseif strcmpi(actualPkg, 'cnn_lstm')
                     app.Data.nodes(idx).params = copyCnnLstmStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
+                elseif strcmpi(actualPkg, 'trackastra')
+                    app.Data.nodes(idx).params = copyTrackastraStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 end
                 try
                     varName = matlab.lang.makeValidName(['classi_' char(string(classiId))]);
@@ -7677,6 +7961,10 @@ classdef pipeline2 < matlab.apps.AppBase
             params = applySam31ExecutionDefaults(app, params, classiObj, 'missing');
         end
 
+        function params = copyTrackastraStaticParamsFromClassi(app, params, classiObj)
+            params = applyTrackastraExecutionDefaults(app, params, classiObj, 'missing');
+        end
+
         function params = copyDeeplabPixelStaticParamsFromClassi(app, params, classiObj)
             params = applyDeeplabPixelExecutionDefaults(app, params, classiObj, 'missing');
         end
@@ -7697,9 +7985,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
                 end
                 pkg = classifierPackageName(app, classiObj);
-                if ~any(strcmpi(pkg, {'cellposesam','sam31','deeplab_pixel_classification','cnn_lstm'}))
+                if ~any(strcmpi(pkg, {'cellposesam','sam31','trackastra','deeplab_pixel_classification','cnn_lstm'}))
                     error('pipeline2:UnsupportedClassifierDefaults', ...
-                        'Execution-default import is currently implemented for CellposeSAM, SAM31, DeepLab pixel, and CNN/LSTM classifiers.');
+                        'Execution-default import is implemented for CellposeSAM, SAM31, Trackastra, DeepLab pixel, and CNN/LSTM classifiers.');
                 end
 
                 choice = uiconfirm(app.UIFigure, ...
@@ -7725,6 +8013,8 @@ classdef pipeline2 < matlab.apps.AppBase
                         app.Data.nodes(idx).params = applyCellposeExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'sam31'
                         app.Data.nodes(idx).params = applySam31ExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                    case 'trackastra'
+                        app.Data.nodes(idx).params = applyTrackastraExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'deeplab_pixel_classification'
                         app.Data.nodes(idx).params = applyDeeplabPixelExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'cnn_lstm'
@@ -7761,6 +8051,53 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if isfield(params, 'backend')
                 params.backend = normalizeSam31BackendForPipeline(app, params.backend);
+            end
+        end
+
+
+        function params = applyTrackastraExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
+            if nargin < 4 || isempty(mode)
+                mode = 'missing';
+            end
+            if ~isstruct(params)
+                params = struct();
+            end
+            spec = trackastraExecutionSpec(app, classiObj);
+            defaults = spec.defaults;
+            keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
+                    continue;
+                end
+                if isfield(defaults, key)
+                    params.(key) = defaults.(key);
+                end
+            end
+        end
+
+        function spec = trackastraExecutionSpec(app, classiObj) %#ok<INUSD>
+            if nargin < 2
+                classiObj = [];
+            end
+            try
+                spec = trackastra.executionSpec(classiObj);
+            catch
+                spec = struct();
+                spec.staticKeys = {'pretrainedModel','trackingMode','device','batchSize','nWorkers', ...
+                    'maxDistance','normalizeImages'};
+                spec.artifactKeys = {'modelSource','customModelPath','checkpointPath'};
+                spec.environmentKeys = {'pythonExecutable'};
+                spec.outputKeys = {'outputName'};
+                spec.defaultImportKeys = [spec.staticKeys spec.outputKeys];
+                spec.defaults = trackastra.utils.defaultExecutionParam();
+                spec.labels = struct();
+                spec.tips = struct();
+                spec.choices = struct('pretrainedModel',{{'general_2d','general_3d','general_2d_w_SAM2_features'}}, ...
+                    'trackingMode',{{'greedy','greedy_nodiv','ilp'}}, ...
+                    'device',{{'automatic','cuda','cpu','mps'}}, ...
+                    'normalizeImages',{{true,false}});
             end
         end
 
@@ -11408,7 +11745,12 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function channels = runtimeValidationRoiChannels(app)
             channels = {};
-            if runtimeStartsFromExistingProject(app)
+            if runtimeStartsFromClassifier(app)
+                channels = explicitRuntimeRoiChannels(app);
+                if isempty(channels)
+                    channels = runtimeSourceChannels(app);
+                end
+            elseif runtimeStartsFromExistingProject(app)
                 channels = runtimeRoiDisplayChannels(app);
                 if isempty(channels)
                     channels = runtimeSourceChannels(app);
@@ -12849,6 +13191,15 @@ classdef pipeline2 < matlab.apps.AppBase
                                     choices = {'session','external'};
                                 end
                             end
+                        case {'pretrainedmodel','trackingmode','device','normalizeimages'}
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'trackastra')
+                                spec = trackastraExecutionSpec(app);
+                                keyName = key;
+                                if isfield(spec, 'choices') && isfield(spec.choices, keyName)
+                                    choices = spec.choices.(keyName);
+                                end
+                            end
                     end
                 case 'roiextract'
                     switch keyLower
@@ -13366,6 +13717,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = spec.staticKeys;
                 case 'sam31'
                     spec = sam31ExecutionSpec(app);
+                    keys = spec.staticKeys;
+                case 'trackastra'
+                    spec = trackastraExecutionSpec(app);
                     keys = spec.staticKeys;
                 case 'deeplab_pixel_classification'
                     spec = deeplabPixelExecutionSpec(app);
@@ -14044,7 +14398,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 projectHasImageSources = projectHasFovImageSources(app, app.CurrentProject);
             end
 
-            if ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
+            if ~startsFromClassifier && ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
                 if startsFromProject
                     issues{end+1} = ['Project path does not exist: ' projectPath]; %#ok<AGROW>
                     markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
@@ -14080,7 +14434,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             elseif startsFromClassifier
                 if isempty(app.ExplicitRuntimeRoiList)
-                    issues{end+1} = 'Classifier-attached ROI mode requires ROI objects attached to the classifier run.'; %#ok<AGROW>
+                    issues{end+1} = 'Classifier-attached ROI mode requires a source classifier containing ROI objects.'; %#ok<AGROW>
+                    if ~app.RuntimeInputModeLocked
+                        markRuntimeField(app, 'projectSource', 'missing', 'Select the source classifier whose attached ROIs will be processed.');
+                    end
                     markRuntimeField(app, 'rois', 'missing', 'Classifier mode uses classifier.roi as runtime input.');
                 else
                     channelIssues = classifierAttachedRoiChannelIssues(app);
@@ -14748,6 +15105,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodes(i).params = applyCellposeExecutionDefaults(app, nodes(i).params, struct(), 'missing');
                     if isfield(nodes(i).params, 'outputType')
                         nodes(i).params.outputType = normalizeCellposeOutputTypeForPipeline(app, nodes(i).params.outputType);
+                    end
+                end
+                if strcmp(pkg, 'trackastra')
+                    nodes(i).params = applyTrackastraExecutionDefaults(app, nodes(i).params, struct(), 'missing');
+                    artifactKeys = {'modelSource','customModelPath','checkpointPath','pythonExecutable'};
+                    dropKeys = artifactKeys(isfield(nodes(i).params,artifactKeys));
+                    if ~isempty(dropKeys)
+                        nodes(i).params = rmfield(nodes(i).params,dropKeys);
                     end
                 end
                 if strcmp(pkg, 'deeplab_pixel_classification')
@@ -15582,6 +15947,9 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRunSaveProgress(app, progressDlg, 'Preparing run: collecting node parameters...', 0.16);
             ctx.run.nodeParams = buildRunNodeParams(app);
             ctx.run.inputSourceMode = getRuntimeValue(app, 'inputSourceMode');
+            if runtimeStartsFromClassifier(app)
+                ctx.run.classifierSource = app.RuntimeClassifierSourceRef;
+            end
             intent = getRuntimeValue(app, 'intent');
             if isempty(strtrim(intent))
                 intent = 'infer';
@@ -15732,6 +16100,17 @@ classdef pipeline2 < matlab.apps.AppBase
         function rawDataPath = effectiveRuntimeRawDataPath(app)
             if runtimeStartsFromClassifier(app)
                 rawDataPath = '';
+                return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'trackastra')
+                try
+                    spec = trackastraExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
                 return;
             end
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
@@ -17058,7 +17437,16 @@ classdef pipeline2 < matlab.apps.AppBase
             ref = struct('type', 'shallow', 'projectPath', getRuntimeValue(app, 'projectPath'), ...
                 'projectName', '', 'fovIds', parseIndexSelection(app, getRuntimeValue(app, 'fovs')), ...
                 'roiIds', {{}}, 'classiPath', '', 'notes', '');
-            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+            if runtimeStartsFromClassifier(app) && ~isempty(app.ExplicitRuntimeRoiList)
+                classiPath = classifierScopedRunRoot(app, false);
+                if ~isempty(classiPath)
+                    ref.type = 'classi';
+                    ref.projectPath = '';
+                    ref.projectName = '';
+                    ref.classiPath = classiPath;
+                    ref.notes = 'Classifier-scoped run using ROIs from the selected source classifier.';
+                end
+            elseif ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 [pth, file] = app.CurrentProject.getPath;
                 ref.projectPath = fullfile(pth, file);
                 ref.projectName = file;
@@ -17113,6 +17501,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function ok = ensureCurrentProjectForRun(app)
             ok = false;
+            if runtimeStartsFromClassifier(app)
+                ok = ~isempty(app.ExplicitRuntimeRoiList) && ~isempty(classifierScopedRunRoot(app, false));
+                return;
+            end
             if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 ok = true;
                 return;
@@ -17169,7 +17561,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(strtrim(char(string(requestedRunId))))
                     args = [{'runId', char(string(requestedRunId))} args]; %#ok<AGROW>
                 end
-                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                if ~runtimeStartsFromClassifier(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                     runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, args{:});
                 else
                     runObj = createClassifierScopedPipelineRun(app, ref, target, ctxForStorage, status, requestedRunId);
@@ -17227,6 +17619,20 @@ classdef pipeline2 < matlab.apps.AppBase
                 requireExists = false;
             end
             root = '';
+            try
+                if ~isempty(app.RuntimeClassifierSource) && isa(app.RuntimeClassifierSource, 'classi') && ...
+                        ~isempty(strtrim(char(string(app.RuntimeClassifierSource.path))))
+                    root = char(string(app.RuntimeClassifierSource.path));
+                end
+            catch
+                root = '';
+            end
+            if ~isempty(root)
+                if logical(requireExists) && exist(root, 'dir') ~= 7
+                    mkdir(root);
+                end
+                return;
+            end
             try
                 nodes = app.Data.nodes;
                 for i = 1:numel(nodes)
@@ -17320,6 +17726,9 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function changed = attachCurrentRunToProject(app, runObj)
             changed = false;
+            if runtimeStartsFromClassifier(app)
+                return;
+            end
             if isempty(runObj) || ~isa(runObj, 'pipelineRun') || isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
                 return;
             end
@@ -17401,7 +17810,8 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function publishCurrentProjectForTreeRefresh(app, runObj)
-            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow') || exist('detecdiv_event', 'file') ~= 2
+            if runtimeStartsFromClassifier(app) || isempty(app.CurrentProject) || ...
+                    ~isa(app.CurrentProject, 'shallow') || exist('detecdiv_event', 'file') ~= 2
                 if exist('detecdiv_event', 'file') == 2 && ~isempty(runObj) && isa(runObj, 'pipelineRun')
                     classiPath = '';
                     try
@@ -17597,7 +18007,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 savePipelineRunAndProject(app, runObj, d, 'Saving run and project link...', true);
                 updateRunSaveProgress(app, d, 'Run saved.', 1);
                 ok = true;
-                setRuntimeStatus(app, ['Run saved and attached to project: ' fullfile(runObj.path, 'run.json')]);
+                if runtimeStartsFromClassifier(app)
+                    setRuntimeStatus(app, ['Run saved under source classifier: ' fullfile(runObj.path, 'run.json')]);
+                else
+                    setRuntimeStatus(app, ['Run saved and attached to project: ' fullfile(runObj.path, 'run.json')]);
+                end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Save run', 'Icon', 'error');
             end

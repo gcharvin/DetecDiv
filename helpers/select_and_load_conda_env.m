@@ -1,5 +1,5 @@
 function info = select_and_load_conda_env(varargin)
-% SELECT_AND_LOAD_CONDA_ENV (interactive env selection + optional auto-setup)
+% SELECT_AND_LOAD_CONDA_ENV (central DetecDiv Python environment bootstrap)
 %
 % Strategy (standardised):
 %   - Ask user (GUI) to choose:
@@ -16,11 +16,15 @@ function info = select_and_load_conda_env(varargin)
 %   'envName' custom conda env name when mode='custom'
 %   'envPath' custom conda env path hint when mode='custom'
 %   'remember' (logical) persist the provided selection
+%   'backend' ('local'|'windows'|'wsl', default 'local')
+%   'wslDistro' WSL distribution (default from canonical recipe)
+%   'wslEnvPath' Linux venv path (default ~/venvs/detecdiv_python)
 %   'classif' / 'classifier' : legacy no-op, accepted for backward compatibility
 
     % -------- Parse options --------
     opts = struct('debug', true, 'reset', false, ...
-        'mode', "", 'envName', "", 'envPath', "", 'remember', []);
+        'mode', "", 'envName', "", 'envPath', "", 'remember', [], ...
+        'backend', "local", 'wslDistro', "", 'wslEnvPath', "");
     if nargin == 1 && (strcmpi(string(varargin{1}), "reset"))
         opts.reset = true;
     else
@@ -37,6 +41,9 @@ function info = select_and_load_conda_env(varargin)
                 case "envname", opts.envName = string(val);
                 case "envpath", opts.envPath = string(val);
                 case "remember", opts.remember = logical(val);
+                case "backend", opts.backend = string(val);
+                case "wsldistro", opts.wslDistro = string(val);
+                case "wslenvpath", opts.wslEnvPath = string(val);
                 case {"classif","classifier"}
                     % Legacy callers still pass the classifier object here.
                     % The current helper no longer needs it, but keeping this
@@ -49,6 +56,12 @@ function info = select_and_load_conda_env(varargin)
     doReset = opts.reset;
 
     fprintf('\n[Detecdiv] Python bootstrap starting...\n');
+
+    backend = normalizePythonBackend(opts.backend);
+    if strcmp(backend, 'wsl')
+        info = ensureWslDetecdivEnvironment(opts, debug);
+        return;
+    end
 
     % -------- 0) Selection mode (default/custom) --------
     userprefs = dd_loadUserPrefs();
@@ -88,8 +101,10 @@ function info = select_and_load_conda_env(varargin)
             [ok, sysver, torchInfo] = quickPythonHealthCheck(debug);
             if ok
                 if pyenvMatchesSelection(pe, selection)
-                    if selection.mode == "default" && ~existingTorchRuntimeCompatible(torchInfo, debug)
-                        fprintf('[Detecdiv] Existing pyenv matches selection but torch runtime is not suitable -> terminating...\n');
+                    if selection.mode == "default" && ...
+                            (~existingTorchRuntimeCompatible(torchInfo, debug) || ...
+                             ~loadedPythonMatchesCanonicalRecipe(debug))
+                        fprintf('[Detecdiv] Existing pyenv matches selection but the canonical runtime is incomplete -> terminating...\n');
                         try, terminate(pyenv); catch, end
                     else
                         fprintf('[Detecdiv] Existing pyenv is healthy and matches selection -> keeping it.\n');
@@ -148,6 +163,7 @@ function info = select_and_load_conda_env(varargin)
 
         info = struct( ...
             'name', string(selection.envName), ...
+            'backend', "local", ...
             'path', string(detPath), ...
             'python', string(detPy), ...
             'pyenv', pe, ...
@@ -158,14 +174,16 @@ function info = select_and_load_conda_env(varargin)
         return;
     end
 
-    % -------- 3) Ensure env detecdiv_python (python=3.10) --------
-    fprintf('[Detecdiv] Step 2/5: Ensuring conda env "detecdiv_python" (python=3.10)...\n');
+    % -------- 3) Ensure canonical detecdiv_python env --------
+    recipe = detecdiv_python_recipe();
+    fprintf('[Detecdiv] Step 2/5: Ensuring conda env "%s" (python=%s)...\n', ...
+        recipe.name, recipe.windowsPythonVersion);
     [detPath, detPy] = ensureDetecdivEnv(condaCmd, debug);
     fprintf('[Detecdiv] detecdiv_python path: %s\n', char(detPath));
     fprintf('[Detecdiv] detecdiv_python python: %s\n', char(detPy));
 
-    % -------- 4) Ensure packages (torch + cellpose) --------
-    fprintf('[Detecdiv] Step 3/5: Ensuring required Python packages (torch + cellpose)...\n');
+    % -------- 4) Ensure canonical packages --------
+    fprintf('[Detecdiv] Step 3/5: Ensuring required Python packages (torch + CellposeSAM + Trackastra)...\n');
     ensureDetecdivPackages(condaCmd, debug);
 
     % -------- 5) Configure MATLAB pyenv to detecdiv_python (OutOfProcess) --------
@@ -185,6 +203,7 @@ function info = select_and_load_conda_env(varargin)
 
     info = struct( ...
         'name', "detecdiv_python", ...
+        'backend', "local", ...
         'path', string(detPath), ...
         'python', string(detPy), ...
         'pyenv', pe, ...
@@ -192,6 +211,268 @@ function info = select_and_load_conda_env(varargin)
         'torch', struct('installed', okTorch, 'version', string(torchVer), 'cuda', string(torchCUDA), 'is_available', logical(torchAvail)), ...
         'debug', debug ...
     );
+end
+
+function backend = normalizePythonBackend(value)
+backend = lower(strtrim(char(string(value))));
+backend = strrep(backend, '-', '_');
+switch backend
+    case {'', 'auto', 'local', 'windows', 'local_windows', 'local_matlab'}
+        backend = 'local';
+    case {'wsl', 'local_wsl', 'local_linux'}
+        backend = 'wsl';
+    otherwise
+        error('select_and_load_conda_env:UnknownBackend', ...
+            'Unknown Python backend "%s". Use local/windows or wsl.', backend);
+end
+end
+
+function info = ensureWslDetecdivEnvironment(opts, debug)
+if ~ispc
+    error('select_and_load_conda_env:WslRequiresWindows', ...
+        'The WSL backend can only be managed from a Windows MATLAB session.');
+end
+[wslStatus, ~] = system('where wsl.exe >nul 2>nul');
+if wslStatus ~= 0
+    error('select_and_load_conda_env:WslNotFound', ...
+        'wsl.exe was not found. Install/enable WSL before selecting the WSL backend.');
+end
+
+recipe = detecdiv_python_recipe();
+distro = strtrim(char(string(opts.wslDistro)));
+if isempty(distro), distro = strtrim(getenv('DETECDIV_WSL_DISTRO')); end
+if isempty(distro), distro = recipe.wsl.defaultDistro; end
+
+mode = lower(strtrim(char(string(opts.mode))));
+if isempty(mode), mode = 'default'; end
+if ~any(strcmp(mode, {'default','custom'}))
+    error('select_and_load_conda_env:UnknownMode', 'Unknown Python env mode "%s".', mode);
+end
+
+envPath = strtrim(char(string(opts.wslEnvPath)));
+if isempty(envPath), envPath = strtrim(getenv('DETECDIV_WSL_ENV_PATH')); end
+if isempty(envPath) && strcmp(mode, 'custom')
+    envPath = strtrim(char(string(opts.envPath)));
+end
+if isempty(envPath)
+    [stHome, homeText] = runWslArgs(distro, {'printenv','HOME'}, debug);
+    if stHome ~= 0 || isempty(strtrim(homeText))
+        error('select_and_load_conda_env:WslHomeUnavailable', ...
+            'Unable to resolve HOME in WSL distribution %s.', distro);
+    end
+    envPath = [strtrim(homeText) '/' recipe.wsl.defaultRelativeEnvPath];
+end
+envPath = strrep(envPath, '\', '/');
+pythonExe = [regexprep(envPath, '/+$', '') '/bin/python'];
+
+fprintf('[Detecdiv] Backend: WSL | distro=%s\n', distro);
+fprintf('[Detecdiv] WSL environment: %s\n', envPath);
+[hasPython, ~] = runWslArgs(distro, {'test','-x',pythonExe}, debug);
+if hasPython ~= 0
+    if strcmp(mode, 'custom')
+        error('select_and_load_conda_env:WslCustomPythonMissing', ...
+            'Custom WSL environment has no executable Python: %s', pythonExe);
+    end
+    pythonLauncher = ['python' recipe.wslPythonVersion];
+    fprintf('[Detecdiv] Creating WSL venv with %s...\n', pythonLauncher);
+    [stCreate, outCreate] = runWslArgs(distro, ...
+        {pythonLauncher,'-m','venv',envPath}, debug);
+    if stCreate ~= 0
+        error('select_and_load_conda_env:WslVenvCreateFailed', ...
+            'Unable to create WSL environment %s:\n%s', envPath, outCreate);
+    end
+    [stPip, outPip] = runWslArgs(distro, ...
+        {pythonExe,'-m','pip','install','--upgrade','pip','setuptools','wheel'}, debug);
+    if stPip ~= 0
+        error('select_and_load_conda_env:WslPipBootstrapFailed', ...
+            'Unable to bootstrap pip in %s:\n%s', envPath, outPip);
+    end
+end
+
+if strcmp(mode, 'default')
+    versionCode = sprintf([ ...
+        'import sys;assert sys.version_info[:2]==tuple(map(int,''%s''.split(''.''))),' ...
+        'sys.version'], recipe.wslPythonVersion);
+    [stVersion, outVersion] = runWslArgs(distro, {pythonExe,'-c',versionCode}, debug);
+    if stVersion ~= 0
+        error('select_and_load_conda_env:WslPythonVersionMismatch', ...
+            'Canonical WSL environment requires Python %s:\n%s', ...
+            recipe.wslPythonVersion, outVersion);
+    end
+    ensureWslTorch(distro, pythonExe, recipe, debug);
+    ensureWslDefaultPackages(distro, pythonExe, recipe, debug);
+end
+
+[stCheck, outCheck] = runWslArgs(distro, {pythonExe,'-m','pip','check'}, debug);
+if stCheck ~= 0
+    error('select_and_load_conda_env:WslDependencyConflict', ...
+        'WSL Python dependency check failed:\n%s', outCheck);
+end
+
+[stInspect, inspectText] = inspectWslPython(distro, pythonExe, debug);
+if stInspect ~= 0
+    error('select_and_load_conda_env:WslInspectionFailed', ...
+        'Unable to inspect WSL Python runtime:\n%s', inspectText);
+end
+values = parseKeyValueLines(inspectText);
+torchInfo = struct( ...
+    'installed', logical(str2double(getStructText(values,'torch_installed','0'))), ...
+    'version', string(getStructText(values,'torch','')), ...
+    'cuda', string(getStructText(values,'cuda_version','')), ...
+    'is_available', logical(str2double(getStructText(values,'cuda_available','0'))));
+packages = struct( ...
+    'cellpose', string(getStructText(values,'cellpose','')), ...
+    'trackastra', string(getStructText(values,'trackastra','')), ...
+    'zarr', string(getStructText(values,'zarr','')));
+
+fprintf('[Detecdiv] WSL ready: Python=%s | Cellpose=%s | Trackastra=%s | CUDA=%d\n', ...
+    getStructText(values,'python',''), char(packages.cellpose), ...
+    char(packages.trackastra), torchInfo.is_available);
+info = struct( ...
+    'name', string(recipe.name), ...
+    'backend', "wsl", ...
+    'kind', "venv", ...
+    'distro', string(distro), ...
+    'path', string(envPath), ...
+    'python', string(pythonExe), ...
+    'pyenv', [], ...
+    'python_sys_version', string(getStructText(values,'python','')), ...
+    'torch', torchInfo, ...
+    'packages', packages, ...
+    'debug', debug);
+end
+
+function ensureWslTorch(distro, pythonExe, recipe, debug)
+gpuAvailable = false;
+[stGpu, gpuText] = runWslArgs(distro, {'nvidia-smi','-L'}, debug);
+if stGpu == 0 && ~contains(lower(string(gpuText)), 'no devices were found')
+    gpuAvailable = true;
+end
+expectedGpu = 'False';
+if gpuAvailable, expectedGpu = 'True'; end
+verifyCode = sprintf([ ...
+    'import torch;' ...
+    'avail=torch.cuda.is_available();' ...
+    'print(torch.__version__);' ...
+    'assert torch.__version__.split(''+'')[0]==''%s'';' ...
+    'assert avail is %s;' ...
+    'assert (not avail) or (''+%s'' in torch.__version__);' ...
+    'x=(torch.ones(1,device=''cuda'')+1).cpu().item() if avail else 2;' ...
+    'assert x==2'], recipe.torch.version, expectedGpu, recipe.torch.preferredCudaIndex);
+[stTorch, ~] = runWslArgs(distro, {pythonExe,'-c',verifyCode}, debug);
+if stTorch == 0
+    fprintf('[Detecdiv] WSL torch already installed and verified.\n');
+    return;
+end
+
+if gpuAvailable
+    indexTag = recipe.torch.preferredCudaIndex;
+else
+    indexTag = recipe.torch.cpuIndex;
+end
+indexUrl = ['https://download.pytorch.org/whl/' indexTag];
+fprintf('[Detecdiv] Installing WSL torch %s from %s...\n', recipe.torch.version, indexTag);
+args = {pythonExe,'-m','pip','install', ...
+    ['torch==' recipe.torch.version], ...
+    ['torchvision==' recipe.torch.torchvisionVersion], ...
+    ['torchaudio==' recipe.torch.torchaudioVersion], ...
+    '--index-url',indexUrl};
+[stInstall, outInstall] = runWslArgs(distro, args, debug);
+if stInstall ~= 0
+    error('select_and_load_conda_env:WslTorchInstallFailed', ...
+        'Unable to install WSL torch:\n%s', outInstall);
+end
+[stVerify, outVerify] = runWslArgs(distro, {pythonExe,'-c',verifyCode}, debug);
+if stVerify ~= 0
+    error('select_and_load_conda_env:WslTorchVerificationFailed', ...
+        'WSL torch did not pass verification:\n%s', outVerify);
+end
+end
+
+function ensureWslDefaultPackages(distro, pythonExe, recipe, debug)
+imports = strjoin(recipe.requiredImports, ',');
+checkCode = sprintf([ ...
+    'import importlib.util as u;from importlib.metadata import version;' ...
+    'mods=''%s''.split('','');' ...
+    'assert all(u.find_spec(m) is not None for m in mods);' ...
+    'assert version(''cellpose'')==''%s'';' ...
+    'assert version(''trackastra'')==''%s'''], ...
+    imports, recipe.packages.cellposeVersion, recipe.packages.trackastraVersion);
+[stCheck, ~] = runWslArgs(distro, {pythonExe,'-c',checkCode}, debug);
+if stCheck == 0
+    fprintf('[Detecdiv] WSL CellposeSAM and Trackastra already match the canonical recipe.\n');
+    return;
+end
+
+fprintf('[Detecdiv] Installing canonical WSL packages (Zarr, CellposeSAM, Trackastra)...\n');
+[stInstall, outInstall] = runWslArgs(distro, {pythonExe,'-m','pip','install', ...
+    recipe.packages.zarr, recipe.packages.cellposeWsl, recipe.packages.trackastra}, debug);
+if stInstall ~= 0
+    error('select_and_load_conda_env:WslPackageInstallFailed', ...
+        'Unable to install canonical WSL packages:\n%s', outInstall);
+end
+[stVerify, outVerify] = runWslArgs(distro, {pythonExe,'-c',checkCode}, debug);
+if stVerify ~= 0
+    error('select_and_load_conda_env:WslPackageVerificationFailed', ...
+        'WSL packages did not pass verification:\n%s', outVerify);
+end
+end
+
+function [status, textOut] = inspectWslPython(distro, pythonExe, debug)
+code = [ ...
+    'import sys,importlib.util as u,importlib.metadata as md;' ...
+    'v=lambda p,m:md.version(p) if u.find_spec(m) else '''';' ...
+    't=__import__(''torch'') if u.find_spec(''torch'') else None;' ...
+    'print(''python=''+sys.version.split()[0]);' ...
+    'print(''torch_installed=''+str(int(t is not None)));' ...
+    'print(''torch=''+str(t.__version__ if t else ''''));' ...
+    'print(''cuda_version=''+str((t.version.cuda or '''') if t else ''''));' ...
+    'print(''cuda_available=''+str(int(t.cuda.is_available()) if t else 0));' ...
+    'print(''cellpose=''+v(''cellpose'',''cellpose''));' ...
+    'print(''trackastra=''+v(''trackastra'',''trackastra''));' ...
+    'print(''zarr=''+v(''zarr'',''zarr''))'];
+[status, textOut] = runWslArgs(distro, {pythonExe,'-c',code}, debug);
+end
+
+function values = parseKeyValueLines(textValue)
+values = struct();
+lines = splitlines(string(textValue));
+for i = 1:numel(lines)
+    line = char(strtrim(lines(i)));
+    token = regexp(line, '^([A-Za-z][A-Za-z0-9_]*)=(.*)$', 'tokens', 'once');
+    if isempty(token), continue; end
+    values.(token{1}) = token{2};
+end
+end
+
+function value = getStructText(s, name, fallback)
+value = fallback;
+if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
+    value = char(string(s.(name)));
+end
+end
+
+function [status, textOut] = runWslArgs(distro, args, debug)
+parts = cell(1, numel(args));
+for i = 1:numel(args)
+    parts{i} = quoteWindowsArg(args{i});
+end
+cmd = sprintf('wsl.exe -d %s -- %s', quoteWindowsArg(distro), strjoin(parts, ' '));
+if debug, fprintf('[DEBUG] WSL command: %s\n', cmd); end
+[status, textOut] = system(cmd);
+if debug && ~isempty(strtrim(textOut))
+    fprintf('[DEBUG] WSL output:\n%s\n', textOut);
+end
+end
+
+function out = quoteWindowsArg(value)
+txt = char(string(value));
+if ~isempty(txt) && ~isempty(regexp(txt, '^[A-Za-z0-9_./:=+\-]+$', 'once'))
+    out = txt;
+    return;
+end
+txt = strrep(txt, '"', '\"');
+out = ['"' txt '"'];
 end
 
 function selection = buildForcedSelection(opts)
@@ -307,15 +588,39 @@ function [ok, sysver, torchInfo] = quickPythonHealthCheck(debug)
 end
 
 function tf = existingTorchRuntimeCompatible(torchInfo, debug)
-tf = true;
+recipe = detecdiv_python_recipe();
+tf = torchInfo.installed && startsWith(string(torchInfo.version), string(recipe.torch.version));
 gpuText = lower(string(getNvidiaGPUText()));
 isBlackwell = contains(gpuText, "blackwell") || contains(gpuText, "rtx 50") || contains(gpuText, "rtx pro 500");
 if isBlackwell
-    tf = torchInfo.installed && contains(string(torchInfo.version), "+cu128") && string(torchInfo.cuda) == "12.8";
+    tf = tf && contains(string(torchInfo.version), "+cu128") && string(torchInfo.cuda) == "12.8";
 end
 if debug
     fprintf('[DEBUG] existingTorchRuntimeCompatible=%d (version=%s cuda=%s gpu="%s")\n', ...
         tf, char(string(torchInfo.version)), char(string(torchInfo.cuda)), char(gpuText));
+end
+end
+
+function tf = loadedPythonMatchesCanonicalRecipe(debug)
+recipe = detecdiv_python_recipe();
+tf = true;
+try
+    metadata = py.importlib.import_module('importlib.metadata');
+    for i = 1:numel(recipe.requiredImports)
+        py.importlib.import_module(recipe.requiredImports{i});
+    end
+    cellposeVersion = string(metadata.version('cellpose'));
+    trackastraVersion = string(metadata.version('trackastra'));
+    tf = cellposeVersion == string(recipe.packages.cellposeVersion) && ...
+         trackastraVersion == string(recipe.packages.trackastraVersion);
+catch ME
+    tf = false;
+    if debug
+        fprintf('[DEBUG] Canonical package check failed: %s\n', ME.message);
+    end
+end
+if debug
+    fprintf('[DEBUG] loadedPythonMatchesCanonicalRecipe=%d\n', tf);
 end
 end
 
@@ -405,6 +710,7 @@ end
 function info = packInfoExisting(pe, sysver, torchInfo, debug)
     info = struct( ...
         'name', "(existing)", ...
+        'backend', "local", ...
         'path', fileparts(pe.Executable), ...
         'python', string(pe.Version), ...
         'pyenv', pe, ...
@@ -1026,7 +1332,8 @@ function ok = probeConda(condaCmd, debug)
 end
 
 function [envPath, pyexe] = ensureDetecdivEnv(condaCmd, debug)
-    envName = "detecdiv_python";
+    recipe = detecdiv_python_recipe();
+    envName = string(recipe.name);
 
     [data, ~, ~] = getCondaEnvs(debug, condaCmd);
     envPaths = string(data.envs);
@@ -1040,8 +1347,11 @@ function [envPath, pyexe] = ensureDetecdivEnv(condaCmd, debug)
     end
 
     if envPath == ""
-        if debug, fprintf('[DEBUG] Env "%s" not found -> creating (python=3.10)...\n', envName); end
-        sub = sprintf('create -y -n %s python=3.10', envName);
+        if debug
+            fprintf('[DEBUG] Env "%s" not found -> creating (python=%s)...\n', ...
+                envName, recipe.windowsPythonVersion);
+        end
+        sub = sprintf('create -y -n %s python=%s', envName, recipe.windowsPythonVersion);
         [st,out] = runConda(sub, debug, condaCmd);
         if st ~= 0
             error('Failed to create conda env "%s". Output:\n%s', envName, out);
@@ -1074,7 +1384,8 @@ function [envPath, pyexe] = ensureDetecdivEnv(condaCmd, debug)
 end
 
 function ensureDetecdivPackages(condaCmd, debug)
-    envName = "detecdiv_python";
+    recipe = detecdiv_python_recipe();
+    envName = string(recipe.name);
     useGPU = hasNvidiaGPU(debug);
 
     % --- torch ---
@@ -1113,37 +1424,32 @@ function ensureDetecdivPackages(condaCmd, debug)
         fprintf('[Detecdiv]   - torch install step skipped.\n');
     end
 
-    % --- OME-Zarr I/O ---
-    fprintf('[Detecdiv]   - Checking zarr...\n');
-    hasZarr = condaRunPyImport(condaCmd, envName, "zarr", debug);
-    if ~hasZarr
-        fprintf('[Detecdiv]   - Installing zarr for OME-Zarr data loading...\n');
-        [stZ,oZ] = runConda("run -n detecdiv_python python -m pip install zarr", debug, condaCmd);
-        if stZ ~= 0, error('zarr install failed:\n%s', oZ); end
+    % --- canonical DetecDiv packages ---
+    fprintf('[Detecdiv]   - Checking Zarr, CellposeSAM and Trackastra...\n');
+    if canonicalCondaPackagesReady(condaCmd, envName, recipe, debug)
+        fprintf('[Detecdiv]   - Canonical packages already installed (including Trackastra training extras).\n');
     else
-        fprintf('[Detecdiv]   - zarr already installed.\n');
-    end
+        fprintf('[Detecdiv]   - Installing canonical packages, including Trackastra training extras...\n');
+        [stPip,oPip] = runConda("run -n " + envName + ...
+            " python -m pip install --upgrade pip", debug, condaCmd);
+        if stPip ~= 0, error('pip upgrade failed:\n%s', oPip); end
 
-    % --- cellpose (Cellpose-SAM) ---
-    fprintf('[Detecdiv]   - Checking cellpose...\n');
-    hasCellpose = condaRunPyImport(condaCmd, envName, "cellpose", debug);
-    if ~hasCellpose
-        fprintf('[Detecdiv]   - Installing cellpose[gui]...\n');
-        [st1,o1] = runConda("run -n detecdiv_python python -m pip install --upgrade pip", debug, condaCmd);
-        if st1 ~= 0, error('pip upgrade failed:\n%s', o1); end
-
-        [st2,o2] = runConda('run -n detecdiv_python python -m pip install "cellpose[gui]"', debug, condaCmd);
-        if st2 ~= 0, error('cellpose install failed:\n%s', o2); end
-    else
-        fprintf('[Detecdiv]   - cellpose already installed.\n');
+        packageCmd = sprintf('run -n %s python -m pip install "%s" "%s" "%s"', ...
+            envName, recipe.packages.zarr, recipe.packages.cellposeWindows, ...
+            recipe.packages.trackastra);
+        [stPackages,oPackages] = runConda(packageCmd, debug, condaCmd);
+        if stPackages ~= 0
+            error('Canonical DetecDiv package install failed:\n%s', oPackages);
+        end
+        if ~canonicalCondaPackagesReady(condaCmd, envName, recipe, debug)
+            error('Canonical package verification failed after installation.');
+        end
     end
 
     % --- final torch verification via conda run ---
     fprintf('[Detecdiv]   - Verifying torch execution...\n');
     [okTorch, outTorch] = verifyTorch(condaCmd, envName, debug);
-    if okTorch
-        return;
-    end
+    if okTorch, return; end
 
     % Auto-heal for known Linux runtime issue:
     % ImportError ... libtorch_cpu.so: undefined symbol: iJIT_NotifyEvent
@@ -1168,6 +1474,24 @@ function ensureDetecdivPackages(condaCmd, debug)
     end
 
     error('Torch verification failed:\n%s', outTorch);
+end
+
+function ok = canonicalCondaPackagesReady(condaCmd, envName, recipe, debug)
+imports = strjoin(recipe.requiredImports, ',');
+code = sprintf([ ...
+    'import importlib.util as u;from importlib.metadata import version;' ...
+    'mods=''%s''.split('','');' ...
+    'assert all(u.find_spec(m) is not None for m in mods);' ...
+    'assert version(''cellpose'')==''%s'';' ...
+    'assert version(''trackastra'')==''%s'';' ...
+    'print(''CANONICAL_OK'')'], ...
+    char(imports), recipe.packages.cellposeVersion, recipe.packages.trackastraVersion);
+sub = sprintf('run -n %s python -c "%s"', envName, code);
+[st,out] = runConda(sub, debug, condaCmd);
+ok = st == 0 && contains(string(out), "CANONICAL_OK");
+if debug
+    fprintf('[DEBUG] canonicalCondaPackagesReady=%d\n', ok);
+end
 end
 
 function ok = condaRunPyImport(condaCmd, envName, moduleName, debug)
@@ -1240,16 +1564,17 @@ end
 end
 
 function tf = torchVerificationMatchesRequestedRuntime(outTorch, useGPU)
-if ~useGPU
-    tf = true;
-    return;
-end
+recipe = detecdiv_python_recipe();
 s = lower(string(outTorch));
-tf = contains(s, "cuda_available true");
+tf = contains(s, "torch " + lower(string(recipe.torch.version)));
+if useGPU
+    tf = tf && contains(s, "cuda_available true");
+end
 end
 
 function ok = attemptTorchPipFallback(condaCmd, envName, useGPU, debug)
 ok = false;
+recipe = detecdiv_python_recipe();
 
 % Cleanup existing torch stack (best effort; failures are non-fatal).
 cleanupCmds = [
@@ -1276,8 +1601,9 @@ for i = 1:numel(wheelTags)
 
     sub = sprintf([ ...
         'run -n %s python -m pip install --no-cache-dir --force-reinstall ' ...
-        '--index-url https://download.pytorch.org/whl/%s torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0'], ...
-        envName, tag);
+        '--index-url https://download.pytorch.org/whl/%s torch==%s torchvision==%s torchaudio==%s'], ...
+        envName, tag, recipe.torch.version, recipe.torch.torchvisionVersion, ...
+        recipe.torch.torchaudioVersion);
     [st,out] = runConda(sub, debug, condaCmd);
     if st ~= 0
         if debug

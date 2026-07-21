@@ -787,6 +787,33 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.out(end+1) = portDef('masks', 'maskSet', true, 'edge');
                 contract.resources.out = resourceDef('mask', 'segmentation', 'segmentation', 'outputName', 'masks', 'outputName', false, 'roiMasks');
                 contract.summary = 'SAM3.1 classifier: outputs instance-tracking masks from ROI movies.';
+            case 'trackastra'
+                contract.parameters.static = unique([contract.parameters.static trackastraExecutionStaticKeys()], 'stable');
+                contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 2);
+                contract.capabilities.outputsMasks = false;
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiMasks = false;
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'channelSlots';
+                contract.binding.selectorKeys = {'imageChannelName','instanceChannelName'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCount = 2;
+                contract.selectors.channelParam = 'imageChannelName';
+                contract.selectors.outputNameParam = 'outputName';
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', true, 'edge') ...
+                    ];
+                contract.resources.in = [ ...
+                    resourceDef('channel', 'roi_image', 'imageChannelName', 'imageChannelName', 'channels', 'imageChannelName', true, ''), ...
+                    resourceDef('channel', 'mask_roi_image', 'instanceChannelName', 'instanceChannelName', 'channels', 'instanceChannelName', true, '') ...
+                    ];
+                contract.resources.out = resourceDef('channel', 'tracking', 'tracklets', 'outputName', 'channels', 'outputName', false, 'roiChannel');
+                contract.summary = 'Trackastra linker: consumes intensity images and indexed instance masks, then writes stable tracklet IDs.';
             case 'deeplab_pixel_classification'
                 outputType = normalizeOutputMode(getNestedParam(node, {'outputType','outputMode'}, 'segmentation'), ...
                     {'segmentation','proba','probability','both'}, 'segmentation');
@@ -1749,6 +1776,16 @@ function keys = sam31ExecutionStaticKeys()
             'budPairingFutureWindow','budPairingMinParentAgeFrames', ...
             'budPairingMaxFutureDistanceReferenceFraction', ...
             'budPairingMaxFutureCentroidDistanceReferenceFraction'};
+    end
+end
+
+function keys = trackastraExecutionStaticKeys()
+    try
+        spec = trackastra.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'pretrainedModel','trackingMode','device','batchSize','nWorkers','maxDistance', ...
+            'normalizeImages'};
     end
 end
 

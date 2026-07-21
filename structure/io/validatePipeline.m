@@ -1970,7 +1970,7 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
                 artifactReport.status = 'missing_model';
                 return;
             end
-        case {'cellposesam','sam31'}
+        case {'cellposesam','sam31','trackastra'}
             % Python-backed classifiers may intentionally use package-managed
             % default weights or explicit checkpoint paths from their runtime
             % config. The linked classi snapshot is sufficient for pipeline
@@ -2454,7 +2454,7 @@ end
 
 function tf = classifierRequiresLocalArtifacts(pkgName)
     pkgName = lower(char(string(pkgName)));
-    tf = ~any(strcmp(pkgName, {'cellposesam','sam31'}));
+    tf = ~any(strcmp(pkgName, {'cellposesam','sam31','trackastra'}));
 end
 
 function msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, reason)
@@ -3782,6 +3782,9 @@ function name = normalizePhysicalResourceOutputName(node, spec, name)
         name = cellposeSegmentationChannelNameLocal(node, name);
     elseif strcmp(nodeType, 'classifier') && strcmp(pkgName, 'deeplab_pixel_classification') && ...
             strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
+        name = prefixedResultsChannelNameLocal(name);
+    elseif strcmp(nodeType, 'classifier') && strcmp(pkgName, 'trackastra') && ...
+            strcmp(resourceType, 'channel') && strcmp(role, 'tracking')
         name = prefixedResultsChannelNameLocal(name);
     elseif strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
             strcmp(resourceType, 'channel') && any(strcmp(role, {'lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'}))

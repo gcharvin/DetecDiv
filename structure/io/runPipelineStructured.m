@@ -2146,6 +2146,19 @@ function ctx = executeClassifierNode(node, ctx)
 
     [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node);
 
+    selectedChannels = [];
+    if strcmpi(char(string(pkgName)), 'trackastra')
+        selectedChannels = compactChannelParams(p, {'imageChannelName','instanceChannelName'});
+        if ~isempty(selectedChannels)
+            if ~isfield(ctx,'io') || ~isstruct(ctx.io), ctx.io = struct(); end
+            ctx.io.requiredChannels = mergeChannelLists( ...
+                getfielddefault(ctx.io,'requiredChannels',{}), selectedChannels);
+        end
+    elseif isfield(p,'channel') && ~isempty(p.channel)
+        selectedChannels = p.channel;
+    elseif isfield(p,'channels') && ~isempty(p.channels)
+        selectedChannels = p.channels;
+    end
     args = {'OutputName', outputName, 'Ctx', ctx};
     if ~isempty(classifierForRun)
         args = [args {'Classifier', classifierForRun}]; %#ok<AGROW>
@@ -2155,12 +2168,6 @@ function ctx = executeClassifierNode(node, ctx)
     end
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames', p.frames}]; %#ok<AGROW>
-    end
-    selectedChannels = [];
-    if isfield(p,'channel') && ~isempty(p.channel)
-        selectedChannels = p.channel;
-    elseif isfield(p,'channels') && ~isempty(p.channels)
-        selectedChannels = p.channels;
     end
     if ~isempty(selectedChannels)
         ch = normalizeClassifierChannels(selectedChannels);
@@ -2232,7 +2239,8 @@ end
 
 function clsObj = applyClassifierReference(clsObj, refClassi)
 props = {'path','strid','description','category','channel','channelName','channelName2', ...
-    'classes','classifyFun','trainingFun','classifierPkg','outputType','outputFun','outputArg','trainingParam','runProfiles'};
+    'classes','classifyFun','trainingFun','classifierPkg','outputType','outputFun','outputArg', ...
+    'trainingParam','executionParam','runProfiles'};
 for i = 1:numel(props)
     name = props{i};
     try
@@ -2245,6 +2253,26 @@ for i = 1:numel(props)
     catch
     end
 end
+end
+
+function channels = compactChannelParams(p, keys)
+channels = {};
+if ~isstruct(p), return; end
+for i = 1:numel(keys)
+    key = keys{i};
+    if ~isfield(p,key) || isempty(p.(key)), continue; end
+    value = p.(key);
+    while iscell(value)
+        value = value(~cellfun(@isempty,value));
+        if isempty(value), break; end
+        value = value{end};
+    end
+    if isempty(value), continue; end
+    txt = strtrim(char(string(value)));
+    if isempty(txt) || startsWith(txt,'@'), continue; end
+    channels{end+1} = txt; %#ok<AGROW>
+end
+channels = unique(channels,'stable');
 end
 
 function intent = classifierRunIntent(ctx, p)

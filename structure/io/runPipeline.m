@@ -2947,7 +2947,8 @@ end
 
 function clsObj = applyClassifierReference(clsObj, refClassi)
 props = {'path','strid','description','category','channel','channelName','channelName2', ...
-    'classes','classifyFun','trainingFun','classifierPkg','outputType','outputFun','outputArg','trainingParam','runProfiles'};
+    'classes','classifyFun','trainingFun','classifierPkg','outputType','outputFun','outputArg', ...
+    'trainingParam','executionParam','runProfiles'};
 for i = 1:numel(props)
     name = props{i};
     try

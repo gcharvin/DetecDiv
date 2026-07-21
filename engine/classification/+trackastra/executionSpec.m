@@ -1,0 +1,76 @@
+function spec = executionSpec(classif)
+% trackastra.executionSpec  Pipeline execution-time parameter contract.
+
+if nargin < 1
+    classif = [];
+end
+
+p = trackastra.utils.defaultExecutionParam();
+spec = struct();
+spec.category = 'Pixel';
+spec.defaultClasses = {'tracklet'};
+spec.segmentationKind = 'instance_tracking';
+spec.instanceSegmentation = false;
+spec.summary = ['Trackastra linker: consumes raw images plus frame-local instance ' ...
+    'masks and produces an indexed channel with stable tracklet IDs.'];
+spec.staticKeys = {'pretrainedModel','trackingMode','device','batchSize','nWorkers','maxDistance', ...
+    'normalizeImages'};
+spec.artifactKeys = {'modelSource','customModelPath','checkpointPath'};
+spec.environmentKeys = {'pythonExecutable'};
+spec.outputKeys = {'outputName'};
+spec.defaultImportKeys = [spec.staticKeys spec.outputKeys];
+spec.defaults = p;
+
+spec.labels = struct( ...
+    'imageChannelName', 'Image channel', ...
+    'instanceChannelName', 'Instance-mask channel', ...
+    'outputName', 'Tracklet output name', ...
+    'pretrainedModel', 'Pretrained model', ...
+    'trackingMode', 'Linking mode', ...
+    'device', 'Device', ...
+    'batchSize', 'Inference batch size', ...
+    'nWorkers', 'Feature workers', ...
+    'maxDistance', 'Maximum link distance', ...
+    'normalizeImages', 'Normalize images');
+
+spec.tips = struct( ...
+    'imageChannelName', 'Intensity image corresponding to the instance masks.', ...
+    'instanceChannelName', 'Indexed mask channel. Labels may be frame-local; Trackastra assigns tracklet IDs.', ...
+    'outputName', 'Physical ROI channel is results_<outputName>.', ...
+    'pretrainedModel', 'For ordinary 2-D microscopy, general_2d is the standard starting point.', ...
+    'trackingMode', 'greedy supports divisions; greedy_nodiv forbids them; ilp requires optional ILP dependencies.', ...
+    'device', 'automatic chooses CUDA when available.', ...
+    'batchSize', '0 uses the model/device default.', ...
+    'nWorkers', '0 avoids multiprocessing overhead and is safest when launched from MATLAB on Windows.', ...
+    'maxDistance', '0 leaves the Trackastra default; positive values constrain candidate links in pixels.', ...
+    'normalizeImages', 'Apply Trackastra image normalization before feature extraction.');
+
+spec.choices = struct();
+spec.choices.pretrainedModel = {'general_2d','general_3d','general_2d_w_SAM2_features'};
+spec.choices.trackingMode = {'greedy','greedy_nodiv','ilp'};
+spec.choices.device = {'automatic','cuda','cpu','mps'};
+spec.choices.normalizeImages = {true,false};
+
+spec.defaults = mergeDefaults(spec.defaults, classif);
+end
+
+function defaults = mergeDefaults(defaults, classif)
+if isempty(classif)
+    return;
+end
+sources = {};
+try
+    if isprop(classif,'executionParam') && isstruct(classif.executionParam)
+        sources{end+1} = classif.executionParam; %#ok<AGROW>
+    end
+catch
+end
+for s = 1:numel(sources)
+    keys = fieldnames(sources{s});
+    for i = 1:numel(keys)
+        if isfield(defaults, keys{i}) && ~isempty(sources{s}.(keys{i}))
+            defaults.(keys{i}) = sources{s}.(keys{i});
+        end
+    end
+end
+end

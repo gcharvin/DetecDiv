@@ -1309,7 +1309,7 @@ function tf = localIsInstanceSegmentationClassifier(classiobj)
     try
         if isprop(classiobj,'classifierPkg')
             pkg = char(string(classiobj.classifierPkg));
-            if any(strcmpi(pkg, {'sam31','cellposesam'}))
+            if any(strcmpi(pkg, {'sam31','cellposesam','trackastra'}))
                 tf = true;
                 return;
             end
@@ -1319,7 +1319,8 @@ function tf = localIsInstanceSegmentationClassifier(classiobj)
     try
         if isprop(classiobj,'classifyFun')
             fun = lower(char(string(classiobj.classifyFun)));
-            if contains(fun, 'sam31.classify') || contains(fun, 'cellposesam.classify') || contains(fun, 'classifycpsamfun')
+            if contains(fun, 'sam31.classify') || contains(fun, 'cellposesam.classify') || ...
+                    contains(fun, 'trackastra.classify') || contains(fun, 'classifycpsamfun')
                 tf = true;
                 return;
             end
