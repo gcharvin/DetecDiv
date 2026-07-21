@@ -227,12 +227,28 @@ end
 end
 
 function [status, cmdout] = runExternal(cmd, workDir, cancelTokenFile)
-if startsWith(cmd, 'wsl.exe ')
+if shouldEchoExternalCommand(cmd)
+    try
+        [status, cmdout] = system(cmd, '-echo');
+    catch
+        [status, cmdout] = system(cmd);
+    end
+elseif startsWith(cmd, 'wsl.exe ')
     [status, cmdout] = system(cmd);
 elseif ~isempty(cancelTokenFile) && ~ispc
     [status, cmdout] = runCommandWithCancel(cmd, workDir, cancelTokenFile);
 else
     [status, cmdout] = system(cmd);
+end
+end
+
+function tf = shouldEchoExternalCommand(cmd)
+tf = false;
+try
+    cmdText = char(string(cmd));
+    tf = contains(cmdText, 'train_sam31.py');
+catch
+    tf = false;
 end
 end
 
@@ -577,10 +593,10 @@ if isstruct(runtime) && isfield(runtime, 'backend') && strcmp(runtime.backend, '
 end
 
 if ispc
-    cmd = sprintf('set "PYTHONPATH=%s;%s" && "%s" "%s" --config "%s"', ...
+    cmd = sprintf('set "PYTHONPATH=%s;%s" && "%s" -u "%s" --config "%s"', ...
         pythonPath, getenv('PYTHONPATH'), runtime.pythonExe, scriptPath, configPath);
 else
-    cmd = sprintf('PYTHONPATH=%s:%s "%s" "%s" --config "%s"', ...
+    cmd = sprintf('PYTHONPATH=%s:%s "%s" -u "%s" --config "%s"', ...
         shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
         runtime.pythonExe, scriptPath, configPath);
 end
@@ -596,7 +612,7 @@ pythonPath = wslPythonPath(runtime, scriptPath);
 
 bashCmd = sprintf('%scd %s && PYTHONPATH=%s:%s %s %s --config %s', ...
     wslMountPrelude(), shellQuote(workDirWsl), shellQuote(pythonPath), shellQuote(getenv('PYTHONPATH')), ...
-    shellQuote(pythonExe), shellQuote(scriptWsl), shellQuote(configWsl));
+    shellQuote(pythonExe), ['-u ' shellQuote(scriptWsl)], shellQuote(configWsl));
 cmd = buildPowershellWslCommand(wslDistro, bashCmd);
 end
 

@@ -7,7 +7,7 @@
     "channels": [],
     "extractChannels": "@source",
     "forceChannelNames": true,
-    "correctDrift": true,
+    "correctDrift": false,
     "driftChannel": [],
     "driftMethod": "subpixel",
     "driftRefMode": "previous",
@@ -18,5 +18,5 @@
   },
   "inputs": [],
   "outputs": [],
-  "updatedAt": "15-Jul-2026 09:13:06"
+  "updatedAt": "15-Jul-2026 15:53:07"
 }

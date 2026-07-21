@@ -398,11 +398,19 @@ def stitch_chunk_ids(
 
     for local_idx, local_frame in enumerate(local_labels):
         abs_idx = chunk_start + local_idx
-        if global_labels[abs_idx] is not None:
-            continue
         remapped = np.zeros_like(local_frame, dtype=np.uint16)
         for local_id, global_id in local_to_global.items():
             remapped[local_frame == local_id] = global_id
+        existing = global_labels[abs_idx]
+        if existing is not None:
+            existing_pixels = int(np.count_nonzero(existing))
+            remapped_pixels = int(np.count_nonzero(remapped))
+            existing_labels = len([label for label in np.unique(existing) if label != 0])
+            remapped_labels = len([label for label in np.unique(remapped) if label != 0])
+            enough_labels = remapped_labels >= max(2, int(0.5 * max(existing_labels, 1)))
+            enough_pixels = remapped_pixels > max(existing_pixels * 1.25, existing_pixels + 1024)
+            if not (enough_pixels and enough_labels):
+                continue
         global_labels[abs_idx] = remapped
     return global_labels, next_global_id
 

@@ -78,7 +78,7 @@
         "channels": [],
         "extractChannels": "@source",
         "forceChannelNames": true,
-        "correctDrift": true,
+        "correctDrift": false,
         "driftChannel": [],
         "driftMethod": "subpixel",
         "driftRefMode": "previous",
