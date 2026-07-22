@@ -16,6 +16,21 @@ function report = pipelinePathMappingSmokeTest()
 
     workerCtx = struct('run', struct('paths', struct( ...
         'path_mappings', payloadMappings)));
+    payload = struct('paths', struct('path_mappings', payloadMappings));
+    detecdiv_paths_assert_hub_payload_safe(payload, 'run_request');
+
+    unsafePayload = payload;
+    unsafePayload.modulePath = 'Z:\matlab\ClassiRepository\div_1\';
+    blockedUnsafePath = false;
+    try
+        detecdiv_paths_assert_hub_payload_safe(unsafePayload, 'run_request');
+    catch ME
+        blockedUnsafePath = strcmp(ME.identifier, ...
+            'detecdiv_hub_submit_pipeline_run:LocalPathInHubPayload');
+    end
+    assert(blockedUnsafePath, ...
+        'A client path outside path_mappings.localRoot was not rejected.');
+
     [classifierPath, classifierMapped] = detecdiv_paths_map_module_path( ...
         'Z:\matlab\ClassiRepository\div_1\', workerCtx, 'server');
     [processorPath, processorMapped] = detecdiv_paths_map_module_path( ...

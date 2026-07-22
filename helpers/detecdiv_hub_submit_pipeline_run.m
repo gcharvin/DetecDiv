@@ -1583,7 +1583,7 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
-    localAssertNoLocalClientPathsInValue(runRequest, 'run_request');
+    detecdiv_paths_assert_hub_payload_safe(runRequest, 'run_request');
 end
 
 function intent = localInferRunIntentFromNodeParams(nodeParams)
@@ -1832,38 +1832,6 @@ function item = localNormalizeNodeParamEntry(value, fallbackId, ref, hub)
     end
     item = struct('id', char(string(nodeId)), ...
         'params', localTranslateValuePathsForServer(params, ref, hub));
-end
-
-function localAssertNoLocalClientPathsInValue(value, label)
-    if isstruct(value)
-        for i = 1:numel(value)
-            names = fieldnames(value(i));
-            for j = 1:numel(names)
-                localAssertNoLocalClientPathsInValue(value(i).(names{j}), [label '.' names{j}]);
-            end
-        end
-    elseif iscell(value)
-        for i = 1:numel(value)
-            localAssertNoLocalClientPathsInValue(value{i}, sprintf('%s{%d}', label, i));
-        end
-    elseif isstring(value)
-        for i = 1:numel(value)
-            localAssertNoLocalClientPathText(char(value(i)), sprintf('%s(%d)', label, i));
-        end
-    elseif ischar(value)
-        localAssertNoLocalClientPathText(value, label);
-    end
-end
-
-function localAssertNoLocalClientPathText(value, label)
-    value = char(string(value));
-    if isempty(value) || ~localLooksLikeLocalClientPath(value)
-        return;
-    end
-    error('detecdiv_hub_submit_pipeline_run:LocalPathInHubPayload', ...
-        ['Hub submission would send a local client path in %s: %s\n' ...
-         'Move/map the resource so the worker can access it, or launch locally.'], ...
-        label, value);
 end
 
 function paths = localBuildRunPaths(ctx, ref, hub)
