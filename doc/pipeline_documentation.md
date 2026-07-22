@@ -23,14 +23,14 @@ The example extractor follows a reusable input/output contract rather than a
 pipeline-specific list of screenshots:
 
 - dataloaders show a raw, full-frame image;
-- manual, pattern, and grid ROI modules show the source full frame and the same
-  frame with every generated ROI overlaid;
-- ROI extraction shows the selected ROI in its full-frame context and a short
-  time series at one fixed Z plane;
-- best-focus modules show a compact input Z stack and the selected best-focus
-  output;
-- instance-segmentation modules show an input containing several cells and the
-  corresponding multi-instance overlay;
+- manual, pattern, and grid ROI modules use one before/after composite showing
+  the source full frame and every generated ROI rectangle;
+- ROI extraction shows five explicitly time-ordered frames from one ROI at one
+  fixed Z plane;
+- best-focus modules show neighbouring input Z planes, highlight the selected
+  plane, plot the recorded focus curve along Z, and show the best-focus output;
+- instance-segmentation modules show the input, the coloured instance-labelled
+  mask, and the segmentation overlay in one composite;
 - tracking or Viterbi modules show the candidate cells and the selected cell;
 - downstream analysis modules show their most relevant input/output or QC
   artifacts when these are available.

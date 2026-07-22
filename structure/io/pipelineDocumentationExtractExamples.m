@@ -58,7 +58,10 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
     if isempty(zNames)
         error('pipelineDocumentationExtractExamples:Channels', 'No DIC Z-stack channel was found in %s.', h5Path);
     end
-    zIndices = unique(max(1, min(numel(zNames), round([0.2 0.5 0.8] * numel(zNames)))));
+    focusSeriesName = resolveFocusSeries(pipelineSpec);
+    [bestZIndex, focusCurveRaw, focusCurveSmooth] = focusEvidence( ...
+        roiObj, focusSeriesName, frameIndex, h5Path, zNames);
+    zIndices = representativeFocusIndices(numel(zNames), bestZIndex, 5);
     rawPanels = cell(1, numel(zIndices));
     for i = 1:numel(zIndices)
         rawPanels{i} = readPlane(h5Path, ['/' char(zNames(zIndices(i)))], frameIndex);
@@ -68,7 +71,7 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
 
     fullFrameFile = '';
     roiDefinitionFile = '';
-    selectedRoiFile = '';
+    roiDefinitionEvidenceFile = '';
     try
         fullFrameChannel = resolveFovChannelIndex(fovObj, zNames(round(numel(zNames)/2)));
         fullFrame = readFullFrame(fovObj, fullFrameChannel, frameIndex);
@@ -77,9 +80,10 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
             imwrite(limitImageSize(toUint8(fullFrame), 1400), fullFrameFile);
             roiDefinitionFile = fullfile(outputDir, 'full_frame_all_rois.png');
             imwrite(limitImageSize(overlayRoiRectangles(fullFrame, fovObj.roi, NaN), 1400), roiDefinitionFile);
-            selectedRoiFile = fullfile(outputDir, 'full_frame_selected_roi.png');
-            selectedIndex = find(arrayfun(@(x) strcmp(char(string(x.id)), char(string(roiObj.id))), fovObj.roi), 1);
-            imwrite(limitImageSize(overlayRoiRectangles(fullFrame, fovObj.roi, selectedIndex), 1400), selectedRoiFile);
+            roiDefinitionEvidenceFile = fullfile(outputDir, 'roi_definition_input_output.png');
+            renderImageComparison(fullFrameFile, roiDefinitionFile, ...
+                'INPUT - Raw full frame', sprintf('OUTPUT - %d generated ROIs', numel(fovObj.roi)), ...
+                'ROI definition: the output rectangles are shown in green', roiDefinitionEvidenceFile);
         end
     catch ME
         warning('pipelineDocumentationExtractExamples:FullFrame', 'Full-frame example unavailable: %s', ME.message);
@@ -92,17 +96,20 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
     for i = 1:numel(timeFrames)
         timePanels{i} = readPlane(h5Path, selectedZ, timeFrames(i));
     end
-    imwrite(panelMontage(timePanels, 1, numel(timePanels)), roiTimeseriesFile);
+    renderTimeSeriesEvidence(timePanels, timeFrames, char(zNames(round(numel(zNames)/2))), roiTimeseriesFile);
 
-    focusFile = '';
     if any(datasetNames == erase(string(focusDataset), '/'))
-        focusFile = fullfile(outputDir, 'best_focus.png');
         focus = readPlane(h5Path, focusDataset, frameIndex);
-        imwrite(toUint8(focus), focusFile);
+    else
+        focus = readPlane(h5Path, ['/' char(zNames(bestZIndex))], frameIndex);
     end
+    bestFocusEvidenceFile = fullfile(outputDir, 'best_focus_input_output.png');
+    renderBestFocusEvidence(rawPanels, zIndices, bestZIndex, focusCurveRaw, ...
+        focusCurveSmooth, focus, bestFocusEvidenceFile);
 
-    segmentationInputFile = '';
     segmentationFile = '';
+    segmentationEvidenceFile = '';
+    segmentationCount = 0;
     segmentationFrame = frameIndex;
     if any(datasetNames == erase(string(instanceDataset), '/'))
         segmentationFrame = bestMultiCellFrame(h5Path, instanceDataset, frameCount);
@@ -111,11 +118,12 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
         else
             segmentationFocus = readPlane(h5Path, selectedZ, segmentationFrame);
         end
-        segmentationInputFile = fullfile(outputDir, 'cellpose_input.png');
-        imwrite(toUint8(segmentationFocus), segmentationInputFile);
         segmentationFile = fullfile(outputDir, 'cellpose_overlay.png');
         mask = readPlane(h5Path, instanceDataset, segmentationFrame);
         imwrite(overlayLabels(segmentationFocus, mask), segmentationFile);
+        segmentationCount = numel(unique(mask(mask > 0)));
+        segmentationEvidenceFile = fullfile(outputDir, 'segmentation_input_output.png');
+        renderSegmentationEvidence(segmentationFocus, mask, segmentationFrame, segmentationEvidenceFile);
     end
 
     viterbiInputFile = segmentationFile;
@@ -143,22 +151,23 @@ function manifestPath = pipelineDocumentationExtractExamples(projectInput, outpu
     else
         roles.raw = entry(rawStackFile, 'Raw ROI Z-stack planes (full-frame source unavailable).', 'input');
     end
-    roiEntries = struct('file',{},'caption',{},'alt',{},'kind',{});
-    if ~isempty(fullFrameFile), roiEntries(end+1) = entry(fullFrameFile, 'Input: raw full frame used to define ROIs.', 'input'); end
-    if ~isempty(roiDefinitionFile), roiEntries(end+1) = entry(roiDefinitionFile, sprintf('Output: all %d ROI rectangles created on the full frame.', numel(fovObj.roi)), 'output'); end
-    if ~isempty(roiEntries), roles.roi_definition = roiEntries; end
-    extractionEntries = struct('file',{},'caption',{},'alt',{},'kind',{});
-    if ~isempty(selectedRoiFile), extractionEntries(end+1) = entry(selectedRoiFile, 'Input: one selected ROI in the source full frame.', 'input'); end
-    extractionEntries(end+1) = entry(roiTimeseriesFile, sprintf('Output: ROI time series at one fixed Z plane in %s.', getLeaf(h5Path)), 'output');
-    roles.roi_extraction = extractionEntries;
-    bestFocusEntries = struct('file',{},'caption',{},'alt',{},'kind',{});
-    bestFocusEntries(end+1) = entry(rawStackFile, 'Input: representative planes from the ROI Z stack.', 'input');
-    if ~isempty(focusFile), bestFocusEntries(end+1) = entry(focusFile, 'Output: derived best-focus image.', 'output'); end
-    roles.best_focus = bestFocusEntries;
-    segmentationEntries = struct('file',{},'caption',{},'alt',{},'kind',{});
-    if ~isempty(segmentationInputFile), segmentationEntries(end+1) = entry(segmentationInputFile, 'Input: best-focus image containing several cells.', 'input'); end
-    if ~isempty(segmentationFile), segmentationEntries(end+1) = entry(segmentationFile, 'Output: instance boundaries for multiple cells.', 'output'); end
-    if ~isempty(segmentationEntries), roles.segmentation = segmentationEntries; end
+    if ~isempty(roiDefinitionEvidenceFile)
+        roles.roi_definition = entry(roiDefinitionEvidenceFile, ...
+            sprintf('Input full frame and output containing all %d generated ROI rectangles.', numel(fovObj.roi)), 'input-output');
+    elseif ~isempty(roiDefinitionFile)
+        roles.roi_definition = entry(roiDefinitionFile, ...
+            sprintf('Output: all %d ROI rectangles created on the full frame.', numel(fovObj.roi)), 'output');
+    end
+    roles.roi_extraction = entry(roiTimeseriesFile, sprintf( ...
+        'Output: five time-ordered images from one ROI at fixed Z in %s.', getLeaf(h5Path)), 'output');
+    roles.best_focus = entry(bestFocusEvidenceFile, ...
+        sprintf('Input Z-stack, focus score along Z, and selected best-focus output at frame %d.', frameIndex), 'input-output');
+    if ~isempty(segmentationEvidenceFile)
+        roles.segmentation = entry(segmentationEvidenceFile, sprintf( ...
+            'Input focused image, output instance mask, and segmentation overlay for %d cells.', segmentationCount), 'input-output');
+    elseif ~isempty(segmentationFile)
+        roles.segmentation = entry(segmentationFile, 'Output: instance boundaries for multiple cells.', 'output');
+    end
     divisionEntries = struct('file',{},'caption',{},'alt',{},'kind',{});
     if ~isempty(viterbiInputFile), divisionEntries(end+1) = entry(viterbiInputFile, 'Input: several segmented candidate cells.', 'input'); end
     if ~isempty(trackedFile), divisionEntries(end+1) = entry(trackedFile, 'Output: the selected target cell highlighted in green.', 'output'); end
@@ -270,6 +279,78 @@ function frameIndex = bestMultiCellFrame(h5Path, dataset, frameCount)
     end
 end
 
+function [bestIndex, rawCurve, smoothCurve] = focusEvidence(roiObj, seriesName, frameIndex, h5Path, zNames)
+    nZ = numel(zNames);
+    bestIndex = max(1, round(nZ / 2));
+    rawCurve = [];
+    smoothCurve = [];
+    try
+        roiObj.load('data');
+        idx = find(arrayfun(@(x) strcmp(char(string(x.groupid)), char(string(seriesName))), roiObj.data), 1);
+        if ~isempty(idx) && istable(roiObj.data(idx).data)
+            values = roiObj.data(idx).data;
+            row = focusSeriesRow(values, frameIndex);
+            candidate = tableRowVector(values, {'zBest','zBestChannelIndex'}, row);
+            if ~isempty(candidate), bestIndex = round(candidate(1)); end
+            rawCurve = tableRowVector(values, {'focusCurveRaw','focusCurve'}, row);
+            smoothCurve = tableRowVector(values, {'focusCurveSmooth','focusCurveFiltered'}, row);
+        end
+    catch
+        rawCurve = [];
+        smoothCurve = [];
+    end
+    if isempty(rawCurve) || numel(rawCurve) ~= nZ
+        rawCurve = zeros(1, nZ);
+        for z = 1:nZ
+            plane = double(readPlane(h5Path, ['/' char(zNames(z))], frameIndex));
+            [gx, gy] = gradient(plane);
+            energy = gx.^2 + gy.^2;
+            rawCurve(z) = mean(energy(:), 'omitnan');
+        end
+    end
+    if isempty(smoothCurve) || numel(smoothCurve) ~= nZ
+        smoothCurve = movmean(rawCurve, min(5, nZ));
+    end
+    if ~isfinite(bestIndex) || bestIndex < 1 || bestIndex > nZ
+        [~, bestIndex] = max(smoothCurve);
+    end
+    bestIndex = max(1, min(nZ, round(bestIndex)));
+end
+
+function row = focusSeriesRow(values, frameIndex)
+    row = max(1, min(height(values), frameIndex));
+    candidates = {'frame','localFrame'};
+    for i = 1:numel(candidates)
+        if any(strcmp(values.Properties.VariableNames, candidates{i}))
+            match = find(double(values.(candidates{i})) == frameIndex, 1);
+            if ~isempty(match), row = match; return; end
+        end
+    end
+end
+
+function value = tableRowVector(values, names, row)
+    value = [];
+    for i = 1:numel(names)
+        if ~any(strcmp(values.Properties.VariableNames, names{i})), continue; end
+        raw = values.(names{i});
+        if iscell(raw)
+            raw = raw{row};
+        elseif size(raw, 1) >= row
+            raw = raw(row, :);
+        end
+        if isnumeric(raw) || islogical(raw)
+            value = double(raw(:)');
+            return;
+        end
+    end
+end
+
+function indices = representativeFocusIndices(nZ, bestIndex, count)
+    count = min(count, nZ);
+    first = max(1, min(nZ - count + 1, bestIndex - floor(count / 2)));
+    indices = first:(first + count - 1);
+end
+
 function spec = normalizePipelineSpec(pipelineInput)
     spec = struct('nodes', struct([]));
     if isempty(pipelineInput), return; end
@@ -325,6 +406,19 @@ function dataset = resolveFocusDataset(datasetNames, spec)
         if ~isempty(candidates), dataset = char(candidates(1)); end
     end
     dataset = datasetPath(dataset);
+end
+
+function seriesName = resolveFocusSeries(spec)
+    seriesName = '';
+    nodes = getSpecNodes(spec);
+    for i = 1:numel(nodes)
+        params = getNodeParams(nodes(i));
+        candidate = firstParamValue(params, {'zBestOutputName','focusSeriesName'});
+        if ~isempty(candidate) && ~startsWith(candidate, '@resource:')
+            seriesName = candidate;
+            return;
+        end
+    end
 end
 
 function dataset = resolveInstanceDataset(datasetNames, spec)
@@ -497,7 +591,7 @@ function rgb = overlayRoiRectangles(image, rois, selectedIndex)
     for i = 1:numel(rois)
         rect = double(rois(i).value(:)');
         if numel(rect) < 4, continue; end
-        if isequal(i, selectedIndex), color = [255 160 25]; width = 6; else, color = [25 220 115]; width = 3; end
+        if isequal(i, selectedIndex), color = [255 160 25]; width = 10; else, color = [25 230 105]; width = 8; end
         rgb = drawRectangle(rgb, rect(1:4), color, width);
     end
 end
@@ -520,6 +614,148 @@ end
 function output = limitImageSize(image, maxDimension)
     step = max(1, ceil(max(size(image,1), size(image,2)) / maxDimension));
     output = image(1:step:end, 1:step:end, :);
+end
+
+function renderImageComparison(inputFile, outputFile, inputTitle, outputTitle, heading, targetFile)
+    fig = evidenceFigure([100 100 1800 760]);
+    cleaner = onCleanup(@() close(fig));
+    layout = tiledlayout(fig, 1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+    title(layout, heading, 'FontName', 'Arial', 'FontSize', 20, 'FontWeight', 'bold');
+    ax = nexttile(layout, 1);
+    showEvidenceImage(ax, imread(inputFile));
+    evidenceTitle(ax, inputTitle, [49 95 115] / 255);
+    ax = nexttile(layout, 2);
+    showEvidenceImage(ax, imread(outputFile));
+    evidenceTitle(ax, outputTitle, [217 76 54] / 255);
+    exportEvidenceFigure(fig, targetFile);
+    clear cleaner;
+end
+
+function renderTimeSeriesEvidence(images, frames, zName, targetFile)
+    fig = evidenceFigure([100 100 1900 560]);
+    cleaner = onCleanup(@() close(fig));
+    layout = tiledlayout(fig, 1, numel(images), 'Padding', 'compact', 'TileSpacing', 'compact');
+    title(layout, sprintf('OUTPUT - ROI time series at fixed Z (%s), ordered from left to right', zName), ...
+        'Interpreter', 'none', 'FontName', 'Arial', 'FontSize', 20, 'FontWeight', 'bold');
+    for i = 1:numel(images)
+        ax = nexttile(layout, i);
+        showEvidenceImage(ax, images{i});
+        evidenceTitle(ax, sprintf('t = %d', frames(i)), [217 76 54] / 255);
+    end
+    exportEvidenceFigure(fig, targetFile);
+    clear cleaner;
+end
+
+function renderBestFocusEvidence(stackImages, zIndices, bestIndex, rawCurve, smoothCurve, focusImage, targetFile)
+    fig = evidenceFigure([100 100 1900 1000]);
+    cleaner = onCleanup(@() close(fig));
+    layout = tiledlayout(fig, 2, 5, 'Padding', 'compact', 'TileSpacing', 'compact');
+    for i = 1:numel(stackImages)
+        ax = nexttile(layout, i);
+        showEvidenceImage(ax, stackImages{i});
+        isBest = zIndices(i) == bestIndex;
+        if isBest
+            evidenceTitle(ax, sprintf('INPUT Z %d - SELECTED', zIndices(i)), [217 76 54] / 255);
+            highlightImage(ax, size(stackImages{i}), [217 76 54] / 255, 4);
+        else
+            evidenceTitle(ax, sprintf('INPUT Z %d', zIndices(i)), [49 95 115] / 255);
+        end
+    end
+    axCurve = nexttile(layout, 6, [1 3]);
+    xRaw = 1:numel(rawCurve);
+    plot(axCurve, xRaw, rawCurve, '-', 'Color', [0.55 0.62 0.66], 'LineWidth', 1.3);
+    hold(axCurve, 'on');
+    xSmooth = 1:numel(smoothCurve);
+    plot(axCurve, xSmooth, smoothCurve, '-', 'Color', [49 95 115] / 255, 'LineWidth', 2.8);
+    xline(axCurve, bestIndex, '--', 'Color', [217 76 54] / 255, 'LineWidth', 2);
+    if bestIndex <= numel(smoothCurve)
+        plot(axCurve, bestIndex, smoothCurve(bestIndex), 'o', 'Color', [217 76 54] / 255, ...
+            'MarkerFaceColor', [217 76 54] / 255, 'MarkerSize', 8);
+    end
+    hold(axCurve, 'off');
+    grid(axCurve, 'on');
+    box(axCurve, 'off');
+    xlabel(axCurve, 'Z plane', 'FontName', 'Arial', 'FontSize', 14);
+    ylabel(axCurve, 'Focus score', 'FontName', 'Arial', 'FontSize', 14);
+    title(axCurve, 'FOCUS OUTPUT - score along the Z-stack', 'FontName', 'Arial', ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Color', [217 76 54] / 255);
+    legend(axCurve, {'Raw score','Smoothed score','Selected Z'}, 'Location', 'best', ...
+        'FontName', 'Arial', 'FontSize', 11, 'Box', 'off');
+    axOutput = nexttile(layout, 9, [1 2]);
+    showEvidenceImage(axOutput, focusImage);
+    evidenceTitle(axOutput, sprintf('OUTPUT - Best-focus image (Z %d)', bestIndex), [217 76 54] / 255);
+    highlightImage(axOutput, size(focusImage), [217 76 54] / 255, 4);
+    exportEvidenceFigure(fig, targetFile);
+    clear cleaner;
+end
+
+function renderSegmentationEvidence(inputImage, labels, frameIndex, targetFile)
+    ids = unique(labels(labels > 0));
+    fig = evidenceFigure([100 100 1900 650]);
+    cleaner = onCleanup(@() close(fig));
+    layout = tiledlayout(fig, 1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
+    title(layout, sprintf('Cell segmentation at frame %d: %d separate instances', frameIndex, numel(ids)), ...
+        'FontName', 'Arial', 'FontSize', 21, 'FontWeight', 'bold');
+    ax = nexttile(layout, 1);
+    showEvidenceImage(ax, inputImage);
+    evidenceTitle(ax, 'INPUT - Best-focus image', [49 95 115] / 255);
+    ax = nexttile(layout, 2);
+    showEvidenceImage(ax, labelColorImage(labels));
+    evidenceTitle(ax, 'OUTPUT - Instance-labelled mask', [217 76 54] / 255);
+    ax = nexttile(layout, 3);
+    showEvidenceImage(ax, overlayLabels(inputImage, labels));
+    evidenceTitle(ax, 'OUTPUT - Segmentation overlay', [217 76 54] / 255);
+    exportEvidenceFigure(fig, targetFile);
+    clear cleaner;
+end
+
+function fig = evidenceFigure(position)
+    fig = figure('Visible', 'off', 'Color', 'white', 'Position', position);
+end
+
+function showEvidenceImage(ax, raster)
+    if ismatrix(raster) || size(raster, 3) == 1
+        imagesc(ax, raster);
+        colormap(ax, gray(256));
+    else
+        image(ax, raster);
+    end
+    axis(ax, 'image');
+    axis(ax, 'off');
+end
+
+function evidenceTitle(ax, value, color)
+    title(ax, value, 'Interpreter', 'none', 'FontName', 'Arial', 'FontSize', 16, ...
+        'FontWeight', 'bold', 'Color', color);
+end
+
+function highlightImage(ax, imageSize, color, width)
+    hold(ax, 'on');
+    rectangle(ax, 'Position', [0.5 0.5 imageSize(2) imageSize(1)], ...
+        'EdgeColor', color, 'LineWidth', width);
+    hold(ax, 'off');
+end
+
+function rgb = labelColorImage(labels)
+    h = size(labels, 1); w = size(labels, 2);
+    rgb = zeros(h, w, 3, 'uint8');
+    for c = 1:3, rgb(:,:,c) = uint8(18); end
+    ids = unique(labels(labels > 0));
+    palette = uint8([236 72 87; 0 174 239; 255 185 0; 167 92 210; 46 190 120]);
+    for i = 1:numel(ids)
+        mask = labels == ids(i);
+        color = palette(mod(i-1, size(palette,1))+1, :);
+        for c = 1:3
+            plane = rgb(:,:,c);
+            plane(mask) = color(c);
+            rgb(:,:,c) = plane;
+        end
+    end
+end
+
+function exportEvidenceFigure(fig, targetFile)
+    drawnow;
+    exportgraphics(fig, targetFile, 'Resolution', 150, 'BackgroundColor', 'white');
 end
 
 function canvas = panelMontage(images, rows, cols)
@@ -566,7 +802,11 @@ end
 function files = findQcFiles(roiObj)
     files = {};
     folder = char(string(roiObj.path));
-    candidates = dir(fullfile(folder, '*qc*.png'));
+    roiId = char(string(roiObj.id));
+    candidates = dir(fullfile(folder, [roiId '*qc*.png']));
+    if isempty(candidates)
+        candidates = dir(fullfile(folder, '*qc*.png'));
+    end
     if isempty(candidates)
         candidates = dir(fullfile(folder, '*quality*control*.png'));
     end
