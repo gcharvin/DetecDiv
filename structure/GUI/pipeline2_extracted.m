@@ -96,6 +96,8 @@ classdef pipeline2 < matlab.apps.AppBase
         EdgeHandles = gobjects(0)
         ModuleContextMenu matlab.ui.container.ContextMenu
         GraphContextMenu matlab.ui.container.ContextMenu
+        GenerateDocumentationMenu matlab.ui.container.Menu
+        OpenDocumentationMenu matlab.ui.container.Menu
         DynamicModuleTabs = gobjects(0)
         AvailableModules cell = {}
         IsRefreshingTabs logical = false
@@ -1058,6 +1060,12 @@ classdef pipeline2 < matlab.apps.AppBase
             app.SaverunMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunMenuSelected, true);
             app.SaverunasMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunasMenuSelected, true);
             app.ExportpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @ExportpipelineMenuSelected, true);
+            app.GenerateDocumentationMenu = uimenu(app.FileMenu, ...
+                'Text', 'Generate pipeline documentation PDF...', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~)generatePipelineDocumentationPdf(app));
+            app.OpenDocumentationMenu = uimenu(app.FileMenu, ...
+                'Text', 'Open pipeline documentation PDF', ...
+                'MenuSelectedFcn', @(~,~)openPipelineDocumentationPdf(app));
             uimenu(app.FileMenu, 'Text', 'Open current run folder', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'folder'));
             uimenu(app.FileMenu, 'Text', 'Open current run log', ...
@@ -1067,6 +1075,7 @@ classdef pipeline2 < matlab.apps.AppBase
             uimenu(app.FileMenu, 'Text', 'Open current run params', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
             rebuildModulesMenu(app);
+            updateDocumentationMenuState(app);
 
             setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline error.';
@@ -15258,6 +15267,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.IsPipelineDirty = logical(isDirty);
             updatePipelineWindowTitle(app);
             updatePipelineRunStatusBar(app);
+            updateDocumentationMenuState(app);
         end
 
         function markRunDirty(app, isDirty)
@@ -15267,6 +15277,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.IsRunDirty = logical(isDirty);
             updatePipelineWindowTitle(app);
             updatePipelineRunStatusBar(app);
+            updateDocumentationMenuState(app);
         end
 
         function updatePipelineWindowTitle(app)
@@ -19516,6 +19527,153 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function ExportpipelineMenuSelected(app, event) %#ok<INUSD>
             exportPipelineInteractive(app);
+        end
+
+        function generatePipelineDocumentationPdf(app)
+            if isempty(app.Data.nodes)
+                uialert(app.UIFigure, 'The current pipeline has no modules to document.', ...
+                    'Pipeline documentation', 'Icon', 'warning');
+                return;
+            end
+            outputDir = pipelineDocumentationOutputDir(app, true);
+            if isempty(outputDir)
+                return;
+            end
+            progress = [];
+            try
+                progress = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline documentation', ...
+                    'Message', 'Preparing the current pipeline...', 'Indeterminate', 'on', ...
+                    'Cancelable', 'off');
+                pipeObj = buildPipelineObject(app, app.CurrentPipelinePath, currentPipelineName(app));
+                projectInput = documentationProjectInput(app);
+                if ~isempty(progress) && isvalid(progress)
+                    if isempty(projectInput)
+                        progress.Message = 'Generating PDF without project examples...';
+                    else
+                        progress.Message = 'Extracting visual inputs and outputs from the project...';
+                    end
+                    drawnow limitrate nocallbacks;
+                end
+                generatorArgs = {'OutputDir', outputDir, 'ExportPdf', true, 'OpenBrowser', false};
+                if ~isempty(projectInput)
+                    generatorArgs(end+1:end+2) = {'Project', projectInput};
+                end
+                result = pipelineDocumentationGenerate(pipeObj, generatorArgs{:});
+                if isempty(result.pdf) || exist(result.pdf, 'file') ~= 2
+                    error('pipeline2:DocumentationPdf', 'The documentation generator did not produce a PDF.');
+                end
+                try
+                    if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                        app.CurrentRun.outputs.documentationPdf = result.pdf;
+                        app.CurrentRun.outputs.documentationHtml = result.html;
+                    end
+                catch
+                end
+                setRuntimeStatus(app, ['Pipeline documentation generated: ' result.pdf]);
+                updateDocumentationMenuState(app);
+                if ~isempty(progress) && isvalid(progress), close(progress); end
+                uialert(app.UIFigure, ['PDF generated:' newline result.pdf], ...
+                    'Pipeline documentation', 'Icon', 'success');
+            catch ME
+                try
+                    if ~isempty(progress) && isvalid(progress)
+                        close(progress);
+                    end
+                catch
+                end
+                uialert(app.UIFigure, ME.message, 'Pipeline documentation', 'Icon', 'error');
+            end
+        end
+
+        function openPipelineDocumentationPdf(app)
+            pdfPath = pipelineDocumentationPdfPath(app);
+            if isempty(pdfPath) || exist(pdfPath, 'file') ~= 2
+                updateDocumentationMenuState(app);
+                uialert(app.UIFigure, 'No documentation PDF is available for the current pipeline or run.', ...
+                    'Pipeline documentation', 'Icon', 'warning');
+                return;
+            end
+            openPathInSystem(app, pdfPath);
+        end
+
+        function updateDocumentationMenuState(app)
+            try
+                if isempty(app.OpenDocumentationMenu) || ~isvalid(app.OpenDocumentationMenu)
+                    return;
+                end
+                if isempty(pipelineDocumentationPdfPath(app))
+                    app.OpenDocumentationMenu.Enable = 'off';
+                else
+                    app.OpenDocumentationMenu.Enable = 'on';
+                end
+            catch
+            end
+        end
+
+        function outputDir = pipelineDocumentationOutputDir(app, allowPrompt)
+            if nargin < 2, allowPrompt = false; end
+            outputDir = '';
+            try
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                    [runPath, ~] = app.CurrentRun.getPath;
+                    if ~isempty(runPath)
+                        outputDir = fullfile(runPath, 'documentation');
+                        return;
+                    end
+                end
+            catch
+            end
+            pipelinePath = char(string(app.CurrentPipelinePath));
+            if ~isempty(pipelinePath)
+                if exist(pipelinePath, 'file') == 2
+                    pipelinePath = fileparts(pipelinePath);
+                end
+                outputDir = fullfile(pipelinePath, 'documentation');
+                return;
+            end
+            if logical(allowPrompt)
+                selected = uigetdir(pwd, 'Select pipeline documentation output folder');
+                if ~isequal(selected, 0)
+                    outputDir = selected;
+                end
+            end
+        end
+
+        function pdfPath = pipelineDocumentationPdfPath(app)
+            pdfPath = '';
+            try
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun') && ...
+                        isstruct(app.CurrentRun.outputs) && isfield(app.CurrentRun.outputs, 'documentationPdf')
+                    candidate = char(string(app.CurrentRun.outputs.documentationPdf));
+                    if exist(candidate, 'file') == 2
+                        pdfPath = candidate;
+                        return;
+                    end
+                end
+            catch
+            end
+            outputDir = pipelineDocumentationOutputDir(app, false);
+            if isempty(outputDir), return; end
+            baseName = regexprep(currentPipelineName(app), '[^a-zA-Z0-9_\-]+', '_');
+            candidate = fullfile(outputDir, [baseName '_documentation.pdf']);
+            if exist(candidate, 'file') == 2
+                pdfPath = candidate;
+            end
+        end
+
+        function projectInput = documentationProjectInput(app)
+            projectInput = [];
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                projectInput = app.CurrentProject;
+                return;
+            end
+            try
+                projectPath = strtrim(char(string(getRuntimeValue(app, 'projectPath'))));
+                if exist(projectPath, 'file') == 2
+                    projectInput = projectPath;
+                end
+            catch
+            end
         end
 
         function LoadpipelineMenuSelected(app, event) %#ok<INUSD>
