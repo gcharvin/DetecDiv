@@ -10633,6 +10633,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isInput && isempty(displayValue)
                     choices = [{placeholder} choices]; %#ok<AGROW>
                     displayValue = placeholder;
+                elseif ~isempty(displayValue) && ~any(strcmp(choices, displayValue))
+                    % Never make the UI look as if the first available
+                    % binding were selected while the model still stores a
+                    % different value. Keep the stored value visible until
+                    % the user explicitly chooses another binding.
+                    choices = [{displayValue} choices]; %#ok<AGROW>
                 end
                 if isempty(choices)
                     choices = {'<unresolved>'};
@@ -12279,35 +12285,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function name = normalizeUiPhysicalResourceOutputName(app, node, spec, name)
-            name = strtrim(char(string(name)));
-            if isempty(name)
-                return;
-            end
-            nodeType = lower(char(string(getField(app, node, 'type', ''))));
-            pkgName = lower(char(string(getField(app, node, 'pkg', ''))));
-            if isempty(pkgName)
-                params = getField(app, node, 'params', struct());
-                if isstruct(params) && isfield(params, 'pkg') && ~isempty(params.pkg)
-                    pkgName = lower(char(string(params.pkg)));
-                end
-            end
-            resourceType = lower(char(string(getField(app, spec, 'type', ''))));
-            role = lower(char(string(getField(app, spec, 'role', ''))));
-            if strcmp(nodeType, 'processor') && strcmp(pkgName, 'computemetrics') && ...
-                    strcmp(resourceType, 'dataseries') && strcmp(role, 'metrics') && ...
-                    ~isempty(regexp(name, '^processor_computemetrics(_\d+)?$', 'once'))
-                name = 'channel_quantification';
-            elseif strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
-                    strcmp(resourceType, 'channel') && any(strcmp(role, {'lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'}))
-                if endsWith(name, '_cell', 'IgnoreCase', true) || endsWith(name, '_bud', 'IgnoreCase', true) || endsWith(name, '_conf', 'IgnoreCase', true)
-                    return;
-                end
-                if any(strcmp(role, {'lineage_confidence','lineage_bud_mask'}))
-                    name = [name '_bud'];
-                else
-                    name = [name '_cell'];
-                end
-            end
+            name = pipelinePhysicalResourceOutputName(node, spec, name);
         end
 
         function tf = resourceOutputNameIsConcrete(app, spec, name) %#ok<INUSD>
@@ -12571,46 +12549,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function value = symbolicBindingValueFromLabel(app, label)
-            label = strtrim(char(string(label)));
-            value = label;
-            if ~(startsWith(label, '<') && endsWith(label, '>'))
-                return;
-            end
-            inner = strtrim(label(2:end-1));
-            tokens = regexp(inner, '^(.+?)\s+output\s+from\s+([^/\s]+)(?:\s*/\s*.*)?$', 'tokens', 'once');
-            if ~isempty(tokens)
-                role = regexprep(strtrim(tokens{1}), '\s+', '_');
-                sourceNode = strtrim(tokens{2});
-                concrete = '';
-                concreteTokens = regexp(inner, '^.+?\s+output\s+from\s+[^/]+/\s*(.+)$', 'tokens', 'once');
-                if ~isempty(concreteTokens)
-                    concrete = strtrim(concreteTokens{1});
-                end
-                variableSuffix = '';
-                if contains(concrete, '/')
-                    parts = regexp(concrete, '\s*/\s*', 'split');
-                    if numel(parts) >= 2
-                        variableSuffix = strtrim(strjoin(parts(2:end), ' / '));
-                    end
-                end
-                if any(strcmp(role, {'lineage_cell_mask','lineage_mother_mask'}))
-                    role = 'lineage_mother';
-                elseif any(strcmp(role, {'lineage_confidence','lineage_bud_mask'}))
-                    role = 'lineage_bud';
-                elseif ~isempty(concrete)
-                    if endsWith(concrete, '_cell', 'IgnoreCase', true)
-                        role = 'lineage_mother';
-                    elseif endsWith(concrete, '_bud', 'IgnoreCase', true) || endsWith(concrete, '_conf', 'IgnoreCase', true)
-                        role = 'lineage_bud';
-                    end
-                end
-                value = ['@resource:' role ':' sourceNode];
-                if ~isempty(variableSuffix)
-                    value = [value ' / ' variableSuffix];
-                end
-            else
-                value = ['@' inner];
-            end
+            value = pipelineSymbolicBindingFromLabel(label);
         end
 
         function sourceNode = symbolicBindingSourceNode(app, value) %#ok<INUSD>

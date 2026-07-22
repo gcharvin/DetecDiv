@@ -9,6 +9,8 @@ tests{end+1} = @testAllKnownModuleContracts; %#ok<AGROW>
 tests{end+1} = @testDynamicCellposeSamContract; %#ok<AGROW>
 tests{end+1} = @testTrackastraContract; %#ok<AGROW>
 tests{end+1} = @testTrackastraResolvesCellposeMask; %#ok<AGROW>
+tests{end+1} = @testCanonicalPhysicalOutputNames; %#ok<AGROW>
+tests{end+1} = @testSymbolicBindingUsesDeclaredRole; %#ok<AGROW>
 tests{end+1} = @testDynamicCnnLstmContract; %#ok<AGROW>
 tests{end+1} = @testDynamicCombineMultipleChannelsContract; %#ok<AGROW>
 tests{end+1} = @testDynamicComputeMetricsContract; %#ok<AGROW>
@@ -162,6 +164,31 @@ key = matlab.lang.makeValidName('classifier_trackastra_1');
 outputs = validation.binding.nodes.(key).resources.outputs;
 assert(any(strcmp({outputs.concreteName},'results_trackastra')), ...
     'Trackastra physical output channel must be results_trackastra.');
+end
+
+function testCanonicalPhysicalOutputNames()
+node = makeNode('classifier', 'cellposesam', struct( ...
+    'pkg', 'cellposesam', 'outputName', 'cellposeSAM'));
+contract = pipelineNodeContract(node);
+spec = contract.resources.out(strcmp({contract.resources.out.role}, 'segmentation'));
+assert(numel(spec) == 1, 'CellposeSAM segmentation resource is not unique.');
+logicalName = pipelinePhysicalResourceOutputName(node, spec, 'cellposeSAM');
+physicalName = pipelinePhysicalResourceOutputName(node, spec, 'results_cellposeSAM_cell');
+assert(strcmp(logicalName, 'results_cellposeSAM_cell'), ...
+    'CellposeSAM logical output name did not resolve to its physical ROI channel.');
+assert(strcmp(physicalName, 'results_cellposeSAM_cell'), ...
+    'CellposeSAM physical output-name normalization is not idempotent.');
+end
+
+function testSymbolicBindingUsesDeclaredRole()
+segmentation = pipelineSymbolicBindingFromLabel( ...
+    '<segmentation output from classifier_cellposesam_1 / results_cellposeSAM_cell>');
+assert(strcmp(segmentation, '@resource:segmentation:classifier_cellposesam_1'), ...
+    'A CellposeSAM _cell suffix must not change the declared segmentation role.');
+lineage = pipelineSymbolicBindingFromLabel( ...
+    '<lineage mother mask output from processor_lineage_1 / results_lineage_cell>');
+assert(strcmp(lineage, '@resource:lineage_mother:processor_lineage_1'), ...
+    'Explicit lineage mother roles should retain their canonical symbolic role.');
 end
 
 function testDynamicCombineMultipleChannelsContract()
