@@ -193,7 +193,7 @@ try
     if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
         shouldPrepareLineage = shouldPrepareLineage || logical(app.DisplayLineageCheckBox.Value);
     end
-    if shouldPrepareLineage && isprop(app,'PaintButton') && app.PaintButton.Value && ~isempty(app.UIAnnotationTable.Selection)
+    if shouldPrepareLineage && score_isEditMode(app) && ~isempty(app.UIAnnotationTable.Selection)
         ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
         sel = app.UIAnnotationTable.Selection;
         ann = app.UIAnnotationTable.Data{sel(1),2};
