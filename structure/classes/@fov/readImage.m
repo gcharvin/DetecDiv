@@ -342,9 +342,12 @@ localLogLoadedImage(obj, channel, frameEff, im, "File", string(localGetSourcePat
 end
 
 function im = localReadStackSeriesPlane(stackPath, pageToRead)
-info = imfinfo(stackPath);
+% Metamorph STK files are TIFF containers with a non-standard extension.
+% Supplying the format avoids extension-based detection failures (and some
+% internal indexing errors) in IMINFO/IMREAD.
+info = imfinfo(stackPath, 'tif');
 if numel(info) >= pageToRead
-    im = imread(stackPath, pageToRead);
+    im = imread(stackPath, 'tif', pageToRead);
     return;
 end
 

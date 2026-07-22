@@ -1614,19 +1614,40 @@ classdef workflow2 < matlab.apps.AppBase
 
             if needReset
 
-                app.ChannelCfg = repmat(struct('enabled',true,'name','','levels',[0 4095],'color',[1 1 1],'weight',1,'auto',true), numel(names), 1);
+                % Start with a single visible source. Enabling every entry is
+                % especially expensive for stack-series datasets, where Z
+                % planes are exposed as display channels (often 100+).
+                app.ChannelCfg = repmat(struct('enabled',false,'name','','levels',[0 4095],'color',[1 1 1],'weight',1,'auto',true), numel(names), 1);
 
                 for i = 1:numel(names)
 
                     app.ChannelCfg(i).name = names{i};
 
-                    app.ChannelCfg(i).enabled = true;
+                    app.ChannelCfg(i).enabled = (i == 1);
 
                     app.ChannelCfg(i).color = [1 1 1];
 
                 end
 
                 app.restoreDisplaySettings(names);
+
+                % A focused pattern editor must render its recorded source
+                % channel on the very first refresh. This also overrides an
+                % old display profile that may have all Z planes enabled.
+                if strcmpi(app.normalizeFocusModuleName(app.FocusModule), 'roipattern') && ...
+                        ~isempty(app.StartupParams) && isstruct(app.StartupParams)
+                    try
+                        [~, ~, ~, startupChanIdx] = app.extractPatternState(app.StartupParams);
+                        startupChanIdx = round(double(startupChanIdx(1)));
+                        if isfinite(startupChanIdx) && startupChanIdx >= 1 && startupChanIdx <= numel(app.ChannelCfg)
+                            for cc = 1:numel(app.ChannelCfg)
+                                app.ChannelCfg(cc).enabled = (cc == startupChanIdx);
+                            end
+                            app.SelectedChannelRow = startupChanIdx;
+                        end
+                    catch
+                    end
+                end
 
                 app.SelectedChannelRow = min(max(1, app.SelectedChannelRow), max(1, numel(names)));
 
@@ -2559,37 +2580,51 @@ classdef workflow2 < matlab.apps.AppBase
 
             nActive = numel(activeList);
 
-            tLoad = tic;
-
             dLoad = [];
+
+            uncached = false;
+            for k = 1:nActive
+                i = activeList(k);
+                key = app.getImageCacheKey(app.SelectedFov, app.SelectedFrame, i);
+                if ~app.isImageCachedKey(key)
+                    uncached = true;
+                    break;
+                end
+            end
+
+            if uncached
+                try
+                    dLoad = uiprogressdlg(app.UIFigure, ...
+                        'Title','Loading raw frame', ...
+                        'Message',sprintf('Preparing channel 1/%d (frame %d)...', nActive, app.SelectedFrame), ...
+                        'Value',0, ...
+                        'Cancelable','off');
+                    drawnow;
+                catch
+                    dLoad = [];
+                end
+            end
 
             for k = 1:nActive
 
                 i = activeList(k);
 
+                if ~isempty(dLoad)
+                    dLoad.Value = max(0, (k-1) / nActive);
+                    dLoad.Message = sprintf('Reading channel %d/%d: %s (frame %d)...', ...
+                        k, nActive, char(string(app.ChannelCfg(i).name)), app.SelectedFrame);
+                    drawnow limitrate;
+                end
+
                 key = app.getImageCacheKey(app.SelectedFov, app.SelectedFrame, i);
 
-                wasCached = app.isImageCachedKey(key);
-
                 imgs{i} = app.getImage(i);
-
-                if ~wasCached && isempty(dLoad) && toc(tLoad) > 0.35 && k < nActive
-
-                    dLoad = uiprogressdlg(app.UIFigure, ...
-                        'Title','Loading raw frame', ...
-                        'Message','Reading channels...', ...
-                        'Value', max(0, (k-1) / nActive), ...
-                        'Cancelable','off');
-
-                end
 
                 if ~isempty(dLoad)
 
                     dLoad.Value = min(1, k / nActive);
 
-                    dLoad.Message = sprintf('Reading channel %d/%d (frame %d)...', k, nActive, app.SelectedFrame);
-
-                    drawnow limitrate nocallbacks;
+                    drawnow limitrate;
 
                 end
 
