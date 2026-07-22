@@ -6,6 +6,7 @@ function varargout = detecdiv_paths_relink_project(obj, varargin)
 %   report = detecdiv_paths_relink_project(obj) % UI prompt for RAWDATA folder
 %   report = detecdiv_paths_relink_project(obj, rawRoot)
 %   report = detecdiv_paths_relink_project(obj, rawRoot, 'Debug', true)
+%   report = detecdiv_paths_relink_project(obj, rawRoot, 'Fovs', [1 3])
 %   report = detecdiv_paths_relink_project(obj, rawRoot, 'Force', true)
 %   report = detecdiv_paths_relink_project(obj, 'Debug', true) % UI + options
 %   [obj, report] = detecdiv_paths_relink_project(obj, rawRoot) % legacy-compatible
@@ -15,7 +16,7 @@ args = varargin;
 if ~isempty(args)
     first = args{1};
     isNameToken = (ischar(first) || (isstring(first) && isscalar(first))) && ...
-        any(strcmpi(string(first), ["Debug","Channels","Force"]));
+        any(strcmpi(string(first), ["Debug","Channels","Fovs","Force"]));
     if ~isNameToken
         rawRoot = string(first);
         args = args(2:end);
@@ -25,6 +26,7 @@ end
 ip = inputParser;
 ip.addParameter('Debug', false, @(x)islogical(x) || isnumeric(x));
 ip.addParameter('Channels', [], @(x)isnumeric(x) || isempty(x));
+ip.addParameter('Fovs', [], @(x)isnumeric(x) || isempty(x));
 ip.addParameter('Force', false, @(x)islogical(x) || isnumeric(x));
 ip.parse(args{:});
 
@@ -32,6 +34,9 @@ debug = logical(ip.Results.Debug);
 forceRebase = logical(ip.Results.Force);
 channels = unique(double(ip.Results.Channels(:)'));
 channels = channels(channels >= 1 & mod(channels,1)==0);
+hasFovFilter = ~isempty(ip.Results.Fovs);
+fovIndices = unique(double(ip.Results.Fovs(:)'), 'stable');
+fovIndices = fovIndices(fovIndices >= 1 & mod(fovIndices,1)==0);
 
 report = struct( ...
     'fovIndex', {}, ...
@@ -89,7 +94,20 @@ catch ME
 end
 
 nFov = numel(obj.fov);
-for i = 1:nFov
+if isempty(fovIndices)
+    if hasFovFilter
+        varargout = localPackOutputs(obj, report, nargout);
+        return;
+    end
+    fovIndices = 1:nFov;
+else
+    fovIndices = fovIndices(fovIndices <= nFov);
+    if isempty(fovIndices)
+        varargout = localPackOutputs(obj, report, nargout);
+        return;
+    end
+end
+for i = fovIndices
     f = obj.fov(i);
 
     nChan = 1;

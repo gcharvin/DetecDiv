@@ -108,6 +108,8 @@ classdef detecdiv < matlab.apps.AppBase
 
             for i=1:numel(app.Data.Project)
                 cmProject = uicontextmenu(app.DetecDivUIFigure);
+                m = uimenu(cmProject,'Text','Relink raw data...');
+                m.MenuSelectedFcn = {@contextMenuRelinkRawDataFcn,i,'Project'};
                 m = uimenu(cmProject,'Text','Refresh Hub lock information');
                 m.MenuSelectedFcn = {@contextMenuRefreshProjectHubLockFcn,i,'Project'};
                 m = uimenu(cmProject,'Text','Release Hub lock and edit here...');
@@ -176,6 +178,8 @@ classdef detecdiv < matlab.apps.AppBase
                     cm=uicontextmenu(app.DetecDivUIFigure);
                     m = uimenu(cm,'Text','Open position...');
                     m.MenuSelectedFcn={@contextMenuPositionFcn,[i,k],'Projectpos'};
+                    m = uimenu(cm,'Text','Relink raw data for this position...');
+                    m.MenuSelectedFcn={@contextMenuRelinkRawDataFcn,[i,k],'Projectpos'};
                     m = uimenu(cm,'Text','Delete ROIs...');
                     m.MenuSelectedFcn={@contextMenuDeleteROIsFcn,[i,k],'Projectpos'};
                     m = uimenu(cm,'Text','Delete current position');
@@ -2244,6 +2248,15 @@ end
                 close(d);
 
             end
+
+            function contextMenuRelinkRawDataFcn(src,event,arg,str) %#ok<INUSD>
+                if strcmp(str, 'Project')
+                    app.relinkTreeRawData(arg(1), []);
+                else
+                    app.relinkTreeRawData(arg(1), arg(2));
+                end
+            end
+
             function contextMenuDeleteROIsFcn(src,event,arg,str)
 
 
@@ -2829,6 +2842,108 @@ end
     end
 
     methods (Access = private)
+
+        function relinkTreeRawData(app, projectIdx, fovIdx)
+            if projectIdx < 1 || projectIdx > numel(app.Data.Project)
+                uialert(app.DetecDivUIFigure, 'The selected project is no longer available.', ...
+                    'Relink raw data', 'Icon', 'warning');
+                return;
+            end
+
+            projectVar = app.Data.Project{projectIdx};
+            try
+                shallowObj = evalin('base', projectVar);
+            catch
+                shallowObj = [];
+            end
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                uialert(app.DetecDivUIFigure, 'The selected shallow project is not available in the workspace.', ...
+                    'Relink raw data', 'Icon', 'warning');
+                return;
+            end
+
+            try
+                detecdiv_hub_assert_project_writable(shallowObj);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Relink raw data', 'Icon', 'error');
+                return;
+            end
+
+            if ~isempty(fovIdx) && (fovIdx < 1 || fovIdx > numel(shallowObj.fov))
+                uialert(app.DetecDivUIFigure, 'The selected position is no longer available.', ...
+                    'Relink raw data', 'Icon', 'warning');
+                return;
+            end
+
+            startDir = pwd;
+            try
+                sourceFov = 1;
+                if ~isempty(fovIdx), sourceFov = fovIdx; end
+                candidates = shallowObj.fov(sourceFov).srcpath;
+                for ii = 1:numel(candidates)
+                    if ~isempty(candidates{ii}) && isfolder(candidates{ii})
+                        startDir = candidates{ii};
+                        break;
+                    end
+                end
+            catch
+                try
+                    if isfolder(shallowObj.io.path), startDir = shallowObj.io.path; end
+                catch
+                end
+            end
+
+            root = uigetdir(startDir, 'Select raw data root or dataset folder for relink');
+            if isequal(root, 0)
+                return;
+            end
+
+            d = [];
+            try
+                d = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Relink raw data', ...
+                    'Message', 'Rebasing FOV source paths...', ...
+                    'Indeterminate', 'on');
+                drawnow;
+            catch
+            end
+            cleanupDlg = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
+
+            try
+                if isempty(fovIdx)
+                    [shallowObj, report] = detecdiv_paths_relink_project(shallowObj, root, ...
+                        'Force', true, 'Debug', false);
+                    scopeText = 'project';
+                else
+                    [shallowObj, report] = detecdiv_paths_relink_project(shallowObj, root, ...
+                        'Fovs', fovIdx, 'Force', true, 'Debug', false);
+                    scopeText = sprintf('position %d', fovIdx);
+                end
+
+                if isempty(report)
+                    uialert(app.DetecDivUIFigure, 'No FOV/channel entry could be relinked.', ...
+                        'Relink raw data', 'Icon', 'warning');
+                    return;
+                end
+
+                okCount = sum([report.ok]);
+                changedCount = sum(~strcmp({report.before}, {report.after}));
+                assignin('base', projectVar, shallowObj);
+
+                app.safeCloseProgressDialog(d);
+                d = [];
+                app.saveShallowProjectWithProgress(shallowObj, 'Saving relinked project...');
+
+                gatherVarsFromWorkspace(app);
+                displayNodes(app);
+                uialert(app.DetecDivUIFigure, sprintf( ...
+                    'Raw data relinked for %s.\n\nReady entries: %d/%d\nChanged entries: %d', ...
+                    scopeText, okCount, numel(report), changedCount), ...
+                    'Relink raw data', 'Icon', 'success');
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Relink raw data failed', 'Icon', 'error');
+            end
+        end
 
         function  displayClassiImage(app,clas)
 

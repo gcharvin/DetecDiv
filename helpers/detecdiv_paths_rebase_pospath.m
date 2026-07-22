@@ -121,6 +121,17 @@ if isfolder(candDS)
     end
 end
 
+% Common synced-drive case: the selected root (for example
+% Z:\Gilles\Data) shares a named ancestor with the saved absolute path
+% (...\SynologyDrive\Data\coudreuse\...). Reuse the remaining suffix
+% deterministically before falling back to a recursive scan.
+cand = localCandidateFromMatchingAncestor(oldPosPath, userPick);
+if strlength(cand) > 0 && isfolder(cand)
+    p2 = cand; ok = true; how = "matchedAncestorSuffix";
+    if debug, fprintf('[paths]   SUCCESS: resolved using matching ancestor suffix: %s\n', cand); end
+    return;
+end
+
 % =========================================================
 % A) user picked upstream root -> search datasetName under it (limited depth)
 % =========================================================
@@ -148,6 +159,31 @@ else
     if debug, fprintf('[paths]   FAIL: dataset found but requested Pos not present\n'); end
 end
 
+end
+
+function cand = localCandidateFromMatchingAncestor(oldPath, newRoot)
+cand = "";
+oldNorm = replace(string(oldPath), "\", "/");
+rootNorm = replace(string(newRoot), "\", "/");
+oldParts = split(oldNorm, "/");
+rootParts = split(rootNorm, "/");
+oldParts = oldParts(oldParts ~= "");
+rootParts = rootParts(rootParts ~= "");
+if isempty(oldParts) || isempty(rootParts)
+    return;
+end
+
+anchor = rootParts(end);
+idx = find(strcmpi(oldParts, anchor), 1, 'last');
+if isempty(idx) || idx >= numel(oldParts)
+    return;
+end
+
+tail = oldParts(idx+1:end);
+cand = string(newRoot);
+for i = 1:numel(tail)
+    cand = string(fullfile(cand, tail(i)));
+end
 end
 
 function out = localFindFolder(root, targetName, maxDepth, debug)
