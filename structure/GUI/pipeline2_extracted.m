@@ -16024,6 +16024,12 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if hubExecution
                 ctx.run.runtimeInventoryMode = 'server_resolved';
+                updateRunSaveProgress(app, progressDlg, 'Preparing run: scanning lightweight dataseries inventory...', 0.48);
+                dataSeriesNames = runtimeDataSeriesNames(app);
+                if ~isempty(dataSeriesNames)
+                    ctx.dataSeriesNames = dataSeriesNames;
+                    ctx.dataSeries = dataSeriesNames;
+                end
             else
                 updateRunSaveProgress(app, progressDlg, 'Preparing run: scanning runtime dataseries...', 0.48);
                 dataSeriesNames = runtimeDataSeriesNames(app);
