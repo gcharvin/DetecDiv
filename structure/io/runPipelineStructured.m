@@ -234,19 +234,12 @@ function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
 if ~pipelineUsesPythonBackend(pipe, ctx)
     return;
 end
-cfg = resolvePythonPreflightConfig(ctx);
-args = {'debug', true, 'mode', cfg.mode};
-if strcmpi(cfg.mode, 'custom')
-    args = [args {'envName', cfg.envName}]; %#ok<AGROW>
-    if ~isempty(cfg.envPath)
-        args = [args {'envPath', cfg.envPath}]; %#ok<AGROW>
-    end
-end
+[cfg, args] = pipelinePythonPreflightConfig(ctx);
 try
     info = select_and_load_conda_env(args{:});
 catch ME
     if contains(ME.message, 'Unknown option "mode"')
-        info = select_and_load_conda_env('debug', true);
+        info = select_and_load_conda_env('debug', true, 'backend', cfg.backend);
     else
         rethrow(ME);
     end
@@ -261,31 +254,12 @@ ctx.exec.python = mergeStruct(ctx.exec.python, struct( ...
     'mode', cfg.mode, ...
     'envName', cfg.envName, ...
     'envPath', cfg.envPath, ...
+    'backend', cfg.backend, ...
+    'wslDistro', cfg.wslDistro, ...
+    'wslEnvPath', cfg.wslEnvPath, ...
     'preflight', true, ...
     'preflightDone', true, ...
     'info', info));
-end
-
-function cfg = resolvePythonPreflightConfig(ctx)
-cfg = struct('mode', 'default', 'envName', '', 'envPath', '');
-try
-    if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
-        py = ctx.exec.python;
-        if isfield(py,'mode') && ~isempty(py.mode)
-            cfg.mode = lower(char(string(py.mode)));
-        end
-        if isfield(py,'envName') && ~isempty(py.envName)
-            cfg.envName = char(string(py.envName));
-        end
-        if isfield(py,'envPath') && ~isempty(py.envPath)
-            cfg.envPath = char(string(py.envPath));
-        end
-    end
-catch
-end
-if ~any(strcmp(cfg.mode, {'default','custom'}))
-    cfg.mode = 'default';
-end
 end
 
 function tf = pipelineUsesPythonBackend(pipe, ctx)
@@ -2027,6 +2001,7 @@ function ctx = executeClassifierNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getRuntimeNodeParams(ctx, node, 'classifier');
+    p = pipelineApplyPythonBackendToNodeParams(p, pkgName, ctx);
     intent = classifierRunIntent(ctx, p);
     refClassi = resolveClassifierReference(node, p, ctx);
     clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);

@@ -237,19 +237,12 @@ function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
 if ~pipelineUsesPythonBackend(pipe, ctx)
     return;
 end
-cfg = resolvePythonPreflightConfig(ctx);
-args = {'debug', true, 'mode', cfg.mode};
-if strcmpi(cfg.mode, 'custom')
-    args = [args {'envName', cfg.envName}]; %#ok<AGROW>
-    if ~isempty(cfg.envPath)
-        args = [args {'envPath', cfg.envPath}]; %#ok<AGROW>
-    end
-end
+[cfg, args] = pipelinePythonPreflightConfig(ctx);
 try
     info = select_and_load_conda_env(args{:});
 catch ME
     if contains(ME.message, 'Unknown option "mode"')
-        info = select_and_load_conda_env('debug', true);
+        info = select_and_load_conda_env('debug', true, 'backend', cfg.backend);
     else
         rethrow(ME);
     end
@@ -264,31 +257,12 @@ ctx.exec.python = mergeStruct(ctx.exec.python, struct( ...
     'mode', cfg.mode, ...
     'envName', cfg.envName, ...
     'envPath', cfg.envPath, ...
+    'backend', cfg.backend, ...
+    'wslDistro', cfg.wslDistro, ...
+    'wslEnvPath', cfg.wslEnvPath, ...
     'preflight', true, ...
     'preflightDone', true, ...
     'info', info));
-end
-
-function cfg = resolvePythonPreflightConfig(ctx)
-cfg = struct('mode', 'default', 'envName', '', 'envPath', '');
-try
-    if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
-        py = ctx.exec.python;
-        if isfield(py,'mode') && ~isempty(py.mode)
-            cfg.mode = lower(char(string(py.mode)));
-        end
-        if isfield(py,'envName') && ~isempty(py.envName)
-            cfg.envName = char(string(py.envName));
-        end
-        if isfield(py,'envPath') && ~isempty(py.envPath)
-            cfg.envPath = char(string(py.envPath));
-        end
-    end
-catch
-end
-if ~any(strcmp(cfg.mode, {'default','custom'}))
-    cfg.mode = 'default';
-end
 end
 
 function tf = pipelineUsesPythonBackend(pipe, ctx)
@@ -2906,43 +2880,7 @@ end
 end
 
 function p = applyLocalPythonBackendToClassifierParams(p, pkgName, ctx)
-try
-    pkg = lower(strtrim(char(string(pkgName))));
-catch
-    pkg = '';
-end
-if ~strcmp(pkg, 'sam31')
-    return;
-end
-
-target = '';
-try
-    if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) ...
-            && isfield(ctx.run, 'executionTarget') && ~isempty(ctx.run.executionTarget)
-        target = lower(strtrim(char(string(ctx.run.executionTarget))));
-    end
-catch
-    target = '';
-end
-if isempty(target)
-    try
-        if isstruct(ctx) && isfield(ctx, 'exec') && isstruct(ctx.exec) ...
-                && isfield(ctx.exec, 'python') && isstruct(ctx.exec.python) ...
-                && isfield(ctx.exec.python, 'backend') && ~isempty(ctx.exec.python.backend)
-            target = lower(strtrim(char(string(ctx.exec.python.backend))));
-        end
-    catch
-        target = '';
-    end
-end
-target = strrep(target, '-', '_');
-target = strrep(target, ' ', '_');
-
-if any(strcmp(target, {'local_wsl','wsl','localwsl','local_linux'}))
-    p.backend = 'wsl';
-elseif any(strcmp(target, {'local','windows','local_windows','local_matlab'}))
-    p.backend = 'local';
-end
+p = pipelineApplyPythonBackendToNodeParams(p, pkgName, ctx);
 end
 
 function clsObj = applyClassifierReference(clsObj, refClassi)
