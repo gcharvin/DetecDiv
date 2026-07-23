@@ -40,6 +40,8 @@ classdef roi < handle
     end
     properties (Transient)
              parent=[] % reference of the parent field of view
+             cellModel=struct() % lazy, compact object/track/state model cache
+             cellModelInfo=struct('loaded',false,'filename','','datenum',NaN)
     end
     methods
         function obj = roi(id,roiarr)

@@ -15,8 +15,11 @@ if strlength(sourceHint) == 0
     sourceHint = channelName;
 end
 
-ensureCellInformationDataseries(roiobj);
 idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiobj.data), 1, 'first');
+if isempty(idx) && p.Results.CreateIfMissing
+    ensureCellInformationDataseries(roiobj);
+    idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiobj.data), 1, 'first');
+end
 if isempty(idx)
     key = "";
     return;

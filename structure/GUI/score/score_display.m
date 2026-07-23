@@ -186,15 +186,9 @@ app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.
 
 % --- Overlay lineage (fille→mère)
 try
-    shouldPrepareLineage = false;
-    if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
-        shouldPrepareLineage = shouldPrepareLineage || logical(app.DisplayBudPairingCheckBox.Value);
-    end
-    if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
-        shouldPrepareLineage = shouldPrepareLineage || logical(app.DisplayLineageCheckBox.Value);
-    end
-    if shouldPrepareLineage && score_isEditMode(app) && ~isempty(app.UIAnnotationTable.Selection)
-        ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
+    lineageUI = score_lineageDisplayOptions(app);
+    shouldPrepareLineage = lineageUI.showBudPairing || lineageUI.showGenealogy;
+    if shouldPrepareLineage && ~isempty(app.UIAnnotationTable.Selection)
         sel = app.UIAnnotationTable.Selection;
         ann = app.UIAnnotationTable.Data{sel(1),2};
         cls = app.UIAnnotationTable.Data{sel(1),3};
@@ -203,11 +197,11 @@ try
         if ~isempty(lineageChannelIdx)
             lineagePix = selectedROI.findChannelID(selectedROI.display.channel{lineageChannelIdx});
             if ~isempty(lineagePix) && lineagePix >= 1
-                activateLineageSourceForChannel(selectedROI, lineageChannelName, lineagePix, ...
-                    'sourceHint', ann, ...
-                    'exclusive', false, ...
-                    'WriteLegacyAlias', false, ...
-                    'CreateIfMissing', false);
+                cfg = score_getObjectDisplayConfig(selectedROI, lineageChannelName);
+                if ~strcmp(cfg.lineageSource, '<none>')
+                    score_configureLineageDisplay(selectedROI, lineageChannelName, ...
+                        lineagePix, cfg, lineageUI.showBudPairing, lineageUI.showGenealogy);
+                end
             end
         end
     end
@@ -373,28 +367,14 @@ end
 end
 
 function opts = localApplyLineageOverlayOptions(app, opts)
-showBud = true;
-showGenealogy = false;
+lineageUI = score_lineageDisplayOptions(app);
+opts.ShowBudPairingOverlay = lineageUI.showBudPairing;
+opts.ShowLineageOverlay = lineageUI.showGenealogy;
+opts.BudLinkColor = lineageUI.budLinkColor;
+opts.GenealogyLinkColor = lineageUI.genealogyLinkColor;
 try
-    if isprop(app, 'ShowBudPairingOverlay') && ~isempty(app.ShowBudPairingOverlay)
-        showBud = logical(app.ShowBudPairingOverlay);
-    end
-    if isprop(app, 'ShowLineageOverlay') && ~isempty(app.ShowLineageOverlay)
-        showGenealogy = logical(app.ShowLineageOverlay);
-    end
-    if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
-        showBud = logical(app.DisplayBudPairingCheckBox.Value);
-    end
-    if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
-        showGenealogy = logical(app.DisplayLineageCheckBox.Value);
-    end
-catch
-end
-opts.ShowBudPairingOverlay = showBud;
-opts.ShowLineageOverlay = showGenealogy;
-try
-    app.ShowBudPairingOverlay = showBud;
-    app.ShowLineageOverlay = showGenealogy;
+    app.ShowBudPairingOverlay = lineageUI.showBudPairing;
+    app.ShowLineageOverlay = lineageUI.showGenealogy;
 catch
 end
 end

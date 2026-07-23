@@ -35,6 +35,12 @@ levels       = param.levels;
 rgb          = param.RGB;
 paintChannel = param.paintChannel;
 defaultClass = param.defaultClass;
+requestedFrameIdx = fr;
+actualFrame = requestedFrameIdx;
+if isfield(param, 'frames') && ~isempty(param.frames)
+    boundedFrameIdx = max(1, min(numel(param.frames), requestedFrameIdx));
+    actualFrame = param.frames(boundedFrameIdx);
+end
 if isfield(param, 'colorMode'), colorMode = param.colorMode; else, colorMode = repmat({'rgb'}, 1, numel(channel)); end
 if isfield(param, 'colormapName'), colormapName = param.colormapName; else, colormapName = repmat({''}, 1, numel(channel)); end
 
@@ -221,6 +227,28 @@ for ch = 1:numel(channel)
         end
     end
 
+    objectCfg = localObjectDisplayConfig(param, thisName);
+    if ~isempty(objectCfg)
+        providerName = char(string(objectCfg.maskProvider));
+        try
+            [resolvedProvider, ~, ~] = ...
+                score_resolveMaskProvider(roitmp, thisName);
+            if ~isempty(resolvedProvider), providerName = resolvedProvider; end
+        catch
+        end
+        if ~any(strcmp(providerName, {'','<family default>'})) && ...
+                ~strcmpi(providerName, thisName)
+            try
+                providerPix = roitmp.findChannelID(providerName);
+                if ~isempty(providerPix) && providerPix(1) <= size(imtmp, 3)
+                    L = double(imtmp(:,:,providerPix(1),fr));
+                end
+            catch
+                % Keep the displayed channel as the safe provider fallback.
+            end
+        end
+    end
+
     % liste des canaux indexés (dans l'espace display)
     currentIndx = [];
     if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'indexed') ...
@@ -258,8 +286,36 @@ for ch = 1:numel(channel)
         isPaintThis = any(paintChannel ~= 0) && ~isempty(currentIndx) && any(paintChannel == currentIndx);
     end
 
-    % couleurs
-    useLabelColors = isPaintThis;
+    % Color strategy is independent from editability. The legacy paint
+    % channel remains a compatibility fallback for old callers.
+    renderMode = 'normal';
+    if isPaintThis
+        renderMode = 'edit';
+    elseif ~isempty(objectCfg)
+        renderMode = lower(char(string(objectCfg.mode)));
+    end
+
+    colorStrategy = 'single';
+    criterion = 'Channel color';
+    if ~isempty(objectCfg)
+        criterion = char(string(objectCfg.criterion));
+    end
+    if strcmp(renderMode, 'edit')
+        colorStrategy = 'label';
+    elseif strcmp(renderMode, 'multicolor')
+        if strcmpi(criterion, 'Frame instance')
+            colorStrategy = 'label';
+        else
+            colorStrategy = 'mapped';
+        end
+    elseif strcmp(renderMode, 'semantic')
+        if strcmpi(criterion, 'Frame instance')
+            colorStrategy = 'label';
+        elseif any(strcmpi(criterion, {'Track','New bud','Cell state'}))
+            colorStrategy = 'mapped';
+        end
+    end
+    useLabelColors = strcmp(colorStrategy, 'label');
 
     if useLabelColors
         levmap = zeros(numel(indices), 3);
@@ -267,12 +323,30 @@ for ch = 1:numel(channel)
             levmap(ii,:) = label2color(indices(ii));
         end
     else
-        % fallback si pas de rgb ou index hors limites
-        if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'rgb') ...
-                && dispIdx >= 1 && dispIdx <= size(roitmp.display.rgb,1)
-            levmap = repmat(roitmp.display.rgb(dispIdx,:), [numel(indices), 1]);
-        else
-            levmap = repmat([1 1 1], [numel(indices), 1]);
+        baseColor = localChannelColor(roitmp, dispIdx);
+        if ~isempty(objectCfg) && strcmp(renderMode, 'semantic') && ...
+                any(strcmpi(objectCfg.criterion, {'Family','New bud','Cell state'}))
+            baseColor = localModelFamilyColor( ...
+                roitmp, objectCfg, thisName, objectCfg.familyColor);
+        end
+        levmap = repmat(baseColor, [numel(indices), 1]);
+        if strcmp(colorStrategy, 'mapped')
+            [modelColors, modelHandled] = localModelLabelColors( ...
+                roitmp, objectCfg, thisName, actualFrame, indices, baseColor, criterion);
+            if modelHandled
+                levmap = modelColors;
+            elseif strcmpi(criterion, 'Track')
+                for ii = 1:numel(indices)
+                    levmap(ii,:) = label2color(indices(ii));
+                end
+            elseif strcmpi(criterion, 'New bud')
+                newBudIds = localNewBudIds(roitmp, objectCfg, thisName, actualFrame);
+                for ii = 1:numel(indices)
+                    if any(double(newBudIds) == double(indices(ii)))
+                        levmap(ii,:) = objectCfg.semanticColor;
+                    end
+                end
+            end
         end
     end
 
@@ -321,6 +395,9 @@ for ch = 1:numel(channel)
             if useLabelColors
                 [indexedOverlay, alphaOverlay] = compositeLabelColorOverlay( ...
                     indexedOverlay, alphaOverlay, L, indices, fillAlpha);
+            elseif strcmp(colorStrategy, 'mapped')
+                [indexedOverlay, alphaOverlay] = compositePerLabelColorOverlay( ...
+                    indexedOverlay, alphaOverlay, L, indices, levmap, fillAlpha);
             else
                 mask = ismember(L, indices);
                 if any(mask(:))
@@ -422,6 +499,18 @@ for c = 1:3
 end
 
 alphaOut(mask) = newAlpha;
+end
+
+function [rgbOut, alphaOut] = compositePerLabelColorOverlay(rgbIn, alphaIn, L, indices, colors, alpha)
+rgbOut = rgbIn;
+alphaOut = alphaIn;
+for i = 1:numel(indices)
+    mask = (L == indices(i));
+    if any(mask(:))
+        [rgbOut, alphaOut] = compositeOverlayLayer( ...
+            rgbOut, alphaOut, mask, colors(i,:), alpha);
+    end
+end
 end
 
 function img = adjustIntensityImage(img, lims)
@@ -565,6 +654,157 @@ try
     tf = logical(defaultClass);
 catch
     tf = logical(defaultClass);
+end
+end
+
+function cfg = localObjectDisplayConfig(param, channelName)
+cfg = [];
+try
+    if ~isfield(param, 'objectDisplay') || isempty(param.objectDisplay) || ...
+            ~isstruct(param.objectDisplay)
+        return;
+    end
+    names = string({param.objectDisplay.channelName});
+    hit = find(strcmpi(names, string(channelName)), 1, 'first');
+    if ~isempty(hit)
+        cfg = param.objectDisplay(hit);
+    end
+catch
+    cfg = [];
+end
+end
+
+function color = localChannelColor(roiobj, dispIdx)
+color = [1 1 1];
+try
+    if isprop(roiobj,'display') && isstruct(roiobj.display) && ...
+            isfield(roiobj.display,'rgb') && dispIdx >= 1 && ...
+            dispIdx <= size(roiobj.display.rgb,1)
+        color = double(roiobj.display.rgb(dispIdx,:));
+    end
+catch
+end
+color = max(0, min(1, color(:).'));
+end
+
+function color = localModelFamilyColor(roiobj, cfg, channelName, fallback)
+color = fallback;
+try
+    [model, status] = score_getCellModel(roiobj);
+    if ~strcmp(status, 'ok'), return; end
+    [familyIndex, ~] = score_resolveCellModelFamily(model, cfg, channelName);
+    if ~isempty(familyIndex)
+        color = double(model.families.color_rgb(familyIndex,:)) ./ 255;
+    end
+catch
+end
+color = max(0, min(1, double(color(:).')));
+end
+
+function ids = localNewBudIds(roiobj, cfg, channelName, frame)
+ids = [];
+try
+    idx = find(arrayfun(@(x) isprop(x,'groupid') && ...
+        strcmp(char(string(x.groupid)), 'cell_information'), roiobj.data), 1, 'first');
+    if isempty(idx) || ~isstruct(roiobj.data(idx).userData)
+        return;
+    end
+    ud = roiobj.data(idx).userData;
+    if ~isfield(ud, 'lineageSources') || ~isstruct(ud.lineageSources)
+        return;
+    end
+    sourceKey = char(string(cfg.lineageSource));
+    if any(strcmp(sourceKey, {'<family default>','<none>',''}))
+        sourceKey = '';
+        fields = fieldnames(ud.lineageSources);
+        for i = 1:numel(fields)
+            candidate = ud.lineageSources.(fields{i});
+            if isfield(candidate, 'channelName') && ...
+                    strcmp(string(candidate.channelName), string(channelName))
+                sourceKey = fields{i};
+                break;
+            end
+        end
+        if isempty(sourceKey) && isfield(ud, 'activeLineageSource')
+            sourceKey = char(string(ud.activeLineageSource));
+        end
+    end
+    if isempty(sourceKey) || ~isfield(ud.lineageSources, sourceKey)
+        return;
+    end
+    source = ud.lineageSources.(sourceKey);
+    if ~isfield(source, 'events') || isempty(source.events)
+        return;
+    end
+    for i = 1:numel(source.events)
+        event = source.events(i);
+        if isfield(event, 'startFrame') && isfield(event, 'childId') && ...
+                double(event.startFrame) == double(frame)
+            ids(end+1) = double(event.childId); %#ok<AGROW>
+        end
+    end
+    ids = unique(ids);
+catch
+    ids = [];
+end
+end
+
+function [colors, handled] = localModelLabelColors( ...
+        roiobj, cfg, channelName, frame, labels, baseColor, criterion)
+colors = repmat(baseColor, numel(labels), 1);
+handled = false;
+try
+    [model, status] = score_getCellModel(roiobj);
+    if ~strcmp(status, 'ok')
+        return;
+    end
+    [familyIndex, familyId] = score_resolveCellModelFamily( ...
+        model, cfg, channelName);
+    if isempty(familyIndex)
+        return;
+    end
+
+    rows = find(model.instances.family_id == familyId & ...
+        model.instances.frame == uint32(frame));
+    frameLabels = double(model.instances.mask_label(rows));
+    handled = true;
+    if strcmpi(criterion, 'Track')
+        for i = 1:numel(labels)
+            hit = find(frameLabels == double(labels(i)), 1, 'first');
+            if isempty(hit), continue; end
+            trackId = model.instances.track_id(rows(hit));
+            if trackId > 0
+                colors(i,:) = label2color(double(trackId));
+            else
+                colors(i,:) = label2color(labels(i));
+            end
+        end
+    elseif strcmpi(criterion, 'Cell state')
+        for i = 1:numel(labels)
+            hit = find(frameLabels == double(labels(i)), 1, 'first');
+            if isempty(hit), continue; end
+            stateId = model.instances.state_id(rows(hit));
+            stateRow = find(model.states.state_id == stateId, 1, 'first');
+            if ~isempty(stateRow)
+                colors(i,:) = double(model.states.color_rgb(stateRow,:)) ./ 255;
+            end
+        end
+    elseif strcmpi(criterion, 'New bud')
+        relationRows = find(model.relations.family_id == familyId & ...
+            model.relations.event_frame == uint32(frame));
+        childTracks = model.relations.child_track_id(relationRows);
+        for i = 1:numel(labels)
+            hit = find(frameLabels == double(labels(i)), 1, 'first');
+            if isempty(hit), continue; end
+            if any(childTracks == model.instances.track_id(rows(hit)))
+                colors(i,:) = cfg.semanticColor;
+            end
+        end
+    else
+        handled = false;
+    end
+catch
+    handled = false;
 end
 end
 

@@ -3,6 +3,7 @@ function layoutOut=score_updateLayout(layoutOptions,roiobj)
  roitmp = roiobj(1);
 score_applyDefaultChannelSelection(roitmp);
 score_loadChannelsForDisplay(roitmp, []);
+score_loadChannelsForDisplay(roitmp, localObjectMaskProviders(roitmp));
 if numel(roitmp.image) == 0
     try
         roitmp.load('Data', false, 'Silent');
@@ -41,6 +42,7 @@ dsC = normalizeChannelScaleForScore(dsC);
 
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
+layoutOptions.objectDisplay = struct([]);
 
 %  if size( dsC.displaylim,2)~=numel(roitmp.channelid)
 % roitmp.computeDisplaylim;
@@ -147,6 +149,41 @@ if ~isempty(selCh)
     layoutOptions.colorMode=colorMode;
     layoutOptions.colormapName=colormapName;
     layoutOptions.weights=weights;
+    objectDisplay = struct([]);
+    for i = 1:numel(channels)
+        cfg = score_getObjectDisplayConfig(roitmp, channels{i});
+        if isempty(objectDisplay)
+            objectDisplay = cfg;
+        else
+            objectDisplay(end+1) = cfg; %#ok<AGROW>
+        end
+    end
+    layoutOptions.objectDisplay = objectDisplay;
+    if ~isempty(objectDisplay)
+        styleIdx = 1;
+        try
+            if isfield(roitmp.display, 'lineage') && ...
+                    isfield(roitmp.display.lineage, 'channelName')
+                hit = find(strcmpi(string({objectDisplay.channelName}), ...
+                    string(roitmp.display.lineage.channelName)), 1, 'first');
+                if ~isempty(hit), styleIdx = hit; end
+            end
+        catch
+        end
+        layoutOptions.BudLinkColor = objectDisplay(styleIdx).budLinkColor;
+        layoutOptions.GenealogyLinkColor = objectDisplay(styleIdx).genealogyLinkColor;
+    end
+    try
+        if isfield(roitmp.display, 'lineage')
+            if isfield(roitmp.display.lineage, 'showBudPairing')
+                layoutOptions.ShowBudPairingOverlay = logical(roitmp.display.lineage.showBudPairing);
+            end
+            if isfield(roitmp.display.lineage, 'showGenealogy')
+                layoutOptions.ShowLineageOverlay = logical(roitmp.display.lineage.showGenealogy);
+            end
+        end
+    catch
+    end
     layoutOptions.scale=logical(dsC.scale(selCh));
     if isfield(dsC, 'log') && ~isempty(dsC.log)
         layoutOptions.log=logical(dsC.log(selCh));
@@ -403,6 +440,30 @@ try
     end
 catch
     labels = dsC.channel(selCh);
+end
+end
+
+function providers = localObjectMaskProviders(roiobj)
+providers = {};
+try
+    if ~isfield(roiobj.display, 'objectDisplay') || ...
+            ~isstruct(roiobj.display.objectDisplay) || ...
+            ~isfield(roiobj.display.objectDisplay, 'channels')
+        return;
+    end
+    records = roiobj.display.objectDisplay.channels;
+    for i = 1:numel(records)
+        if ~isfield(records, 'maskProvider')
+            continue;
+        end
+        provider = char(string(records(i).maskProvider));
+        if ~any(strcmp(provider, {'','<family default>'}))
+            providers{end+1} = provider; %#ok<AGROW>
+        end
+    end
+    providers = unique(providers, 'stable');
+catch
+    providers = {};
 end
 end
 

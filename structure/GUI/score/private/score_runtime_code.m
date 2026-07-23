@@ -71,13 +71,13 @@ classdef score < matlab.apps.AppBase
         AnnotationsTab                  matlab.ui.container.Tab
         AnnotationPanel                 matlab.ui.container.Panel
         SelectedchannelpropertiesPanel  matlab.ui.container.Panel
+        DisplayCriterionDropDown        matlab.ui.control.DropDown
+        ColorbyLabel                    matlab.ui.control.Label
         ChannelModeButtonGroup          matlab.ui.container.ButtonGroup
         EditButton                      matlab.ui.control.RadioButton
         SemanticButton                  matlab.ui.control.RadioButton
         MulticolorButton                matlab.ui.control.RadioButton
         NormalButton                    matlab.ui.control.RadioButton
-        DisplayLineageCheckBox          matlab.ui.control.CheckBox
-        DisplayBudPairingCheckBox       matlab.ui.control.CheckBox
         MaskColorPicker                 matlab.ui.control.ColorPicker
         AnnoatationcolorLabel           matlab.ui.control.Label
         Transparency                    matlab.ui.control.Slider
@@ -90,9 +90,36 @@ classdef score < matlab.apps.AppBase
         DeleteAnnnotationButton         matlab.ui.control.Button
         NewAnnotationButton             matlab.ui.control.Button
         ObjectspanelPanel               matlab.ui.container.Panel
+        CellModelStatusLabel            matlab.ui.control.Label
+        SelectedCellStateDropDown       matlab.ui.control.DropDown
+        SelectedCellStateDropDownLabel  matlab.ui.control.Label
+        SelectedTrackIDEditField        matlab.ui.control.EditField
+        SelectedTrackIDEditFieldLabel   matlab.ui.control.Label
+        SelectedObjectIDEditField       matlab.ui.control.EditField
+        SelectedObjectIDLabel           matlab.ui.control.Label
         ObjectColorsPanel               matlab.ui.container.Panel
-        SelectedobjectindexEditField    matlab.ui.control.NumericEditField
-        SelectedobjectindexEditFieldLabel  matlab.ui.control.Label
+        GenealogyLinkColorPicker        matlab.ui.control.ColorPicker
+        GenealogyLinkColorPickerLabel   matlab.ui.control.Label
+        BudlinkcolorColorPicker         matlab.ui.control.ColorPicker
+        BudlinkcolorColorPickerLabel    matlab.ui.control.Label
+        SemanticValueColorPicker        matlab.ui.control.ColorPicker
+        SemanticValueColorPickerLabel   matlab.ui.control.Label
+        SemanticValueDropDown           matlab.ui.control.DropDown
+        SemanticValueDropDownLabel      matlab.ui.control.Label
+        FamilyColorPicker               matlab.ui.control.ColorPicker
+        FamilyColorPickerLabel          matlab.ui.control.Label
+        LineageSourceDropDown           matlab.ui.control.DropDown
+        LineageSourceDropDownLabel      matlab.ui.control.Label
+        MaskProviderDropDown            matlab.ui.control.DropDown
+        MaskProviderDropDownLabel       matlab.ui.control.Label
+        ObjectFamilyDropDown            matlab.ui.control.DropDown
+        ObjectFamilyDropDownLabel       matlab.ui.control.Label
+        LineageDisplayButtonGroup       matlab.ui.container.ButtonGroup
+        FullGenealogyRadioButton        matlab.ui.control.RadioButton
+        BudLinksRadioButton             matlab.ui.control.RadioButton
+        NoLineageRadioButton            matlab.ui.control.RadioButton
+        MasklabelEditField              matlab.ui.control.NumericEditField
+        MasklabelEditFieldLabel         matlab.ui.control.Label
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
@@ -408,6 +435,7 @@ classdef score < matlab.apps.AppBase
 
                 disp(['Selected ROI: ', selectedROI.id]);
                 displayROIChannels(app);
+                score_refreshObjectDisplayUI(app);
                 numFrames =max(2, size(selectedROI.image, 4));
 
 
@@ -735,26 +763,18 @@ classdef score < matlab.apps.AppBase
                 return;
             end
 
-            showBud = app.ShowBudPairingOverlay;
-            showGenealogy = app.ShowLineageOverlay;
-            try
-                if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
-                    showBud = logical(app.DisplayBudPairingCheckBox.Value);
-                end
-                if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
-                    showGenealogy = logical(app.DisplayLineageCheckBox.Value);
-                end
-            catch
-            end
+            lineageUI = score_lineageDisplayOptions(app);
+            showBud = lineageUI.showBudPairing;
+            showGenealogy = lineageUI.showGenealogy;
             app.ShowBudPairingOverlay = showBud;
             app.ShowLineageOverlay = showGenealogy;
 
-            if ~score_isEditMode(app) || (~showBud && ~showGenealogy)
+            if ~showBud && ~showGenealogy
                 app.clearLineageDisplayForROI(roi);
                 return;
             end
 
-            [roi, channelName, pix, sourceHint] = app.selectedPaintLineageChannel();
+            [roi, channelName, pix, ~] = app.selectedPaintLineageChannel();
             if isempty(roi) || isempty(channelName)
                 key = app.restoreLineageDisplayFromUserData(roi, showBud, showGenealogy);
                 if isempty(key)
@@ -763,11 +783,13 @@ classdef score < matlab.apps.AppBase
                 return;
             end
 
-            key = char(activateLineageSourceForChannel(roi, channelName, pix, ...
-                'sourceHint', sourceHint, ...
-                'exclusive', true, ...
-                'WriteLegacyAlias', false, ...
-                'CreateIfMissing', false));
+            cfg = score_getObjectDisplayConfig(roi, channelName);
+            if strcmp(cfg.lineageSource, '<none>')
+                app.clearLineageDisplayForROI(roi);
+                return;
+            end
+            key = score_configureLineageDisplay(roi, channelName, pix, cfg, ...
+                showBud, showGenealogy);
             if isempty(key)
                 key = app.restoreLineageDisplayFromUserData(roi, showBud, showGenealogy);
                 if isempty(key)
@@ -776,15 +798,7 @@ classdef score < matlab.apps.AppBase
                 return;
             end
 
-            roi.display.lineage = struct( ...
-                'enabled', true, ...
-                'channelName', channelName, ...
-                'channelPix', double(pix), ...
-                'sourceKey', key, ...
-                'showBudPairing', logical(showBud), ...
-                'showGenealogy', logical(showGenealogy), ...
-                'budWindowBefore', 0, ...
-                'budWindowAfter', 6);
+            % score_configureLineageDisplay owns the display-only binding.
         end
 
         function key = restoreLineageDisplayFromUserData(app, roi, showBud, showGenealogy) %#ok<INUSL>
@@ -895,6 +909,51 @@ classdef score < matlab.apps.AppBase
             catch ME
                 warning('Score:LineageDisplay', ...
                     'Could not refresh lineage display: %s', ME.message);
+            end
+        end
+
+        function ObjectDisplayModeChanged(app, event)
+            score_storeObjectDisplayUI(app);
+            app.PaintButtonValueChanged(event);
+            score_refreshObjectDisplayUI(app);
+        end
+
+        function ObjectDisplaySettingChanged(app, event) %#ok<INUSD>
+            try
+                score_storeObjectDisplayUI(app);
+                app.syncLineageDisplayForPaintChannel();
+                score_refreshObjectDisplayUI(app);
+                score_display(app, 'refresh');
+            catch ME
+                warning('Score:ObjectDisplaySetting', ...
+                    'Could not apply object display setting: %s', ME.message);
+            end
+        end
+
+        function ObjectDisplayColorChanged(app, event) %#ok<INUSD>
+            try
+                score_storeObjectDisplayUI(app);
+                score_storeCellModelColors(app);
+                app.syncLineageDisplayForPaintChannel();
+                score_refreshObjectDisplayUI(app);
+                score_display(app, 'refresh');
+            catch ME
+                warning('Score:ObjectDisplayColor', ...
+                    'Could not apply cellular display color: %s', ME.message);
+            end
+        end
+
+        function ObjectMaskProviderChanged(app, event) %#ok<INUSD>
+            try
+                score_storeObjectDisplayUI(app);
+                score_updateCellModelMaskProvider(app);
+                app.syncLineageDisplayForPaintChannel();
+                score_refreshObjectDisplayUI(app);
+                score_display(app, 'refresh');
+            catch ME
+                warning('Score:ObjectMaskProvider', ...
+                    'Could not change the family mask provider: %s', ME.message);
+                score_refreshObjectDisplayUI(app);
             end
         end
 
@@ -3633,13 +3692,35 @@ end
 
         % Code that executes after component creation
         function startupFcn(app, roiobj, options)
-            % Route every radio-button transition through the existing edit
-            % handler. Rendering modes will be added behind the same group.
+            % App Designer owns the layout; runtime wiring remains centralized
+            % here so layout synchronization cannot silently drop callbacks.
             if isprop(app, 'ChannelModeButtonGroup') && ...
                     ~isempty(app.ChannelModeButtonGroup) && isvalid(app.ChannelModeButtonGroup)
                 app.ChannelModeButtonGroup.SelectionChangedFcn = ...
-                    @(src, event) PaintButtonValueChanged(app, event); %#ok<NASGU>
+                    @(src, event) ObjectDisplayModeChanged(app, event); %#ok<NASGU>
             end
+            app.DisplayCriterionDropDown.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.LineageDisplayButtonGroup.SelectionChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.ObjectFamilyDropDown.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.MaskProviderDropDown.ValueChangedFcn = ...
+                @(src, event) ObjectMaskProviderChanged(app, event); %#ok<NASGU>
+            app.LineageSourceDropDown.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.FamilyColorPicker.ValueChangedFcn = ...
+                @(src, event) ObjectDisplayColorChanged(app, event); %#ok<NASGU>
+            app.SemanticValueDropDown.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.SemanticValueColorPicker.ValueChangedFcn = ...
+                @(src, event) ObjectDisplayColorChanged(app, event); %#ok<NASGU>
+            app.BudlinkcolorColorPicker.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.GenealogyLinkColorPicker.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.SelectedCellStateDropDown.ValueChangedFcn = ...
+                @(src, event) score_updateSelectedCellState(app); %#ok<NASGU>
             % Rendre visibles les panels souhaités
 
             % Ajouter la ROI à la liste
@@ -3717,6 +3798,8 @@ end
                 delete(app);
                 return;
             end
+
+            score_refreshObjectDisplayUI(app);
 
        
 
@@ -4382,6 +4465,7 @@ end
 
             if isempty(selection)
                 app.DisplaySettings.Movie.paintChannel=0;
+                score_refreshObjectDisplayUI(app);
                 return;
             end
 
@@ -4421,11 +4505,8 @@ end
             % Mettre à jour le label avec le nom complet du canal sélectionné
             app.IndexChannelLabel.Text = sprintf(' %s', fullChannelName);
 
-            if score_isEditMode(app)
-                app.DisplaySettings.Movie.paintChannel=selection(1);
-                app.syncLineageDisplayForPaintChannel();
-                score_display(app, 'refresh');
-            end
+            score_refreshObjectDisplayUI(app);
+            app.PaintButtonValueChanged([]);
 
 
 
@@ -4683,43 +4764,45 @@ end
                 return;
             end
 
+            score_storeObjectDisplayUI(app);
+
 
             if value
                 if ishandle( app.ImageFigure)
                     %           app.OverlayAxes.ButtonDownFcn = @(src, event) score_paintOverlay(src, event, app);
                     app.ImageFigure.WindowButtonDownFcn = @(src, event) score_paintOverlay(src, event, app);
-                    app.SelectedobjectindexEditField.Enable="on";
+                    app.MasklabelEditField.Enable="on";
 
                     t=app.UIAnnotationTable.Data;
 
                     paintRank = [t{selectedRow(1),2} '_' t{selectedRow(1),3}]; % HERE chang and find 
 
                app.DisplaySettings.Movie.paintChannel = paintRank;
-               app.syncLineageDisplayForPaintChannel();
 
                 end
             else
                 if ishandle( app.ImageFigure)
                     app.ImageFigure.WindowButtonDownFcn=[];
-                    app.SelectedobjectindexEditField.Enable="off";
+                    app.MasklabelEditField.Enable="off";
                     app.DisplaySettings.Movie.paintChannel=0;
-                    app.clearLineageDisplayForROI(app.getSelectedROI());
                     if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
                         delete(app.SelectedObjectRectangle);
                     end
                 end
             end
 
+            app.syncLineageDisplayForPaintChannel();
             score_display(app, 'refresh');
         end
 
-        % Value changed function: SelectedobjectindexEditField
-        function SelectedobjectindexEditFieldValueChanged(app, event)
-            newVal = app.SelectedobjectindexEditField.Value;
+        % Value changed function: MasklabelEditField
+        function MasklabelEditFieldValueChanged(app, event)
+            newVal = app.MasklabelEditField.Value;
 
             % Récupérer la nouvelle valeur saisie (en chaîne) et la convertir en nombre
 
-            if isnan(newVal)
+            if isnan(newVal) || ~isfinite(newVal) || newVal < 0 || ...
+                    newVal ~= round(newVal) || newVal > double(intmax('uint16'))
                 uialert(app.ScoreAppUIFigure, 'Veuillez entrer une valeur numérique valide.', 'Erreur');
                 return;
             end
@@ -4742,34 +4825,58 @@ end
                 uialert(app.ScoreAppUIFigure, 'Aucun canal d''annotation sélectionné.', 'Erreur');
                 return;
             end
-            selectedChannelName = [app.UIAnnotationTable.Data{selectedRow(1), 2} '_' app.UIAnnotationTable.Data{selectedRow(1), 3}];
+            annotationName = char(string(app.UIAnnotationTable.Data{selectedRow(1), 2}));
+            className = char(string(app.UIAnnotationTable.Data{selectedRow(1), 3}));
+            if isempty(className)
+                selectedChannelName = annotationName;
+            else
+                selectedChannelName = [annotationName '_' className];
+            end
 
-            channelIdx = find(strcmp(roi.display.channel, selectedChannelName), 1);
+            [~, channelIdx, pix, familyId] = ...
+                score_resolveMaskProvider(roi, selectedChannelName);
             if isempty(channelIdx)
                 uialert(app.ScoreAppUIFigure, 'Canal d''annotation invalide.', 'Erreur');
                 return;
             end
-            % Obtenir l'indice du canal dans l'image
-            pix = roi.findChannelID(roi.display.channel{channelIdx});
 
             % Récupérer la valeur actuelle (l'ancien label) de l'objet sélectionné
-            if ~isprop(app, 'SelectedObjectLabel') || isempty(app.SelectedObjectLabel)
+            oldLabel = app.SelectedObjectLabelCell;
+            if isempty(oldLabel) || ~isscalar(oldLabel) || ~isfinite(oldLabel)
+                oldLabel = app.SelectedObjectLabel;
+            end
+            if isempty(oldLabel) || ~isscalar(oldLabel) || ~isfinite(oldLabel)
                 uialert(app.ScoreAppUIFigure, 'Aucun objet n''est actuellement sélectionné.', 'Erreur');
                 return;
             end
-            oldLabel = app.SelectedObjectLabel;
 
             % Pour le frame courant, remplacer dans le masque toutes les valeurs égales à oldLabel par newVal
             currentFrame = roi.display.frame;
+            [model, modelStatus] = score_getCellModel(roi);
+            modelChanged = strcmp(modelStatus, 'ok') && ~isempty(familyId);
+            if modelChanged && newVal > 0
+                [model, ~] = cellModel.relabelFrame(model, familyId, ...
+                    currentFrame, oldLabel, newVal, 'merge');
+            end
             temp = roi.image(:, :, pix, currentFrame); % masque actuel (par exemple, de type uint16)
             temp(temp == oldLabel) = newVal;
             roi.image(:, :, pix, currentFrame) = temp;
+            if modelChanged
+                if newVal == 0
+                    [model, ~] = cellModel.syncFrame(model, familyId, ...
+                        currentFrame, temp, 'TrackPolicy', 'preserve_or_label');
+                end
+                roi.saveCellModel(model);
+                app.syncLineageDisplayForPaintChannel();
+            end
 
             % Mettre à jour l'affichage (ce qui actualisera l'overlay et le composite)
             score_display(app, 'refresh');
 
             % Stocker le nouveau label dans la propriété de l'application
             app.SelectedObjectLabel = newVal;
+            app.SelectedObjectLabelCell = newVal;
+            score_updateSelectedObjectFields(app);
         end
 
         % Button pushed function: NewAnnotationButton
@@ -6426,7 +6533,7 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.AnnotationPanel = uipanel(app.AnnotationsTab);
             app.AnnotationPanel.Title = 'Annotation Panel';
             app.AnnotationPanel.FontSize = 10;
-            app.AnnotationPanel.Position = [7 24 583 864];
+            app.AnnotationPanel.Position = [7 9 618 879];
 
             % Create UIAnnotationTable
             app.UIAnnotationTable = uitable(app.AnnotationPanel);
@@ -6436,79 +6543,224 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.UIAnnotationTable.ColumnEditable = [true true true true true true];
             app.UIAnnotationTable.SelectionChangedFcn = createCallbackFcn(app, @UIAnnotationTableSelectionChanged, true);
             app.UIAnnotationTable.FontSize = 10;
-            app.UIAnnotationTable.Position = [13 503 553 280];
+            app.UIAnnotationTable.Position = [13 519 589 279];
 
             % Create ObjectspanelPanel
             app.ObjectspanelPanel = uipanel(app.AnnotationPanel);
             app.ObjectspanelPanel.Title = 'Objects panel';
             app.ObjectspanelPanel.FontSize = 10;
-            app.ObjectspanelPanel.Position = [16 20 547 239];
+            app.ObjectspanelPanel.Position = [17 13 581 316];
 
-            % Create SelectedobjectindexEditFieldLabel
-            app.SelectedobjectindexEditFieldLabel = uilabel(app.ObjectspanelPanel);
-            app.SelectedobjectindexEditFieldLabel.HorizontalAlignment = 'right';
-            app.SelectedobjectindexEditFieldLabel.Position = [21 15 119 22];
-            app.SelectedobjectindexEditFieldLabel.Text = 'Selected object index';
+            % Create MasklabelEditFieldLabel
+            app.MasklabelEditFieldLabel = uilabel(app.ObjectspanelPanel);
+            app.MasklabelEditFieldLabel.HorizontalAlignment = 'right';
+            app.MasklabelEditFieldLabel.Position = [10 153 66 22];
+            app.MasklabelEditFieldLabel.Text = 'Mask label:';
 
-            % Create SelectedobjectindexEditField
-            app.SelectedobjectindexEditField = uieditfield(app.ObjectspanelPanel, 'numeric');
-            app.SelectedobjectindexEditField.ValueChangedFcn = createCallbackFcn(app, @SelectedobjectindexEditFieldValueChanged, true);
-            app.SelectedobjectindexEditField.Position = [155 15 100 22];
+            % Create MasklabelEditField
+            app.MasklabelEditField = uieditfield(app.ObjectspanelPanel, 'numeric');
+            app.MasklabelEditField.ValueChangedFcn = createCallbackFcn(app, @MasklabelEditFieldValueChanged, true);
+            app.MasklabelEditField.Position = [146 153 100 22];
+
+            % Create LineageDisplayButtonGroup
+            app.LineageDisplayButtonGroup = uibuttongroup(app.ObjectspanelPanel);
+            app.LineageDisplayButtonGroup.Title = 'Lineage display';
+            app.LineageDisplayButtonGroup.Position = [7 193 123 97];
+
+            % Create NoLineageRadioButton
+            app.NoLineageRadioButton = uiradiobutton(app.LineageDisplayButtonGroup);
+            app.NoLineageRadioButton.Text = 'None';
+            app.NoLineageRadioButton.Position = [11 51 51 22];
+            app.NoLineageRadioButton.Value = true;
+
+            % Create BudLinksRadioButton
+            app.BudLinksRadioButton = uiradiobutton(app.LineageDisplayButtonGroup);
+            app.BudLinksRadioButton.Text = 'Recent bud links';
+            app.BudLinksRadioButton.Position = [11 29 111 22];
+
+            % Create FullGenealogyRadioButton
+            app.FullGenealogyRadioButton = uiradiobutton(app.LineageDisplayButtonGroup);
+            app.FullGenealogyRadioButton.Text = 'Full genealogy';
+            app.FullGenealogyRadioButton.Position = [11 7 100 22];
+
+            % Create ObjectFamilyDropDownLabel
+            app.ObjectFamilyDropDownLabel = uilabel(app.ObjectspanelPanel);
+            app.ObjectFamilyDropDownLabel.HorizontalAlignment = 'right';
+            app.ObjectFamilyDropDownLabel.Position = [145 265 78 22];
+            app.ObjectFamilyDropDownLabel.Text = 'Object family:';
+
+            % Create ObjectFamilyDropDown
+            app.ObjectFamilyDropDown = uidropdown(app.ObjectspanelPanel);
+            app.ObjectFamilyDropDown.Items = {'<auto>'};
+            app.ObjectFamilyDropDown.Position = [235 265 100 22];
+            app.ObjectFamilyDropDown.Value = '<auto>';
+
+            % Create MaskProviderDropDownLabel
+            app.MaskProviderDropDownLabel = uilabel(app.ObjectspanelPanel);
+            app.MaskProviderDropDownLabel.HorizontalAlignment = 'right';
+            app.MaskProviderDropDownLabel.Position = [137 232 84 22];
+            app.MaskProviderDropDownLabel.Text = 'Mask provider:';
+
+            % Create MaskProviderDropDown
+            app.MaskProviderDropDown = uidropdown(app.ObjectspanelPanel);
+            app.MaskProviderDropDown.Items = {'<family default>'};
+            app.MaskProviderDropDown.Position = [236 232 100 22];
+            app.MaskProviderDropDown.Value = '<family default>';
+
+            % Create LineageSourceDropDownLabel
+            app.LineageSourceDropDownLabel = uilabel(app.ObjectspanelPanel);
+            app.LineageSourceDropDownLabel.HorizontalAlignment = 'right';
+            app.LineageSourceDropDownLabel.Position = [133 201 89 22];
+            app.LineageSourceDropDownLabel.Text = 'Lineage Source';
+
+            % Create LineageSourceDropDown
+            app.LineageSourceDropDown = uidropdown(app.ObjectspanelPanel);
+            app.LineageSourceDropDown.Items = {'<family default>', ''};
+            app.LineageSourceDropDown.Position = [237 201 100 22];
+            app.LineageSourceDropDown.Value = '<family default>';
 
             % Create ObjectColorsPanel
             app.ObjectColorsPanel = uipanel(app.ObjectspanelPanel);
             app.ObjectColorsPanel.Title = 'Object Colors';
-            app.ObjectColorsPanel.Position = [408 54 128 150];
+            app.ObjectColorsPanel.Position = [354 83 218 206];
+
+            % Create FamilyColorPickerLabel
+            app.FamilyColorPickerLabel = uilabel(app.ObjectColorsPanel);
+            app.FamilyColorPickerLabel.HorizontalAlignment = 'right';
+            app.FamilyColorPickerLabel.Position = [35 147 70 22];
+            app.FamilyColorPickerLabel.Text = 'Family color';
+
+            % Create FamilyColorPicker
+            app.FamilyColorPicker = uicolorpicker(app.ObjectColorsPanel);
+            app.FamilyColorPicker.Position = [120 147 38 22];
+
+            % Create SemanticValueDropDownLabel
+            app.SemanticValueDropDownLabel = uilabel(app.ObjectColorsPanel);
+            app.SemanticValueDropDownLabel.HorizontalAlignment = 'right';
+            app.SemanticValueDropDownLabel.Position = [12 110 87 22];
+            app.SemanticValueDropDownLabel.Text = 'Semantic value';
+
+            % Create SemanticValueDropDown
+            app.SemanticValueDropDown = uidropdown(app.ObjectColorsPanel);
+            app.SemanticValueDropDown.Position = [120 110 84 22];
+
+            % Create SemanticValueColorPickerLabel
+            app.SemanticValueColorPickerLabel = uilabel(app.ObjectColorsPanel);
+            app.SemanticValueColorPickerLabel.HorizontalAlignment = 'right';
+            app.SemanticValueColorPickerLabel.Position = [17 74 88 22];
+            app.SemanticValueColorPickerLabel.Text = 'Semantic Value';
+
+            % Create SemanticValueColorPicker
+            app.SemanticValueColorPicker = uicolorpicker(app.ObjectColorsPanel);
+            app.SemanticValueColorPicker.Position = [120 74 38 22];
+
+            % Create BudlinkcolorColorPickerLabel
+            app.BudlinkcolorColorPickerLabel = uilabel(app.ObjectColorsPanel);
+            app.BudlinkcolorColorPickerLabel.HorizontalAlignment = 'right';
+            app.BudlinkcolorColorPickerLabel.Position = [41 40 77 22];
+            app.BudlinkcolorColorPickerLabel.Text = 'Bud link color';
+
+            % Create BudlinkcolorColorPicker
+            app.BudlinkcolorColorPicker = uicolorpicker(app.ObjectColorsPanel);
+            app.BudlinkcolorColorPicker.Value = [1 0.8196 0.051];
+            app.BudlinkcolorColorPicker.Position = [121 40 38 22];
+
+            % Create GenealogyLinkColorPickerLabel
+            app.GenealogyLinkColorPickerLabel = uilabel(app.ObjectColorsPanel);
+            app.GenealogyLinkColorPickerLabel.HorizontalAlignment = 'right';
+            app.GenealogyLinkColorPickerLabel.Position = [-1 9 114 22];
+            app.GenealogyLinkColorPickerLabel.Text = 'Genealogy link color';
+
+            % Create GenealogyLinkColorPicker
+            app.GenealogyLinkColorPicker = uicolorpicker(app.ObjectColorsPanel);
+            app.GenealogyLinkColorPicker.Value = [0.051 0.749 1];
+            app.GenealogyLinkColorPicker.Position = [119 9 38 22];
+
+            % Create SelectedObjectIDLabel
+            app.SelectedObjectIDLabel = uilabel(app.ObjectspanelPanel);
+            app.SelectedObjectIDLabel.HorizontalAlignment = 'right';
+            app.SelectedObjectIDLabel.Position = [7 113 108 22];
+            app.SelectedObjectIDLabel.Text = 'Selected Object ID:';
+
+            % Create SelectedObjectIDEditField
+            app.SelectedObjectIDEditField = uieditfield(app.ObjectspanelPanel, 'text');
+            app.SelectedObjectIDEditField.Editable = 'off';
+            app.SelectedObjectIDEditField.Position = [149 113 100 22];
+
+            % Create SelectedTrackIDEditFieldLabel
+            app.SelectedTrackIDEditFieldLabel = uilabel(app.ObjectspanelPanel);
+            app.SelectedTrackIDEditFieldLabel.HorizontalAlignment = 'right';
+            app.SelectedTrackIDEditFieldLabel.Position = [8 71 106 22];
+            app.SelectedTrackIDEditFieldLabel.Text = 'Selected Track ID: ';
+
+            % Create SelectedTrackIDEditField
+            app.SelectedTrackIDEditField = uieditfield(app.ObjectspanelPanel, 'text');
+            app.SelectedTrackIDEditField.Position = [149 71 100 22];
+
+            % Create SelectedCellStateDropDownLabel
+            app.SelectedCellStateDropDownLabel = uilabel(app.ObjectspanelPanel);
+            app.SelectedCellStateDropDownLabel.HorizontalAlignment = 'right';
+            app.SelectedCellStateDropDownLabel.Position = [28 34 102 22];
+            app.SelectedCellStateDropDownLabel.Text = 'Selected cell state';
+
+            % Create SelectedCellStateDropDown
+            app.SelectedCellStateDropDown = uidropdown(app.ObjectspanelPanel);
+            app.SelectedCellStateDropDown.Position = [145 34 100 22];
+
+            % Create CellModelStatusLabel
+            app.CellModelStatusLabel = uilabel(app.ObjectspanelPanel);
+            app.CellModelStatusLabel.Position = [16 7 133 22];
+            app.CellModelStatusLabel.Text = 'No cellular object model';
 
             % Create NewAnnotationButton
             app.NewAnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.NewAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @NewAnnotationButtonPushed, true);
-            app.NewAnnotationButton.Position = [4 817 95 23];
+            app.NewAnnotationButton.Position = [4 832 95 23];
             app.NewAnnotationButton.Text = 'New Annotation';
 
             % Create DeleteAnnnotationButton
             app.DeleteAnnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.DeleteAnnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteAnnnotationButtonPushed, true);
-            app.DeleteAnnnotationButton.Position = [103 817 109 23];
+            app.DeleteAnnnotationButton.Position = [103 832 109 23];
             app.DeleteAnnnotationButton.Text = 'Delete Annnotation';
 
             % Create NewclassButton
             app.NewclassButton = uibutton(app.AnnotationPanel, 'push');
             app.NewclassButton.ButtonPushedFcn = createCallbackFcn(app, @NewclassButtonPushed, true);
-            app.NewclassButton.Position = [218 817 94 23];
+            app.NewclassButton.Position = [218 832 94 23];
             app.NewclassButton.Text = 'New class';
 
             % Create DeleteclassButton
             app.DeleteclassButton = uibutton(app.AnnotationPanel, 'push');
             app.DeleteclassButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteclassButtonPushed, true);
-            app.DeleteclassButton.Position = [318 817 108 23];
+            app.DeleteclassButton.Position = [318 832 108 23];
             app.DeleteclassButton.Text = 'Delete class';
 
             % Create isthedefautcolorCheckBox
             app.isthedefautcolorCheckBox = uicheckbox(app.AnnotationPanel);
             app.isthedefautcolorCheckBox.ValueChangedFcn = createCallbackFcn(app, @isthedefautcolorCheckBoxValueChanged, true);
             app.isthedefautcolorCheckBox.Text = '''1'' is the defaut color';
-            app.isthedefautcolorCheckBox.Position = [9 789 131 22];
+            app.isthedefautcolorCheckBox.Position = [9 804 131 22];
 
             % Create SelectedchannelpropertiesPanel
             app.SelectedchannelpropertiesPanel = uipanel(app.AnnotationPanel);
             app.SelectedchannelpropertiesPanel.Title = 'Selected channel properties';
-            app.SelectedchannelpropertiesPanel.Position = [16 270 549 221];
+            app.SelectedchannelpropertiesPanel.Position = [16 343 582 163];
 
             % Create IndexChannelLabel
             app.IndexChannelLabel = uilabel(app.SelectedchannelpropertiesPanel);
-            app.IndexChannelLabel.Position = [65 167 333 22];
+            app.IndexChannelLabel.Position = [65 109 333 22];
             app.IndexChannelLabel.Text = 'IndexChannelLabel';
 
             % Create SelectedLabel
             app.SelectedLabel = uilabel(app.SelectedchannelpropertiesPanel);
-            app.SelectedLabel.Position = [9 167 55 22];
+            app.SelectedLabel.Position = [9 109 55 22];
             app.SelectedLabel.Text = 'Selected:';
 
             % Create TransparencyLabel
             app.TransparencyLabel = uilabel(app.SelectedchannelpropertiesPanel);
             app.TransparencyLabel.HorizontalAlignment = 'right';
-            app.TransparencyLabel.Position = [6 143 78 22];
+            app.TransparencyLabel.Position = [3 82 78 22];
             app.TransparencyLabel.Text = 'Transparency';
 
             % Create Transparency
@@ -6516,59 +6768,56 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.Transparency.Limits = [0 1];
             app.Transparency.ValueChangedFcn = createCallbackFcn(app, @TransparencyValueChanged, true);
             app.Transparency.ValueChangingFcn = createCallbackFcn(app, @TransparencyValueChanging, true);
-            app.Transparency.Position = [104 151 150 3];
+            app.Transparency.Position = [101 90 150 3];
             app.Transparency.Value = 0.5;
 
             % Create AnnoatationcolorLabel
             app.AnnoatationcolorLabel = uilabel(app.SelectedchannelpropertiesPanel);
             app.AnnoatationcolorLabel.HorizontalAlignment = 'right';
-            app.AnnoatationcolorLabel.Position = [270 141 92 22];
-            app.AnnoatationcolorLabel.Text = 'Annotation color';
+            app.AnnoatationcolorLabel.Position = [269 79 34 22];
+            app.AnnoatationcolorLabel.Text = 'Color';
 
             % Create MaskColorPicker
             app.MaskColorPicker = uicolorpicker(app.SelectedchannelpropertiesPanel);
             app.MaskColorPicker.ValueChangedFcn = createCallbackFcn(app, @MaskColorPickerValueChanged, true);
-            app.MaskColorPicker.Position = [377 142 38 22];
-
-            % Create DisplayBudPairingCheckBox
-            app.DisplayBudPairingCheckBox = uicheckbox(app.SelectedchannelpropertiesPanel);
-            app.DisplayBudPairingCheckBox.ValueChangedFcn = createCallbackFcn(app, @LineageDisplayCheckBoxValueChanged, true);
-            app.DisplayBudPairingCheckBox.Text = 'Bud links';
-            app.DisplayBudPairingCheckBox.Position = [445 99 71 22];
-            app.DisplayBudPairingCheckBox.Value = true;
-
-            % Create DisplayLineageCheckBox
-            app.DisplayLineageCheckBox = uicheckbox(app.SelectedchannelpropertiesPanel);
-            app.DisplayLineageCheckBox.ValueChangedFcn = createCallbackFcn(app, @LineageDisplayCheckBoxValueChanged, true);
-            app.DisplayLineageCheckBox.Text = 'Lineage';
-            app.DisplayLineageCheckBox.Position = [446 43 65 22];
-            app.DisplayLineageCheckBox.Value = false;
+            app.MaskColorPicker.Position = [318 80 38 22];
 
             % Create ChannelModeButtonGroup
             app.ChannelModeButtonGroup = uibuttongroup(app.SelectedchannelpropertiesPanel);
             app.ChannelModeButtonGroup.Title = 'Channel mode';
-            app.ChannelModeButtonGroup.Position = [10 9 123 110];
+            app.ChannelModeButtonGroup.Position = [419 14 107 119];
 
             % Create NormalButton
             app.NormalButton = uiradiobutton(app.ChannelModeButtonGroup);
             app.NormalButton.Text = 'Normal';
-            app.NormalButton.Position = [11 64 61 22];
+            app.NormalButton.Position = [13 73 61 22];
             app.NormalButton.Value = true;
 
             % Create MulticolorButton
             app.MulticolorButton = uiradiobutton(app.ChannelModeButtonGroup);
             app.MulticolorButton.Text = 'Multicolor';
-            app.MulticolorButton.Position = [11 42 73 22];
+            app.MulticolorButton.Position = [13 49 73 22];
 
             % Create SemanticButton
             app.SemanticButton = uiradiobutton(app.ChannelModeButtonGroup);
             app.SemanticButton.Text = 'Semantic';
-            app.SemanticButton.Position = [11 21 72 22];
+            app.SemanticButton.Position = [13 26 72 22];
 
             % Create EditButton
             app.EditButton = uiradiobutton(app.ChannelModeButtonGroup);
             app.EditButton.Text = 'Edit';
-            app.EditButton.Position = [11 -1 43 22];
+            app.EditButton.Position = [13 4 43 22];
+
+            % Create ColorbyLabel
+            app.ColorbyLabel = uilabel(app.SelectedchannelpropertiesPanel);
+            app.ColorbyLabel.Position = [248 19 53 22];
+            app.ColorbyLabel.Text = 'Color by:';
+
+            % Create DisplayCriterionDropDown
+            app.DisplayCriterionDropDown = uidropdown(app.SelectedchannelpropertiesPanel);
+            app.DisplayCriterionDropDown.Items = {'Channel color', 'Track', 'Frame instance', 'Family', 'New bud', 'Cell state'};
+            app.DisplayCriterionDropDown.Position = [310 20 100 22];
+            app.DisplayCriterionDropDown.Value = 'Channel color';
 
             % Create MovieoutputTab
             app.MovieoutputTab = uitab(app.TabGroup);

@@ -21,10 +21,13 @@ selectedRow = app.UIAnnotationTable.Selection;
 if isempty(selectedRow), disp('No channel is selected; quitting!'); return; end
 annotationPart  = app.UIAnnotationTable.Data{selectedRow(1), 2};
 classPart       = app.UIAnnotationTable.Data{selectedRow(1), 3};
-fullChannelName = [annotationPart, '_', classPart];
-channelIdx = find(strcmp(roi.display.channel, fullChannelName), 1);
-if isempty(channelIdx), disp('Selected annotation channel not found'); return; end
-pix = roi.findChannelID(roi.display.channel{channelIdx});
+if isempty(classPart)
+    fullChannelName = char(string(annotationPart));
+else
+    fullChannelName = [char(string(annotationPart)), '_', char(string(classPart))];
+end
+[providerName, channelIdx, pix] = score_resolveMaskProvider(roi, fullChannelName);
+if isempty(channelIdx), disp('Selected mask provider channel not found'); return; end
 if isempty(pix) || pix<1, disp('Invalid pix for annotation channel'); return; end
 
 % Masque courant & overlay handles (compatibles containers.Map, struct, cell, array)
@@ -71,19 +74,34 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
     mods   = get(src,'CurrentModifier');
     isCtrl = iscell(mods) && any(strcmp(mods,'control'));
     if isCtrl
-        % s'assurer que le dataseries existe
-        ensureCellInformationDataseries(roi);
-        setLineageChannel(roi, fullChannelName, pix, annotationPart);
-
         daughterID = int32(app.SelectedObjectLabelCell);
         labAt      = currentMask(yinit,xinit);
-
-        if labAt > 0 && labAt ~= daughterID
-            setCellMother(roi, daughterID, double(labAt), 'birthFrame', frm);
-            flashStatus(app, sprintf('Mère de #%d → #%d (frame %d)', daughterID, labAt, frm));
+        [model, modelStatus] = score_getCellModel(roi);
+        cfg = score_getObjectDisplayConfig(roi, fullChannelName);
+        [~, familyId] = score_resolveCellModelFamily(model, cfg, fullChannelName);
+        if strcmp(modelStatus, 'ok') && ~isempty(familyId)
+            [model, ~] = cellModel.syncFrame(model, familyId, frm, currentMask, ...
+                'TrackPolicy', 'preserve_or_label');
+            if labAt > 0 && labAt ~= daughterID
+                [model, ~] = cellModel.setParent(model, familyId, frm, daughterID, labAt);
+                flashStatus(app, sprintf('Mère de #%d → #%d (frame %d)', daughterID, labAt, frm));
+            else
+                [model, ~] = cellModel.setParent(model, familyId, frm, daughterID, []);
+                flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
+            end
+            roi.saveCellModel(model);
+            app.syncLineageDisplayForPaintChannel();
         else
-            removeCellMother(roi, daughterID);
-            flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
+            % Backward-compatible editing for ROIs not migrated yet.
+            ensureCellInformationDataseries(roi);
+            setLineageChannel(roi, providerName, pix, annotationPart);
+            if labAt > 0 && labAt ~= daughterID
+                setCellMother(roi, daughterID, double(labAt), 'birthFrame', frm);
+                flashStatus(app, sprintf('Mère de #%d → #%d (frame %d)', daughterID, labAt, frm));
+            else
+                removeCellMother(roi, daughterID);
+                flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
+            end
         end
         refreshLineageAfterEdit(app, roi, frm);
         return;
@@ -237,6 +255,13 @@ end
     % --- NEW: fin de trait -> on libère l'ID/couleur verrouillés
     paintValue_locked = [];
     paintColor_locked = [];
+    try
+        score_syncCellModelFrame(roi, fullChannelName, frm);
+        score_updateSelectedObjectFields(app);
+    catch ME
+        warning('score:CellModelMaskSync', ...
+            'Could not synchronize the cellular model after painting: %s', ME.message);
+    end
     drawnow limitrate nocallbacks;
 end
 
@@ -265,8 +290,9 @@ tmp=['ROI:' char(app.SelectedObjectRoiId) ' -  Frame: ' num2str(frm) '/' num2str
 app.ImageFigure.Name = tmp;
 
 
-app.SelectedobjectindexEditField.Value = 0;
+app.MasklabelEditField.Value = 0;
 app.SelectedObjectLabelCell  = NaN;
+score_updateSelectedObjectFields(app);
 app.SelectedObjectChannelIdx = NaN;
 app.SelectedObjectRoiId      = "";
 end
@@ -370,16 +396,17 @@ currentMask = roi.image(:,:,pix,frm);
 
 [H,W] = size(currentMask);
 if xinit<1 || xinit>W || yinit<1 || yinit>H
-    app.SelectedobjectindexEditField.Value = 0; return;
+    app.MasklabelEditField.Value = 0; return;
 end
 objLabel = currentMask(yinit,xinit);
 if objLabel==0
-    app.SelectedobjectindexEditField.Value = 0; return;
+    app.MasklabelEditField.Value = 0; return;
 end
 
 % Mémos sélection
-app.SelectedobjectindexEditField.Value = double(objLabel);
+app.MasklabelEditField.Value = double(objLabel);
 app.SelectedObjectLabelCell  = double(objLabel);
+score_updateSelectedObjectFields(app);
 app.SelectedObjectChannelIdx = channelIdx;
 app.SelectedObjectRoiId      = string(roi.id);
 app.KeepSelection            = true;
@@ -525,6 +552,9 @@ opts = struct('maxFrames', min(maxFrames, remaining), ...
     'minIou', minIou, ...
     'maxGap', maxGap);
 summary = repairIdentityContinuityByIoU(roi, pix, frm, oldLab, opts);
+[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+score_syncCellModelFrames(roi, selectedDisplayChannel, ...
+    (frm + 1):min(size(roi.image,4), frm + opts.maxFrames));
 
 score_display(app,'fast');
 safeClearSelection(app, roi, frm);
@@ -685,6 +715,8 @@ catch
 end
 
 summary = applySam31TrackPropagationResult(roi, pix, oldLab, result, opts);
+[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+score_syncCellModelFrames(roi, selectedDisplayChannel, double(result.frames(:).'));
 score_display(app,'fast');
 safeClearSelection(app, roi, frm);
 msg = sprintf('SAM31 propagation applied to %d/%d frames.', ...
@@ -1051,6 +1083,30 @@ set(d,'KeyPressFcn',@keyHandler);
             end
         end
 
+        % Update structured references before changing authoritative pixels.
+        [model, modelStatus] = score_getCellModel(roi);
+        modelChanged = false;
+        if strcmp(modelStatus, 'ok')
+            [~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+            cfg = score_getObjectDisplayConfig(roi, selectedDisplayChannel);
+            [~, familyId] = score_resolveCellModelFamily( ...
+                model, cfg, selectedDisplayChannel);
+            if ~isempty(familyId)
+                affectedFrames = relabelScopeFrames(roi, pix, frm, oldLab, mode);
+                try
+                    for affectedFrame = affectedFrames
+                        [model, ~] = cellModel.relabelFrame(model, familyId, ...
+                            affectedFrame, oldLab, newLab, action);
+                    end
+                    modelChanged = true;
+                catch ME
+                    errordlg(sprintf('Cell model relabel failed: %s', ME.message), ...
+                        'Relabel object');
+                    return;
+                end
+            end
+        end
+
         % --- Application selon scope
         switch mode
             case 'frame-only'
@@ -1060,12 +1116,41 @@ set(d,'KeyPressFcn',@keyHandler);
             case 'all-frames'
                 relabelAllFrames(roi, pix, oldLab, newLab, action);
         end
+        if modelChanged
+            roi.saveCellModel(model);
+            app.syncLineageDisplayForPaintChannel();
+        end
 
         % --- Update sélection + refresh
         app.SelectedObjectLabelCell = newLab;
+        score_updateSelectedObjectFields(app);
         score_display(app,'fast');
         delete(d);
     end
+end
+
+function frames = relabelScopeFrames(roi, pix, frm, oldLab, mode)
+switch mode
+    case 'frame-only'
+        frames = frm;
+    case 'to-last'
+        lastFrame = frm - 1;
+        for f = frm:size(roi.image,4)
+            if any(roi.image(:,:,pix,f) == oldLab, 'all')
+                lastFrame = f;
+            else
+                break;
+            end
+        end
+        frames = frm:lastFrame;
+    otherwise
+        frames = [];
+        for f = 1:size(roi.image,4)
+            if any(roi.image(:,:,pix,f) == oldLab, 'all')
+                frames(end+1) = f; %#ok<AGROW>
+            end
+        end
+end
 end
 
 
@@ -1261,6 +1346,8 @@ for k = 1:nComp
 end
 
 roi.image(:,:,pix,frm) = M;
+[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+score_syncCellModelFrames(roi, selectedDisplayChannel, frm);
 
 % Keep selection on the kept component and refresh
 app.SelectedObjectLabelCell = oldLab;
@@ -1344,6 +1431,8 @@ end
 
 M(M==oldLab) = 0;                 % remove label on this frame
 roi.image(:,:,pix,frm) = M;
+[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+score_syncCellModelFrames(roi, selectedDisplayChannel, frm);
 
 % Clear selection + refresh
 safeClearSelection(app,roi,frm);
@@ -1372,6 +1461,8 @@ for f = 1:nf
         roi.image(:,:,pix,f) = M;
     end
 end
+[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+score_syncCellModelFrames(roi, selectedDisplayChannel, 1:nf);
 
 % Clear selection + refresh
 safeClearSelection(app,roi,frm);
@@ -1516,12 +1607,11 @@ try
 
     opts = app.layoutOptions;
     try
-        if isprop(app, 'DisplayBudPairingCheckBox') && ~isempty(app.DisplayBudPairingCheckBox) && isvalid(app.DisplayBudPairingCheckBox)
-            opts.ShowBudPairingOverlay = logical(app.DisplayBudPairingCheckBox.Value);
-        end
-        if isprop(app, 'DisplayLineageCheckBox') && ~isempty(app.DisplayLineageCheckBox) && isvalid(app.DisplayLineageCheckBox)
-            opts.ShowLineageOverlay = logical(app.DisplayLineageCheckBox.Value);
-        end
+        lineageUI = score_lineageDisplayOptions(app);
+        opts.ShowBudPairingOverlay = lineageUI.showBudPairing;
+        opts.ShowLineageOverlay = lineageUI.showGenealogy;
+        opts.BudLinkColor = lineageUI.budLinkColor;
+        opts.GenealogyLinkColor = lineageUI.genealogyLinkColor;
     catch
     end
     opts.LineageUseViewport = true;

@@ -593,6 +593,11 @@ end
 function geoms = getLineageGeometriesForFrame_ROI(roi, fallbackPix, frm, fallbackColor, layoutOptions)
 geoms = struct('mapKey',{},'daughterID',{},'motherID',{},'xd',{},'yd',{},'xm',{},'ym',{}, ...
     'color',{},'sourceKey',{},'mode',{},'lineWidth',{},'lineStyle',{});
+[geoms, modelConfigured] = getCellModelLineageGeometries( ...
+    roi, fallbackPix, frm, fallbackColor, layoutOptions, geoms);
+if modelConfigured
+    return;
+end
 idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
 if isempty(idx), return; end
 ds = roi.data(idx);
@@ -623,15 +628,94 @@ for s = 1:numel(sources)
     end
 
     if sources(s).showBudPairing
-        geoms = appendBudEventGeoms(geoms, sources(s), s, centroids, frm);
+        geoms = appendBudEventGeoms(geoms, sources(s), s, centroids, frm, ...
+            resolveBudLinkColor(layoutOptions));
     end
     if sources(s).showGenealogy
-        geoms = appendMotherMapGeoms(geoms, sources(s), s, centroids, fallbackColor);
+        geoms = appendMotherMapGeoms(geoms, sources(s), s, centroids, ...
+            resolveGenealogyLinkColor(layoutOptions, fallbackColor));
     end
 end
 end
 
-function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm)
+function [geoms, configured] = getCellModelLineageGeometries( ...
+        roi, fallbackPix, frm, fallbackColor, layoutOptions, geoms)
+configured = false;
+cfg = getLineageDisplayConfig(roi);
+if ~startsWith(string(cfg.sourceKey), "cell_model:")
+    return;
+end
+configured = true;
+cfg = applyLineageOverlayToggles(cfg, layoutOptions);
+if ~cfg.enabled
+    return;
+end
+
+try
+    [model, status] = score_getCellModel(roi);
+    if ~strcmp(status, 'ok')
+        return;
+    end
+    familyId = uint32(cfg.modelFamilyId);
+    if familyId == 0
+        token = extractAfter(string(cfg.sourceKey), "cell_model:");
+        familyId = uint32(str2double(token));
+    end
+    [familyIndex, familyId] = cellModel.familyIndex(model, familyId);
+    if isempty(familyIndex)
+        return;
+    end
+
+    pix = fallbackPix;
+    if strlength(cfg.channelName) > 0
+        resolved = resolvePixForChannelName(roi, cfg.channelName);
+        if ~isempty(resolved), pix = resolved; end
+    end
+    frm = double(frm(1));
+    if isempty(pix) || pix < 1 || pix > size(roi.image,3) || ...
+            frm < 1 || frm > size(roi.image,4)
+        return;
+    end
+    centroids = computeLabelCentroidMap(roi.image(:,:,pix,frm));
+    if centroids.Count == 0
+        return;
+    end
+
+    instanceRows = find(model.instances.family_id == familyId & ...
+        model.instances.frame == uint32(frm));
+    relationRows = find(model.relations.family_id == familyId);
+    source = struct('key', char(cfg.sourceKey));
+    budColor = resolveBudLinkColor(layoutOptions);
+    genealogyColor = resolveGenealogyLinkColor(layoutOptions, fallbackColor);
+    for k = relationRows(:).'
+        childTrack = model.relations.child_track_id(k);
+        parentTrack = model.relations.parent_track_id(k);
+        childRow = instanceRows(find(model.instances.track_id(instanceRows) == childTrack, 1, 'first'));
+        parentRow = instanceRows(find(model.instances.track_id(instanceRows) == parentTrack, 1, 'first'));
+        if isempty(childRow) || isempty(parentRow)
+            continue;
+        end
+        childLabel = int32(model.instances.mask_label(childRow));
+        parentLabel = double(model.instances.mask_label(parentRow));
+        if cfg.showBudPairing
+            eventFrame = double(model.relations.event_frame(k));
+            if frm >= eventFrame - cfg.budWindowBefore && ...
+                    frm <= eventFrame + cfg.budWindowAfter
+                geoms = appendPairGeom(geoms, source, 1, centroids, ...
+                    childLabel, parentLabel, "bud", budColor, 2.0, '-');
+            end
+        end
+        if cfg.showGenealogy
+            geoms = appendPairGeom(geoms, source, 1, centroids, ...
+                childLabel, parentLabel, "genealogy", genealogyColor, 1.25, '-');
+        end
+    end
+catch
+    % A corrupt optional object model must not break image display.
+end
+end
+
+function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm, color)
 if ~isfield(source, 'events') || isempty(source.events)
     return;
 end
@@ -649,7 +733,7 @@ for k = 1:numel(events)
     end
     geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
         int32(events(k).childId), double(events(k).motherId), ...
-        "bud", [1.0 0.82 0.05], 2.0, '-');
+        "bud", color, 2.0, '-');
 end
 end
 
@@ -821,7 +905,8 @@ end
 function cfg = getLineageDisplayConfig(roi)
 cfg = struct('enabled', false, 'channelName', "", 'channelPix', [], ...
     'sourceKey', "", 'showBudPairing', false, 'showGenealogy', false, ...
-    'budWindowBefore', 0, 'budWindowAfter', 6, 'explicit', false);
+    'budWindowBefore', 0, 'budWindowAfter', 6, 'modelFamilyId', 0, ...
+    'explicit', false);
 try
     if ~isprop(roi, 'display') || ~isstruct(roi.display) || ...
             ~isfield(roi.display, 'lineage') || isempty(roi.display.lineage)
@@ -837,6 +922,7 @@ try
     if isfield(in, 'showGenealogy'), cfg.showGenealogy = logical(in.showGenealogy); end
     if isfield(in, 'budWindowBefore'), cfg.budWindowBefore = max(0, double(in.budWindowBefore)); end
     if isfield(in, 'budWindowAfter'), cfg.budWindowAfter = max(0, double(in.budWindowAfter)); end
+    if isfield(in, 'modelFamilyId'), cfg.modelFamilyId = double(in.modelFamilyId); end
     cfg.enabled = cfg.enabled && (cfg.showBudPairing || cfg.showGenealogy) && strlength(cfg.channelName) > 0;
 catch
     cfg.enabled = false;
@@ -1030,6 +1116,19 @@ if nargin < 2
 end
 for r = 1:numel(roiobj)
     try
+        cfg = getLineageDisplayConfig(roiobj(r));
+        if startsWith(string(cfg.sourceKey), "cell_model:")
+            cfg = applyLineageOverlayToggles(cfg, layoutOptions);
+            if cfg.enabled
+                [model, status] = score_getCellModel(roiobj(r));
+                if strcmp(status, 'ok') && ...
+                        any(model.relations.family_id == uint32(cfg.modelFamilyId))
+                    tf = true;
+                    return;
+                end
+            end
+            continue;
+        end
         idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiobj(r).data),1,'first');
         if isempty(idx), continue; end
         if ~isempty(getVisibleLineageMaps(roiobj(r), roiobj(r).data(idx), layoutOptions))
@@ -1147,6 +1246,30 @@ col = max(min(col,1),0);
 if mean(col) < 0.15
     col = min(col + 0.15, 1); % évite trop sombre
 end
+end
+
+function color = resolveBudLinkColor(layoutOptions)
+color = [1.0 0.82 0.05];
+try
+    if isstruct(layoutOptions) && isfield(layoutOptions, 'BudLinkColor') && ...
+            isnumeric(layoutOptions.BudLinkColor) && numel(layoutOptions.BudLinkColor) == 3
+        color = double(layoutOptions.BudLinkColor(:).');
+    end
+catch
+end
+color = max(0, min(1, color));
+end
+
+function color = resolveGenealogyLinkColor(layoutOptions, fallback)
+color = fallback;
+try
+    if isstruct(layoutOptions) && isfield(layoutOptions, 'GenealogyLinkColor') && ...
+            isnumeric(layoutOptions.GenealogyLinkColor) && numel(layoutOptions.GenealogyLinkColor) == 3
+        color = double(layoutOptions.GenealogyLinkColor(:).');
+    end
+catch
+end
+color = max(0, min(1, color));
 end
 
 function ax = getTileAxesFromHandles(graphicsHandles, tileIndex)
