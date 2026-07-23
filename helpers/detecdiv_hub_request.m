@@ -38,7 +38,12 @@ function [data, info] = detecdiv_hub_request(method, apiPath, payload, hub)
         end
 
         req = RequestMessage(localRequestMethod(method), headers, body);
-        opts = HTTPOptions('ConnectTimeout', localTimeout(hub), 'ConvertResponse', true);
+        timeoutSeconds = localTimeout(hub);
+        opts = HTTPOptions( ...
+            'ConnectTimeout', timeoutSeconds, ...
+            'ResponseTimeout', timeoutSeconds, ...
+            'DataTimeout', timeoutSeconds, ...
+            'ConvertResponse', true);
         resp = req.send(URI(url), opts);
         info.statusCode = double(resp.StatusCode);
         info.ok = info.statusCode >= 200 && info.statusCode < 300;

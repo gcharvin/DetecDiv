@@ -1633,7 +1633,16 @@ end
                     pipelineRunSave(runObj);
                     reloadMsg = '';
                     if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
+                        reloadDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                            'Title', 'Refreshing Hub project', ...
+                            'Message', 'Reloading project results and acquiring a local edit lease...', ...
+                            'Indeterminate', 'on');
+                        drawnow;
                         [~, reloadMsg] = localReloadProjectFromDiskAfterHubTerminalStatus(projVar, shallowObj, runObj, runIdx);
+                        try
+                            close(reloadDialog);
+                        catch
+                        end
                     end
                     if showDialog
                         msg = sprintf('Hub job: %s\nStatus: %s', char(string(job.id)), char(string(job.status)));
@@ -1704,21 +1713,8 @@ end
                     return;
                 end
                 try
-                    S = load(projectMatPath, 'shallowObj');
-                    if ~isfield(S, 'shallowObj') || ~isa(S.shallowObj, 'shallow')
-                        msg = 'Project changed on hub/server, but automatic reload failed.';
-                        return;
-                    end
-                    reloadedObj = S.shallowObj;
-                    try
-                        [pathstr, namestr] = fileparts(projectMatPath);
-                        if isunix || ismac
-                            reloadedObj.setPath([pathstr '/'], namestr);
-                        else
-                            reloadedObj.setPath([pathstr '\'], namestr);
-                        end
-                    catch
-                    end
+                    [reloadedObj, hubAccess, resumeInfo] = detecdiv_hub_resume_project_editing( ...
+                        shallowObj, 'ProjectMatPath', projectMatPath);
                     try
                         if isfield(reloadedObj.processing, 'pipelineRun') ...
                                 && runIdx >= 1 && runIdx <= numel(reloadedObj.processing.pipelineRun)
@@ -1737,9 +1733,13 @@ end
                     catch
                     end
                     ok = true;
-                    msg = 'Project reloaded from disk; local FOV/ROI tree has been refreshed.';
-                catch
-                    msg = 'Project changed on hub/server, but automatic reload failed. Reload before local editing.';
+                    msg = resumeInfo.message;
+                    if hubAccess.readOnly
+                        ok = false;
+                    end
+                catch ME
+                    msg = ['Project changed on hub/server, but automatic reload failed. ' ...
+                        'Reload before local editing. ' ME.message];
                 end
             end
 
@@ -5805,6 +5805,8 @@ function openRecentProjectCallback(app, projectPath)
         return;
     end
 
+    d.Message = 'Checking Hub access and acquiring a local edit lease...';
+    drawnow;
     [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
 
     d.Value = 0.66;
@@ -6701,13 +6703,11 @@ end
         function txt = formatProjectHubStatusText(app, shallowObj)
             txt = 'Hub project status: not Hub-managed';
             try
-                if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ...
-                        ~isprop(shallowObj, 'runProfiles') || ~isstruct(shallowObj.runProfiles) || ...
-                        ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+                if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
                     return;
                 end
 
-                hub = shallowObj.runProfiles.hub;
+                hub = detecdiv_hub_local_project_state(shallowObj);
                 projectId = app.hubTextField(hub, {'hub_project_id','project_id','id'});
                 hubManaged = app.hubLogicalField(hub, {'hubManaged','hub_managed'}, ~isempty(projectId));
                 if ~hubManaged && isempty(projectId)
@@ -6723,7 +6723,7 @@ end
                 elseif strcmpi(mode, 'write_granted')
                     state = 'editable';
                 else
-                    state = 'Hub-managed';
+                    state = 'Hub-managed (no local edit lease)';
                 end
 
                 parts = cell(1, 12);
@@ -7801,6 +7801,8 @@ end
                 end
                 return;
             end
+            d.Message = 'Checking Hub access and acquiring a local edit lease...';
+            drawnow;
             [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
 
             d.Value = 0.66;
@@ -7973,6 +7975,12 @@ end
             if strcmp(app.Tree.SelectedNodes.Tag,'Project')
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
+                closeDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Closing project', ...
+                    'Message', 'Releasing the Hub edit lease...', ...
+                    'Indeterminate', 'on');
+                closeGuard = onCleanup(@() close(closeDialog)); %#ok<NASGU>
+                drawnow;
 
                 shallowObj = [];
                 try
@@ -7981,11 +7989,15 @@ end
                 end
                 try
                     if ~isempty(shallowObj)
-                        detecdiv_hub_release_project_open(shallowObj);
+                        closeHub = detecdiv_hub_settings_get();
+                        closeHub.timeout = min(5, double(closeHub.timeout));
+                        detecdiv_hub_release_project_open(shallowObj, closeHub);
                     end
                 catch
                 end
 
+                closeDialog.Message = 'Removing the project and linked pipelines from this session...';
+                drawnow;
                 clearVars = {proj};
                 if isfield(app.Data,'Pipeline') && ~isempty(app.Data.Pipeline)
                     clearVars = [clearVars localFindLinkedPipelineVars(app, shallowObj, proj)]; %#ok<AGROW>

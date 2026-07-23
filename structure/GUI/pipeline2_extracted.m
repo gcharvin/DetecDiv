@@ -18510,8 +18510,17 @@ classdef pipeline2 < matlab.apps.AppBase
                     stopActiveRunControl(app, terminalButtonText(app, terminalStatus));
                     setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                     appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
+                    resumeDialog = uiprogressdlg(app.UIFigure, ...
+                        'Title', 'Refreshing Hub project', ...
+                        'Message', 'Reloading project results and acquiring a local edit lease...', ...
+                        'Indeterminate', 'on');
+                    drawnow;
+                    emitLocalWorkspaceRefreshForHubRun(app, job);
+                    try
+                        close(resumeDialog);
+                    catch
+                    end
                     if strcmpi(terminalStatus, 'done')
-                        emitLocalWorkspaceRefreshForHubRun(app, job);
                         showRunCompletedMessage(app);
                     else
                         uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
@@ -18578,6 +18587,25 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 catch
                 end
+            end
+            try
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow') && ...
+                        ~isempty(payload.projectMatPath)
+                    [projectObj, access, resumeInfo] = detecdiv_hub_resume_project_editing( ...
+                        app.CurrentProject, 'Hub', hubSettingsFromUi(app), ...
+                        'ProjectMatPath', payload.projectMatPath);
+                    app.CurrentProject = projectObj;
+                    payload.projectObj = projectObj;
+                    payload.summary.hubAccess = access;
+                    payload.summary.resumeMessage = resumeInfo.message;
+                    if ~isempty(payload.projectVarName)
+                        assignin('base', payload.projectVarName, projectObj);
+                    end
+                    appendRunReport(app, resumeInfo.message, struct());
+                end
+            catch ME
+                payload.summary.resumeError = ME.message;
+                appendRunReport(app, ['Local project refresh after Hub run failed: ' ME.message], struct());
             end
             try
                 detecdiv_event('emit', 'pipelineRunCompleted', payload);
