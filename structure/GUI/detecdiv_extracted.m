@@ -6890,6 +6890,8 @@ end
                 % displayNodes(app)
 
                 app.ProjectsPanel.Title='Project';
+                app.ProjectInformationLabel.Text='Loading project information...';
+                drawnow;
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
                 shallowObj=evalin('base',proj);
@@ -6905,16 +6907,8 @@ end
 
                 t=[t 'Number of classifiers in project: ' num2str(numel(shallowObj.processing.classification)) newline newline];
 
-                defaultPipePath = app.getProjectDefaultPipelinePath(shallowObj);
-                if ~isempty(defaultPipePath)
-                    defaultPipeId = '';
-                    try
-                        if isfield(shallowObj.runProfiles,'pipeline') && isfield(shallowObj.runProfiles.pipeline,'defaultTemplateId')
-                            defaultPipeId = char(string(shallowObj.runProfiles.pipeline.defaultTemplateId));
-                        end
-                    catch
-                    end
-
+                [defaultPipePath, defaultPipeId] = detecdiv_project_cached_pipeline_ref(shallowObj);
+                if ~isempty(defaultPipePath) || ~isempty(defaultPipeId)
                     t=[t 'Default pipeline: '];
                     if ~isempty(defaultPipeId)
                         t=[t defaultPipeId newline];
@@ -6922,7 +6916,10 @@ end
                         [~, pipeFolder] = fileparts(fileparts(defaultPipePath));
                         t=[t pipeFolder newline];
                     end
-                    t=[t defaultPipePath newline newline];
+                    if ~isempty(defaultPipePath)
+                        t=[t defaultPipePath newline];
+                    end
+                    t=[t newline];
                 end
 
                 nRuns = 0;
