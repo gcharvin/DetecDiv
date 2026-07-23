@@ -815,7 +815,23 @@ function ctx = updatePipelineProgress(ctx, nodeId, nodeIndex, totalNodes, subInd
         subIndex = 0;
     end
     totalNodes = max(1, totalNodes);
-    frac = max(0, min(1, (max(0, nodeIndex - 1) + max(0, min(1, subIndex ./ subTotal))) ./ totalNodes));
+    localFraction = max(0, min(1, subIndex ./ subTotal));
+    frac = (max(0, nodeIndex - 1) + localFraction) ./ totalNodes;
+    try
+        if isfield(ctx, 'progress') && isstruct(ctx.progress) && ...
+                isfield(ctx.progress, 'roiIndex') && ...
+                isfield(ctx.progress, 'totalRois') && ...
+                ~isempty(ctx.progress.roiIndex) && ...
+                ~isempty(ctx.progress.totalRois)
+            roiIndex = max(1, double(ctx.progress.roiIndex));
+            totalRois = max(1, double(ctx.progress.totalRois));
+            frac = ((roiIndex - 1) * totalNodes + ...
+                max(0, nodeIndex - 1) + localFraction) ./ ...
+                (totalRois * totalNodes);
+        end
+    catch
+    end
+    frac = max(0, min(1, frac));
     etaText = '';
     try
         if isfield(ctx,'progress') && isstruct(ctx.progress) && isfield(ctx.progress,'startedTic')
@@ -847,11 +863,17 @@ function ctx = updatePipelineProgress(ctx, nodeId, nodeIndex, totalNodes, subInd
     try
         if isfield(ctx, 'progressCallback') && isa(ctx.progressCallback, 'function_handle')
             payload = struct( ...
+                'protocol', 'detecdiv.progress.v1', ...
+                'value', frac, ...
+                'localValue', localFraction, ...
                 'nodeId', char(string(nodeId)), ...
                 'nodeIndex', nodeIndex, ...
                 'totalNodes', totalNodes, ...
                 'nodeProgress', frac, ...
-                'message', char(string(message)));
+                'message', char(string(message)), ...
+                'status', 'running', ...
+                'scope', 'node', ...
+                'indeterminate', false);
             ctx.progressCallback(payload);
         end
     catch
@@ -1276,7 +1298,9 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
             nodeId = ids{i};
             node = nodeStats(i).node;
             policy = nodeStats(i).policy;
-            roiCtx = updatePipelineProgress(roiCtx, nodeId, i, totalNodes, r-1, nRoi, ...
+            roiCtx.progress.roiIndex = r;
+            roiCtx.progress.totalRois = nRoi;
+            roiCtx = updatePipelineProgress(roiCtx, nodeId, i, totalNodes, 0, 1, ...
                 sprintf('ROI %d/%d, node %d/%d: %s', r, nRoi, i, totalNodes, nodeId));
             checkPipelineCancelled(roiCtx, sprintf('before ROI %d node %s', r, nodeId));
 
@@ -1391,7 +1415,9 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
             ctx.store = roiCtx.store;
         catch
         end
-        ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, r, nRoi, ...
+        ctx.progress.roiIndex = r;
+        ctx.progress.totalRois = nRoi;
+        ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, 1, 1, ...
             sprintf('Finalized ROI %d/%d', r, nRoi));
     end
 
@@ -2192,6 +2218,10 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
     procCtx.cancel = getfielddefault(ctx, 'cancel', struct());
     procCtx.progress = getfielddefault(ctx, 'progress', struct());
+    if isfield(ctx, 'progressCallback') && ...
+            isa(ctx.progressCallback, 'function_handle')
+        procCtx.progressCallback = ctx.progressCallback;
+    end
     if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
         procCtx.progressDlg = ctx.progressDlg;
     end

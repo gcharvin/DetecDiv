@@ -240,6 +240,23 @@ cfg.min_size     = round(min_size);
 cfg.mode         = mode_str;
 cfg.cancel_path  = char(string(cancelPath));
 cfg.log_path     = strrep(fullfile(workDir, 'runner_live.log'), '\\', '/');
+cfg.progress_base = 0;
+cfg.progress_span = 1;
+cfg.progress_enabled = isfield(ctx, 'progressCallback') && ...
+    isa(ctx.progressCallback, 'function_handle');
+try
+    if exist('detecdiv_progress_bounds', 'file') == 2
+        [cfg.progress_base, cfg.progress_span] = ...
+            detecdiv_progress_bounds(ctx);
+        % Python inference occupies the first 85% of this ROI/module
+        % interval. MATLAB normalization, tracking and integration use the
+        % remaining 15%, so the gauge cannot reach 100% prematurely.
+        cfg.progress_span = 0.85 * cfg.progress_span;
+    end
+catch
+    cfg.progress_base = 0;
+    cfg.progress_span = 1;
+end
 
 configPath = fullfile(workDir, 'classify_cellposesam_config.json');
 fid = fopen(configPath, 'w');
@@ -286,6 +303,11 @@ tRun = tic;
 runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, workDir, cancelPath, stdoutPath, stderrPath, liveLogPath);
 runSec = toc(tRun);
 disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.85, ...
+        'CellposeSAM inference complete; normalizing masks...', ...
+        'Scope', 'postprocess');
+end
 
 % If results.mat missing, force reload + retry once
 resultsPath = fullfile(workDir, 'results.mat');
@@ -350,7 +372,8 @@ catch
 end
 
 % Normalize IDs per frame
-for f = 1:size(tmpout, 4)
+nNormalizeFrames = size(tmpout, 4);
+for f = 1:nNormalizeFrames
     labels = unique(tmpout(:,:,1,f));
     labels(labels == 0) = [];
     new_frame = zeros(size(tmpout(:,:,1,f)), 'uint16');
@@ -358,10 +381,21 @@ for f = 1:size(tmpout, 4)
         new_frame(tmpout(:,:,1,f) == labels(k)) = uint16(k);
     end
     tmpout(:,:,1,f) = new_frame;
+    if exist('detecdiv_progress', 'file') == 2
+        detecdiv_progress(ctx, 0.85 + 0.05 * f / max(1, nNormalizeFrames), ...
+            sprintf('Normalizing mask %d/%d', f, nNormalizeFrames), ...
+            'Scope', 'postprocess', 'Current', f, ...
+            'Total', nNormalizeFrames);
+    end
 end
 
 if doTracking
-    tmpout = trackMasksHungarian(tmpout);
+    tmpout = trackMasksHungarian(tmpout, ctx, 0.90, 0.08);
+end
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.98, ...
+        'Integrating CellposeSAM results into the ROI...', ...
+        'Scope', 'integration');
 end
 
 if wantSegmentation
@@ -404,6 +438,10 @@ if wantProbability
     end
 
     disp('? Carte de probabilite CellposeSAM integree (channel *_cellprob).');
+end
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 1, 'CellposeSAM results integrated.', ...
+        'Scope', 'integration');
 end
 end
 
@@ -1131,8 +1169,12 @@ if isempty(id)
 end
 end
 
-function tracked_masks = trackMasksHungarian(masks4D)
+function tracked_masks = trackMasksHungarian(masks4D, ctx, progressBase, progressSpan)
 % Hongrois + distance gating ; next_id strictement monotone
+
+if nargin < 2 || isempty(ctx), ctx = struct(); end
+if nargin < 3 || isempty(progressBase), progressBase = 0; end
+if nargin < 4 || isempty(progressSpan), progressSpan = 1; end
 
 [H, W, ~, num_frames] = size(masks4D);
 tracked_masks = masks4D;
@@ -1153,6 +1195,13 @@ for t = 1:(num_frames-1)
 
     if isempty(labels_t) || isempty(labels_t1)
         tracked_masks(:,:,1,t+1) = mask_t1;
+        if exist('detecdiv_progress', 'file') == 2
+            detecdiv_progress(ctx, progressBase + ...
+                progressSpan * t / max(1, num_frames - 1), ...
+                sprintf('Tracking segmented frame %d/%d', t + 1, num_frames), ...
+                'Scope', 'tracking', 'Current', t + 1, ...
+                'Total', num_frames);
+        end
         continue;
     end
 
@@ -1227,5 +1276,18 @@ for t = 1:(num_frames-1)
     end
 
     tracked_masks(:,:,1,t+1) = mask_new_t1;
+    if exist('detecdiv_progress', 'file') == 2
+        detecdiv_progress(ctx, progressBase + ...
+            progressSpan * t / max(1, num_frames - 1), ...
+            sprintf('Tracking segmented frame %d/%d', t + 1, num_frames), ...
+            'Scope', 'tracking', 'Current', t + 1, ...
+            'Total', num_frames);
+    end
+end
+if num_frames <= 1 && exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, progressBase + progressSpan, ...
+        'Tracking complete (single frame).', ...
+        'Scope', 'tracking', 'Current', num_frames, ...
+        'Total', num_frames);
 end
 end

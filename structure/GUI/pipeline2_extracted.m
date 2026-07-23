@@ -4,42 +4,37 @@ classdef pipeline2 < matlab.apps.AppBase
     properties (Access = public)
         UIFigure                        matlab.ui.Figure
         FileMenu                        matlab.ui.container.Menu
-        ModulesMenu                     matlab.ui.container.Menu
         NewpipelineMenu                 matlab.ui.container.Menu
-        LoadpipelineMenu                matlab.ui.container.Menu
-        LoadrecentpipelineMenu          matlab.ui.container.Menu
         SavecurrentpipelineMenu         matlab.ui.container.Menu
         SavepipelineasMenu              matlab.ui.container.Menu
-        LoadrunMenu                     matlab.ui.container.Menu
         SaverunMenu                     matlab.ui.container.Menu
         SaverunasMenu                   matlab.ui.container.Menu
         ExportpipelineMenu              matlab.ui.container.Menu
-        ParametersPanel                 matlab.ui.container.Panel
+        MainTabGroup                    matlab.ui.container.TabGroup
+        BuildTab                        matlab.ui.container.Tab
+        ModuleParametersPanel           matlab.ui.container.Panel
+        TabGroup                        matlab.ui.container.TabGroup
+        RuntimeInputsTab                matlab.ui.container.Tab
         NewRunButton                    matlab.ui.control.Button
         PipelinestatusLabel             matlab.ui.control.Label
-        RuntimestatusLabel              matlab.ui.control.Label
-        RunButton                       matlab.ui.control.Button
-        SmokeTestButton                 matlab.ui.control.Button
-        ReviewRunButton                 matlab.ui.control.Button
-        RunParamsButton                 matlab.ui.control.Button
-        RunLogButton                    matlab.ui.control.Button
-        OpenRunFolderButton             matlab.ui.control.Button
-        CheckpipelineButton             matlab.ui.control.Button
-        CloseappButton                  matlab.ui.control.Button
-        PipelineandRuncheckreportLabel  matlab.ui.control.Label
-        RuninformationhereLabel         matlab.ui.control.Label
-        TabGroup                        matlab.ui.container.TabGroup
-        SubtypeDropDown                 matlab.ui.control.DropDown
-        SubtypeDropDownLabel            matlab.ui.control.Label
-        AdvancedmodeCheckBox            matlab.ui.control.CheckBox
+        CheckbuildButton                matlab.ui.control.Button
         IdEditField                     matlab.ui.control.EditField
         IdEditFieldLabel                matlab.ui.control.Label
-        TypeDropDown                    matlab.ui.control.DropDown
-        TypeDropDownLabel               matlab.ui.control.Label
-        RuntimeTab                      matlab.ui.container.Tab
-        RuntimeInputsTab                matlab.ui.container.Tab
-        TemplateidEditField             matlab.ui.control.EditField
-        TemplateidEditFieldLabel        matlab.ui.control.Label
+        PipelineandRuncheckreportLabel  matlab.ui.control.Label
+        GraphPanel                      matlab.ui.container.Panel
+        UIGraphAxes                     matlab.ui.control.UIAxes
+        RunTab                          matlab.ui.container.Tab
+        HubparametersPanel              matlab.ui.container.Panel
+        RuntimestatusLabel              matlab.ui.control.Label
+        RuninformationhereLabel         matlab.ui.control.Label
+        RunTargetDropDown               matlab.ui.control.DropDown
+        RunTargetDropDownLabel          matlab.ui.control.Label
+        ResumeoptionsDropDown           matlab.ui.control.DropDown
+        ResumeoptionsDropDownLabel      matlab.ui.control.Label
+        ExecutionDropDown               matlab.ui.control.DropDown
+        ExecutionDropDownLabel          matlab.ui.control.Label
+        UISelectedModuleTable           matlab.ui.control.Table
+        SelectedmodulesLabel            matlab.ui.control.Label
         RuntimeOutputPolicyDropDown     matlab.ui.control.DropDown
         RuntimeOutputPolicyLabel        matlab.ui.control.Label
         RuntimeRoisEditField            matlab.ui.control.EditField
@@ -48,6 +43,8 @@ classdef pipeline2 < matlab.apps.AppBase
         RuntimeFramesLabel              matlab.ui.control.Label
         RuntimeFovsEditField            matlab.ui.control.EditField
         RuntimeFovsLabel                matlab.ui.control.Label
+        RunButton                       matlab.ui.control.Button
+        SmokeTestButton                 matlab.ui.control.Button
         RuntimeAvailableTextArea        matlab.ui.control.TextArea
         RuntimeAvailableLabel           matlab.ui.control.Label
         RuntimeBrowseRawDataButton      matlab.ui.control.Button
@@ -59,29 +56,18 @@ classdef pipeline2 < matlab.apps.AppBase
         RuntimeProjectTargetLabel       matlab.ui.control.Label
         RuntimeSourceDropDown           matlab.ui.control.DropDown
         RuntimeSourceLabel              matlab.ui.control.Label
-        SelectedmodulesLabel            matlab.ui.control.Label
-        UISelectedModuleTable           matlab.ui.control.Table
-        RunTargetDropDown               matlab.ui.control.DropDown
-        RunTargetDropDownLabel          matlab.ui.control.Label
-        ResumeoptionsDropDown           matlab.ui.control.DropDown
-        ResumeoptionsDropDownLabel      matlab.ui.control.Label
-        ExecutionDropDown               matlab.ui.control.DropDown
-        ExecutionDropDownLabel          matlab.ui.control.Label
-        PathProjectBox                  matlab.ui.control.ListBox
-        ListofpathprojectsLabel         matlab.ui.control.Label
-        UIFOVTable                      matlab.ui.control.Table
-        BuildPanel                      matlab.ui.container.Panel
-        UIWorkspacePipelineTable        matlab.ui.control.Table
-        DeleteselectedButton            matlab.ui.control.Button
-        InsertbeforeselectedButton      matlab.ui.control.Button
-        MergegraphButton                matlab.ui.control.Button
-        ForkgraphButton                 matlab.ui.control.Button
-        GraphPanel                      matlab.ui.container.Panel
-        UIGraphAxes                     matlab.ui.control.UIAxes
-        PrototypeRuntimeConfig struct = struct()
-        PrototypePipelineRef struct = struct()
-        PrototypeRunPath char = ''
-        PrototypeAccepted logical = false
+        TemplateidEditField             matlab.ui.control.EditField
+        TemplateidEditFieldLabel        matlab.ui.control.Label
+        MonitorTab                      matlab.ui.container.Tab
+        ProgressionStatusLabel          matlab.ui.control.Label
+        ProgressionLabel                matlab.ui.control.Label
+        ConsoleTextArea                 matlab.ui.control.TextArea
+        ConsoleTextAreaLabel            matlab.ui.control.Label
+        CancelrunButton                 matlab.ui.control.Button
+        RunParamsButton                 matlab.ui.control.Button
+        RunLogButton                    matlab.ui.control.Button
+        OpenRunFolderButton             matlab.ui.control.Button
+        ReviewRunButton                 matlab.ui.control.Button
     end
 
     properties (Access = private)
@@ -96,6 +82,10 @@ classdef pipeline2 < matlab.apps.AppBase
         EdgeHandles = gobjects(0)
         ModuleContextMenu matlab.ui.container.ContextMenu
         GraphContextMenu matlab.ui.container.ContextMenu
+        ModulesMenu = []
+        LoadpipelineMenu = []
+        LoadrecentpipelineMenu = []
+        LoadrunMenu = []
         GenerateDocumentationMenu matlab.ui.container.Menu
         OpenDocumentationMenu matlab.ui.container.Menu
         DynamicModuleTabs = gobjects(0)
@@ -144,6 +134,10 @@ classdef pipeline2 < matlab.apps.AppBase
         HubRunMonitorJobId char = ''
         HubRunMonitorLastStatus char = ''
         HubRunUiLocked logical = false
+        HubRunFileMonitorFuture = []
+        HubRunFileMonitorEventQueue = []
+        HubRunFileMonitorEventListener = []
+        HubRunFileMonitorResultQueue = []
         LocalRunSubmission struct = struct()
         BatchPrototypeMode logical = false
         BatchPrototypeModal logical = false
@@ -151,6 +145,14 @@ classdef pipeline2 < matlab.apps.AppBase
         RuntimeClassifierSource = []
         RuntimeClassifierSourceRef = struct('key', '', 'label', '', 'kind', '', 'path', '', 'id', '')
         RuntimeClassifierChoices = struct('key', {}, 'label', {}, 'kind', {}, 'path', {}, 'id', {}, 'object', {})
+        TypeDropDown struct = struct()
+        SubtypeDropDown struct = struct()
+        AdvancedmodeCheckBox struct = struct()
+        UIWorkspacePipelineTable struct = struct()
+        MonitorProgressGauge = []
+        MonitorLastProgress double = 0
+        MonitorLastHubConsoleText char = ''
+        MonitorHasModuleProgress logical = false
     end
 
     methods (Access = private)
@@ -546,16 +548,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     catch
                     end
                 end
-                try
-                    app.CloseappButton.Text = 'Use Prototype';
-                catch
-                end
+                app.NewRunButton.Text = 'Use Prototype';
                 try
                     app.UIFigure.Name = [guiAppName(app) ' - Batch prototype'];
                 catch
                 end
                 try
-                    app.TabGroup.SelectedTab = app.RuntimeInputsTab;
+                    app.MainTabGroup.SelectedTab = app.RunTab;
                 catch
                 end
                 setRuntimeStatus(app, sprintf('Batch prototype mode.\nSet runtime parameters and target, then click Use Prototype.'));
@@ -987,6 +986,8 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function configureControls(app)
+            configureFileMenus(app);
+            configureGraphAppearance(app);
             app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier'};
             app.TypeDropDown.Value = 'dataLoader';
             app.TypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TypeDropDownValueChanged, true);
@@ -999,11 +1000,12 @@ classdef pipeline2 < matlab.apps.AppBase
             app.UIWorkspacePipelineTable.ColumnName = {'Module','Type','Package','Status'};
             app.UIWorkspacePipelineTable.ColumnEditable = false(1,4);
             app.UIWorkspacePipelineTable.ColumnWidth = {82 82 62 'auto'};
+            app.UIWorkspacePipelineTable.Selection = [];
             app.UIWorkspacePipelineTable.SelectionChangedFcn = createCallbackFcn(app, @UIWorkspacePipelineTableSelectionChanged, true);
 
             app.UISelectedModuleTable.ColumnName = {'Run','Module','Type','Package'};
             app.UISelectedModuleTable.ColumnEditable = [true false false false];
-            app.UISelectedModuleTable.ColumnWidth = {42 82 70 'auto'};
+            app.UISelectedModuleTable.ColumnWidth = {52 250 110 'auto'};
             app.UISelectedModuleTable.CellEditCallback = @(src,event)selectedModuleTableEdited(app, src, event);
 
             app.ResumeoptionsDropDown.Items = {'Resume previous progress','Restart from scratch'};
@@ -1014,14 +1016,10 @@ classdef pipeline2 < matlab.apps.AppBase
             buildHubRuntimeControls(app);
             buildRunArtifactControls(app);
             buildRuntimeControls(app);
+            configureMonitorControls(app);
 
-            app.ForkgraphButton.ButtonPushedFcn = createCallbackFcn(app, @ForkgraphButtonPushed, true);
-            app.MergegraphButton.ButtonPushedFcn = createCallbackFcn(app, @MergegraphButtonPushed, true);
-            app.InsertbeforeselectedButton.ButtonPushedFcn = createCallbackFcn(app, @InsertbeforeselectedButtonPushed, true);
-            app.DeleteselectedButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteselectedButtonPushed, true);
-            app.CloseappButton.ButtonPushedFcn = createCallbackFcn(app, @CloseappButtonPushed, true);
             app.RunButton.ButtonPushedFcn = createCallbackFcn(app, @RunButtonPushed, true);
-            app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
+            app.CheckbuildButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
             app.SmokeTestButton.ButtonPushedFcn = createCallbackFcn(app, @SmokeTestButtonPushed, true);
             try, app.NewRunButton.ButtonPushedFcn = createCallbackFcn(app, @NewRunButtonPushed, true); catch, end
             app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
@@ -1051,6 +1049,8 @@ classdef pipeline2 < matlab.apps.AppBase
             updateDocumentationMenuState(app);
 
             setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
+            app.PipelineandRuncheckreportLabel.WordWrap = 'on';
+            app.PipelineandRuncheckreportLabel.VerticalAlignment = 'top';
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline error.';
 
             app.ModuleContextMenu = uicontextmenu(app.UIFigure);
@@ -1080,39 +1080,59 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function configureRuntimeTabs(app)
-            app.RuntimeTab.Title = 'Runtime options';
-            if isempty(app.RuntimeInputsTab) || ~isvalid(app.RuntimeInputsTab)
-                app.RuntimeInputsTab = uitab(app.TabGroup);
-                app.RuntimeInputsTab.Title = 'Runtime inputs';
-            else
-                app.RuntimeInputsTab.Title = 'Runtime inputs';
+            % The Build tab group is now reserved for per-module editors.
+            % App Designer keeps one placeholder tab so the group can be
+            % laid out visually; remove that placeholder at startup.
+            try
+                if ~isempty(app.RuntimeInputsTab) && isvalid(app.RuntimeInputsTab)
+                    delete(app.RuntimeInputsTab);
+                end
+            catch
             end
-            reorderRuntimeTabs(app);
         end
 
         function reorderRuntimeTabs(app)
-            try
-                children = app.TabGroup.Children;
-                dynamicTabs = gobjects(0);
-                otherTabs = gobjects(0);
-                for i = 1:numel(children)
-                    if isequal(children(i), app.RuntimeInputsTab) || isequal(children(i), app.RuntimeTab)
-                        continue;
-                    end
-                    try
-                        ud = children(i).UserData;
-                        if isstruct(ud) && isfield(ud, 'dynamic') && logical(ud.dynamic)
-                            dynamicTabs(end+1) = children(i); %#ok<AGROW>
-                        else
-                            otherTabs(end+1) = children(i); %#ok<AGROW>
-                        end
-                    catch
-                        otherTabs(end+1) = children(i); %#ok<AGROW>
-                    end
-                end
-                app.TabGroup.Children = [otherTabs(:); app.RuntimeInputsTab; app.RuntimeTab; dynamicTabs(:)];
-            catch
-            end
+            % Module tabs are created in pipeline order; no runtime input
+            % or option tabs are mixed into this group anymore.
+        end
+
+        function configureGraphAppearance(app)
+            app.UIGraphAxes.XTick = [];
+            app.UIGraphAxes.YTick = [];
+            app.UIGraphAxes.Box = 'on';
+            app.UIGraphAxes.Toolbar.Visible = 'off';
+            title(app.UIGraphAxes, '');
+            xlabel(app.UIGraphAxes, '');
+            ylabel(app.UIGraphAxes, '');
+            zlabel(app.UIGraphAxes, '');
+        end
+
+        function configureFileMenus(app)
+            app.LoadpipelineMenu = uimenu(app.FileMenu, ...
+                'Text', 'Load pipeline...');
+            app.LoadrecentpipelineMenu = uimenu(app.FileMenu, ...
+                'Text', 'Load recent pipeline');
+            app.LoadrunMenu = uimenu(app.FileMenu, ...
+                'Text', 'Load run...', 'Separator', 'on');
+            app.ModulesMenu = uimenu(app.UIFigure, 'Text', '+');
+        end
+
+        function configureMonitorControls(app)
+            app.ConsoleTextArea.Editable = 'off';
+            app.ConsoleTextArea.FontName = 'Consolas';
+            app.ConsoleTextArea.Value = {'Monitor ready.'};
+            app.CancelrunButton.ButtonPushedFcn = @(~,~)requestActiveRunCancellation(app);
+            app.CancelrunButton.Enable = 'off';
+            app.ProgressionStatusLabel.Text = 'Idle';
+            app.MonitorProgressGauge = uigauge(app.MonitorTab, 'linear', ...
+                'Limits', [0 1], ...
+                'Value', 0, ...
+                'MajorTicks', [0 0.25 0.5 0.75 1], ...
+                'MajorTickLabels', {'0%','25%','50%','75%','100%'}, ...
+                'Position', [91 869 1111 36]);
+            app.MonitorLastProgress = 0;
+            app.MonitorLastHubConsoleText = '';
+            app.MonitorHasModuleProgress = false;
         end
 
         function modules = defaultModuleLibrary(app)
@@ -2537,7 +2557,6 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isempty(nodes)
                 maxRow = max(arrayfun(@(n) getLayoutRow(app, n), nodes));
             end
-            drawRuntimeGraphButtons(app, blockW, blockH, gapX, gapY, maxRow);
             xlim(app.UIGraphAxes, [-0.3 maxCol * (blockW + gapX)]);
             ylim(app.UIGraphAxes, [-(maxRow) * (blockH + gapY) blockH + 0.35]);
             axis(app.UIGraphAxes, 'manual');
@@ -2592,24 +2611,6 @@ classdef pipeline2 < matlab.apps.AppBase
             addModuleFromCurrentSelection(app);
         end
 
-        function GraphRuntimeNavButtonDown(app, event)
-            src = getCallbackSource(app, event);
-            if isempty(src) || ~isvalid(src) || ~isstruct(src.UserData) || ~isfield(src.UserData, 'runtimeTab')
-                return;
-            end
-            target = char(string(src.UserData.runtimeTab));
-            try
-                switch target
-                    case 'inputs'
-                        app.TabGroup.SelectedTab = app.RuntimeInputsTab;
-                    case 'options'
-                        app.TabGroup.SelectedTab = app.RuntimeTab;
-                end
-            catch
-            end
-            redrawGraph(app);
-        end
-
         function src = getCallbackSource(app, event) %#ok<INUSD>
             src = [];
             try
@@ -2626,51 +2627,6 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 src = [];
             end
-        end
-
-        function drawRuntimeGraphButtons(app, blockW, blockH, gapX, gapY, maxRow)
-            btnW = 1.45;
-            btnH = 0.30;
-            btnGap = 0.14;
-            x0 = 0;
-            y0 = -(maxRow) * (blockH + gapY) + 0.13;
-            drawRuntimeGraphButton(app, x0, y0, btnW, btnH, 'Runtime inputs', 'inputs');
-            drawRuntimeGraphButton(app, x0 + btnW + btnGap, y0, btnW, btnH, 'Runtime options', 'options');
-        end
-
-        function drawRuntimeGraphButton(app, x, y, w, h, label, target)
-            selected = false;
-            try
-                if strcmp(target, 'inputs')
-                    selected = isequal(app.TabGroup.SelectedTab, app.RuntimeInputsTab);
-                elseif strcmp(target, 'options')
-                    selected = isequal(app.TabGroup.SelectedTab, app.RuntimeTab);
-                end
-            catch
-                selected = false;
-            end
-            face = [0.94 0.96 0.98];
-            edge = [0.40 0.48 0.58];
-            textColor = [0.18 0.22 0.28];
-            lineWidth = 1.0;
-            if selected
-                face = [0.78 0.88 1.00];
-                edge = [0.05 0.32 0.68];
-                lineWidth = 1.6;
-            end
-            ud = struct('runtimeTab', char(string(target)));
-            hRect = rectangle(app.UIGraphAxes, 'Position', [x y w h], ...
-                'Curvature', 0.10, 'FaceColor', face, 'EdgeColor', edge, ...
-                'LineWidth', lineWidth, ...
-                'ButtonDownFcn', createCallbackFcn(app, @GraphRuntimeNavButtonDown, true));
-            hRect.UserData = ud;
-            hText = text(app.UIGraphAxes, x + w/2, y + h/2, char(string(label)), ...
-                'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-                'Interpreter', 'none', 'FontSize', 8, 'FontWeight', 'bold', ...
-                'Color', textColor, ...
-                'ButtonDownFcn', createCallbackFcn(app, @GraphRuntimeNavButtonDown, true));
-            hText.UserData = ud;
-            app.GhostHandles(end+1:end+2) = [hRect hText]; %#ok<AGROW>
         end
 
         function drawImplicitEdges(app, blockW, blockH, gapX, gapY)
@@ -2996,14 +2952,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             app.SelectedNodeIndex = NaN;
-            try
-                if ~isempty(app.RuntimeTab) && isvalid(app.RuntimeTab)
-                    app.IsRefreshingTabs = true;
-                    cleanupObj = onCleanup(@()setRefreshingTabs(app, false)); %#ok<NASGU>
-                    app.TabGroup.SelectedTab = app.RuntimeTab;
-                end
-            catch
-            end
             redrawGraph(app);
             updateCommonControlsEnableState(app);
         end
@@ -3431,11 +3379,7 @@ classdef pipeline2 < matlab.apps.AppBase
             focus = struct('kind', '', 'nodeId', '');
             try
                 selectedTab = app.TabGroup.SelectedTab;
-                if isequal(selectedTab, app.RuntimeTab)
-                    focus.kind = 'runtimeOptions';
-                elseif isequal(selectedTab, app.RuntimeInputsTab)
-                    focus.kind = 'runtimeInputs';
-                elseif isstruct(selectedTab.UserData) && isfield(selectedTab.UserData, 'nodeId')
+                if isstruct(selectedTab.UserData) && isfield(selectedTab.UserData, 'nodeId')
                     focus.kind = 'module';
                     focus.nodeId = char(string(selectedTab.UserData.nodeId));
                 end
@@ -3450,16 +3394,6 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             try
                 switch char(string(getField(app, focus, 'kind', '')))
-                    case 'runtimeOptions'
-                        if isvalid(app.RuntimeTab)
-                            app.TabGroup.SelectedTab = app.RuntimeTab;
-                            restored = true;
-                        end
-                    case 'runtimeInputs'
-                        if isvalid(app.RuntimeInputsTab)
-                            app.TabGroup.SelectedTab = app.RuntimeInputsTab;
-                            restored = true;
-                        end
                     case 'module'
                         nodeId = char(string(getField(app, focus, 'nodeId', '')));
                         for i = 1:numel(app.DynamicModuleTabs)
@@ -3533,48 +3467,15 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function refreshGlobalRuntimeTable(app)
-            try
-                if isvalid(app.UIFOVTable)
-                    app.UIFOVTable.Data = { ...
-                        'Project / data path', ''; ...
-                        'FOV selection', ''; ...
-                        'Frame selection', ''; ...
-                        'Source channels', ''; ...
-                        'ROI selection', '' ...
-                        };
-                end
-            catch
-            end
+            % Runtime inputs now use the designer controls on RunTab.
         end
 
         function buildRuntimeControls(app)
-            if hasStaticRuntimeInputControls(app)
-                bindStaticRuntimeInputControls(app);
-                updateRuntimeInputStates(app);
-                return;
+            if ~hasStaticRuntimeInputControls(app)
+                error('pipeline2:MissingRuntimeControls', ...
+                    'The App Designer Run tab is missing required runtime input controls.');
             end
-
-            deleteRuntimeInputChildren(app);
-            grid = uigridlayout(app.RuntimeInputsTab, [8 4]);
-            grid.RowHeight = {32, 32, 32, 96, 32, 32, 32, 32};
-            grid.ColumnWidth = {86, '1x', 115, 88};
-            grid.Padding = [14 14 14 14];
-            grid.RowSpacing = 10;
-            grid.ColumnSpacing = 10;
-
-            app.RuntimeFieldHandles = struct();
-            app.RuntimeButtonHandles = struct();
-            app.RuntimeValues = struct();
-            app.RuntimeParseInfo = struct();
-
-            addRuntimeInputSourceRow(app, grid, 1);
-            addRuntimeProjectRow(app, grid, 2);
-            addRuntimeRow(app, grid, 3, 'Raw image folder', 'rawDataPath', 'Raw image/data folder parsed by dataloader in raw-data mode.', 'Browse...');
-            addRuntimeInventoryRow(app, grid, 4);
-            addRuntimeTextRow(app, grid, 5, 'FOVs', 'fovs', 'all / 1,3,5 / 1:4');
-            addRuntimeTextRow(app, grid, 6, 'Frames', 'frames', 'all / 1:50 / 1,5,9');
-            addRuntimeTextRow(app, grid, 7, 'ROIs', 'rois', 'all / selected ROI ids');
-            addRuntimePolicyRow(app, grid, 8);
+            bindStaticRuntimeInputControls(app);
             updateRuntimeInputStates(app);
         end
 
@@ -3660,7 +3561,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function deleteRuntimeInputChildren(app)
             try
-                kids = app.RuntimeInputsTab.Children;
+                kids = app.RunTab.Children;
                 for k = 1:numel(kids)
                     delete(kids(k));
                 end
@@ -3673,24 +3574,22 @@ classdef pipeline2 < matlab.apps.AppBase
             hub = defaultHubSettingsForUi(app);
             app.HubFieldHandles = struct();
 
-            if ~isempty(app.RunTargetDropDown) && isvalid(app.RunTargetDropDown)
-                app.RunTargetDropDown.Items = {'Local / Windows','Local / WSL','DetecDiv Hub'};
-                app.RunTargetDropDown.ItemsData = {'local','local_wsl','hub'};
-                app.RunTargetDropDown.Value = 'local';
-                target = app.RunTargetDropDown;
-                app.HubFieldHandles.executionTargetLabel = app.RunTargetDropDownLabel;
-            else
-                app.HubFieldHandles.executionTargetLabel = uilabel(app.RuntimeTab, ...
-                    'Text', 'Run target', 'HorizontalAlignment', 'right', 'Position', [374 330 78 22]);
-                target = uidropdown(app.RuntimeTab, ...
-                    'Items', {'Local / Windows','Local / WSL','Hub'}, ...
-                    'ItemsData', {'local','local_wsl','hub'}, ...
-                    'Value', 'local', ...
-                    'Position', [462 330 170 22]);
-            end
+            app.RunTargetDropDown.Items = {'Local / Windows','Local / WSL','DetecDiv Hub'};
+            app.RunTargetDropDown.ItemsData = {'local','local_wsl','hub'};
+            app.RunTargetDropDown.Value = 'local';
+            target = app.RunTargetDropDown;
+            app.HubFieldHandles.executionTargetLabel = app.RunTargetDropDownLabel;
             target.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, 'executionTarget', src.Value);
             app.HubFieldHandles.executionTarget = target;
             app.RuntimeValues.executionTarget = 'local';
+
+            grid = uigridlayout(app.HubparametersPanel, [8 3]);
+            grid.RowHeight = repmat({28}, 1, 8);
+            grid.ColumnWidth = {92, '1x', 76};
+            grid.Padding = [8 8 8 8];
+            grid.RowSpacing = 5;
+            grid.ColumnSpacing = 6;
+            app.HubFieldHandles.container = grid;
 
             labels = {'Hub URL','Fallback URLs','User key','Password','Session token','Timeout','Remote root','Local root'};
             keys = {'baseUrl','fallbackBaseUrls','userKey','password','sessionToken','timeout','defaultRemoteProjectRoot','defaultLocalProjectRoot'};
@@ -3705,19 +3604,27 @@ classdef pipeline2 < matlab.apps.AppBase
                 getStructText(app, hub, 'defaultLocalProjectRoot', '') ...
                 };
 
-            y = 292;
             for i = 1:numel(keys)
-                lbl = uilabel(app.RuntimeTab, 'Text', labels{i}, 'HorizontalAlignment', 'right', ...
-                    'Position', [348 y 104 22]);
+                lbl = uilabel(grid, 'Text', labels{i}, 'HorizontalAlignment', 'right');
+                lbl.Layout.Row = i;
+                lbl.Layout.Column = 1;
                 if strcmp(keys{i}, 'timeout')
-                    fld = uieditfield(app.RuntimeTab, 'numeric', 'Position', [462 y 170 22], 'Value', str2double(defaults{i}));
+                    fld = uieditfield(grid, 'numeric', 'Value', str2double(defaults{i}));
                 elseif strcmp(keys{i}, 'password')
-                    fld = createHubPasswordControl(app, app.RuntimeTab, [462 y 190 22]);
-                    app.HubFieldHandles.connectButton = uibutton(app.RuntimeTab, 'push', ...
-                        'Text', 'Connect', 'Position', [660 y-1 130 24], ...
+                    fld = createHubPasswordControl(app, grid, [1 1 10 10]);
+                    app.HubFieldHandles.connectButton = uibutton(grid, 'push', ...
+                        'Text', 'Connect', ...
                         'ButtonPushedFcn', @(~,~)connectHubButtonPushed(app));
+                    app.HubFieldHandles.connectButton.Layout.Row = i;
+                    app.HubFieldHandles.connectButton.Layout.Column = 3;
                 else
-                    fld = uieditfield(app.RuntimeTab, 'text', 'Position', [462 y 330 22], 'Value', defaults{i});
+                    fld = uieditfield(grid, 'text', 'Value', defaults{i});
+                end
+                fld.Layout.Row = i;
+                if strcmp(keys{i}, 'password')
+                    fld.Layout.Column = 2;
+                else
+                    fld.Layout.Column = [2 3];
                 end
                 if strcmp(keys{i}, 'password') && isprop(fld, 'DataChangedFcn')
                     fld.DataChangedFcn = @(src,~)hubRuntimeFieldChanged(app, 'hubPassword', src.Data);
@@ -3726,7 +3633,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 app.HubFieldHandles.([keys{i} 'Label']) = lbl;
                 app.HubFieldHandles.(keys{i}) = fld;
-                y = y - 34;
             end
             updateHubRuntimeControlsVisibility(app);
         end
@@ -3744,16 +3650,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.RunParamsButton.ButtonPushedFcn = @(~,~)openCurrentRunArtifact(app, 'params');
                 app.ReviewRunButton.ButtonPushedFcn = @(~,~)showCurrentRunReview(app);
             else
-                app.RunArtifactButtonHandles.folder = uibutton(app.RuntimeTab, 'push', ...
+                app.RunArtifactButtonHandles.folder = uibutton(app.MonitorTab, 'push', ...
                     'Text', 'Open run folder', 'Position', [660 404 130 24], ...
                     'ButtonPushedFcn', @(~,~)openCurrentRunArtifact(app, 'folder'));
-                app.RunArtifactButtonHandles.log = uibutton(app.RuntimeTab, 'push', ...
+                app.RunArtifactButtonHandles.log = uibutton(app.MonitorTab, 'push', ...
                     'Text', 'Run log', 'Position', [660 368 130 24], ...
                     'ButtonPushedFcn', @(~,~)showCurrentRunLog(app));
-                app.RunArtifactButtonHandles.params = uibutton(app.RuntimeTab, 'push', ...
+                app.RunArtifactButtonHandles.params = uibutton(app.MonitorTab, 'push', ...
                     'Text', 'Run params', 'Position', [660 332 130 24], ...
                     'ButtonPushedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
-                app.RunArtifactButtonHandles.review = uibutton(app.RuntimeTab, 'push', ...
+                app.RunArtifactButtonHandles.review = uibutton(app.MonitorTab, 'push', ...
                     'Text', 'Review run', 'Position', [660 296 130 24], ...
                     'ButtonPushedFcn', @(~,~)showCurrentRunReview(app));
             end
@@ -3829,17 +3735,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             isHub = strcmp(char(string(app.HubFieldHandles.executionTarget.Value)), 'hub');
-            fn = fieldnames(app.HubFieldHandles);
-            for i = 1:numel(fn)
-                key = fn{i};
-                if any(strcmp(key, {'executionTarget','executionTargetLabel'}))
-                    continue;
-                end
-                try
-                    app.HubFieldHandles.(key).Visible = ternary(app, isHub, 'on', 'off');
-                catch
-                end
-            end
+            app.HubparametersPanel.Visible = ternary(app, isHub, 'on', 'off');
         end
 
         function hub = defaultHubSettingsForUi(app) %#ok<INUSD>
@@ -5436,7 +5332,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 else
                     lines{end+1} = 'Authority: selected source classifier (ROI container only)';
                 end
-                lines{end+1} = 'Execution target: select on the Runtime options tab';
+                lines{end+1} = 'Execution target: select on the Run tab';
                 app.RuntimeFieldHandles.availableResources.Value = lines;
                 return;
             end
@@ -5726,8 +5622,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             if ~app.RuntimeModeUnlocked
-                setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, false);
-                setRuntimeControlTreeEnabled(app, app.RuntimeTab, false);
+                setRuntimeControlTreeEnabled(app, app.RunTab, false);
                 setRuntimeArtifactButtonsEnabled(app, false);
                 try, app.RunButton.Enable = 'off'; catch, end
                 try, app.SmokeTestButton.Enable = 'off'; catch, end
@@ -5965,10 +5860,8 @@ classdef pipeline2 < matlab.apps.AppBase
         function setRuntimeModeUnlocked(app, tf)
             app.RuntimeModeUnlocked = logical(tf);
             app.Data.runMode = logical(tf);
-            try, app.RuntimeInputsTab.Enable = ternary(app, tf, 'on', 'off'); catch, end
-            try, app.RuntimeTab.Enable = ternary(app, tf, 'on', 'off'); catch, end
-            setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, tf);
-            setRuntimeControlTreeEnabled(app, app.RuntimeTab, tf);
+            try, app.RunTab.Enable = ternary(app, tf, 'on', 'off'); catch, end
+            setRuntimeControlTreeEnabled(app, app.RunTab, tf);
             if app.HubRunUiLocked
                 applyHubRunUiLock(app, true);
             end
@@ -5986,7 +5879,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~app.BatchPrototypeMode
                 return;
             end
-            disabledControls = {'RunButton','SmokeTestButton','NewRunButton', ...
+            disabledControls = {'RunButton','SmokeTestButton', ...
                 'OpenRunFolderButton','RunLogButton','RunParamsButton','ReviewRunButton', ...
                 'ForkgraphButton','MergegraphButton','InsertbeforeselectedButton','DeleteselectedButton'};
             for i = 1:numel(disabledControls)
@@ -6011,8 +5904,8 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             try, app.RunButton.Text = 'Run disabled'; catch, end
             try, app.SmokeTestButton.Text = 'Smoke disabled'; catch, end
-            try, app.NewRunButton.Text = 'Prototype only'; catch, end
-            try, app.CloseappButton.Text = 'Use Prototype'; catch, end
+            try, app.NewRunButton.Text = 'Use Prototype'; catch, end
+            try, app.NewRunButton.Enable = 'on'; catch, end
             try, app.UISelectedModuleTable.ColumnEditable = [false false false false]; catch, end
             try, app.IdEditField.Enable = 'off'; catch, end
             try, app.TypeDropDown.Enable = 'off'; catch, end
@@ -6027,6 +5920,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         if isprop(kids(i), 'Enable')
                             kids(i).Enable = ternary(app, tf, 'on', 'off');
                         end
+                    catch
+                    end
+                    try
+                        setRuntimeControlTreeEnabled(app, kids(i), tf);
                     catch
                     end
                 end
@@ -6052,10 +5949,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~app.RuntimeModeUnlocked
                 return;
             end
-            try, setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, ~tf); catch, end
-            try, setRuntimeControlTreeEnabled(app, app.RuntimeTab, ~tf); catch, end
+            try, setRuntimeControlTreeEnabled(app, app.RunTab, ~tf); catch, end
             try, app.UISelectedModuleTable.ColumnEditable = ternary(app, ~tf, [true false false false], [false false false false]); catch, end
-            names = {'NewRunButton','SmokeTestButton','CheckpipelineButton'};
+            names = {'NewRunButton','SmokeTestButton','CheckbuildButton'};
             for i = 1:numel(names)
                 try
                     h = app.(names{i});
@@ -6066,12 +5962,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             try
-                app.RunButton.Enable = 'on';
-                if tf
-                    app.RunButton.Text = 'Cancel run';
-                end
+                app.RunButton.Enable = ternary(app, ~tf, 'on', 'off');
             catch
             end
+            try, app.CancelrunButton.Enable = ternary(app, tf, 'on', 'off'); catch, end
             setRuntimeArtifactButtonsEnabled(app, true);
         end
 
@@ -8995,7 +8889,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
 
-                msg = ['A shallow project must be selected in Runtime inputs before opening workflow, ' ...
+                msg = ['A shallow project must be selected in the Run tab before opening workflow, ' ...
                     'unless Input mode is set to Parse raw images into project.'];
                 return;
             end
@@ -18337,8 +18231,12 @@ classdef pipeline2 < matlab.apps.AppBase
         function startLocalRunControl(app, runObj) %#ok<INUSD>
             app.ActiveRunMode = 'local_process';
             app.ActiveRunCancelRequested = false;
-            app.RunButton.Text = 'Stop run';
-            app.RunButton.Enable = 'on';
+            app.RunButton.Text = 'Run !';
+            app.RunButton.Enable = 'off';
+            app.CancelrunButton.Text = 'Cancel run...';
+            app.CancelrunButton.Enable = 'on';
+            resetRunMonitor(app, 'Local MATLAB worker queued.');
+            app.MainTabGroup.SelectedTab = app.MonitorTab;
             applyHubRunUiLock(app, true);
             drawnow limitrate;
         end
@@ -18352,6 +18250,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ActiveRunCancelRequested = false;
             app.RunButton.Text = char(string(buttonText));
             app.RunButton.Enable = 'on';
+            app.CancelrunButton.Text = 'Cancel run...';
+            app.CancelrunButton.Enable = 'off';
             drawnow limitrate;
         end
 
@@ -18364,7 +18264,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             app.ActiveRunCancelRequested = true;
-            app.RunButton.Text = 'Cancelling...';
+            app.CancelrunButton.Text = 'Cancelling...';
+            app.CancelrunButton.Enable = 'off';
+            appendMonitorConsole(app, '[control] Cancellation requested; waiting for a safe stop point.');
             drawnow limitrate;
             switch mode
                 case {'local','local_process'}
@@ -18373,7 +18275,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     requestHubRunCancellation(app);
                 otherwise
                     app.ActiveRunCancelRequested = false;
-                    app.RunButton.Text = 'Run !';
+                    app.CancelrunButton.Text = 'Cancel run...';
+                    app.CancelrunButton.Enable = 'off';
             end
         end
 
@@ -18410,12 +18313,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 setRuntimeStatus(app, 'Stop requested. Waiting for the current safe point...');
                 try
-                    logRunEvent(app, app.CurrentRun, 'Local run cancellation requested from Run button.', 'pipeline2');
+                    logRunEvent(app, app.CurrentRun, 'Local run cancellation requested from Monitor.', 'pipeline2');
                 catch
                 end
             catch ME
                 app.ActiveRunCancelRequested = false;
-                app.RunButton.Text = 'Stop run';
+                app.CancelrunButton.Text = 'Cancel run...';
+                app.CancelrunButton.Enable = 'on';
                 uialert(app.UIFigure, ME.message, 'Stop run failed', 'Icon', 'error');
             end
         end
@@ -18424,7 +18328,8 @@ classdef pipeline2 < matlab.apps.AppBase
             jobId = currentHubRunJobId(app);
             if isempty(jobId)
                 app.ActiveRunCancelRequested = false;
-                app.RunButton.Text = 'Cancel run';
+                app.CancelrunButton.Text = 'Cancel run...';
+                app.CancelrunButton.Enable = 'off';
                 uialert(app.UIFigure, 'This run has no hub job id.', 'Cancel hub run', 'Icon', 'warning');
                 return;
             end
@@ -18445,7 +18350,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch ME
                 app.ActiveRunCancelRequested = false;
-                app.RunButton.Text = 'Cancel run';
+                app.CancelrunButton.Text = 'Cancel run...';
+                app.CancelrunButton.Enable = 'on';
                 uialert(app.UIFigure, ME.message, 'Cancel hub run failed', 'Icon', 'error');
             end
         end
@@ -18460,9 +18366,19 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ActiveRunCancelRequested = false;
             app.HubRunMonitorJobId = jobId;
             app.HubRunMonitorLastStatus = char(string(getField(app, job, 'status', 'submitted')));
-            app.RunButton.Text = 'Cancel run';
-            app.RunButton.Enable = 'on';
+            app.RunButton.Text = 'Run !';
+            app.RunButton.Enable = 'off';
+            app.CancelrunButton.Text = 'Cancel run...';
+            app.CancelrunButton.Enable = 'on';
+            resetRunMonitor(app, ['Hub job submitted: ' jobId]);
+            updateRunMonitorFromHubJob(app, job);
+            app.MainTabGroup.SelectedTab = app.MonitorTab;
             applyHubRunUiLock(app, true);
+            try
+                startHubRunFileMonitor(app, runObj);
+            catch ME
+                appendMonitorConsole(app, ['[monitor] Shared-file stream unavailable: ' ME.message]);
+            end
             try
                 startHubRunStatusWorker(app, jobId, false, Inf);
             catch ME
@@ -18483,6 +18399,244 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            try
+                if ~isempty(app.HubRunFileMonitorFuture) && isvalid(app.HubRunFileMonitorFuture)
+                    cancel(app.HubRunFileMonitorFuture);
+                end
+            catch
+            end
+            try
+                if ~isempty(app.HubRunFileMonitorEventListener) && isvalid(app.HubRunFileMonitorEventListener)
+                    delete(app.HubRunFileMonitorEventListener);
+                end
+            catch
+            end
+            app.HubRunFileMonitorFuture = [];
+            app.HubRunFileMonitorEventQueue = [];
+            app.HubRunFileMonitorEventListener = [];
+            app.HubRunFileMonitorResultQueue = [];
+        end
+
+        function startHubRunFileMonitor(app, runObj)
+            runPath = '';
+            try
+                runPath = char(string(runObj.path));
+            catch
+            end
+            if isempty(runPath)
+                appendMonitorConsole(app, '[monitor] Hub run path unavailable; using status polling only.');
+                return;
+            end
+            consolePath = fullfile(runPath, 'worker_console.log');
+            progressPath = fullfile(runPath, 'progress.json');
+            neverResultPath = fullfile(runPath, '.hub_monitor_result_never.json');
+            eventQueue = parallel.pool.DataQueue;
+            resultQueue = parallel.pool.DataQueue;
+            eventListener = afterEach(eventQueue, ...
+                @(payload)handleLocalRunMonitorEvent(app, payload));
+            future = parfeval(backgroundPool, ...
+                @detecdiv_local_watch_pipeline_result, 0, ...
+                neverResultPath, resultQueue, 7 * 24 * 60 * 60, ...
+                consolePath, progressPath, eventQueue);
+            app.HubRunFileMonitorEventQueue = eventQueue;
+            app.HubRunFileMonitorResultQueue = resultQueue;
+            app.HubRunFileMonitorEventListener = eventListener;
+            app.HubRunFileMonitorFuture = future;
+        end
+
+        function resetRunMonitor(app, message)
+            if nargin < 2 || isempty(message)
+                message = 'Preparing run...';
+            end
+            stamp = char(datetime('now', 'Format', 'HH:mm:ss'));
+            app.ConsoleTextArea.Value = {sprintf('[%s] %s', stamp, char(string(message)))};
+            app.MonitorLastHubConsoleText = '';
+            app.MonitorHasModuleProgress = false;
+            updateRunMonitorProgress(app, 0, char(string(message)));
+        end
+
+        function appendMonitorConsole(app, textValue)
+            if isempty(textValue)
+                return;
+            end
+            try
+                existing = cellstr(string(app.ConsoleTextArea.Value));
+            catch
+                existing = {};
+            end
+            incoming = regexp(char(string(textValue)), '\r\n|\r|\n', 'split');
+            if ~isempty(incoming) && isempty(incoming{end})
+                incoming(end) = [];
+            end
+            if isempty(incoming)
+                return;
+            end
+            lines = [existing(:); incoming(:)];
+            maxLines = 2000;
+            if numel(lines) > maxLines
+                lines = lines(end-maxLines+1:end);
+            end
+            app.ConsoleTextArea.Value = lines;
+            drawnow limitrate nocallbacks;
+            scroll(app.ConsoleTextArea, 'bottom');
+        end
+
+        function updateRunMonitorProgress(app, value, message)
+            if nargin < 2 || isempty(value) || ~isfinite(double(value))
+                value = app.MonitorLastProgress;
+            end
+            value = max(0, min(1, double(value)));
+            app.MonitorLastProgress = value;
+            try
+                if ~isempty(app.MonitorProgressGauge) && isvalid(app.MonitorProgressGauge)
+                    app.MonitorProgressGauge.Value = value;
+                end
+            catch
+            end
+            if nargin >= 3 && ~isempty(message)
+                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%  %s', ...
+                    100 * value, char(string(message)));
+            else
+                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%', 100 * value);
+            end
+            drawnow limitrate nocallbacks;
+        end
+
+        function handleLocalRunMonitorEvent(app, payload)
+            if isempty(app) || ~isvalid(app) || ~isstruct(payload)
+                return;
+            end
+            kind = lower(char(string(getField(app, payload, 'kind', ''))));
+            switch kind
+                case 'console'
+                    appendMonitorConsole(app, getField(app, payload, 'text', ''));
+                case 'progress'
+                    app.MonitorHasModuleProgress = true;
+                    data = getField(app, payload, 'data', struct());
+                    value = getField(app, data, 'value', ...
+                        getField(app, data, 'nodeProgress', app.MonitorLastProgress));
+                    indeterminate = logical(getField(app, data, ...
+                        'indeterminate', false));
+                    if isequal(value, app.MonitorLastProgress)
+                        where = getField(app, data, 'where', []);
+                        maxEpochs = getField(app, data, 'max_epochs', []);
+                        if isnumeric(where) && isscalar(where) && isnumeric(maxEpochs) && ...
+                                isscalar(maxEpochs) && maxEpochs > 0
+                            value = max(0, min(1, double(where) / double(maxEpochs)));
+                        end
+                    end
+                    try
+                        value = double(value);
+                        if ~isscalar(value) || ~isfinite(value)
+                            value = app.MonitorLastProgress;
+                        end
+                    catch
+                        value = app.MonitorLastProgress;
+                    end
+                    if indeterminate
+                        value = app.MonitorLastProgress;
+                    else
+                        value = max(app.MonitorLastProgress, value);
+                    end
+                    message = getField(app, data, 'message', ...
+                        getField(app, data, 'last_train_line', ...
+                        getField(app, data, 'status', 'Local worker running...')));
+                    eta = getField(app, data, 'eta', '');
+                    if ~isempty(eta)
+                        message = sprintf('%s | ETA %s', char(string(message)), char(string(eta)));
+                    end
+                    updateRunMonitorProgress(app, value, message);
+            end
+        end
+
+        function updateRunMonitorFromHubJob(app, job)
+            statusText = lower(char(string(getField(app, job, 'status', 'unknown'))));
+            progressValue = hubJobProgressValue(app, job);
+            progressMessage = ['Hub: ' statusText];
+            shouldUpdateProgress = true;
+            if isempty(progressValue)
+                switch statusText
+                    case {'submitted','queued'}
+                        progressValue = app.MonitorLastProgress;
+                    case 'running'
+                        progressValue = app.MonitorLastProgress;
+                        if app.MonitorHasModuleProgress
+                            shouldUpdateProgress = false;
+                        else
+                            progressMessage = ...
+                                'Hub: running (waiting for module progress)';
+                        end
+                    case 'cancelling'
+                        progressValue = max(app.MonitorLastProgress, 0.10);
+                    case 'done'
+                        progressValue = 1;
+                    otherwise
+                        progressValue = app.MonitorLastProgress;
+                end
+            else
+                progressValue = max(app.MonitorLastProgress, progressValue);
+            end
+            if shouldUpdateProgress
+                updateRunMonitorProgress(app, progressValue, progressMessage);
+            end
+
+            detail = hubJobConsoleText(app, job);
+            signature = [statusText newline detail];
+            if ~strcmp(signature, app.MonitorLastHubConsoleText)
+                stamp = char(datetime('now', 'Format', 'HH:mm:ss'));
+                appendMonitorConsole(app, sprintf('[%s] Hub status: %s', stamp, statusText));
+                if ~isempty(strtrim(detail))
+                    appendMonitorConsole(app, detail);
+                end
+                app.MonitorLastHubConsoleText = signature;
+            end
+        end
+
+        function value = hubJobProgressValue(app, job)
+            value = [];
+            candidates = { ...
+                getField(app, job, 'progress', []), ...
+                getField(app, job, 'progress_value', []), ...
+                getField(app, job, 'progressValue', [])};
+            result = getField(app, job, 'result_json', struct());
+            if isstruct(result)
+                candidates{end+1} = getField(app, result, 'progress', []); %#ok<AGROW>
+            end
+            for i = 1:numel(candidates)
+                candidate = candidates{i};
+                if isstruct(candidate)
+                    candidate = getField(app, candidate, 'value', []);
+                end
+                if isnumeric(candidate) && isscalar(candidate) && isfinite(candidate)
+                    value = double(candidate);
+                    if value > 1 && value <= 100
+                        value = value / 100;
+                    end
+                    value = max(0, min(1, value));
+                    return;
+                end
+            end
+        end
+
+        function text = hubJobConsoleText(app, job)
+            lines = {};
+            fields = {'message','error','error_message','detail','stdout','stderr','log','worker_log','console'};
+            for i = 1:numel(fields)
+                value = getField(app, job, fields{i}, '');
+                if (ischar(value) || isstring(value)) && ~isempty(strtrim(char(string(value))))
+                    lines{end+1} = sprintf('[%s] %s', fields{i}, char(string(value))); %#ok<AGROW>
+                end
+            end
+            result = getField(app, job, 'result_json', struct());
+            if isstruct(result)
+                for i = 1:numel(fields)
+                    value = getField(app, result, fields{i}, '');
+                    if (ischar(value) || isstring(value)) && ~isempty(strtrim(char(string(value))))
+                        lines{end+1} = sprintf('[result.%s] %s', fields{i}, char(string(value))); %#ok<AGROW>
+                    end
+                end
+            end
+            text = strjoin(lines, newline);
         end
 
         function handleLocalProcessRunFinished(app, result, future, completion) %#ok<INUSD>
@@ -18550,10 +18704,14 @@ classdef pipeline2 < matlab.apps.AppBase
 
             switch statusText
                 case 'done'
+                    updateRunMonitorProgress(app, 1, 'Local worker completed.');
+                    appendMonitorConsole(app, '[result] Local pipeline run completed successfully.');
                     setRuntimeStatus(app, ['Local process run done: ' runJsonPath]);
                     appendRunReport(app, 'Local process run: OK', getField(app, result, 'summary', struct()));
                     showRunCompletedMessage(app);
                 case 'cancelled'
+                    updateRunMonitorProgress(app, app.MonitorLastProgress, 'Local worker cancelled.');
+                    appendMonitorConsole(app, '[result] Local pipeline run cancelled.');
                     setRuntimeStatus(app, ['Local process run cancelled: ' runJsonPath]);
                     appendRunReport(app, 'Local process run: cancelled', result);
                     uialert(app.UIFigure, ...
@@ -18564,6 +18722,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     if isempty(strtrim(errorText))
                         errorText = 'Local process run failed.';
                     end
+                    updateRunMonitorProgress(app, app.MonitorLastProgress, 'Local worker failed.');
+                    appendMonitorConsole(app, ['[result] ' errorText]);
                     setRuntimeStatus(app, ['Local process run failed: ' runJsonPath]);
                     appendRunReport(app, 'Local process run: failed', result);
                     uialert(app.UIFigure, compactLocalProcessError(app, errorText), ...
@@ -18636,7 +18796,7 @@ classdef pipeline2 < matlab.apps.AppBase
             hub.timeout = min(5, double(hub.timeout));
             keepMonitoring = isinf(maxIterations);
             config = struct('hub', hub, 'jobId', jobId, ...
-                'periodSeconds', 15, 'maxIterations', maxIterations);
+                'periodSeconds', 3, 'maxIterations', maxIterations);
             app.HubRunMonitorToken = detecdiv_hub_broker('register', ...
                 'run_status', config, ...
                 @(payload)handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring));
@@ -18668,10 +18828,12 @@ classdef pipeline2 < matlab.apps.AppBase
             updateCurrentRunFromHubJob(app, job);
             statusText = char(string(getField(app, job, 'status', 'unknown')));
             setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
+            updateRunMonitorFromHubJob(app, job);
             if app.ActiveRunCancelRequested && any(strcmpi(statusText, {'queued','running'}))
-                app.RunButton.Text = 'Cancelling...';
+                app.CancelrunButton.Text = 'Cancelling...';
             elseif any(strcmpi(statusText, {'queued','running','cancelling'}))
-                app.RunButton.Text = 'Cancel run';
+                app.CancelrunButton.Text = 'Cancel run...';
+                app.CancelrunButton.Enable = 'on';
             end
             if ~any(strcmpi(statusText, {'done','failed','cancelled'}))
                 return;
@@ -19118,7 +19280,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if any(strcmpi(lockKinds, 'server_job'))
                 error('detecdiv_hub_submit_pipeline_run:ProjectLocked', '%s', ...
                     [details newline newline ...
-                    'A running Hub job owns this lock. Cancel it from the Run Monitor or wait for it to finish before retrying.']);
+                    'A running Hub job owns this lock. Cancel it from Monitor or wait for it to finish before retrying.']);
             end
             if ~all(strcmpi(lockKinds, 'client_edit_lease'))
                 rethrow(originalError);
@@ -20701,6 +20863,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     updateRunSaveProgress(app, d, 'Starting local MATLAB worker...', 0.90);
                     app.LocalRunSubmission = detecdiv_local_submit_pipeline_run( ...
                         runObj, app.CurrentProject, localPipelineSnapshot, ...
+                        'EventCallback', ...
+                        @(payload)handleLocalRunMonitorEvent(app, payload), ...
                         'CompletionCallback', ...
                         @(result, future, completion)handleLocalProcessRunFinished(app, result, future, completion));
                     setRuntimeStatus(app, ['Local process run queued: ' fullfile(runObj.path, 'run.json')]);
@@ -20807,7 +20971,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Hub project locked.' newline ...
                         ME.message newline newline ...
-                        'Open the Run Monitor to follow or cancel the active job, then retry submission.'];
+                        'Open Monitor to follow or cancel the active job, then retry submission.'];
                     uialert(app.UIFigure, ME.message, 'Hub project locked', 'Icon', 'warning');
                 else
                     stopActiveRunControl(app, 'Run !');
@@ -20822,8 +20986,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function NewRunButtonPushed(app, event) %#ok<INUSD>
             if app.BatchPrototypeMode
-                uialert(app.UIFigure, 'New Run is disabled in batch prototype mode. Edit the current prototype runtime parameters instead.', ...
-                    'Batch prototype', 'Icon', 'info');
+                CloseappButtonPushed(app, []);
                 return;
             end
             setRuntimeModeUnlocked(app, true);
@@ -20857,7 +21020,7 @@ classdef pipeline2 < matlab.apps.AppBase
             markRunDirty(app, true);
             setRuntimeStatus(app, sprintf('New run draft: %s\nRuntime parameters are editable.', runId));
             try
-                app.TabGroup.SelectedTab = app.RuntimeInputsTab;
+                app.MainTabGroup.SelectedTab = app.RunTab;
             catch
             end
         end
@@ -21046,27 +21209,15 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
             app.UIFigure.Position = [80 80 1240 960];
-            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.Name = 'pipelineGUI2 - pipelineTemplate *';
 
             % Create FileMenu
             app.FileMenu = uimenu(app.UIFigure);
             app.FileMenu.Text = 'File';
 
-            % Create ModulesMenu
-            app.ModulesMenu = uimenu(app.UIFigure);
-            app.ModulesMenu.Text = 'Modules';
-
             % Create NewpipelineMenu
             app.NewpipelineMenu = uimenu(app.FileMenu);
             app.NewpipelineMenu.Text = 'New pipeline';
-
-            % Create LoadpipelineMenu
-            app.LoadpipelineMenu = uimenu(app.FileMenu);
-            app.LoadpipelineMenu.Text = 'Load pipeline...';
-
-            % Create LoadrecentpipelineMenu
-            app.LoadrecentpipelineMenu = uimenu(app.FileMenu);
-            app.LoadrecentpipelineMenu.Text = 'Load recent pipeline';
 
             % Create SavecurrentpipelineMenu
             app.SavecurrentpipelineMenu = uimenu(app.FileMenu);
@@ -21076,13 +21227,9 @@ classdef pipeline2 < matlab.apps.AppBase
             app.SavepipelineasMenu = uimenu(app.FileMenu);
             app.SavepipelineasMenu.Text = 'Save pipeline as...';
 
-            % Create LoadrunMenu
-            app.LoadrunMenu = uimenu(app.FileMenu);
-            app.LoadrunMenu.Separator = 'on';
-            app.LoadrunMenu.Text = 'Load run...';
-
             % Create SaverunMenu
             app.SaverunMenu = uimenu(app.FileMenu);
+            app.SaverunMenu.Separator = 'on';
             app.SaverunMenu.Text = 'Save run';
 
             % Create SaverunasMenu
@@ -21093,369 +21240,308 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ExportpipelineMenu = uimenu(app.FileMenu);
             app.ExportpipelineMenu.Text = 'Export pipeline...';
 
+            % Create MainTabGroup
+            app.MainTabGroup = uitabgroup(app.UIFigure);
+            app.MainTabGroup.Position = [10 13 1220 941];
+
+            % Create BuildTab
+            app.BuildTab = uitab(app.MainTabGroup);
+            app.BuildTab.Title = 'Build';
+
             % Create GraphPanel
-            app.GraphPanel = uipanel(app.UIFigure);
+            app.GraphPanel = uipanel(app.BuildTab);
             app.GraphPanel.Title = 'Graph';
-            app.GraphPanel.Position = [13 628 1214 304];
+            app.GraphPanel.Position = [9 583 1202 328];
 
             % Create UIGraphAxes
             app.UIGraphAxes = uiaxes(app.GraphPanel);
-            title(app.UIGraphAxes, '')
-            xlabel(app.UIGraphAxes, '')
-            ylabel(app.UIGraphAxes, '')
-            zlabel(app.UIGraphAxes, '')
-            app.UIGraphAxes.Box = 'on';
-            app.UIGraphAxes.XTick = [];
-            app.UIGraphAxes.YTick = [];
-            app.UIGraphAxes.Toolbar.Visible = 'off';
-            app.UIGraphAxes.Position = [15 9 1184 265];
+            title(app.UIGraphAxes, 'Title')
+            xlabel(app.UIGraphAxes, 'X')
+            ylabel(app.UIGraphAxes, 'Y')
+            zlabel(app.UIGraphAxes, 'Z')
+            app.UIGraphAxes.Position = [15 11 1171 287];
 
-            % Create BuildPanel
-            app.BuildPanel = uipanel(app.UIFigure);
-            app.BuildPanel.Title = 'Build';
-            app.BuildPanel.Visible = 'off';
-            app.BuildPanel.Position = [13 621 250 304];
-
-            % Create ForkgraphButton
-            app.ForkgraphButton = uibutton(app.BuildPanel, 'push');
-            app.ForkgraphButton.Position = [9 251 100 23];
-            app.ForkgraphButton.Text = 'Fork graph';
-
-            % Create MergegraphButton
-            app.MergegraphButton = uibutton(app.BuildPanel, 'push');
-            app.MergegraphButton.Position = [9 219 100 23];
-            app.MergegraphButton.Text = 'Merge graph';
-
-            % Create InsertbeforeselectedButton
-            app.InsertbeforeselectedButton = uibutton(app.BuildPanel, 'push');
-            app.InsertbeforeselectedButton.Position = [9 187 140 23];
-            app.InsertbeforeselectedButton.Text = 'Insert before selected';
-
-            % Create DeleteselectedButton
-            app.DeleteselectedButton = uibutton(app.BuildPanel, 'push');
-            app.DeleteselectedButton.Position = [9 155 140 23];
-            app.DeleteselectedButton.Text = 'Delete selected';
-
-            % Create UIWorkspacePipelineTable
-            app.UIWorkspacePipelineTable = uitable(app.BuildPanel);
-            app.UIWorkspacePipelineTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UIWorkspacePipelineTable.RowName = {};
-            app.UIWorkspacePipelineTable.Position = [17 9 218 134];
-
-            % Create ParametersPanel
-            app.ParametersPanel = uipanel(app.UIFigure);
-            app.ParametersPanel.Title = 'Parameters';
-            app.ParametersPanel.Position = [13 14 1214 598];
-
-            % Create TabGroup
-            app.TabGroup = uitabgroup(app.ParametersPanel);
-            app.TabGroup.Position = [366 47 833 520];
-
-            % Create TypeDropDownLabel
-            app.TypeDropDownLabel = uilabel(app.ParametersPanel);
-            app.TypeDropDownLabel.Visible = 'off';
-            app.TypeDropDownLabel.HorizontalAlignment = 'right';
-            app.TypeDropDownLabel.Position = [25 535 31 22];
-            app.TypeDropDownLabel.Text = 'Type';
-
-            % Create TypeDropDown
-            app.TypeDropDown = uidropdown(app.ParametersPanel);
-            app.TypeDropDown.Visible = 'off';
-            app.TypeDropDown.Position = [71 535 118 22];
-
-            % Create IdEditFieldLabel
-            app.IdEditFieldLabel = uilabel(app.ParametersPanel);
-            app.IdEditFieldLabel.HorizontalAlignment = 'right';
-            app.IdEditFieldLabel.Position = [17 547 16 22];
-            app.IdEditFieldLabel.Text = 'Id';
-
-            % Create IdEditField
-            app.IdEditField = uieditfield(app.ParametersPanel, 'text');
-            app.IdEditField.Position = [48 547 230 22];
-
-            % Create AdvancedmodeCheckBox
-            app.AdvancedmodeCheckBox = uicheckbox(app.ParametersPanel);
-            app.AdvancedmodeCheckBox.Enable = 'off';
-            app.AdvancedmodeCheckBox.Visible = 'off';
-            app.AdvancedmodeCheckBox.Text = 'Advanced mode';
-            app.AdvancedmodeCheckBox.Position = [306 535 109 22];
-
-            % Create SubtypeDropDownLabel
-            app.SubtypeDropDownLabel = uilabel(app.ParametersPanel);
-            app.SubtypeDropDownLabel.Visible = 'off';
-            app.SubtypeDropDownLabel.HorizontalAlignment = 'right';
-            app.SubtypeDropDownLabel.Position = [4 510 52 22];
-            app.SubtypeDropDownLabel.Text = 'Sub type';
-
-            % Create SubtypeDropDown
-            app.SubtypeDropDown = uidropdown(app.ParametersPanel);
-            app.SubtypeDropDown.Visible = 'off';
-            app.SubtypeDropDown.Position = [71 510 118 22];
-
-            % Create RuntimeInputsTab
-            app.RuntimeInputsTab = uitab(app.TabGroup);
-            app.RuntimeInputsTab.Title = 'Runtime inputs';
-
-            % Create RuntimeSourceLabel
-            app.RuntimeSourceLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeSourceLabel.Position = [12 395 75 22];
-            app.RuntimeSourceLabel.Text = 'Input mode';
-
-            % Create RuntimeSourceDropDown
-            app.RuntimeSourceDropDown = uidropdown(app.RuntimeInputsTab);
-            app.RuntimeSourceDropDown.Items = {'Read from existing project', 'Parse raw images into project', 'Use classifier attached ROIs'};
-            app.RuntimeSourceDropDown.ItemsData = {'existing_rois', 'raw_dataloader', 'classifier_rois'};
-            app.RuntimeSourceDropDown.Position = [110 395 585 22];
-            app.RuntimeSourceDropDown.Value = 'existing_rois';
-
-            % Create RuntimeProjectTargetLabel
-            app.RuntimeProjectTargetLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeProjectTargetLabel.Position = [12 367 95 22];
-            app.RuntimeProjectTargetLabel.Text = 'Project';
-
-            % Create RuntimeProjectTargetEditField
-            app.RuntimeProjectTargetEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.RuntimeProjectTargetEditField.Position = [110 367 390 22];
-            try, app.RuntimeProjectTargetEditField.Placeholder = 'Project .mat used as input and/or output container'; catch, end
-            try, app.RuntimeProjectTargetEditField.Tooltip = 'Project container. In project-input mode it supplies existing data; in raw-input mode it receives loaded FOVs, ROIs and outputs.'; catch, end
-
-            % Create RuntimeProjectSelectDropDown
-            app.RuntimeProjectSelectDropDown = uidropdown(app.RuntimeInputsTab);
-            app.RuntimeProjectSelectDropDown.Items = {'Select project...'};
-            app.RuntimeProjectSelectDropDown.Position = [516 367 95 22];
-            app.RuntimeProjectSelectDropDown.Value = 'Select project...';
-
-            % Create RuntimeBrowseExistingButton
-            app.RuntimeBrowseExistingButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.RuntimeBrowseExistingButton.Position = [616 367 95 22];
-            app.RuntimeBrowseExistingButton.Text = 'Browse existing...';
-
-            % Create RuntimeRawDataLabel
-            app.RuntimeRawDataLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeRawDataLabel.Position = [12 339 75 22];
-            app.RuntimeRawDataLabel.Text = 'Raw image folder';
-
-            % Create RuntimeRawDataEditField
-            app.RuntimeRawDataEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.RuntimeRawDataEditField.Enable = 'off';
-            app.RuntimeRawDataEditField.Position = [110 339 555 22];
-            try, app.RuntimeRawDataEditField.Placeholder = 'Raw image/data folder parsed by dataloader'; catch, end
-            try, app.RuntimeRawDataEditField.Tooltip = 'Raw image/data folder parsed by dataloader. Required when Input mode parses raw images.'; catch, end
-
-            % Create RuntimeBrowseRawDataButton
-            app.RuntimeBrowseRawDataButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.RuntimeBrowseRawDataButton.Enable = 'off';
-            app.RuntimeBrowseRawDataButton.Position = [674 339 95 22];
-            app.RuntimeBrowseRawDataButton.Text = 'Browse...';
-
-            % Create RuntimeAvailableLabel
-            app.RuntimeAvailableLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeAvailableLabel.Position = [12 306 75 22];
-            app.RuntimeAvailableLabel.Text = 'Available';
-
-            % Create RuntimeAvailableTextArea
-            app.RuntimeAvailableTextArea = uitextarea(app.RuntimeInputsTab);
-            app.RuntimeAvailableTextArea.Position = [110 245 690 82];
-            app.RuntimeAvailableTextArea.Value = {'Run summary: select an input mode and project/raw folder'; 'Resources: resolved after project/raw data load'};
-
-            % Create RuntimeFovsLabel
-            app.RuntimeFovsLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeFovsLabel.Position = [12 213 75 22];
-            app.RuntimeFovsLabel.Text = 'FOVs';
-
-            % Create RuntimeFovsEditField
-            app.RuntimeFovsEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.RuntimeFovsEditField.Position = [110 213 690 22];
-            try, app.RuntimeFovsEditField.Placeholder = 'all / 1,3,5 / 1:4'; catch, end
-            try, app.RuntimeFovsEditField.Tooltip = 'all / 1,3,5 / 1:4'; catch, end
-
-            % Create RuntimeFramesLabel
-            app.RuntimeFramesLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeFramesLabel.Position = [12 185 75 22];
-            app.RuntimeFramesLabel.Text = 'Frames';
-
-            % Create RuntimeFramesEditField
-            app.RuntimeFramesEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.RuntimeFramesEditField.Position = [110 185 690 22];
-            try, app.RuntimeFramesEditField.Placeholder = 'all / 1:50 / 1,5,9'; catch, end
-            try, app.RuntimeFramesEditField.Tooltip = 'all / 1:50 / 1,5,9'; catch, end
-
-            % Create RuntimeRoisLabel
-            app.RuntimeRoisLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeRoisLabel.Position = [12 157 75 22];
-            app.RuntimeRoisLabel.Text = 'ROIs';
-
-            % Create RuntimeRoisEditField
-            app.RuntimeRoisEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.RuntimeRoisEditField.Position = [110 157 690 22];
-            try, app.RuntimeRoisEditField.Placeholder = 'all / selected ROI ids'; catch, end
-            try, app.RuntimeRoisEditField.Tooltip = 'all / selected ROI ids'; catch, end
-
-            % Create RuntimeOutputPolicyLabel
-            app.RuntimeOutputPolicyLabel = uilabel(app.RuntimeInputsTab);
-            app.RuntimeOutputPolicyLabel.Position = [12 129 85 22];
-            app.RuntimeOutputPolicyLabel.Text = 'Output policy';
-
-            % Create RuntimeOutputPolicyDropDown
-            app.RuntimeOutputPolicyDropDown = uidropdown(app.RuntimeInputsTab);
-            app.RuntimeOutputPolicyDropDown.Items = {'Skip existing outputs', 'Replace existing outputs', 'Append/update existing outputs', 'Error if outputs exist'};
-            app.RuntimeOutputPolicyDropDown.ItemsData = {'skip', 'replace', 'upsert', 'error'};
-            app.RuntimeOutputPolicyDropDown.Position = [110 129 690 22];
-            app.RuntimeOutputPolicyDropDown.Value = 'skip';
-
-            % Create TemplateidEditFieldLabel
-            app.TemplateidEditFieldLabel = uilabel(app.RuntimeInputsTab);
-            app.TemplateidEditFieldLabel.HorizontalAlignment = 'right';
-            app.TemplateidEditFieldLabel.Position = [29 440 66 22];
-            app.TemplateidEditFieldLabel.Text = 'Run id';
-
-            % Create TemplateidEditField
-            app.TemplateidEditField = uieditfield(app.RuntimeInputsTab, 'text');
-            app.TemplateidEditField.Position = [110 440 180 22];
-
-            % Create OpenRunFolderButton
-            app.OpenRunFolderButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.OpenRunFolderButton.Position = [13 40 130 24];
-            app.OpenRunFolderButton.Text = 'Open run folder';
-
-            % Create RunLogButton
-            app.RunLogButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.RunLogButton.Position = [154 40 130 24];
-            app.RunLogButton.Text = 'Run log';
-
-            % Create RunParamsButton
-            app.RunParamsButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.RunParamsButton.Position = [155 10 130 24];
-            app.RunParamsButton.Text = 'Run params';
-
-            % Create ReviewRunButton
-            app.ReviewRunButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.ReviewRunButton.Position = [437 10 130 54];
-            app.ReviewRunButton.Text = 'Review run';
-
-            % Create SmokeTestButton
-            app.SmokeTestButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.SmokeTestButton.Position = [13 10 130 23];
-            app.SmokeTestButton.Text = 'Smoke test (1 ROI)';
-
-            % Create RunButton
-            app.RunButton = uibutton(app.RuntimeInputsTab, 'push');
-            app.RunButton.Position = [582 10 240 54];
-            app.RunButton.Text = 'Run !';
-
-            % Create RuntimeTab
-            app.RuntimeTab = uitab(app.TabGroup);
-            app.RuntimeTab.Title = 'Runtime options';
-
-            % Create UIFOVTable
-            app.UIFOVTable = uitable(app.RuntimeTab);
-            app.UIFOVTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UIFOVTable.RowName = {};
-            app.UIFOVTable.Visible = 'off';
-            app.UIFOVTable.Position = [256 42 417 200];
-
-            % Create ListofpathprojectsLabel
-            app.ListofpathprojectsLabel = uilabel(app.RuntimeTab);
-            app.ListofpathprojectsLabel.Visible = 'off';
-            app.ListofpathprojectsLabel.HorizontalAlignment = 'right';
-            app.ListofpathprojectsLabel.Position = [270 308 109 22];
-            app.ListofpathprojectsLabel.Text = 'List of path/projects';
-
-            % Create PathProjectBox
-            app.PathProjectBox = uilistbox(app.RuntimeTab);
-            app.PathProjectBox.Visible = 'off';
-            app.PathProjectBox.Position = [395 256 278 74];
-
-            % Create ExecutionDropDownLabel
-            app.ExecutionDropDownLabel = uilabel(app.RuntimeTab);
-            app.ExecutionDropDownLabel.HorizontalAlignment = 'right';
-            app.ExecutionDropDownLabel.Position = [388 404 64 22];
-            app.ExecutionDropDownLabel.Text = 'Execution';
-
-            % Create ExecutionDropDown
-            app.ExecutionDropDown = uidropdown(app.RuntimeTab);
-            app.ExecutionDropDown.Items = {'Auto', 'GPU', 'CPU'};
-            app.ExecutionDropDown.Position = [462 404 120 22];
-            app.ExecutionDropDown.Value = 'Auto';
-
-            % Create ResumeoptionsDropDownLabel
-            app.ResumeoptionsDropDownLabel = uilabel(app.RuntimeTab);
-            app.ResumeoptionsDropDownLabel.HorizontalAlignment = 'right';
-            app.ResumeoptionsDropDownLabel.Position = [356 368 96 22];
-            app.ResumeoptionsDropDownLabel.Text = 'Resume options';
-
-            % Create ResumeoptionsDropDown
-            app.ResumeoptionsDropDown = uidropdown(app.RuntimeTab);
-            app.ResumeoptionsDropDown.Items = {'Resume previous progress', 'Restart from scratch'};
-            app.ResumeoptionsDropDown.Position = [462 368 170 22];
-            app.ResumeoptionsDropDown.Value = 'Resume previous progress';
-
-            % Create RunTargetDropDownLabel
-            app.RunTargetDropDownLabel = uilabel(app.RuntimeTab);
-            app.RunTargetDropDownLabel.HorizontalAlignment = 'right';
-            app.RunTargetDropDownLabel.Position = [374 330 78 22];
-            app.RunTargetDropDownLabel.Text = 'Run target';
-
-            % Create RunTargetDropDown
-            app.RunTargetDropDown = uidropdown(app.RuntimeTab);
-            app.RunTargetDropDown.Items = {'Local / Windows', 'Local / WSL', 'DetecDiv Hub'};
-            app.RunTargetDropDown.ItemsData = {'local', 'local_wsl', 'hub'};
-            app.RunTargetDropDown.Position = [462 330 170 22];
-            app.RunTargetDropDown.Value = 'local';
-
-            % Create UISelectedModuleTable
-            app.UISelectedModuleTable = uitable(app.RuntimeTab);
-            app.UISelectedModuleTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UISelectedModuleTable.RowName = {};
-            app.UISelectedModuleTable.Position = [13 194 344 251];
-
-            % Create SelectedmodulesLabel
-            app.SelectedmodulesLabel = uilabel(app.RuntimeTab);
-            app.SelectedmodulesLabel.Position = [12 450 130 22];
-            app.SelectedmodulesLabel.Text = 'Selected modules';
-
-            % Create RuninformationhereLabel
-            app.RuninformationhereLabel = uilabel(app.ParametersPanel);
-            app.RuninformationhereLabel.HorizontalAlignment = 'left';
-            app.RuninformationhereLabel.VerticalAlignment = 'top';
-            app.RuninformationhereLabel.WordWrap = 'on';
-            app.RuninformationhereLabel.Position = [16 432 334 70];
-            app.RuninformationhereLabel.Text = 'Template mode - no module yet.';
+            % Create ModuleParametersPanel
+            app.ModuleParametersPanel = uipanel(app.BuildTab);
+            app.ModuleParametersPanel.Title = 'Module Parameters';
+            app.ModuleParametersPanel.Position = [11 12 1191 564];
 
             % Create PipelineandRuncheckreportLabel
-            app.PipelineandRuncheckreportLabel = uilabel(app.ParametersPanel);
-            app.PipelineandRuncheckreportLabel.HorizontalAlignment = 'left';
+            app.PipelineandRuncheckreportLabel = uilabel(app.ModuleParametersPanel);
             app.PipelineandRuncheckreportLabel.VerticalAlignment = 'top';
-            app.PipelineandRuncheckreportLabel.WordWrap = 'on';
-            app.PipelineandRuncheckreportLabel.Position = [14 87 335 300];
+            app.PipelineandRuncheckreportLabel.Position = [13 103 335 362];
             app.PipelineandRuncheckreportLabel.Text = 'Click the grey block to add the first module.';
 
-            % Create CloseappButton
-            app.CloseappButton = uibutton(app.ParametersPanel, 'push');
-            app.CloseappButton.Position = [158 12 100 23];
-            app.CloseappButton.Text = 'Quit';
+            % Create IdEditFieldLabel
+            app.IdEditFieldLabel = uilabel(app.ModuleParametersPanel);
+            app.IdEditFieldLabel.HorizontalAlignment = 'right';
+            app.IdEditFieldLabel.Position = [9 513 58 22];
+            app.IdEditFieldLabel.Text = 'Module Id';
 
-            % Create CheckpipelineButton
-            app.CheckpipelineButton = uibutton(app.ParametersPanel, 'push');
-            app.CheckpipelineButton.Position = [13 11 130 23];
-            app.CheckpipelineButton.Text = 'Check pipeline';
+            % Create IdEditField
+            app.IdEditField = uieditfield(app.ModuleParametersPanel, 'text');
+            app.IdEditField.Position = [82 513 230 22];
 
-            % Create RuntimestatusLabel
-            app.RuntimestatusLabel = uilabel(app.ParametersPanel);
-            app.RuntimestatusLabel.FontWeight = 'bold';
-            app.RuntimestatusLabel.Position = [14 508 92 22];
-            app.RuntimestatusLabel.Text = 'Runtime status';
+            % Create CheckbuildButton
+            app.CheckbuildButton = uibutton(app.ModuleParametersPanel, 'push');
+            app.CheckbuildButton.Position = [9 12 111 79];
+            app.CheckbuildButton.Text = 'Check build';
 
             % Create PipelinestatusLabel
-            app.PipelinestatusLabel = uilabel(app.ParametersPanel);
+            app.PipelinestatusLabel = uilabel(app.ModuleParametersPanel);
             app.PipelinestatusLabel.FontWeight = 'bold';
-            app.PipelinestatusLabel.Position = [14 395 90 22];
+            app.PipelinestatusLabel.Position = [13 477 90 22];
             app.PipelinestatusLabel.Text = 'Pipeline status';
 
             % Create NewRunButton
-            app.NewRunButton = uibutton(app.ParametersPanel, 'push');
-            app.NewRunButton.Position = [274 12 100 23];
+            app.NewRunButton = uibutton(app.ModuleParametersPanel, 'push');
+            app.NewRunButton.Position = [134 12 223 79];
             app.NewRunButton.Text = 'New Run';
+
+            % Create TabGroup
+            app.TabGroup = uitabgroup(app.ModuleParametersPanel);
+            app.TabGroup.Position = [372 14 805 520];
+
+            % Create RuntimeInputsTab
+            app.RuntimeInputsTab = uitab(app.TabGroup);
+            app.RuntimeInputsTab.Title = 'default';
+
+            % Create RunTab
+            app.RunTab = uitab(app.MainTabGroup);
+            app.RunTab.Title = 'Run';
+
+            % Create TemplateidEditFieldLabel
+            app.TemplateidEditFieldLabel = uilabel(app.RunTab);
+            app.TemplateidEditFieldLabel.HorizontalAlignment = 'right';
+            app.TemplateidEditFieldLabel.Position = [11 880 66 22];
+            app.TemplateidEditFieldLabel.Text = 'Template id';
+
+            % Create TemplateidEditField
+            app.TemplateidEditField = uieditfield(app.RunTab, 'text');
+            app.TemplateidEditField.Position = [92 880 407 22];
+
+            % Create RuntimeSourceLabel
+            app.RuntimeSourceLabel = uilabel(app.RunTab);
+            app.RuntimeSourceLabel.Position = [20 841 75 22];
+            app.RuntimeSourceLabel.Text = 'Source';
+
+            % Create RuntimeSourceDropDown
+            app.RuntimeSourceDropDown = uidropdown(app.RunTab);
+            app.RuntimeSourceDropDown.Items = {'Existing project ROIs'};
+            app.RuntimeSourceDropDown.Position = [118 841 585 22];
+            app.RuntimeSourceDropDown.Value = 'Existing project ROIs';
+
+            % Create RuntimeProjectTargetLabel
+            app.RuntimeProjectTargetLabel = uilabel(app.RunTab);
+            app.RuntimeProjectTargetLabel.Position = [21 811 95 22];
+            app.RuntimeProjectTargetLabel.Text = 'Project / target';
+
+            % Create RuntimeProjectTargetEditField
+            app.RuntimeProjectTargetEditField = uieditfield(app.RunTab, 'text');
+            app.RuntimeProjectTargetEditField.Position = [119 811 390 22];
+            app.RuntimeProjectTargetEditField.Value = 'Existing project source or raw-run target .mat';
+
+            % Create RuntimeProjectSelectDropDown
+            app.RuntimeProjectSelectDropDown = uidropdown(app.RunTab);
+            app.RuntimeProjectSelectDropDown.Items = {'Select project...'};
+            app.RuntimeProjectSelectDropDown.Position = [525 811 95 22];
+            app.RuntimeProjectSelectDropDown.Value = 'Select project...';
+
+            % Create RuntimeBrowseExistingButton
+            app.RuntimeBrowseExistingButton = uibutton(app.RunTab, 'push');
+            app.RuntimeBrowseExistingButton.Position = [631 811 95 22];
+            app.RuntimeBrowseExistingButton.Text = 'Browse existing...';
+
+            % Create RuntimeRawDataLabel
+            app.RuntimeRawDataLabel = uilabel(app.RunTab);
+            app.RuntimeRawDataLabel.Position = [21 780 75 22];
+            app.RuntimeRawDataLabel.Text = 'Raw data';
+
+            % Create RuntimeRawDataEditField
+            app.RuntimeRawDataEditField = uieditfield(app.RunTab, 'text');
+            app.RuntimeRawDataEditField.Enable = 'off';
+            app.RuntimeRawDataEditField.Position = [119 778 555 22];
+            app.RuntimeRawDataEditField.Value = 'Project source path not resolved';
+
+            % Create RuntimeBrowseRawDataButton
+            app.RuntimeBrowseRawDataButton = uibutton(app.RunTab, 'push');
+            app.RuntimeBrowseRawDataButton.Enable = 'off';
+            app.RuntimeBrowseRawDataButton.Position = [685 778 95 22];
+            app.RuntimeBrowseRawDataButton.Text = 'Browse...';
+
+            % Create RuntimeAvailableLabel
+            app.RuntimeAvailableLabel = uilabel(app.RunTab);
+            app.RuntimeAvailableLabel.Position = [21 690 75 68];
+            app.RuntimeAvailableLabel.Text = 'Available';
+
+            % Create RuntimeAvailableTextArea
+            app.RuntimeAvailableTextArea = uitextarea(app.RunTab);
+            app.RuntimeAvailableTextArea.Position = [119 618 690 139];
+            app.RuntimeAvailableTextArea.Value = {'Channels: resolved after project/raw data load'; 'Data series: resolved after project load'};
+
+            % Create SmokeTestButton
+            app.SmokeTestButton = uibutton(app.RunTab, 'push');
+            app.SmokeTestButton.Position = [825 201 378 46];
+            app.SmokeTestButton.Text = 'Smoke test (1 ROI)';
+
+            % Create RunButton
+            app.RunButton = uibutton(app.RunTab, 'push');
+            app.RunButton.Position = [824 27 378 160];
+            app.RunButton.Text = 'Run !';
+
+            % Create RuntimeFovsLabel
+            app.RuntimeFovsLabel = uilabel(app.RunTab);
+            app.RuntimeFovsLabel.Position = [21 573 75 22];
+            app.RuntimeFovsLabel.Text = 'FOVs';
+
+            % Create RuntimeFovsEditField
+            app.RuntimeFovsEditField = uieditfield(app.RunTab, 'text');
+            app.RuntimeFovsEditField.Position = [119 573 690 22];
+            app.RuntimeFovsEditField.Value = 'all / 1,3,5 / 1:4';
+
+            % Create RuntimeFramesLabel
+            app.RuntimeFramesLabel = uilabel(app.RunTab);
+            app.RuntimeFramesLabel.Position = [21 545 75 22];
+            app.RuntimeFramesLabel.Text = 'Frames';
+
+            % Create RuntimeFramesEditField
+            app.RuntimeFramesEditField = uieditfield(app.RunTab, 'text');
+            app.RuntimeFramesEditField.Position = [119 545 690 22];
+            app.RuntimeFramesEditField.Value = 'all / 1:50 / 1,5,9';
+
+            % Create RuntimeRoisLabel
+            app.RuntimeRoisLabel = uilabel(app.RunTab);
+            app.RuntimeRoisLabel.Position = [21 517 75 22];
+            app.RuntimeRoisLabel.Text = 'ROIs';
+
+            % Create RuntimeRoisEditField
+            app.RuntimeRoisEditField = uieditfield(app.RunTab, 'text');
+            app.RuntimeRoisEditField.Position = [119 517 690 22];
+            app.RuntimeRoisEditField.Value = 'all / selected ROI ids';
+
+            % Create RuntimeOutputPolicyLabel
+            app.RuntimeOutputPolicyLabel = uilabel(app.RunTab);
+            app.RuntimeOutputPolicyLabel.Position = [21 489 85 22];
+            app.RuntimeOutputPolicyLabel.Text = 'Output policy';
+
+            % Create RuntimeOutputPolicyDropDown
+            app.RuntimeOutputPolicyDropDown = uidropdown(app.RunTab);
+            app.RuntimeOutputPolicyDropDown.Items = {'Skip existing outputs', 'Replace existing outputs'};
+            app.RuntimeOutputPolicyDropDown.Position = [119 489 690 22];
+            app.RuntimeOutputPolicyDropDown.Value = 'Skip existing outputs';
+
+            % Create SelectedmodulesLabel
+            app.SelectedmodulesLabel = uilabel(app.RunTab);
+            app.SelectedmodulesLabel.Position = [16 347 130 22];
+            app.SelectedmodulesLabel.Text = 'Selected modules';
+
+            % Create UISelectedModuleTable
+            app.UISelectedModuleTable = uitable(app.RunTab);
+            app.UISelectedModuleTable.ColumnName = {'Run'; 'Module'; 'Type'; 'Package'};
+            app.UISelectedModuleTable.RowName = {};
+            app.UISelectedModuleTable.Position = [124 24 685 349];
+
+            % Create ExecutionDropDownLabel
+            app.ExecutionDropDownLabel = uilabel(app.RunTab);
+            app.ExecutionDropDownLabel.HorizontalAlignment = 'right';
+            app.ExecutionDropDownLabel.Position = [45 453 64 22];
+            app.ExecutionDropDownLabel.Text = 'Execution';
+
+            % Create ExecutionDropDown
+            app.ExecutionDropDown = uidropdown(app.RunTab);
+            app.ExecutionDropDown.Items = {'Auto', 'GPU', 'CPU'};
+            app.ExecutionDropDown.Position = [121 454 120 22];
+            app.ExecutionDropDown.Value = 'Auto';
+
+            % Create ResumeoptionsDropDownLabel
+            app.ResumeoptionsDropDownLabel = uilabel(app.RunTab);
+            app.ResumeoptionsDropDownLabel.HorizontalAlignment = 'right';
+            app.ResumeoptionsDropDownLabel.Position = [16 422 96 22];
+            app.ResumeoptionsDropDownLabel.Text = 'Resume options';
+
+            % Create ResumeoptionsDropDown
+            app.ResumeoptionsDropDown = uidropdown(app.RunTab);
+            app.ResumeoptionsDropDown.Items = {'Resume previous progress', 'Restart from scratch'};
+            app.ResumeoptionsDropDown.Position = [122 422 170 22];
+            app.ResumeoptionsDropDown.Value = 'Resume previous progress';
+
+            % Create RunTargetDropDownLabel
+            app.RunTargetDropDownLabel = uilabel(app.RunTab);
+            app.RunTargetDropDownLabel.HorizontalAlignment = 'right';
+            app.RunTargetDropDownLabel.Position = [34 389 78 22];
+            app.RunTargetDropDownLabel.Text = 'Run target';
+
+            % Create RunTargetDropDown
+            app.RunTargetDropDown = uidropdown(app.RunTab);
+            app.RunTargetDropDown.Items = {'Local MATLAB', 'DetecDiv Hub'};
+            app.RunTargetDropDown.Position = [122 389 170 22];
+            app.RunTargetDropDown.Value = 'Local MATLAB';
+
+            % Create RuninformationhereLabel
+            app.RuninformationhereLabel = uilabel(app.RunTab);
+            app.RuninformationhereLabel.VerticalAlignment = 'top';
+            app.RuninformationhereLabel.Position = [824 594 387 279];
+            app.RuninformationhereLabel.Text = 'Template mode - no module yet.';
+
+            % Create RuntimestatusLabel
+            app.RuntimestatusLabel = uilabel(app.RunTab);
+            app.RuntimestatusLabel.FontWeight = 'bold';
+            app.RuntimestatusLabel.Position = [822 881 92 22];
+            app.RuntimestatusLabel.Text = 'Runtime status';
+
+            % Create HubparametersPanel
+            app.HubparametersPanel = uipanel(app.RunTab);
+            app.HubparametersPanel.Title = 'Hub parameters';
+            app.HubparametersPanel.Position = [822 260 389 324];
+
+            % Create MonitorTab
+            app.MonitorTab = uitab(app.MainTabGroup);
+            app.MonitorTab.Title = 'Monitor';
+
+            % Create ReviewRunButton
+            app.ReviewRunButton = uibutton(app.MonitorTab, 'push');
+            app.ReviewRunButton.Position = [21 12 130 104];
+            app.ReviewRunButton.Text = 'Review run';
+
+            % Create OpenRunFolderButton
+            app.OpenRunFolderButton = uibutton(app.MonitorTab, 'push');
+            app.OpenRunFolderButton.Position = [162 12 130 104];
+            app.OpenRunFolderButton.Text = 'Open run folder';
+
+            % Create RunLogButton
+            app.RunLogButton = uibutton(app.MonitorTab, 'push');
+            app.RunLogButton.Position = [448 12 130 104];
+            app.RunLogButton.Text = 'Run log';
+
+            % Create RunParamsButton
+            app.RunParamsButton = uibutton(app.MonitorTab, 'push');
+            app.RunParamsButton.Position = [304 12 130 104];
+            app.RunParamsButton.Text = 'Run params';
+
+            % Create CancelrunButton
+            app.CancelrunButton = uibutton(app.MonitorTab, 'push');
+            app.CancelrunButton.Position = [985 12 218 114];
+            app.CancelrunButton.Text = 'Cancel run...';
+
+            % Create ConsoleTextAreaLabel
+            app.ConsoleTextAreaLabel = uilabel(app.MonitorTab);
+            app.ConsoleTextAreaLabel.HorizontalAlignment = 'right';
+            app.ConsoleTextAreaLabel.Position = [15 753 49 22];
+            app.ConsoleTextAreaLabel.Text = 'Console';
+
+            % Create ConsoleTextArea
+            app.ConsoleTextArea = uitextarea(app.MonitorTab);
+            app.ConsoleTextArea.Position = [79 150 1132 627];
+
+            % Create ProgressionLabel
+            app.ProgressionLabel = uilabel(app.MonitorTab);
+            app.ProgressionLabel.Position = [11 850 69 22];
+            app.ProgressionLabel.Text = 'Progression';
+
+            % Create ProgressionStatusLabel
+            app.ProgressionStatusLabel = uilabel(app.MonitorTab);
+            app.ProgressionStatusLabel.Position = [91 811 1111 100];
+            app.ProgressionStatusLabel.Text = 'ProgressionStatus';
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';

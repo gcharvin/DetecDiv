@@ -67,7 +67,8 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref, opts.hub));
     payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub, shallowObj));
     payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
-    payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
+    payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts, runObj));
+    localRunStageNoOutput('prepare Hub monitor files', @() localPrepareMonitorFiles(runObj));
 
     if ~isempty(shallowObj)
         localRunStageNoOutput('release local hub edit lease', @() detecdiv_hub_release_project_open(shallowObj, opts.hub));
@@ -75,6 +76,16 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     job = localRunStage('POST /pipeline-runs', @() detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub));
     runObj = localRunStage('attach hub job to pipelineRun', @() localAttachHubJob(runObj, job, ref));
     localRunStageNoOutput('save pipelineRun after hub submit', @() localSavePipelineRun(runObj));
+end
+
+function localPrepareMonitorFiles(runObj)
+    try
+        consolePath = fullfile(char(string(runObj.path)), 'worker_console.log');
+        if exist(consolePath, 'file') == 2
+            delete(consolePath);
+        end
+    catch
+    end
 end
 
 function tf = localIsClass(value, className)
@@ -1970,16 +1981,37 @@ function control = localBuildRunControl(ctx)
     control.hub_cancel_endpoint = '/pipeline-runs/{job_id}/cancel';
 end
 
-function execution = localBuildExecution(opts)
+function execution = localBuildExecution(opts, runObj)
     execution = struct();
     execution.allow_gui = false;
     execution.interactive = false;
     execution.save_project = opts.saveProject;
     execution.write_scope = opts.writeScope;
     execution.requested_mode = opts.requestedMode;
+    runPath = '';
+    try
+        runPath = char(string(runObj.path));
+    catch
+    end
+    if ~isempty(runPath)
+        ctx = struct('hub', opts.hub);
+        [remoteRunPath, mapped] = detecdiv_paths_map_module_path(runPath, ctx, 'remote');
+        if mapped && ~isempty(remoteRunPath)
+            execution.progress_json_path = localJoinRemotePath(remoteRunPath, 'progress.json');
+            execution.console_log_path = localJoinRemotePath(remoteRunPath, 'worker_console.log');
+        end
+    end
     if ~isempty(opts.executionTargetId)
         execution.execution_target_id = opts.executionTargetId;
     end
+end
+
+function pathText = localJoinRemotePath(folder, name)
+    folder = strrep(char(string(folder)), '\', '/');
+    name = strrep(char(string(name)), '\', '/');
+    folder = regexprep(folder, '/+$', '');
+    name = regexprep(name, '^/+', '');
+    pathText = [folder '/' name];
 end
 
 function runObj = localAttachHubJob(runObj, job, ref)

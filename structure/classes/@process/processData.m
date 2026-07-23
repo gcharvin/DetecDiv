@@ -163,6 +163,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     ctx = ctxBase;
     ctx.frames = fra;
     ctx.gpu = gpu;
+    ctx = setRoiProgressWindowLocal(ctx, i, numel(roiobj));
     if isprop(classi,'strid') && (~isfield(ctx,'outputName') || isempty(ctx.outputName))
         ctx.outputName = classi.strid;
     end
@@ -552,9 +553,6 @@ end
     end
 
     function updateProcessProgress(ctx, progressDlg, roiIndex, totalRois, verb)
-        if isempty(progressDlg) || ~isvalid(progressDlg)
-            return;
-        end
         if nargin < 5 || isempty(verb)
             verb = 'Processing';
         end
@@ -583,13 +581,21 @@ end
             end
         catch
         end
+        displayIndex = max(1, min(totalRois, roiIndex));
+        progressMessage = sprintf('%s ROI %d/%d%s%s', char(string(verb)), ...
+            displayIndex, totalRois, ...
+            ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
+        if exist('detecdiv_progress', 'file') == 2
+            detecdiv_progress(ctx, roiFrac, progressMessage, ...
+                'Scope', 'roi', 'Current', roiIndex, 'Total', totalRois);
+        end
         try
-            progressDlg.Indeterminate = 'off';
-            progressDlg.Value = value;
-            displayIndex = max(1, min(totalRois, roiIndex));
-            progressDlg.Message = sprintf('%s ROI %d/%d%s%s', char(string(verb)), displayIndex, totalRois, ...
-                ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
-            drawnow limitrate;
+            if ~isempty(progressDlg) && isvalid(progressDlg)
+                progressDlg.Indeterminate = 'off';
+                progressDlg.Value = value;
+                progressDlg.Message = progressMessage;
+                drawnow limitrate;
+            end
         catch
         end
     end
@@ -681,6 +687,19 @@ end
         else
             out = b;
         end
+    end
+
+    function out = setRoiProgressWindowLocal(out, roiIndex, totalRois)
+        if ~isstruct(out)
+            out = struct();
+        end
+        if ~isfield(out, 'progress') || ~isstruct(out.progress)
+            out.progress = struct();
+        end
+        totalRois = max(1, double(totalRois));
+        roiIndex = max(1, min(totalRois, double(roiIndex)));
+        out.progress.localBase = (roiIndex - 1) / totalRois;
+        out.progress.localSpan = 1 / totalRois;
     end
 
     function tf = processorCanRunWithoutImage(funName)

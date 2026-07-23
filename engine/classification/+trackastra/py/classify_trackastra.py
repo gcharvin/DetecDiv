@@ -12,6 +12,35 @@ import pandas as pd
 from scipy.io import loadmat, savemat
 from trackastra.model import Trackastra
 
+PROGRESS_MARKER = "@@DETECDIV_PROGRESS@@"
+
+
+def _report_progress(
+    cfg: dict[str, object],
+    local_value: float,
+    message: str,
+    *,
+    indeterminate: bool = False,
+) -> None:
+    if not bool(cfg.get("progress_enabled", False)):
+        return
+    local_value = max(0.0, min(1.0, float(local_value)))
+    base = float(cfg.get("progress_base", 0.0))
+    span = float(cfg.get("progress_span", 1.0))
+    payload = {
+        "protocol": "detecdiv.progress.v1",
+        "value": max(0.0, min(1.0, base + span * local_value)),
+        "localValue": local_value,
+        "message": message,
+        "status": "running",
+        "scope": "tracking",
+        "indeterminate": bool(indeterminate),
+    }
+    print(
+        f"{PROGRESS_MARKER} {json.dumps(payload, separators=(',', ':'))}",
+        flush=True,
+    )
+
 
 def _time_first(array: np.ndarray, name: str) -> np.ndarray:
     value = np.asarray(array)
@@ -30,6 +59,9 @@ def _check_cancel(path_value: str) -> None:
 def run(config_path: Path) -> None:
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     _check_cancel(cfg.get("cancel_path", ""))
+    _report_progress(
+        cfg, 0, "Loading Trackastra inputs...", indeterminate=True
+    )
 
     payload = loadmat(cfg["input_mat_path"])
     images = _time_first(payload["rawImages"], "rawImages")
@@ -38,6 +70,9 @@ def run(config_path: Path) -> None:
         raise ValueError(f"Image/mask shape mismatch: {images.shape} vs {masks.shape}")
 
     device = cfg.get("device", "automatic")
+    _report_progress(
+        cfg, 0, "Loading Trackastra model...", indeterminate=True
+    )
     if cfg.get("model_source", "pretrained") == "custom":
         model_path = cfg.get("custom_model_path", "")
         if not model_path:
@@ -62,6 +97,12 @@ def run(config_path: Path) -> None:
     if max_distance > 0:
         kwargs["max_distance"] = max_distance
 
+    _report_progress(
+        cfg,
+        0,
+        f"Tracking {images.shape[0]} frames with Trackastra...",
+        indeterminate=True,
+    )
     graph, masks_tracked = model.track(images, masks.astype(np.int32), **kwargs)
     _check_cancel(cfg.get("cancel_path", ""))
 
@@ -86,6 +127,12 @@ def run(config_path: Path) -> None:
         f"[Trackastra PY] frames={images.shape[0]} nodes={graph.number_of_nodes()} "
         f"edges={graph.number_of_edges()} max_tracklet={int(matlab_masks.max(initial=0))}",
         flush=True,
+    )
+    _report_progress(
+        cfg,
+        1,
+        f"Tracked {images.shape[0]} frames "
+        f"({graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges)",
     )
 
 

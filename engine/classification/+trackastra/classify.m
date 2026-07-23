@@ -94,6 +94,20 @@ cfg.n_workers = nonnegativeInteger(p.nWorkers, 0, 'nWorkers');
 cfg.max_distance = nonnegativeScalar(p.maxDistance, 0, 'maxDistance');
 cfg.normalize_images = logicalScalar(p.normalizeImages, true);
 cfg.cancel_path = cancelTokenFile(ctx);
+cfg.progress_base = 0;
+cfg.progress_span = 1;
+cfg.progress_enabled = isfield(ctx, 'progressCallback') && ...
+    isa(ctx.progressCallback, 'function_handle');
+try
+    if exist('detecdiv_progress_bounds', 'file') == 2
+        [cfg.progress_base, cfg.progress_span] = ...
+            detecdiv_progress_bounds(ctx);
+        cfg.progress_span = 0.95 * cfg.progress_span;
+    end
+catch
+    cfg.progress_base = 0;
+    cfg.progress_span = 1;
+end
 writeJson(configPath, cfg);
 
 pythonExe = trackastra.utils.resolvePythonExecutable(p.pythonExecutable, ctx);
@@ -106,6 +120,11 @@ if status ~= 0
     error('trackastra:PythonFailed', 'Trackastra Python runner failed (%d):\n%s', status, msg);
 end
 detecdiv_check_cancel(ctx, 'trackastra classify after Python');
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.95, ...
+        'Trackastra inference complete; integrating tracks...', ...
+        'Scope', 'integration');
+end
 
 if exist(resultPath,'file') ~= 2
     error('trackastra:MissingResults', 'Python runner did not write %s.', resultPath);
@@ -147,6 +166,11 @@ out.artifacts.workDir = workDir;
 out.artifacts.edges = fullfile(workDir, 'trackastra_edges.csv');
 out.metrics.trackletCount = double(max(tracked(:)));
 out.metrics.frameCount = numel(frames);
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 1, ...
+        sprintf('Integrated %d Trackastra frames.', numel(frames)), ...
+        'Scope', 'integration');
+end
 end
 
 function frames = resolveFrames(ctx, nFrames)

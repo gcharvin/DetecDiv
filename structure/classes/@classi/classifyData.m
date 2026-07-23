@@ -349,6 +349,7 @@ for i = 1:numel(roiobj)
     if para
         if isPipelineFun
             ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy);
+            ctx = setRoiProgressWindowLocal(ctx, i, numel(roiobj));
             try
                 ctx = classi.buildCtx('classify', ctx);
             catch
@@ -372,6 +373,7 @@ for i = 1:numel(roiobj)
     else
         if isPipelineFun
             ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy);
+            ctx = setRoiProgressWindowLocal(ctx, i, numel(roiobj));
             try
                 ctx = classi.buildCtx('classify', ctx);
             catch
@@ -527,9 +529,6 @@ end
 end
 
 function updateClassifyProgress(ctx, progressDlg, roiIndex, totalRois, verb)
-if isempty(progressDlg) || ~isvalid(progressDlg)
-    return;
-end
 if nargin < 5 || isempty(verb)
     verb = 'Classifying';
 end
@@ -558,13 +557,21 @@ try
     end
 catch
 end
+displayIndex = max(1, min(totalRois, roiIndex));
+progressMessage = sprintf('%s ROI %d/%d%s%s', char(string(verb)), ...
+    displayIndex, totalRois, ...
+    ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, roiFrac, progressMessage, ...
+        'Scope', 'roi', 'Current', roiIndex, 'Total', totalRois);
+end
 try
-    progressDlg.Indeterminate = 'off';
-    progressDlg.Value = value;
-    displayIndex = max(1, min(totalRois, roiIndex));
-    progressDlg.Message = sprintf('%s ROI %d/%d%s%s', char(string(verb)), displayIndex, totalRois, ...
-        ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
-    drawnow limitrate;
+    if ~isempty(progressDlg) && isvalid(progressDlg)
+        progressDlg.Indeterminate = 'off';
+        progressDlg.Value = value;
+        progressDlg.Message = progressMessage;
+        drawnow limitrate;
+    end
 catch
 end
 end
@@ -586,6 +593,19 @@ if cond
 else
     out = b;
 end
+end
+
+function ctx = setRoiProgressWindowLocal(ctx, roiIndex, totalRois)
+if ~isstruct(ctx)
+    ctx = struct();
+end
+if ~isfield(ctx, 'progress') || ~isstruct(ctx.progress)
+    ctx.progress = struct();
+end
+totalRois = max(1, double(totalRois));
+roiIndex = max(1, min(totalRois, double(roiIndex)));
+ctx.progress.localBase = (roiIndex - 1) / totalRois;
+ctx.progress.localSpan = 1 / totalRois;
 end
 
 

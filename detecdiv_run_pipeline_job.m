@@ -17,6 +17,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
 
     payload = localLoadPayload(jobInput);
     payload = localNormalizePayload(payload);
+    diaryCleanup = localStartWorkerDiary(payload); %#ok<NASGU>
 
     result = struct( ...
         'status', 'failed', ...
@@ -30,6 +31,9 @@ function result = detecdiv_run_pipeline_job(jobInput)
         'error', '');
 
     resultPath = localGetText(payload, {'execution','result_json_path'}, '');
+    progressPath = localGetText(payload, {'execution','progress_json_path'}, '');
+    localWriteWorkerProgress(progressPath, struct( ...
+        'value', 0, 'status', 'starting', 'message', 'Worker starting...'));
 
     try
         classifierScopedRun = localIsClassifierScopedPayload(payload);
@@ -73,9 +77,12 @@ function result = detecdiv_run_pipeline_job(jobInput)
         runObj.ctx = ctx;
         pipelineRunSave(runObj);
         ctx = runObj.ctx;
+        if ~isempty(progressPath)
+            ctx.progressCallback = @(progress)localWriteWorkerProgress(progressPath, progress);
+        end
 
         [ctxOut, report] = runPipelineDetecDiv(pipeObj, ctx);
-        runObj.ctx = ctxOut;
+        runObj.ctx = localStripWorkerCallbacks(ctxOut);
         runObj.outputs = struct('report', report);
         runObj.progress = struct();
         runObj.status = 'done';
@@ -96,6 +103,8 @@ function result = detecdiv_run_pipeline_job(jobInput)
         result.artifacts = localBuildArtifacts(result.run_json_path);
         result.summary = localBuildResultSummary(pipeObj, report, ctxOut);
         result.dependency_audit = dependencyAudit;
+        localWriteWorkerProgress(progressPath, struct( ...
+            'value', 1, 'status', 'done', 'message', 'Pipeline completed.'));
     catch ME
         try
             report = getappdata(0, 'DetecDivLastPipelineReport');
@@ -115,9 +124,9 @@ function result = detecdiv_run_pipeline_job(jobInput)
                     runObj.status = 'failed';
                 end
                 if exist('ctxOut', 'var') && ~isempty(ctxOut)
-                    runObj.ctx = ctxOut;
+                    runObj.ctx = localStripWorkerCallbacks(ctxOut);
                 elseif exist('ctx', 'var') && ~isempty(ctx)
-                    runObj.ctx = ctx;
+                    runObj.ctx = localStripWorkerCallbacks(ctx);
                 end
                 if isstruct(report) && ~isempty(fieldnames(report))
                     runObj.outputs = struct('report', report);
@@ -153,6 +162,13 @@ function result = detecdiv_run_pipeline_job(jobInput)
         else
             result.status = 'failed';
         end
+        progressContext = struct();
+        if exist('ctx', 'var')
+            progressContext = ctx;
+        end
+        localWriteWorkerProgress(progressPath, struct( ...
+            'value', localProgressValueFromContext(progressContext), ...
+            'status', result.status, 'message', ME.message));
         if exist('dependencyAudit', 'var') && ~isempty(dependencyAudit)
             result.dependency_audit = dependencyAudit;
         end
@@ -165,6 +181,88 @@ function result = detecdiv_run_pipeline_job(jobInput)
 
     localWriteResultIfRequested(resultPath, result);
     fprintf('PIPELINE_RUN_RESULT_JSON %s\n', char(string(resultPath)));
+end
+
+function cleanup = localStartWorkerDiary(payload)
+    cleanup = [];
+    consolePath = localGetText(payload, {'execution','console_log_path'}, '');
+    if isempty(consolePath)
+        return;
+    end
+    folder = fileparts(consolePath);
+    if ~isempty(folder) && exist(folder, 'dir') ~= 7
+        mkdir(folder);
+    end
+    try
+        diary off;
+        if exist(consolePath, 'file') == 2
+            delete(consolePath);
+        end
+        diary(consolePath);
+        cleanup = onCleanup(@localStopWorkerDiary);
+        fprintf('[worker] Started %s\n', char(datetime('now')));
+    catch
+        cleanup = [];
+    end
+end
+
+function localStopWorkerDiary()
+    try
+        fprintf('[worker] Finished %s\n', char(datetime('now')));
+        diary off;
+    catch
+    end
+end
+
+function ctx = localStripWorkerCallbacks(ctx)
+    if ~isstruct(ctx)
+        return;
+    end
+    if isfield(ctx, 'progressCallback')
+        ctx = rmfield(ctx, 'progressCallback');
+    end
+end
+
+function value = localProgressValueFromContext(ctx)
+    value = 0;
+    try
+        if isstruct(ctx) && isfield(ctx, 'progress') && isstruct(ctx.progress) && ...
+                isfield(ctx.progress, 'value') && isfinite(double(ctx.progress.value))
+            value = max(0, min(1, double(ctx.progress.value)));
+        end
+    catch
+        value = 0;
+    end
+end
+
+function localWriteWorkerProgress(pathText, progress)
+    if isempty(pathText) || ~isstruct(progress)
+        return;
+    end
+    if ~isfield(progress, 'protocol')
+        progress.protocol = 'detecdiv.progress.v1';
+    end
+    if ~isfield(progress, 'indeterminate')
+        progress.indeterminate = false;
+    end
+    progress.updatedAt = char(datetime('now'));
+    folder = fileparts(pathText);
+    if ~isempty(folder) && exist(folder, 'dir') ~= 7
+        mkdir(folder);
+    end
+    tempPath = [pathText '.tmp'];
+    fid = fopen(tempPath, 'w');
+    if fid < 0
+        return;
+    end
+    try
+        fwrite(fid, jsonencode(progress, 'PrettyPrint', true), 'char');
+        fclose(fid);
+        movefile(tempPath, pathText, 'f');
+    catch
+        try, fclose(fid); catch, end
+        try, delete(tempPath); catch, end
+    end
 end
 
 function payload = localLoadPayload(jobInput)

@@ -15,6 +15,39 @@ MODEL_GPU = None
 BASE_PRINT = builtins.print
 TEE_LOG_PATH = None
 TEE_LOG_HANDLE = None
+PROGRESS_MARKER = "@@DETECDIV_PROGRESS@@"
+
+
+def report_progress(
+    cfg,
+    local_value,
+    message,
+    *,
+    current=None,
+    total=None,
+    scope="frame",
+    indeterminate=False,
+):
+    if not bool(cfg.get("progress_enabled", False)):
+        return
+    local_value = max(0.0, min(1.0, float(local_value)))
+    base = float(cfg.get("progress_base", 0.0))
+    span = float(cfg.get("progress_span", 1.0))
+    payload = {
+        "protocol": "detecdiv.progress.v1",
+        "value": max(0.0, min(1.0, base + span * local_value)),
+        "localValue": local_value,
+        "message": str(message),
+        "status": "running",
+        "scope": scope,
+        "indeterminate": bool(indeterminate),
+        "current": current,
+        "total": total,
+    }
+    print(
+        f"{PROGRESS_MARKER} {json.dumps(payload, separators=(',', ':'))}",
+        flush=True,
+    )
 
 
 def check_cancel(cancel_path, where="run"):
@@ -242,6 +275,13 @@ def run(cfg_path=None):
     cell_prob_threshold = to_float(cfg.get("cell_prob_threshold", 0.0), 0.0)
     min_size = to_int(cfg.get("min_size", 10), 10)
     mode = cfg.get("mode", "segmentation")
+    report_progress(
+        cfg,
+        0,
+        "Loading CellposeSAM inputs and model...",
+        scope="model",
+        indeterminate=True,
+    )
 
     print("torch.cuda.is_available():", torch.cuda.is_available())
     if torch.cuda.is_available():
@@ -320,6 +360,13 @@ def run(cfg_path=None):
 
     for i, (img, frame_idx) in enumerate(zip(images, frames_list)):
         check_cancel(cancel_path, f"frame_{int(frame_idx)}_start")
+        report_progress(
+            cfg,
+            i / max(1, len(frames_list)),
+            f"Segmenting frame {i+1}/{len(frames_list)}",
+            current=i + 1,
+            total=len(frames_list),
+        )
         print(f"[PY] Frame {i+1}/{len(frames_list)} start (frame_id={int(frame_idx)})", flush=True)
         try:
             masks, flows, styles = model.eval(
@@ -357,6 +404,13 @@ def run(cfg_path=None):
         nobj = int(len(np.unique(masks)) - (1 if np.any(masks == 0) else 0))
         counts_all[i] = nobj
         print(f"[PY] Frame {i+1}/{len(frames_list)} done (frame_id={int(frame_idx)}, objects={nobj})", flush=True)
+        report_progress(
+            cfg,
+            (i + 1) / max(1, len(frames_list)),
+            f"Segmented frame {i+1}/{len(frames_list)} ({nobj} objects)",
+            current=i + 1,
+            total=len(frames_list),
+        )
         masks_all[:, :, 0, i] = masks
 
         if mode == "proba":
