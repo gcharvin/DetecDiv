@@ -177,6 +177,15 @@ function report = localRunPack(pairs, opts, repoRoot)
             appMetadata = localReadAppMetadata(fr);
             fw = appdesigner.internal.serialization.FileWriter(char(pairs(i).mlapp));
             fw.writeAppCodeData(code, appCodeData, appMetadata);
+            % FileWriter may normalize line endings. Re-read the mlapp and
+            % verify that its embedded MATLAB code is otherwise identical
+            % to the extracted source before reporting a successful pack.
+            verifyReader = appdesigner.internal.serialization.FileReader(char(pairs(i).mlapp));
+            embeddedCode = verifyReader.readMATLABCodeText();
+            if ~strcmp(localNormalizeCodeText(embeddedCode), localNormalizeCodeText(code))
+                error("sync_mlapp_code:PackVerificationFailed", ...
+                    "Embedded code differs from %s after packing %s.", pairs(i).m, appName);
+            end
             fprintf("[sync] pack     %s <- %s\n", appName, pairs(i).m);
             row = {appName, "pack", pairs(i).mlapp, string(backupPath), "ok"};
         catch ME
@@ -276,6 +285,14 @@ function localWriteTextFile(pathStr, txt)
     end
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
     fwrite(fid, txt, "char");
+end
+
+function txt = localNormalizeCodeText(txt)
+    txt = char(txt);
+    if ~isempty(txt) && double(txt(1)) == 65279
+        txt = txt(2:end);
+    end
+    txt = regexprep(txt, '\r\n?|\n', '\n');
 end
 
 

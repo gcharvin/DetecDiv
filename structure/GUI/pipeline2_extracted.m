@@ -987,40 +987,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function configureControls(app)
-            app.UIGraphAxes.XTick = [];
-            app.UIGraphAxes.YTick = [];
-            app.UIGraphAxes.Box = 'on';
-            app.UIGraphAxes.Toolbar.Visible = 'off';
-            title(app.UIGraphAxes, '');
-            xlabel(app.UIGraphAxes, '');
-            ylabel(app.UIGraphAxes, '');
-            zlabel(app.UIGraphAxes, '');
-            app.UIFigure.Position = [80 80 1240 960];
-            app.GraphPanel.Position = [13 628 1214 304];
-            app.UIGraphAxes.Position = [15 9 1184 265];
-            app.ParametersPanel.Position = [13 14 1214 598];
-            app.TabGroup.Position = [366 47 833 520];
-            app.RuninformationhereLabel.Position = [16 432 334 70];
-            app.PipelineandRuncheckreportLabel.Position = [14 87 335 300];
-            try, app.RuninformationhereLabel.WordWrap = 'on'; catch, end
-            try, app.PipelineandRuncheckreportLabel.WordWrap = 'on'; catch, end
-            try, app.RuninformationhereLabel.HorizontalAlignment = 'left'; catch, end
-            try, app.RuninformationhereLabel.VerticalAlignment = 'top'; catch, end
-            try, app.PipelineandRuncheckreportLabel.HorizontalAlignment = 'left'; catch, end
-            try, app.PipelineandRuncheckreportLabel.VerticalAlignment = 'top'; catch, end
-            try, app.BuildPanel.Visible = 'off'; catch, end
-
             app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier'};
             app.TypeDropDown.Value = 'dataLoader';
             app.TypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TypeDropDownValueChanged, true);
             updateSubtypeChoices(app);
             app.SubtypeDropDown.ValueChangedFcn = createCallbackFcn(app, @SubtypeDropDownValueChanged, true);
-            app.TypeDropDown.Visible = 'off';
-            app.TypeDropDownLabel.Visible = 'off';
-            app.SubtypeDropDown.Visible = 'off';
-            app.SubtypeDropDownLabel.Visible = 'off';
-            app.AdvancedmodeCheckBox.Visible = 'off';
-            app.AdvancedmodeCheckBox.Enable = 'off';
             configureRuntimeTabs(app);
             app.AdvancedmodeCheckBox.ValueChangedFcn = createCallbackFcn(app, @AdvancedmodeCheckBoxValueChanged, true);
             app.TabGroup.SelectionChangedFcn = createCallbackFcn(app, @TabGroupSelectionChanged, true);
@@ -1040,7 +1011,6 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ResumeoptionsDropDown.ValueChangedFcn = createCallbackFcn(app, @ResumeoptionsDropDownValueChanged, true);
             app.ExecutionDropDown.Items = {'Auto','GPU','CPU'};
             app.ExecutionDropDown.Value = 'Auto';
-            layoutRuntimeOptionsTab(app);
             buildHubRuntimeControls(app);
             buildRunArtifactControls(app);
             buildRuntimeControls(app);
@@ -1143,17 +1113,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.TabGroup.Children = [otherTabs(:); app.RuntimeInputsTab; app.RuntimeTab; dynamicTabs(:)];
             catch
             end
-        end
-
-        function layoutRuntimeOptionsTab(app)
-            app.SelectedmodulesLabel.Position = [12 450 130 22];
-            app.UISelectedModuleTable.Position = [18 90 320 318];
-            app.UISelectedModuleTable.ColumnWidth = {42 132 78 'auto'};
-
-            app.ExecutionDropDownLabel.Position = [388 404 64 22];
-            app.ExecutionDropDown.Position = [462 404 120 22];
-            app.ResumeoptionsDropDownLabel.Position = [356 368 96 22];
-            app.ResumeoptionsDropDown.Position = [462 368 170 22];
         end
 
         function modules = defaultModuleLibrary(app)
@@ -3589,10 +3548,6 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function buildRuntimeControls(app)
-            try, delete(app.UIFOVTable); catch, end
-            try, delete(app.PathProjectBox); catch, end
-            try, delete(app.ListofpathprojectsLabel); catch, end
-
             if hasStaticRuntimeInputControls(app)
                 bindStaticRuntimeInputControls(app);
                 updateRuntimeInputStates(app);
@@ -5802,14 +5757,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.RuntimeButtonHandles.projectPath.Tooltip = 'Refresh classifiers currently loaded as independent objects or inside workspace projects.';
                     if ~app.RuntimeInputModeLocked
                         try, app.RuntimeFieldHandles.projectPath.Visible = 'off'; catch, end
-                        try, app.RuntimeFieldHandles.projectSource.Position = [110 367 496 22]; catch, end
-                        try, app.RuntimeButtonHandles.projectPath.Position = [616 367 190 22]; catch, end
                     end
                 elseif startsFromProject
                     try, app.RuntimeProjectTargetLabel.Text = 'Project'; catch, end
                     try, app.RuntimeFieldHandles.projectPath.Visible = 'on'; catch, end
-                    try, app.RuntimeFieldHandles.projectSource.Position = [516 367 95 22]; catch, end
-                    try, app.RuntimeButtonHandles.projectPath.Position = [616 367 95 22]; catch, end
                     app.RuntimeFieldHandles.projectPath.Tooltip = 'Read mode: this project supplies existing FOVs, ROIs, channels and dataseries. Raw-image nodes also require usable FOV image sources saved in the project.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Informational only in project-input mode: raw source path inferred from saved project FOVs, when available.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'on';
@@ -5818,8 +5769,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 else
                     try, app.RuntimeProjectTargetLabel.Text = 'Project'; catch, end
                     try, app.RuntimeFieldHandles.projectPath.Visible = 'on'; catch, end
-                    try, app.RuntimeFieldHandles.projectSource.Position = [516 367 95 22]; catch, end
-                    try, app.RuntimeButtonHandles.projectPath.Position = [616 367 95 22]; catch, end
                     app.RuntimeFieldHandles.projectPath.Tooltip = 'Write target: dataloader, ROI modules and downstream outputs are written into this project.';
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Read source: raw parser supplies FOV/frame/channel inventory for this run.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'off';
@@ -21151,15 +21100,20 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create UIGraphAxes
             app.UIGraphAxes = uiaxes(app.GraphPanel);
-            title(app.UIGraphAxes, 'Title')
-            xlabel(app.UIGraphAxes, 'X')
-            ylabel(app.UIGraphAxes, 'Y')
-            zlabel(app.UIGraphAxes, 'Z')
+            title(app.UIGraphAxes, '')
+            xlabel(app.UIGraphAxes, '')
+            ylabel(app.UIGraphAxes, '')
+            zlabel(app.UIGraphAxes, '')
+            app.UIGraphAxes.Box = 'on';
+            app.UIGraphAxes.XTick = [];
+            app.UIGraphAxes.YTick = [];
+            app.UIGraphAxes.Toolbar.Visible = 'off';
             app.UIGraphAxes.Position = [15 9 1184 265];
 
             % Create BuildPanel
             app.BuildPanel = uipanel(app.UIFigure);
             app.BuildPanel.Title = 'Build';
+            app.BuildPanel.Visible = 'off';
             app.BuildPanel.Position = [13 621 250 304];
 
             % Create ForkgraphButton
@@ -21199,12 +21153,14 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create TypeDropDownLabel
             app.TypeDropDownLabel = uilabel(app.ParametersPanel);
+            app.TypeDropDownLabel.Visible = 'off';
             app.TypeDropDownLabel.HorizontalAlignment = 'right';
             app.TypeDropDownLabel.Position = [25 535 31 22];
             app.TypeDropDownLabel.Text = 'Type';
 
             % Create TypeDropDown
             app.TypeDropDown = uidropdown(app.ParametersPanel);
+            app.TypeDropDown.Visible = 'off';
             app.TypeDropDown.Position = [71 535 118 22];
 
             % Create IdEditFieldLabel
@@ -21219,17 +21175,21 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create AdvancedmodeCheckBox
             app.AdvancedmodeCheckBox = uicheckbox(app.ParametersPanel);
+            app.AdvancedmodeCheckBox.Enable = 'off';
+            app.AdvancedmodeCheckBox.Visible = 'off';
             app.AdvancedmodeCheckBox.Text = 'Advanced mode';
             app.AdvancedmodeCheckBox.Position = [306 535 109 22];
 
             % Create SubtypeDropDownLabel
             app.SubtypeDropDownLabel = uilabel(app.ParametersPanel);
+            app.SubtypeDropDownLabel.Visible = 'off';
             app.SubtypeDropDownLabel.HorizontalAlignment = 'right';
             app.SubtypeDropDownLabel.Position = [4 510 52 22];
             app.SubtypeDropDownLabel.Text = 'Sub type';
 
             % Create SubtypeDropDown
             app.SubtypeDropDown = uidropdown(app.ParametersPanel);
+            app.SubtypeDropDown.Visible = 'off';
             app.SubtypeDropDown.Position = [71 510 118 22];
 
             % Create RuntimeInputsTab
@@ -21391,16 +21351,19 @@ classdef pipeline2 < matlab.apps.AppBase
             app.UIFOVTable = uitable(app.RuntimeTab);
             app.UIFOVTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
             app.UIFOVTable.RowName = {};
+            app.UIFOVTable.Visible = 'off';
             app.UIFOVTable.Position = [256 42 417 200];
 
             % Create ListofpathprojectsLabel
             app.ListofpathprojectsLabel = uilabel(app.RuntimeTab);
+            app.ListofpathprojectsLabel.Visible = 'off';
             app.ListofpathprojectsLabel.HorizontalAlignment = 'right';
             app.ListofpathprojectsLabel.Position = [270 308 109 22];
             app.ListofpathprojectsLabel.Text = 'List of path/projects';
 
             % Create PathProjectBox
             app.PathProjectBox = uilistbox(app.RuntimeTab);
+            app.PathProjectBox.Visible = 'off';
             app.PathProjectBox.Position = [395 256 278 74];
 
             % Create ExecutionDropDownLabel
@@ -21455,6 +21418,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuninformationhereLabel = uilabel(app.ParametersPanel);
             app.RuninformationhereLabel.HorizontalAlignment = 'left';
             app.RuninformationhereLabel.VerticalAlignment = 'top';
+            app.RuninformationhereLabel.WordWrap = 'on';
             app.RuninformationhereLabel.Position = [16 432 334 70];
             app.RuninformationhereLabel.Text = 'Template mode - no module yet.';
 
@@ -21462,6 +21426,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.PipelineandRuncheckreportLabel = uilabel(app.ParametersPanel);
             app.PipelineandRuncheckreportLabel.HorizontalAlignment = 'left';
             app.PipelineandRuncheckreportLabel.VerticalAlignment = 'top';
+            app.PipelineandRuncheckreportLabel.WordWrap = 'on';
             app.PipelineandRuncheckreportLabel.Position = [14 87 335 300];
             app.PipelineandRuncheckreportLabel.Text = 'Click the grey block to add the first module.';
 
