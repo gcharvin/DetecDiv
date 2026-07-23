@@ -1,46 +1,28 @@
-function [paramout, dataout, imageout] = core(param, roiobj, ctx)
+function [paramout, dataout, imageout] = core(param, roiobj, ctx, classif)
 %BUDMOTHERLINKER.CORE Run HGB-16 inference and update the canonical cellModel.
 
 if nargin < 3, ctx = struct(); end
-paramout = budMotherLinker.normalizeParam(param, ctx);
+if nargin < 4, classif = []; end
+paramout = budMotherLinker.normalizeParam(param, ctx, classif);
 ensureROIImage(roiobj);
 [trackStack, trackPix] = trackedStack(roiobj, paramout.trackChannelName);
 
-paths = resolveRuntimePaths(paramout);
-runtimeDir = tempname;
-mkdir(runtimeDir);
-cleanup = onCleanup(@() cleanupRuntime(runtimeDir, paramout.keepRuntimeFiles));
-inputFile = fullfile(runtimeDir, 'tracks.h5');
-writeTrackStack(inputFile, trackStack);
-
 auditFile = resolveAuditFile(roiobj, paramout.outputFamilyName, ctx);
 if ~isfolder(fileparts(auditFile)), mkdir(fileparts(auditFile)); end
-runtimeScript = fullfile(fileparts(mfilename('fullpath')), 'python', ...
-    'bud_mother_linker_runtime.py');
-command = buildCommand(paths, runtimeScript, inputFile, auditFile, roiobj, paramout);
 if paramout.debug
     fprintf('[budMotherLinker] track channel: %s (pix %d)\n', ...
         paramout.trackChannelName, trackPix);
-    fprintf('[budMotherLinker] model package: %s\n', paths.modelPackage);
-    fprintf('[budMotherLinker] LYN repository: %s\n', paths.lynRepository);
+    fprintf('[budMotherLinker] runtime: native MATLAB HGB-16\n');
     fprintf('[budMotherLinker] audit output: %s\n', auditFile);
 end
-[status, console] = system(command);
-if status ~= 0
-    error('budMotherLinker:BackendFailed', ...
-        'Bud/mother backend failed (exit %d):\n%s', status, console);
-end
-if ~isfile(auditFile)
-    error('budMotherLinker:MissingOutput', ...
-        'Python backend did not create %s.', auditFile);
-end
-result = jsondecode(fileread(auditFile));
+result = budMotherLinker.infer(trackStack, paramout, char(string(roiobj.id)));
+writeAuditFile(auditFile, result);
 
 [model, loadReport] = roiobj.loadCellModel('MigrateLegacy', true);
 [model, familyId, applyReport] = applyInference( ...
     model, trackStack, paramout.trackChannelName, paramout.inputFamily, ...
     paramout.outputFamilyName, result, paramout.overwriteOutputFamily);
-model.provenance.last_processor = 'budMotherLinker';
+model.provenance.last_classifier = 'budMotherLinker';
 model.provenance.last_audit_artifact = auditFile;
 if isfield(result, 'tool_version')
     model.provenance.last_processor_version = char(string(result.tool_version));
@@ -56,21 +38,21 @@ paramout.auditFile = auditFile;
 paramout.cellModelFile = char(saveReport.filename);
 paramout.artifacts = {auditFile, char(saveReport.filename)};
 paramout.summary = result.summary;
-paramout.runtime = struct('pythonExecutable', paths.pythonExecutable, ...
-    'modelPackage', paths.modelPackage, 'lynRepository', paths.lynRepository, ...
-    'lynCheckpoint', paths.lynCheckpoint);
+paramout.runtime = struct('backend', 'MATLAB', ...
+    'model_source', paramout.modelSource, 'model', paramout.modelPath);
 paramout.cellModelReport = struct('load', loadReport, 'apply', applyReport, ...
     'save', saveReport);
 paramout.saveChannels = {};
 
 dataout = roiobj.data;
-imageout = roiobj.image;
+% The tracked masks are read-only input. Returning the ROI image here makes
+% classifier orchestration interpret every loaded channel as image output
+% and rewrite the complete HDF5 stack during the deferred final save.
+imageout = [];
 if paramout.debug
     fprintf('[budMotherLinker] %d linked, %d review; family %u.\n', ...
         double(result.summary.linked), double(result.summary.review), familyId);
 end
-clear cleanup;
-cleanupRuntime(runtimeDir, paramout.keepRuntimeFiles);
 end
 
 function ensureROIImage(roiobj)
@@ -98,126 +80,22 @@ end
 stack = uint32(stack);
 end
 
-function writeTrackStack(filename, stack)
-shape = size(stack); if numel(shape) < 3, shape(3) = 1; end
-h5create(filename, '/tracks', shape, 'Datatype', 'uint32', ...
-    'ChunkSize', [shape(1), shape(2), 1], 'Deflate', 4);
-h5write(filename, '/tracks', stack);
-h5writeatt(filename, '/tracks', 'producer', 'MATLAB');
-h5writeatt(filename, '/tracks', 'logical_axes', 'YXT');
-h5writeatt(filename, '/tracks', 'height', uint32(shape(1)));
-h5writeatt(filename, '/tracks', 'width', uint32(shape(2)));
-h5writeatt(filename, '/tracks', 'frames', uint32(shape(3)));
+function writeAuditFile(filename, result)
+temporary = [filename '.tmp'];
+fid = fopen(temporary, 'w');
+if fid < 0
+    error('budMotherLinker:AuditWriteFailed', ...
+        'Cannot create audit artifact: %s', temporary);
 end
-
-function paths = resolveRuntimePaths(param)
-packageDir = fileparts(mfilename('fullpath'));
-repoRoot = fileparts(fileparts(fileparts(packageDir)));
-paths.modelPackage = resolveModelPackage(param.modelPackage, repoRoot);
-paths.lynRepository = resolveLynRepository(param.lynRepository, paths.modelPackage, repoRoot);
-paths.lynCheckpoint = resolveLynCheckpoint(param.lynCheckpoint, paths.lynRepository);
-paths.pythonExecutable = resolvePython(param.pythonExecutable);
-required = {paths.modelPackage, paths.lynRepository, paths.lynCheckpoint, paths.pythonExecutable};
-labels = {'model package','LYN repository','LYN checkpoint','Python executable'};
-for i = 1:numel(required)
-    commandOnly = i == 4 && ~contains(required{i}, filesep) && ...
-        ~contains(required{i}, '/') && ~contains(required{i}, '\');
-    if (i <= 2 && ~isfolder(required{i})) || ...
-            (i > 2 && ~commandOnly && ~isfile(required{i}))
-        error('budMotherLinker:MissingRuntime', 'Missing %s: %s', labels{i}, required{i});
-    end
+cleanup = onCleanup(@() fclose(fid));
+text = jsonencode(result, 'PrettyPrint', true);
+fwrite(fid, text, 'char');
+clear cleanup;
+[ok, message] = movefile(temporary, filename, 'f');
+if ~ok
+    error('budMotherLinker:AuditWriteFailed', ...
+        'Cannot finalize audit artifact %s: %s', filename, message);
 end
-if ~isfile(fullfile(paths.modelPackage, 'manifest.json')) || ...
-        ~isfile(fullfile(paths.modelPackage, 'hgb_lyn16.joblib'))
-    error('budMotherLinker:InvalidModelPackage', ...
-        'Model package lacks manifest.json or hgb_lyn16.joblib: %s', paths.modelPackage);
-end
-end
-
-function path = resolveModelPackage(value, repoRoot)
-path = explicitOrEnvironment(value, 'DETECDIV_BUD_MOTHER_MODEL');
-if ~isempty(path), return; end
-candidates = { ...
-    fullfile(repoRoot, 'models', 'bud_mother_linker', 'project47_v002'), ...
-    fullfile(fileparts(repoRoot), 'SAM31_yeast_sandbox', 'data', 'models', ...
-        'project47_bud_mother_linker_v002')};
-path = firstExisting(candidates, true);
-end
-
-function path = resolveLynRepository(value, modelPackage, repoRoot)
-path = explicitOrEnvironment(value, 'DETECDIV_LYN_TRACE_REPO');
-if ~isempty(path), return; end
-manifestPath = fullfile(modelPackage, 'manifest.json');
-try
-    manifest = jsondecode(fileread(manifestPath));
-    if isfield(manifest, 'lyn_repository') && isfolder(manifest.lyn_repository)
-        path = char(string(manifest.lyn_repository)); return;
-    end
-catch
-end
-candidates = {fullfile(fileparts(repoRoot), 'LYN-trace'), ...
-    fullfile(tempdir, 'codex_lyn_trace_20260722')};
-path = firstExisting(candidates, true);
-end
-
-function path = resolveLynCheckpoint(value, lynRepository)
-path = explicitOrEnvironment(value, 'DETECDIV_LYN_TRACE_CHECKPOINT');
-if ~isempty(path), return; end
-path = fullfile(lynRepository, 'src', 'bread', 'algo', 'lineage', ...
-    'saved_models', 'best_model_with_fake_candid_thresh12_frame_num8_normalized_True.pth');
-end
-
-function path = resolvePython(value)
-path = explicitOrEnvironment(value, 'DETECDIV_PYTHON');
-if isempty(path), path = getenv('PROJECT47_GT_PYTHON'); end
-if ~isempty(path), path = char(string(path)); return; end
-try
-    env = pyenv;
-    if strlength(string(env.Executable)) > 0, path = char(env.Executable); return; end
-catch
-end
-candidate = fullfile(getenv('USERPROFILE'), '.conda', 'envs', ...
-    'detecdiv_python', 'python.exe');
-if isfile(candidate), path = candidate; else, path = 'python'; end
-end
-
-function path = explicitOrEnvironment(value, environmentName)
-path = '';
-value = char(string(value));
-if ~isempty(value) && ~strcmpi(value, 'auto'), path = value; return; end
-envValue = getenv(environmentName);
-if ~isempty(envValue), path = envValue; end
-end
-
-function path = firstExisting(candidates, directory)
-path = '';
-for i = 1:numel(candidates)
-    if (directory && isfolder(candidates{i})) || (~directory && isfile(candidates{i}))
-        path = candidates{i}; return;
-    end
-end
-end
-
-function command = buildCommand(paths, runtimeScript, inputFile, outputFile, roiobj, param)
-args = {paths.pythonExecutable, runtimeScript, '--input-h5', inputFile, ...
-    '--dataset', '/tracks', '--model-dir', paths.modelPackage, ...
-    '--lyn-repo', paths.lynRepository, '--lyn-model', paths.lynCheckpoint, ...
-    '--output-json', outputFile, '--roi-id', char(string(roiobj.id)), ...
-    '--frame-end', num2str(param.frameEnd, '%.0f'), ...
-    '--min-lifetime', num2str(param.minLifetime, '%.0f'), ...
-    '--max-birth-area', num2str(param.maxBirthArea, '%.17g'), ...
-    '--min-parent-age', num2str(param.minParentAge, '%.0f'), ...
-    '--max-parent-centroid-distance', num2str(param.maxParentCentroidDistance, '%.17g'), ...
-    '--max-parent-contour-distance', num2str(param.maxParentContourDistance, '%.17g'), ...
-    '--max-candidates', num2str(param.maxCandidates, '%.0f')};
-quoted = cellfun(@quoteArgument, args, 'UniformOutput', false);
-command = strjoin(quoted, ' ');
-end
-
-function value = quoteArgument(value)
-value = char(string(value));
-value = strrep(value, '"', '""');
-value = ['"' value '"'];
 end
 
 function auditFile = resolveAuditFile(roiobj, outputFamily, ctx)
@@ -340,9 +218,4 @@ end
 function columns = subsetRows(columns, keep)
 names = fieldnames(columns);
 for i = 1:numel(names), columns.(names{i}) = columns.(names{i})(keep,:); end
-end
-
-function cleanupRuntime(path, keep)
-if keep || ~isfolder(path), return; end
-try rmdir(path, 's'); catch, end
 end

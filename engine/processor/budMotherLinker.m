@@ -1,10 +1,10 @@
 function [paramout, dataout, imageout] = budMotherLinker(param, roiobj, frames)
 % budMotherLinker  Legacy entry point for the builtin bud/mother linker.
 %
-% New pipeline code should call budMotherLinker.process(param, roiobj, ctx).
+% New configurations should use the builtin budMotherLinker classifier.
 
 if nargin == 0
-    paramout = budMotherLinker.setparam(struct());
+    paramout = budMotherLinker.utils.defaultExecutionParam();
     dataout = [];
     imageout = [];
     return;

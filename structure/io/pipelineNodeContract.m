@@ -814,6 +814,35 @@ function contract = enrichContractFromPackage(contract, node)
                     ];
                 contract.resources.out = resourceDef('channel', 'tracking', 'tracklets', 'outputName', 'channels', 'outputName', false, 'roiChannel');
                 contract.summary = 'Trackastra linker: consumes intensity images and indexed instance masks, then writes stable tracklet IDs.';
+            case 'budmotherlinker'
+                contract.parameters.static = unique([contract.parameters.static budMotherLinkerExecutionStaticKeys()], 'stable');
+                contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
+                contract.capabilities.outputsMasks = false;
+                contract.capabilities.outputsChannels = false;
+                contract.capabilities.roiMasks = false;
+                contract.capabilities.roiChannels = false;
+                contract.capabilities.roiDataSeries = true;
+                contract.capabilities.outputsDataSeries = true;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'singleChannel';
+                contract.binding.selectorKeys = {'trackChannelName'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCount = 1;
+                contract.selectors.channelParam = 'trackChannelName';
+                contract.selectors.channelsParam = '';
+                contract.selectors.outputNameParam = 'outputFamilyName';
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.resources.in = resourceDef('channel', 'mask_roi_image', ...
+                    'tracked_masks', 'trackChannelName', 'channels', ...
+                    'trackChannelName', true, '');
+                contract.resources.out = resourceDef('dataSeries', 'lineage', ...
+                    'cell_model_lineage', 'outputFamilyName', 'dataSeries', ...
+                    'outputFamilyName', false, 'roiDataSeries');
+                contract.summary = 'Bud-mother classifier: consumes stable tracked masks and writes a cell-model lineage family.';
             case 'deeplab_pixel_classification'
                 outputType = normalizeOutputMode(getNestedParam(node, {'outputType','outputMode'}, 'segmentation'), ...
                     {'segmentation','proba','probability','both'}, 'segmentation');
@@ -1786,6 +1815,19 @@ function keys = trackastraExecutionStaticKeys()
     catch
         keys = {'pretrainedModel','trackingMode','device','batchSize','nWorkers','maxDistance', ...
             'normalizeImages'};
+    end
+end
+
+function keys = budMotherLinkerExecutionStaticKeys()
+    try
+        spec = budMotherLinker.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'inputFamily','outputFamilyName','frameEnd','minLifetime', ...
+            'maxBirthArea','minParentAge','maxParentCentroidDistance', ...
+            'maxParentContourDistance','maxCandidates','rankMarginThreshold', ...
+            'trackingLoadGuard','maxNewTracksPerFrame', ...
+            'overwriteOutputFamily','debug'};
     end
 end
 

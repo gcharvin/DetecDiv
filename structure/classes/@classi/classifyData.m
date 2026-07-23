@@ -129,7 +129,7 @@ end
 % -----------------------------
 % Load classifiers if needed
 % -----------------------------
-mustload = isempty(classifier);
+mustload = isempty(classifier) && packageRequiresRuntimeClassifierLocal(classi);
 
 if CNNflag==1
     if isempty(classifierCNN)
@@ -1645,6 +1645,32 @@ end
 
 if isprop(classif,'classifyFun')
     fun = classif.classifyFun;
+end
+end
+
+function tf = packageRequiresRuntimeClassifierLocal(classif)
+% Package classifiers may own their model artifact and not use the legacy
+% <classifier-id>.mat network convention.
+tf = true;
+pkg = '';
+try
+    if isprop(classif,'classifierPkg') && ~isempty(classif.classifierPkg)
+        pkg = char(string(classif.classifierPkg));
+    elseif isprop(classif,'classifyFun') && ~isempty(classif.classifyFun)
+        pkg = localInferPkg(classif.classifyFun);
+    end
+catch
+    pkg = '';
+end
+if isempty(pkg), return; end
+try
+    specFun = str2func([pkg '.executionSpec']);
+    spec = specFun(classif);
+    if isstruct(spec) && isfield(spec,'requiresRuntimeClassifier') && ...
+            ~isempty(spec.requiresRuntimeClassifier)
+        tf = logical(spec.requiresRuntimeClassifier);
+    end
+catch
 end
 end
 

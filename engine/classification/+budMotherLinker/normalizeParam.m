@@ -1,25 +1,34 @@
-function paramout = normalizeParam(param, ctx)
-%BUDMOTHERLINKER.NORMALIZEPARAM Upgrade aliases and fill builtin defaults.
+function paramout = normalizeParam(param, ctx, classif)
+%BUDMOTHERLINKER.NORMALIZEPARAM Upgrade aliases and fill classifier defaults.
 
 if nargin < 2, ctx = struct(); end
-defaults = budMotherLinker.setparam(ctx);
+if nargin < 3, classif = []; end
+defaults = budMotherLinker.utils.defaultExecutionParam();
+try
+    if ~isempty(classif) && isa(classif, 'classi') && ...
+            isstruct(classif.executionParam)
+        defaults = budMotherLinker.utils.applyOverrides( ...
+            defaults, classif.executionParam);
+    end
+catch
+end
 if nargin < 1 || isempty(param), param = struct(); end
 paramout = param;
 
 aliases = { ...
     'inputChannelName','trackChannelName'; ...
     'instanceChannelName','trackChannelName'; ...
-    'outputName','outputFamilyName'; ...
-    'modelDir','modelPackage'; ...
-    'lynRepo','lynRepository'; ...
-    'lynModel','lynCheckpoint'; ...
-    'python','pythonExecutable'};
+    'outputName','outputFamilyName'};
 for i = 1:size(aliases,1)
     old = aliases{i,1}; new = aliases{i,2};
     if isfield(paramout, old) && ~isfield(paramout, new)
         paramout.(new) = paramout.(old);
     end
 end
+obsolete = {'modelPackage','lynRepository','lynCheckpoint','pythonExecutable', ...
+    'modelDir','lynRepo','lynModel','python','keepRuntimeFiles'};
+present = obsolete(isfield(paramout, obsolete));
+if ~isempty(present), paramout = rmfield(paramout, present); end
 
 names = fieldnames(defaults);
 for i = 1:numel(names)
@@ -34,13 +43,10 @@ if isMissingChoice(paramout.trackChannelName)
 end
 paramout.inputFamily = readChoice(paramout.inputFamily);
 paramout.outputFamilyName = strtrim(char(string(paramout.outputFamilyName)));
-paramout.modelPackage = strtrim(char(string(paramout.modelPackage)));
-paramout.lynRepository = strtrim(char(string(paramout.lynRepository)));
-paramout.lynCheckpoint = strtrim(char(string(paramout.lynCheckpoint)));
-paramout.pythonExecutable = strtrim(char(string(paramout.pythonExecutable)));
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
-    'maxParentCentroidDistance','maxParentContourDistance','maxCandidates'};
+    'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
+    'rankMarginThreshold','maxNewTracksPerFrame'};
 for i = 1:numel(numericNames)
     name = numericNames{i};
     paramout.(name) = readScalar(paramout.(name), defaults.(name));
@@ -52,15 +58,49 @@ paramout.minParentAge = max(1, floor(paramout.minParentAge));
 paramout.maxParentCentroidDistance = max(0, paramout.maxParentCentroidDistance);
 paramout.maxParentContourDistance = max(0, paramout.maxParentContourDistance);
 paramout.maxCandidates = max(1, min(12, floor(paramout.maxCandidates)));
+if paramout.rankMarginThreshold >= 0
+    paramout.rankMarginThreshold = min(1, paramout.rankMarginThreshold);
+end
+paramout.maxNewTracksPerFrame = max(0, floor(paramout.maxNewTracksPerFrame));
+paramout.trackingLoadGuard = logical(paramout.trackingLoadGuard);
 paramout.overwriteOutputFamily = logical(paramout.overwriteOutputFamily);
-paramout.keepRuntimeFiles = logical(paramout.keepRuntimeFiles);
 paramout.debug = logical(paramout.debug);
+paramout.modelSource = lower(strtrim(readChoice(paramout.modelSource)));
+paramout.modelPath = strtrim(readChoice(paramout.modelPath));
+if isempty(paramout.modelSource), paramout.modelSource = 'builtin'; end
+if strcmp(paramout.modelSource, 'trained') && isempty(paramout.modelPath)
+    try
+        if ~isempty(classif) && isprop(classif, 'path')
+            candidate = fullfile(classif.path, 'models', 'latest', 'model.mat');
+            if isfile(candidate), paramout.modelPath = candidate; end
+        end
+    catch
+    end
+end
+if ~isempty(paramout.modelPath) && ~isfile(paramout.modelPath)
+    try
+        if ~isempty(classif) && isprop(classif, 'path')
+            candidate = fullfile(classif.path, paramout.modelPath);
+            if isfile(candidate), paramout.modelPath = candidate; end
+        end
+    catch
+    end
+end
 
 if isMissingChoice(paramout.trackChannelName)
     error('budMotherLinker:MissingTrackChannel', 'Select a tracked label channel.');
 end
 if isempty(paramout.outputFamilyName)
     error('budMotherLinker:MissingOutputFamily', 'Output family name cannot be empty.');
+end
+if ~any(strcmp(paramout.modelSource, {'builtin','trained'}))
+    error('budMotherLinker:InvalidModelSource', ...
+        'modelSource must be builtin or trained.');
+end
+if strcmp(paramout.modelSource, 'trained') && ...
+        (isempty(paramout.modelPath) || ~isfile(paramout.modelPath))
+    error('budMotherLinker:MissingTrainedModel', ...
+        'The trained model artifact was not found. Format and train this classifier first.');
 end
 end
 

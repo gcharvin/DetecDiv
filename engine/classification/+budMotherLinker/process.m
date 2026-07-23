@@ -7,7 +7,7 @@ elseif ~isstruct(ctx)
     ctx = struct('frames', ctx);
 end
 if nargin == 0 || isempty(param)
-    paramout = budMotherLinker.setparam(ctx);
+    paramout = budMotherLinker.utils.defaultExecutionParam();
     dataout = [];
     imageout = [];
     return;

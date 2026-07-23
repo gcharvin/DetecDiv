@@ -198,7 +198,11 @@ node.guiMode = 'replace';
 node.paramRequired = {'pkg'};
 node.params = params;
 node.inputs = {'roiList'};
-node.outputs = {'roiList','masks'};
+if strcmpi(pkg,'budMotherLinker')
+    node.outputs = {'roiList','dataSeries'};
+else
+    node.outputs = {'roiList','masks'};
+end
 node.enabled = true;
 node.status = '';
 node.layout = [10 10 24 10];
@@ -243,7 +247,14 @@ try
     specFun = str2func([params.pkg '.executionSpec']);
     spec = specFun(classiObj);
     if isstruct(spec) && isfield(spec, 'defaults') && isstruct(spec.defaults)
-        params = mergeStructDefaults(params, spec.defaults);
+        defaults = spec.defaults;
+        privateKeys = {};
+        if isfield(spec,'artifactKeys'), privateKeys = [privateKeys spec.artifactKeys]; end
+        if isfield(spec,'environmentKeys'), privateKeys = [privateKeys spec.environmentKeys]; end
+        privateKeys = unique(privateKeys,'stable');
+        privateKeys = privateKeys(isfield(defaults,privateKeys));
+        if ~isempty(privateKeys), defaults = rmfield(defaults,privateKeys); end
+        params = mergeStructDefaults(params, defaults);
     end
 catch
 end

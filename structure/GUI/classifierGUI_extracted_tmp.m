@@ -573,7 +573,7 @@ function classlist = appendPackageClassifiers(app, classlist, rootPath)
         newId = size(classlist,1) + 1;
         descr = pkgName;
         longdescr = [pkgName ' classifier'];
-        category = 'Image';  % default
+        category = inferPkgCategory(app,pkgName);
 
         if istable(classlist)
             newRow = {newId, descr, longdescr, category, {trainFun}, {classifyFun}};
@@ -786,9 +786,14 @@ end
                 pkg = lower(strtrim(char(string(classiObj.classifierPkg))));
                 trainFun = lower(strtrim(char(string(classiObj.trainingFun))));
                 classifyFun = lower(strtrim(char(string(classiObj.classifyFun))));
-                if strcmp(pkg,'trackastra') || startsWith(trainFun,'trackastra.') || ...
-                        startsWith(classifyFun,'trackastra.')
-                    trackastra.ensureClassMetadata(classiObj);
+                if isempty(pkg)
+                    if contains(trainFun,'.'), pkg = extractBefore(trainFun,'.');
+                    elseif contains(classifyFun,'.'), pkg = extractBefore(classifyFun,'.');
+                    end
+                end
+                metadataFun = [pkg '.ensureClassMetadata'];
+                if ~isempty(pkg) && ~isempty(which(metadataFun))
+                    feval(metadataFun,classiObj);
                 end
             catch
             end

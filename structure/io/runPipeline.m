@@ -2966,6 +2966,9 @@ end
 function [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node)
 classifierForRun = [];
 classifierCNNForRun = [];
+if ~classifierRequiresRuntimeObjectLocal(clsObj)
+    return;
+end
 try
     nodeId = char(string(getfielddefault(node,'id',clsObj.strid)));
     key = matlab.lang.makeValidName(nodeId);
@@ -3003,6 +3006,32 @@ try
 catch
     classifierForRun = [];
     classifierCNNForRun = [];
+end
+end
+
+function tf = classifierRequiresRuntimeObjectLocal(clsObj)
+tf = true;
+pkg = '';
+try
+    if isprop(clsObj,'classifierPkg') && ~isempty(clsObj.classifierPkg)
+        pkg = char(string(clsObj.classifierPkg));
+    elseif isprop(clsObj,'classifyFun') && ~isempty(clsObj.classifyFun)
+        value = char(string(clsObj.classifyFun));
+        dot = strfind(value,'.');
+        if ~isempty(dot), pkg = value(1:dot(1)-1); end
+    end
+catch
+    pkg = '';
+end
+if isempty(pkg), return; end
+try
+    specFun = str2func([pkg '.executionSpec']);
+    spec = specFun(clsObj);
+    if isstruct(spec) && isfield(spec,'requiresRuntimeClassifier') && ...
+            ~isempty(spec.requiresRuntimeClassifier)
+        tf = logical(spec.requiresRuntimeClassifier);
+    end
+catch
 end
 end
 

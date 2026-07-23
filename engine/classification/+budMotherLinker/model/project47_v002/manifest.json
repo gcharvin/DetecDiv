@@ -1,0 +1,54 @@
+{
+  "schema_version": 3,
+  "tool_version": "1.0.0-matlab",
+  "model_type": "StandardScaler plus HistGradientBoostingClassifier candidate ranker",
+  "runtime": "MATLAB",
+  "feature_implementation": "builtin LYN-16-compatible geometry",
+  "feature_reference_commit": "52821eacc19e444e89c084ce384ec259894239b8",
+  "training_model_commit": "54361c2e387b779e397498767b50d698c4afc235",
+  "gfp_used": false,
+  "features": [
+    "dist_0",
+    "dist_std",
+    "poly_fit_budcm_budpt",
+    "poly_fit_expansion_vector",
+    "position_bud_std",
+    "position_bud_max",
+    "position_bud_min",
+    "position_bud_last",
+    "position_bud_first",
+    "orientation_bud_std",
+    "orientation_bud_max",
+    "orientation_bud_min",
+    "orientation_bud_last",
+    "orientation_bud_first",
+    "orientation_bud_last_minus_first",
+    "plyfit_orientation_bud"
+  ],
+  "training_rois": [
+    "pos1_1",
+    "pos2_2"
+  ],
+  "training_events": 266,
+  "deployment_calibration": {
+    "calibration_rois": [
+      "pos4_4"
+    ],
+    "events": 90,
+    "target_auto_precision": 0.95,
+    "rank_margin_threshold": 0.8437635905835801,
+    "selected": 52,
+    "coverage": 0.5777777777777777,
+    "precision": 0.9615384615384616,
+    "calibration_note": "Recalibrated for the native MATLAB LYN-16 geometry implementation."
+  },
+  "tracking_load_guard": {
+    "enabled": true,
+    "metric": "new_track_ids_at_event_frame",
+    "max_new_tracks_per_frame": 7
+  },
+  "files": {
+    "hgb_lyn16.mat": "0b18507148361d8245f70d706d97f9c51f1d8c2ae4dc5488cfc9bc7cf5d6e3a6",
+    "source_hgb_lyn16.joblib": "231aec59c10d84d2af9d2fa839fc417d7b39cca2e00d1845c8a5d26d2f6cecbb"
+  }
+}
