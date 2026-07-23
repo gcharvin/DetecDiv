@@ -102,6 +102,8 @@ classdef pipeline2 < matlab.apps.AppBase
         AvailableModules cell = {}
         IsRefreshingTabs logical = false
         ModuleTabRefreshSuspended logical = false
+        ModuleTabRefreshBatchDepth double = 0
+        ModuleTabRefreshPending logical = false
         IsRedrawingGraph logical = false
         RuntimeFieldHandles struct = struct()
         RuntimeButtonHandles struct = struct()
@@ -3427,9 +3429,16 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function refreshModuleTabs(app)
-            if app.ModuleTabRefreshSuspended
+            if app.ModuleTabRefreshSuspended || app.ModuleTabRefreshBatchDepth > 0
+                app.ModuleTabRefreshPending = true;
                 return;
             end
+            if app.IsRefreshingTabs
+                % The active rebuild reads app.Data directly. Re-entrant UI
+                % callbacks must not queue an identical second rebuild.
+                return;
+            end
+            app.ModuleTabRefreshPending = false;
             d = openRuntimeProgress(app, 'Pipeline modules', 'Refreshing module tabs...');
             cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             app.IsRefreshingTabs = true;
@@ -4119,6 +4128,8 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function runtimeFieldChanged(app, key, value)
+            beginModuleTabRefreshBatch(app);
+            tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
             app.RuntimeValues.(key) = char(string(value));
             markRunDirty(app, true);
             if strcmp(char(string(key)), 'inputSourceMode')
@@ -4154,6 +4165,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 3
                 d = [];
             end
+            beginModuleTabRefreshBatch(app);
+            tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
             value = char(string(value));
             app.RuntimeValues.inputSourceMode = value;
             setRuntimeControlValue(app, 'inputSourceMode', value);
@@ -4792,6 +4805,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
                 return;
             end
+            beginModuleTabRefreshBatch(app);
+            tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
             app.CurrentProject = shallowObj;
             app.CurrentProjectVarName = char(string(varName));
             clearRuntimeDataSeriesCache(app);
@@ -5357,6 +5372,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isstruct(info) || ~isfield(info, 'ok') || ~info.ok
                 return;
             end
+            beginModuleTabRefreshBatch(app);
+            tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
             if isfield(info, 'fovCount') && info.fovCount > 0
                 setRuntimeValuePreserveParse(app, 'fovs', sprintf('1:%d', info.fovCount));
                 try
@@ -6621,6 +6638,21 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function setModuleTabRefreshSuspended(app, value)
             app.ModuleTabRefreshSuspended = logical(value);
+        end
+
+        function beginModuleTabRefreshBatch(app)
+            app.ModuleTabRefreshBatchDepth = app.ModuleTabRefreshBatchDepth + 1;
+        end
+
+        function endModuleTabRefreshBatch(app, flushPending)
+            if nargin < 2
+                flushPending = true;
+            end
+            app.ModuleTabRefreshBatchDepth = max(0, app.ModuleTabRefreshBatchDepth - 1);
+            if app.ModuleTabRefreshBatchDepth == 0 && logical(flushPending) && ...
+                    app.ModuleTabRefreshPending && ~app.ModuleTabRefreshSuspended
+                refreshModuleTabs(app);
+            end
         end
 
         function setRedrawingGraph(app, value)
@@ -18833,6 +18865,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(runObj) || ~isa(runObj, 'pipelineRun')
                 return;
             end
+            beginModuleTabRefreshBatch(app);
+            tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, logical(refreshUi))); %#ok<NASGU>
             wasSuspended = app.RuntimeInventoryRefreshSuspended;
             app.RuntimeInventoryRefreshSuspended = true;
             cleanupObj = onCleanup(@()setRuntimeInventoryRefreshSuspended(app, wasSuspended)); %#ok<NASGU>
