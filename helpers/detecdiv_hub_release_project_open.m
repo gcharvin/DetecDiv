@@ -12,7 +12,6 @@ function released = detecdiv_hub_release_project_open(shallowObj, hub)
     localStopProjectHeartbeats(ref);
 
     state = localHubState(shallowObj);
-    storedLockId = '';
     if isfield(state, 'lease') && isstruct(state.lease) && isfield(state.lease, 'id') && ~isempty(state.lease.id)
         storedLockId = char(string(state.lease.id));
         localStopHeartbeat(ref, storedLockId);
@@ -31,6 +30,24 @@ end
 
 function localStopProjectHeartbeats(ref)
     prefix = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_'], '[^a-zA-Z0-9_]', '_')]);
+    workers = localGetRegistry('DetecDivHubLeaseWorkers');
+    names = fieldnames(workers);
+    changed = false;
+    for i = 1:numel(names)
+        name = names{i};
+        if ~startsWith(name, prefix)
+            continue;
+        end
+        localCancelWorkerRecord(workers.(name));
+        workers = rmfield(workers, name);
+        changed = true;
+    end
+    if changed
+        setappdata(0, 'DetecDivHubLeaseWorkers', workers);
+    end
+
+    % Clean timers created by older DetecDiv code in an already-running
+    % MATLAB session.
     timers = struct();
     try
         existing = getappdata(0, 'DetecDivHubLeaseTimers');
@@ -93,6 +110,13 @@ end
 
 function localStopHeartbeat(ref, lockId)
     key = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_' char(string(lockId))], '[^a-zA-Z0-9_]', '_')]);
+    workers = localGetRegistry('DetecDivHubLeaseWorkers');
+    if isfield(workers, key)
+        localCancelWorkerRecord(workers.(key));
+        workers = rmfield(workers, key);
+        setappdata(0, 'DetecDivHubLeaseWorkers', workers);
+    end
+
     timers = struct();
     try
         existing = getappdata(0, 'DetecDivHubLeaseTimers');
@@ -110,5 +134,25 @@ function localStopHeartbeat(ref, lockId)
         end
         timers = rmfield(timers, key);
         setappdata(0, 'DetecDivHubLeaseTimers', timers);
+    end
+end
+
+function registry = localGetRegistry(name)
+    registry = struct();
+    try
+        existing = getappdata(0, name);
+        if isstruct(existing)
+            registry = existing;
+        end
+    catch
+    end
+end
+
+function localCancelWorkerRecord(worker)
+    try
+        if isfield(worker, 'token') && ~isempty(worker.token)
+            detecdiv_hub_broker('unregister', worker.token);
+        end
+    catch
     end
 end

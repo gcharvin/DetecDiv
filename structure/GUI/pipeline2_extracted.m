@@ -138,7 +138,7 @@ classdef pipeline2 < matlab.apps.AppBase
         RoiManualSelectedRectangle double = NaN
         ActiveRunMode char = ''
         ActiveRunCancelRequested logical = false
-        HubRunMonitorTimer = []
+        HubRunMonitorToken char = ''
         HubRunMonitorJobId char = ''
         HubRunMonitorLastStatus char = ''
         HubRunUiLocked logical = false
@@ -18455,16 +18455,9 @@ classdef pipeline2 < matlab.apps.AppBase
             app.HubRunMonitorLastStatus = char(string(getField(app, job, 'status', 'submitted')));
             app.RunButton.Text = 'Cancel run';
             app.RunButton.Enable = 'on';
-            app.HubRunMonitorTimer = timer( ...
-                'ExecutionMode', 'fixedSpacing', ...
-                'Period', 15, ...
-                'BusyMode', 'drop', ...
-                'Name', ['DetecDivHubRunMonitor_' jobId], ...
-                'TimerFcn', @(~,~)pollHubRunStatus(app, false), ...
-                'ErrorFcn', @(~,evt)handleHubRunMonitorTimerError(app, evt));
             applyHubRunUiLock(app, true);
             try
-                start(app.HubRunMonitorTimer);
+                startHubRunStatusWorker(app, jobId, false, Inf);
             catch ME
                 stopHubRunMonitor(app);
                 uialert(app.UIFigure, ME.message, 'Hub monitor failed', 'Icon', 'warning');
@@ -18472,15 +18465,14 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function stopHubRunMonitor(app)
-            t = app.HubRunMonitorTimer;
-            app.HubRunMonitorTimer = [];
+            token = app.HubRunMonitorToken;
+            app.HubRunMonitorToken = '';
             app.HubRunMonitorJobId = '';
             app.HubRunMonitorLastStatus = '';
             applyHubRunUiLock(app, false);
             try
-                if ~isempty(t) && isvalid(t)
-                    stop(t);
-                    delete(t);
+                if ~isempty(token)
+                    detecdiv_hub_broker('unregister', token);
                 end
             catch
             end
@@ -18490,58 +18482,113 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 2
                 showErrors = false;
             end
+            queueHubRunStatusPoll(app, showErrors);
+        end
+
+        function queueHubRunStatusPoll(app, showErrors)
+            if nargin < 2
+                showErrors = false;
+            end
             jobId = currentHubRunJobId(app);
             if isempty(jobId)
                 stopActiveRunControl(app, 'Run !');
                 return;
             end
+            if ~isempty(app.HubRunMonitorToken)
+                return;
+            end
+            if isempty(app.HubRunMonitorJobId)
+                app.HubRunMonitorJobId = jobId;
+            end
             try
-                job = detecdiv_hub_get_pipeline_run(jobId, hubSettingsFromUi(app));
-                updateCurrentRunFromHubJob(app, job);
-                statusText = char(string(getField(app, job, 'status', 'unknown')));
-                setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
-                if app.ActiveRunCancelRequested && any(strcmpi(statusText, {'queued','running'}))
-                    app.RunButton.Text = 'Cancelling...';
-                elseif any(strcmpi(statusText, {'queued','running','cancelling'}))
-                    app.RunButton.Text = 'Cancel run';
-                end
-                if any(strcmpi(statusText, {'done','failed','cancelled'}))
-                    terminalStatus = statusText;
-                    stopActiveRunControl(app, terminalButtonText(app, terminalStatus));
-                    setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
-                    appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
-                    resumeDialog = uiprogressdlg(app.UIFigure, ...
-                        'Title', 'Refreshing Hub project', ...
-                        'Message', 'Reloading project results and acquiring a local edit lease...', ...
-                        'Indeterminate', 'on');
-                    drawnow;
-                    emitLocalWorkspaceRefreshForHubRun(app, job);
-                    try
-                        close(resumeDialog);
-                    catch
-                    end
-                    if strcmpi(terminalStatus, 'done')
-                        showRunCompletedMessage(app);
-                    else
-                        uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
-                            'Hub run finished', 'Icon', terminalAlertIcon(app, terminalStatus));
-                    end
-                end
+                startHubRunStatusWorker(app, jobId, showErrors, 1);
             catch ME
-                msg = compactHubStatusError(app, ME);
-                if isTransientHubStatusError(app, ME)
-                    if showErrors
-                        uialert(app.UIFigure, msg, 'Hub status temporarily unavailable', 'Icon', 'warning');
-                    else
-                        setRuntimeStatus(app, msg);
-                    end
-                    return;
+                handleHubRunStatusError(app, ME, showErrors);
+            end
+        end
+
+        function startHubRunStatusWorker(app, jobId, showErrors, maxIterations)
+            hub = hubSettingsFromUi(app);
+            hub.timeout = min(5, double(hub.timeout));
+            keepMonitoring = isinf(maxIterations);
+            config = struct('hub', hub, 'jobId', jobId, ...
+                'periodSeconds', 15, 'maxIterations', maxIterations);
+            app.HubRunMonitorToken = detecdiv_hub_broker('register', ...
+                'run_status', config, ...
+                @(payload)handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring));
+        end
+
+        function handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring)
+            if isempty(app) || ~isvalid(app) || ~strcmp(jobId, app.HubRunMonitorJobId)
+                return;
+            end
+            if ~isstruct(payload) || ~isfield(payload, 'ok')
+                return;
+            end
+            if ~logical(payload.ok)
+                identifier = char(string(payload.errorIdentifier));
+                if isempty(identifier)
+                    identifier = 'detecdiv_hub:BackgroundRequest';
                 end
+                ME = MException(identifier, '%s', char(string(payload.errorMessage)));
+                handleHubRunStatusError(app, ME, showErrors);
+            else
+                applyHubRunStatus(app, payload.data, jobId);
+            end
+            if ~keepMonitoring && strcmp(jobId, app.HubRunMonitorJobId)
+                stopHubRunMonitor(app);
+            end
+        end
+
+        function applyHubRunStatus(app, job, jobId)
+            updateCurrentRunFromHubJob(app, job);
+            statusText = char(string(getField(app, job, 'status', 'unknown')));
+            setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
+            if app.ActiveRunCancelRequested && any(strcmpi(statusText, {'queued','running'}))
+                app.RunButton.Text = 'Cancelling...';
+            elseif any(strcmpi(statusText, {'queued','running','cancelling'}))
+                app.RunButton.Text = 'Cancel run';
+            end
+            if ~any(strcmpi(statusText, {'done','failed','cancelled'}))
+                return;
+            end
+
+            terminalStatus = statusText;
+            stopActiveRunControl(app, terminalButtonText(app, terminalStatus));
+            setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
+            appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
+            resumeDialog = uiprogressdlg(app.UIFigure, ...
+                'Title', 'Refreshing Hub project', ...
+                'Message', 'Reloading project results and acquiring a local edit lease...', ...
+                'Indeterminate', 'on');
+            drawnow;
+            emitLocalWorkspaceRefreshForHubRun(app, job);
+            try
+                close(resumeDialog);
+            catch
+            end
+            if strcmpi(terminalStatus, 'done')
+                showRunCompletedMessage(app);
+            else
+                uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
+                    'Hub run finished', 'Icon', terminalAlertIcon(app, terminalStatus));
+            end
+        end
+
+        function handleHubRunStatusError(app, ME, showErrors)
+            msg = compactHubStatusError(app, ME);
+            if isTransientHubStatusError(app, ME)
                 if showErrors
-                    uialert(app.UIFigure, msg, 'Hub status failed', 'Icon', 'error');
+                    uialert(app.UIFigure, msg, 'Hub status temporarily unavailable', 'Icon', 'warning');
                 else
-                    setRuntimeStatus(app, ['Hub status refresh failed: ' msg]);
+                    setRuntimeStatus(app, msg);
                 end
+                return;
+            end
+            if showErrors
+                uialert(app.UIFigure, msg, 'Hub status failed', 'Icon', 'error');
+            else
+                setRuntimeStatus(app, ['Hub status refresh failed: ' msg]);
             end
         end
 
@@ -18639,17 +18686,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 raw = [raw '...'];
             end
             msg = raw;
-        end
-
-        function handleHubRunMonitorTimerError(app, evt)
-            try
-                if isprop(evt, 'Data') && isa(evt.Data, 'MException')
-                    setRuntimeStatus(app, ['Hub monitor error: ' evt.Data.message]);
-                else
-                    setRuntimeStatus(app, 'Hub monitor error.');
-                end
-            catch
-            end
         end
 
         function updateCurrentRunFromHubJob(app, job)

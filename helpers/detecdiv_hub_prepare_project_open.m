@@ -51,51 +51,46 @@ function [shallowObj, access] = detecdiv_hub_prepare_project_open(shallowObj, va
     shallowObj = localSetHubState(shallowObj, access);
 end
 
-function timerObj = detecdiv_hub_start_lease_heartbeat(project, lockId, varargin)
-% detecdiv_hub_start_lease_heartbeat  Start a MATLAB timer for lease heartbeats.
+function token = detecdiv_hub_start_lease_heartbeat(project, lockId, varargin)
+% detecdiv_hub_start_lease_heartbeat  Start a background lease heartbeat.
 
     [hub, ttlSeconds] = localTimerParse(varargin{:});
     ref = localProjectRef(project, hub);
-    key = localTimerKey(ref, lockId);
+    key = localWorkerKey(ref, lockId);
     localStopProjectHeartbeats(ref);
-    period = max(15, floor(double(ttlSeconds) / 3));
-    timerObj = timer('ExecutionMode', 'fixedSpacing', 'Period', period, ...
-        'BusyMode', 'drop', ...
-        'Name', ['DetecDivHubLease_' char(string(lockId))], ...
-        'UserData', struct('project_id', char(string(ref.project_id)), ...
-                           'lock_id', char(string(lockId))), ...
-        'TimerFcn', @(~,~)localHeartbeat(ref, lockId, hub, ttlSeconds));
-    timers = localGetTimers();
-    timers.(key) = timerObj;
-    setappdata(0, 'DetecDivHubLeaseTimers', timers);
-    start(timerObj);
+
+    hub.timeout = min(5, double(hub.timeout));
+    config = struct('hub', hub, 'projectRef', ref, ...
+        'lockId', char(string(lockId)), 'ttlSeconds', ttlSeconds, ...
+        'periodSeconds', max(15, floor(double(ttlSeconds) / 3)), ...
+        'maxIterations', Inf);
+    token = detecdiv_hub_broker('register', 'lease_heartbeat', config, ...
+        @(payload)localHandleHeartbeatPayload(payload, ref, lockId));
+
+    workers = localGetWorkers();
+    workers.(key) = struct('token', token, ...
+        'project_id', char(string(ref.project_id)), ...
+        'lock_id', char(string(lockId)));
+    setappdata(0, 'DetecDivHubLeaseWorkers', workers);
 end
 
 function detecdiv_hub_stop_lease_heartbeat(project, lockId)
-% detecdiv_hub_stop_lease_heartbeat  Stop and remove a lease heartbeat timer.
+% detecdiv_hub_stop_lease_heartbeat  Stop and remove a heartbeat worker.
 
     ref = localProjectRef(project, detecdiv_hub_settings_get());
-    key = localTimerKey(ref, lockId);
-    timers = localGetTimers();
-    if isfield(timers, key)
-        t = timers.(key);
-        try
-            stop(t);
-            delete(t);
-        catch
-        end
-        timers = rmfield(timers, key);
-        setappdata(0, 'DetecDivHubLeaseTimers', timers);
+    key = localWorkerKey(ref, lockId);
+    workers = localGetWorkers();
+    if isfield(workers, key)
+        localCancelWorkerRecord(workers.(key));
+        workers = rmfield(workers, key);
+        setappdata(0, 'DetecDivHubLeaseWorkers', workers);
     end
+    localStopLegacyProjectTimers(ref, lockId);
 end
 
 function localStopProjectHeartbeats(ref)
-    timers = localGetTimers();
-    names = fieldnames(timers);
-    if isempty(names)
-        return;
-    end
-
+    workers = localGetWorkers();
+    names = fieldnames(workers);
     prefix = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_'], '[^a-zA-Z0-9_]', '_')]);
     changed = false;
     for i = 1:numel(names)
@@ -103,18 +98,14 @@ function localStopProjectHeartbeats(ref)
         if ~startsWith(name, prefix)
             continue;
         end
-        t = timers.(name);
-        try
-            stop(t);
-            delete(t);
-        catch
-        end
-        timers = rmfield(timers, name);
+        localCancelWorkerRecord(workers.(name));
+        workers = rmfield(workers, name);
         changed = true;
     end
     if changed
-        setappdata(0, 'DetecDivHubLeaseTimers', timers);
+        setappdata(0, 'DetecDivHubLeaseWorkers', workers);
     end
+    localStopLegacyProjectTimers(ref, '');
 end
 
 function opts = localParse(varargin)
@@ -170,17 +161,6 @@ function shallowObj = localSetHubState(shallowObj, access)
     end
 end
 
-function state = localHubState(shallowObj)
-    state = struct();
-    try
-        if isprop(shallowObj, 'runProfiles') && isstruct(shallowObj.runProfiles) && ...
-                isfield(shallowObj.runProfiles, 'hub') && isstruct(shallowObj.runProfiles.hub)
-            state = shallowObj.runProfiles.hub;
-        end
-    catch
-    end
-end
-
 function txt = localFieldText(S, name, defaultValue)
     txt = defaultValue;
     try
@@ -191,26 +171,27 @@ function txt = localFieldText(S, name, defaultValue)
     end
 end
 
-function localHeartbeat(ref, lockId, hub, ttlSeconds)
-    try
-        detecdiv_hub_heartbeat_project_lease(ref, lockId, 'Hub', hub, 'TtlSeconds', ttlSeconds);
-    catch ME
-        if localIsMissingLeaseError(ME)
-            detecdiv_hub_stop_lease_heartbeat(ref, lockId);
-        end
-        warning('detecdiv_hub:heartbeat', 'Hub lease heartbeat failed: %s', ME.message);
+function localHandleHeartbeatPayload(payload, ref, lockId)
+    if ~isstruct(payload) || ~isfield(payload, 'ok') || logical(payload.ok)
+        return;
+    end
+    warning('detecdiv_hub:heartbeat', 'Hub lease heartbeat failed: %s', ...
+        char(string(payload.errorMessage)));
+    if isfield(payload, 'stop') && logical(payload.stop)
+        detecdiv_hub_stop_lease_heartbeat(ref, lockId);
     end
 end
 
-function tf = localIsMissingLeaseError(ME)
-    msg = lower(char(string(ME.message)));
-    id = lower(char(string(ME.identifier)));
-    tf = contains(msg, 'active project lease not found') || ...
-        contains(msg, 'lease not found') || ...
-        contains(id, 'http404');
+function localCancelWorkerRecord(worker)
+    try
+        if isfield(worker, 'token') && ~isempty(worker.token)
+            detecdiv_hub_broker('unregister', worker.token);
+        end
+    catch
+    end
 end
 
-function timers = localGetTimers()
+function localStopLegacyProjectTimers(ref, lockId)
     timers = struct();
     try
         existing = getappdata(0, 'DetecDivHubLeaseTimers');
@@ -219,9 +200,44 @@ function timers = localGetTimers()
         end
     catch
     end
+    names = fieldnames(timers);
+    prefix = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_'], '[^a-zA-Z0-9_]', '_')]);
+    exactKey = '';
+    if ~isempty(lockId)
+        exactKey = localWorkerKey(ref, lockId);
+    end
+    changed = false;
+    for i = 1:numel(names)
+        name = names{i};
+        if (~isempty(exactKey) && ~strcmp(name, exactKey)) || ...
+                (isempty(exactKey) && ~startsWith(name, prefix))
+            continue;
+        end
+        try
+            stop(timers.(name));
+            delete(timers.(name));
+        catch
+        end
+        timers = rmfield(timers, name);
+        changed = true;
+    end
+    if changed
+        setappdata(0, 'DetecDivHubLeaseTimers', timers);
+    end
 end
 
-function key = localTimerKey(ref, lockId)
+function workers = localGetWorkers()
+    workers = struct();
+    try
+        existing = getappdata(0, 'DetecDivHubLeaseWorkers');
+        if isstruct(existing)
+            workers = existing;
+        end
+    catch
+    end
+end
+
+function key = localWorkerKey(ref, lockId)
     raw = [char(string(ref.project_id)) '_' char(string(lockId))];
     key = matlab.lang.makeValidName(['k_' regexprep(raw, '[^a-zA-Z0-9_]', '_')]);
 end
