@@ -99,12 +99,26 @@ function [broker, token] = localEnsureBroker(broker)
         catch
         end
         broker = localEmptyBroker();
-        broker.commandQueue = parallel.pool.PollableDataQueue(Destination="any");
+        % Create the command queue on the background worker. Before R2025a,
+        % a PollableDataQueue can only be polled by the MATLAB session or
+        % worker that created it. Bootstrapping the queue from the worker
+        % therefore keeps client-to-background commands compatible with
+        % older MATLAB releases without using Destination="any".
+        bootstrapQueue = parallel.pool.PollableDataQueue;
         broker.resultQueue = parallel.pool.DataQueue;
         broker.listener = afterEach(broker.resultQueue, ...
             @(payload)detecdiv_hub_broker('dispatch', payload));
         broker.future = parfeval(backgroundPool, @detecdiv_hub_broker_worker, ...
-            0, broker.commandQueue, broker.resultQueue);
+            0, broker.resultQueue, bootstrapQueue);
+        [broker.commandQueue, commandQueueReady] = poll(bootstrapQueue, 10);
+        if ~commandQueueReady
+            try
+                cancel(broker.future);
+            catch
+            end
+            error('detecdiv_hub_broker:WorkerStartupTimeout', ...
+                'The Hub background worker did not start within 10 seconds.');
+        end
     end
     token = char(java.util.UUID.randomUUID);
 end

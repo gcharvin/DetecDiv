@@ -1,5 +1,11 @@
-function detecdiv_hub_broker_worker(commandQueue, resultQueue)
+function detecdiv_hub_broker_worker(resultQueue, bootstrapQueue)
 % detecdiv_hub_broker_worker  Background event loop for Hub communications.
+
+    % The worker must create the command queue so it can poll it on MATLAB
+    % releases before R2025a. Return the connected queue to the client
+    % through a client-owned bootstrap queue.
+    commandQueue = parallel.pool.PollableDataQueue;
+    send(bootstrapQueue, commandQueue);
 
     tasks = struct();
     epoch = tic;
