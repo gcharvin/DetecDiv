@@ -12668,6 +12668,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     ctx.masks = runtimeMasks;
                 end
             end
+            if ~isfield(ctx, 'dataSeriesNames') || isempty(ctx.dataSeriesNames)
+                runtimeDataSeries = runtimeDataSeriesNames(app);
+                if ~isempty(runtimeDataSeries)
+                    ctx.dataSeriesNames = runtimeDataSeries;
+                    ctx.dataSeries = runtimeDataSeries;
+                end
+            end
         end
 
         function txt = choiceScalarText(app, v) %#ok<INUSD>
