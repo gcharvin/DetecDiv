@@ -8,6 +8,11 @@ function result = detecdiv_run_pipeline_job(jobInput)
 % The payload is expected to follow the shared pipeline_run contract.
 
     repoRoot = fileparts(mfilename('fullpath'));
+    currentRoot = pwd;
+    if exist(fullfile(currentRoot, 'detecdiv_setup_path.m'), 'file') == 2 && ...
+            exist(fullfile(currentRoot, 'structure', 'io', 'runPipelineStructured.m'), 'file') == 2
+        repoRoot = currentRoot;
+    end
     localAddRepoPaths(repoRoot);
 
     payload = localLoadPayload(jobInput);

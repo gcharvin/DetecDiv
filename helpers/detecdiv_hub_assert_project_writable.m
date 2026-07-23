@@ -3,6 +3,9 @@ function ok = detecdiv_hub_assert_project_writable(shallowObj, varargin)
 
     opts = localParse(varargin{:});
     ok = true;
+    if exist('detecdiv_local_run_lock', 'file') == 2
+        detecdiv_local_run_lock('assert', shallowObj);
+    end
     ref = detecdiv_hub_project_ref(shallowObj, opts.hub);
     if ~ref.hubManaged
         return;

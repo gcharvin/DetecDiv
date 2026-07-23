@@ -144,6 +144,7 @@ classdef pipeline2 < matlab.apps.AppBase
         HubRunMonitorJobId char = ''
         HubRunMonitorLastStatus char = ''
         HubRunUiLocked logical = false
+        LocalRunSubmission struct = struct()
         BatchPrototypeMode logical = false
         BatchPrototypeModal logical = false
         ExplicitRuntimeRoiList = []
@@ -16140,6 +16141,30 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function snapshotPath = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj) %#ok<INUSD>
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline') || ...
+                    isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                error('pipeline2:LocalSnapshotInput', ...
+                    'A pipeline and pipelineRun are required for a local process snapshot.');
+            end
+            runPath = char(string(runObj.path));
+            if isempty(runPath)
+                error('pipeline2:LocalSnapshotPath', ...
+                    'The run path is empty; cannot create a local process snapshot.');
+            end
+            snapshotDir = fullfile(runPath, 'pipeline_snapshot');
+            if exist(snapshotDir, 'dir') ~= 7
+                mkdir(snapshotDir);
+            end
+            pipeObj.setPath(snapshotDir);
+            pipelineSave(pipeObj, 'Artifacts', false, 'Audit', false);
+            snapshotPath = fullfile(snapshotDir, 'pipeline.json');
+            if exist(snapshotPath, 'file') ~= 2
+                error('pipeline2:LocalSnapshotSave', ...
+                    'Local process pipeline snapshot was not created: %s', snapshotPath);
+            end
+        end
+
         function info = runtimeInventorySnapshot(app, rawDataPath)
             if nargin < 2
                 rawDataPath = effectiveRuntimeRawDataPath(app);
@@ -18361,10 +18386,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function startLocalRunControl(app, runObj) %#ok<INUSD>
-            app.ActiveRunMode = 'local';
+            app.ActiveRunMode = 'local_process';
             app.ActiveRunCancelRequested = false;
             app.RunButton.Text = 'Stop run';
             app.RunButton.Enable = 'on';
+            applyHubRunUiLock(app, true);
             drawnow limitrate;
         end
 
@@ -18392,7 +18418,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RunButton.Text = 'Cancelling...';
             drawnow limitrate;
             switch mode
-                case 'local'
+                case {'local','local_process'}
                     requestLocalRunCancellation(app);
                 case 'hub'
                     requestHubRunCancellation(app);
@@ -18507,6 +18533,123 @@ classdef pipeline2 < matlab.apps.AppBase
                     detecdiv_hub_broker('unregister', token);
                 end
             catch
+            end
+        end
+
+        function handleLocalProcessRunFinished(app, result, future, completion) %#ok<INUSD>
+            if isempty(app) || ~isvalid(app)
+                return;
+            end
+            app.LocalRunSubmission = struct();
+
+            statusText = lower(char(string(getField(app, result, 'status', 'failed'))));
+            runJsonPath = char(string(getField(app, result, 'run_json_path', '')));
+            if isempty(runJsonPath) && isfield(completion, 'runPath')
+                runJsonPath = fullfile(char(string(completion.runPath)), 'run.json');
+            end
+            loadedRun = [];
+            if ~isempty(runJsonPath) && exist(runJsonPath, 'file') == 2
+                try
+                    [loadedRun, ~] = pipelineRunLoad(runJsonPath);
+                catch
+                    loadedRun = [];
+                end
+            end
+
+            projectMatPath = char(string(getField(app, result, 'project_mat_path', '')));
+            if isempty(projectMatPath) && isfield(completion, 'projectPath')
+                projectMatPath = char(string(completion.projectPath));
+            end
+            reloadedProject = [];
+            if ~runtimeStartsFromClassifier(app) && ~isempty(projectMatPath)
+                try
+                    [reloadedProject, loadMsg] = shallowLoad(projectMatPath);
+                    if isempty(reloadedProject)
+                        error('pipeline2:LocalProjectReloadFailed', '%s', loadMsg);
+                    end
+                    app.CurrentProject = reloadedProject;
+                    if ~isempty(app.CurrentProjectVarName)
+                        assignin('base', char(string(app.CurrentProjectVarName)), reloadedProject);
+                    end
+                catch ME
+                    appendRunReport(app, ['Local project reload failed: ' ME.message], struct());
+                    reloadedProject = [];
+                end
+            end
+
+            if ~isempty(loadedRun) && isa(loadedRun, 'pipelineRun')
+                app.CurrentRun = loadedRun;
+                app.CurrentRunPath = loadedRun.path;
+                if ~isempty(reloadedProject) && isa(reloadedProject, 'shallow')
+                    try
+                        ids = arrayfun(@(r)char(string(r.runId)), ...
+                            reloadedProject.processing.pipelineRun, 'UniformOutput', false);
+                        idx = find(strcmp(ids, char(string(loadedRun.runId))), 1);
+                        if ~isempty(idx)
+                            app.CurrentRun = reloadedProject.processing.pipelineRun(idx);
+                            app.CurrentRunPath = app.CurrentRun.path;
+                        end
+                    catch
+                    end
+                end
+            end
+
+            emitLocalProcessRunWorkspaceRefresh(app, result, reloadedProject, projectMatPath);
+            clearRuntimeDataSeriesCache(app);
+            try, updateRuntimeResourceInventory(app); catch, end
+            stopActiveRunControl(app, terminalButtonText(app, statusText));
+
+            switch statusText
+                case 'done'
+                    setRuntimeStatus(app, ['Local process run done: ' runJsonPath]);
+                    appendRunReport(app, 'Local process run: OK', getField(app, result, 'summary', struct()));
+                    showRunCompletedMessage(app);
+                case 'cancelled'
+                    setRuntimeStatus(app, ['Local process run cancelled: ' runJsonPath]);
+                    appendRunReport(app, 'Local process run: cancelled', result);
+                    uialert(app.UIFigure, ...
+                        'The local process run stopped at a safe cancellation point.', ...
+                        'Run cancelled', 'Icon', 'warning');
+                otherwise
+                    errorText = char(string(getField(app, result, 'error', 'Local process run failed.')));
+                    if isempty(strtrim(errorText))
+                        errorText = 'Local process run failed.';
+                    end
+                    setRuntimeStatus(app, ['Local process run failed: ' runJsonPath]);
+                    appendRunReport(app, 'Local process run: failed', result);
+                    uialert(app.UIFigure, compactLocalProcessError(app, errorText), ...
+                        'Run failed', 'Icon', 'error');
+            end
+        end
+
+        function emitLocalProcessRunWorkspaceRefresh(app, result, projectObj, projectMatPath)
+            if exist('detecdiv_event', 'file') ~= 2
+                return;
+            end
+            payload = struct();
+            payload.kind = 'pipelineRun';
+            payload.action = 'completed';
+            payload.source = 'pipeline2_local_process';
+            payload.status = char(string(getField(app, result, 'status', 'failed')));
+            payload.runId = char(string(getField(app, result, 'run_id', '')));
+            payload.projectObj = projectObj;
+            payload.projectVarName = char(string(app.CurrentProjectVarName));
+            payload.projectMatPath = char(string(projectMatPath));
+            payload.projectPath = regexprep(payload.projectMatPath, '\.mat$', '', 'ignorecase');
+            [~, payload.projectName] = fileparts(payload.projectPath);
+            payload.summary = getField(app, result, 'summary', struct());
+            try
+                detecdiv_event('emit', 'pipelineRunCompleted', payload);
+                detecdiv_event('emit', 'workspaceChanged', payload);
+            catch
+            end
+        end
+
+        function text = compactLocalProcessError(app, text) %#ok<INUSD>
+            text = char(string(text));
+            text = regexprep(text, '\s+', ' ');
+            if strlength(string(text)) > 600
+                text = [char(extractBefore(string(text), 601)) '...'];
             end
         end
 
@@ -20590,30 +20733,35 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeStatus(app, formatHubRunStatusText(app, job, runObj));
                     startHubRunMonitor(app, runObj, job);
                 else
-                    if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
+                    if ~isempty(d), d.Message = 'Submitting local MATLAB process run...'; end
                     ctxRun = ctx;
                     ctxRun.dryRun = false;
                     ctxRun = attachRunCancellationAndProgress(app, ctxRun, runObj, d);
                     startLocalRunControl(app, runObj);
-                    runObj.status = 'running';
+                    runObj.status = 'local_queued';
                     runObj.ctx = stripTransientRunContext(app, ctxRun);
-                    logRunEvent(app, runObj, 'Local MATLAB run started.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving local run start state...', false);
-                    [ctxOut, report] = runPipeline(pipeObj, ctxRun);
-                    runObj.ctx = stripTransientRunContext(app, ctxOut);
-                    runObj.outputs.report = report;
-                    runObj.status = 'done';
-                    runObj.progress = getField(app, report, 'summary', struct());
-                    logRunEvent(app, runObj, 'Local MATLAB run completed.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving local run result and project...', true);
-                    clearRuntimeDataSeriesCache(app);
-                    updateRuntimeResourceInventory(app);
-                    appendRunReport(app, 'Local run: OK', report);
-                    setRuntimeStatus(app, ['Run done: ' fullfile(runObj.path, 'run.json')]);
-                    stopActiveRunControl(app, 'Run !');
+                    logRunEvent(app, runObj, 'Local MATLAB process run queued.', 'pipeline2');
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local process run state...', false);
+                    if ~runtimeStartsFromClassifier(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                        updateRunSaveProgress(app, d, 'Saving project snapshot for local worker...', 0.82);
+                        detecdiv_hub_assert_project_writable(app.CurrentProject);
+                        shallowSave(app.CurrentProject, 'shallowObj');
+                    end
+                    updateRunSaveProgress(app, d, 'Writing run-specific pipeline snapshot...', 0.86);
+                    localPipelineSnapshot = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj);
+                    updateRunSaveProgress(app, d, 'Starting local MATLAB worker...', 0.90);
+                    app.LocalRunSubmission = detecdiv_local_submit_pipeline_run( ...
+                        runObj, app.CurrentProject, localPipelineSnapshot, ...
+                        'CompletionCallback', ...
+                        @(result, future, completion)handleLocalProcessRunFinished(app, result, future, completion));
+                    setRuntimeStatus(app, ['Local process run queued: ' fullfile(runObj.path, 'run.json')]);
+                    appendRunReport(app, 'Local process run submitted.', struct( ...
+                        'runId', runObj.runId, ...
+                        'resultPath', app.LocalRunSubmission.resultPath, ...
+                        'cancelTokenFile', app.LocalRunSubmission.cancelTokenFile));
                     try, close(d); catch, end
                     d = [];
-                    showRunCompletedMessage(app);
+                    return;
                 end
             catch ME
                 wasCancelled = isPipelineCancelException(app, ME);
