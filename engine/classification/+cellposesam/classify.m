@@ -793,19 +793,19 @@ end
 end
 
 function runCellposeRunnerInProcess(runnerPath, configPath, cancelPath)
-persistent runnerMod runnerPathCached
+persistent runnerMod runnerCallable runnerPathCached
 if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
     error('runPipeline:Cancelled', 'Pipeline run cancelled by user before CellposeSAM execution.');
 end
 try
-    runnerDir = fileparts(runnerPath);
-    if isempty(runnerMod) || isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
-        py.importlib.import_module('sys');
-        py.sys.path().insert(int32(0), runnerDir);
-        runnerMod = py.importlib.import_module('cellposesam_runner');
+    if isempty(runnerMod) || isempty(runnerCallable) || ...
+            isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
+        [runnerMod, runnerCallable, resolvedPath] = ...
+            cellposesam.utils.loadRunnerModule(runnerPath);
         runnerPathCached = runnerPath;
+        disp(['[INFO] cellposesam: session runner loaded from ' resolvedPath]);
     end
-    runnerMod.run(configPath);
+    runnerCallable(configPath);
 catch ME
     if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
         error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
