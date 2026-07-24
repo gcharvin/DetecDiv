@@ -60,11 +60,6 @@ parameters = struct( ...
     'min_samples_leaf',positiveInteger(tp.minSamplesLeaf,'minSamplesLeaf'), ...
     'l2_regularization',nonnegativeScalar(tp.l2Regularization,'l2Regularization'), ...
     'random_state',nonnegativeInteger(tp.randomState,'randomState'));
-scriptPath = fullfile(fileparts(mfilename('fullpath')),'py','train_hgb.py');
-if ~isfile(scriptPath)
-    error('budMotherLinker:MissingPythonTrainer', ...
-        'Bundled HGB training script is missing: %s',scriptPath);
-end
 cfg = struct( ...
     'input_path',pythonInputFile, ...
     'output_path',pythonExportFile, ...
@@ -75,9 +70,9 @@ deleteIfExists(pythonExportFile);
 deleteIfExists(pythonReportFile);
 deleteIfExists(pythonStdoutFile);
 
-pythonExe = resolveTrainingPython(ctx);
 detecdiv_check_cancel(ctx,'budMotherLinker before Python HGB training');
-runPythonTrainer(pythonExe,scriptPath,pythonConfigFile,pythonStdoutFile);
+budMotherLinker.utils.runPythonModule( ...
+    'train-hgb', pythonConfigFile, ctx, pythonStdoutFile);
 detecdiv_check_cancel(ctx,'budMotherLinker after Python HGB training');
 if ~isfile(pythonExportFile) || ~isfile(pythonReportFile)
     error('budMotherLinker:PythonTrainingIncomplete', ...
@@ -95,7 +90,7 @@ if ~all(isfield(exported,required))
 end
 artifact = struct( ...
     'schema_version',2, ...
-    'tool_version','budMotherLinker-classifier-2.0', ...
+    'tool_version','cell_lineage_linker-0.1.0', ...
     'model_type','sklearn.ensemble.HistGradientBoostingClassifier', ...
     'feature_names',{dataset.feature_names}, ...
     'feature_mean',exported.feature_mean, ...
@@ -262,73 +257,6 @@ cleanup=onCleanup(@()fclose(fid));
 fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 
-function pythonExe = resolveTrainingPython(ctx)
-try
-    selectArgs = buildPythonSelectionArgs(ctx);
-    select_and_load_conda_env(selectArgs{:});
-catch ME
-    error('budMotherLinker:PythonBootstrapFailed', ...
-        'DetecDiv could not initialize its managed Python environment:%s%s', ...
-        newline,ME.message);
-end
-environment = pyenv();
-if strcmp(environment.Status,'NotLoaded') || isempty(environment.Executable)
-    error('budMotherLinker:PythonNotLoaded', ...
-        'DetecDiv selected a Python environment but did not load it.');
-end
-pythonExe = char(environment.Executable);
-end
-
-function args = buildPythonSelectionArgs(ctx)
-args = {'mode','default'};
-try
-    pyCfg = ctx.exec.python;
-catch
-    return;
-end
-if ~isstruct(pyCfg) || ~isfield(pyCfg,'mode') || ...
-        ~strcmpi(char(string(pyCfg.mode)),'custom')
-    return;
-end
-args = {'mode','custom'};
-if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
-    args = [args {'envName',char(string(pyCfg.envName))}];
-end
-if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
-    args = [args {'envPath',char(string(pyCfg.envPath))}];
-end
-end
-
-function runPythonTrainer(pythonExe,scriptPath,configPath,stdoutPath)
-if ispc
-    cmd = sprintf('"%s" -u "%s" --config "%s" 2>&1', ...
-        pythonExe,scriptPath,configPath);
-else
-    cmd = sprintf('%s -u %s --config %s 2>&1', ...
-        shellQuote(pythonExe),shellQuote(scriptPath),shellQuote(configPath));
-end
-try
-    [status,output] = system(cmd,'-echo');
-catch
-    [status,output] = system(cmd);
-end
-fid = fopen(stdoutPath,'w');
-if fid >= 0
-    cleanup = onCleanup(@()fclose(fid));
-    fwrite(fid,output,'char');
-    clear cleanup;
-end
-if status ~= 0
-    error('budMotherLinker:PythonTrainingFailed', ...
-        'sklearn HGB training failed (%d):%s%s',status,newline,output);
-end
-end
-
 function deleteIfExists(filename)
 if isfile(filename), delete(filename); end
-end
-
-function value = shellQuote(raw)
-value = char(string(raw));
-value = ['''' strrep(value,'''','''"''"''') ''''];
 end

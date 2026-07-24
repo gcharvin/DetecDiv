@@ -1,312 +1,136 @@
-function result = infer(tracks, param, roiId)
-%BUDMOTHERLINKER.INFER Native MATLAB HGB-16 bud/mother inference.
+function result = infer(tracks, param, roiId, ctx)
+%BUDMOTHERLINKER.INFER Call the external cell_lineage_linker Python package.
+%
+% DetecDiv owns ROI adaptation and persistence. Candidate generation,
+% LYN-16 descriptors, ranking, and scientific audit metadata live in the
+% independent cell_lineage_linker repository/package.
 
 if nargin < 3 || isempty(roiId), roiId = 'roi'; end
+if nargin < 4 || isempty(ctx), ctx = struct(); end
 tracks = uint32(tracks);
-if param.frameEnd > 0
-    tracks = tracks(:,:,1:min(size(tracks,3), param.frameEnd));
-end
-[stats, newTracks] = trackStatistics(tracks);
-geometry = budMotherLinker.Lyn16Geometry(tracks, 8);
-[modelInfo, manifestFile] = loadModelInfo(param);
-threshold = double(modelInfo.rank_margin_threshold);
-if isfield(param, 'rankMarginThreshold') && param.rankMarginThreshold >= 0
-    threshold = double(param.rankMarginThreshold);
-end
-guardEnabled = logical(param.trackingLoadGuard);
-maxNewTracks = double(param.maxNewTracksPerFrame);
-
-eligible = find(stats.start > 1 & stats.frames >= param.minLifetime & ...
-    stats.birthArea <= param.maxBirthArea);
-if ~isempty(eligible)
-    order = sortrows([stats.start(eligible), eligible(:)], [1 2]);
-    eligible = order(:,2);
-end
-edges = repmat(edgeTemplate(), 0, 1);
-
-for eventIndex = 1:numel(eligible)
-    child = eligible(eventIndex) - 1;
-    frame = stats.start(child + 1);
-    current = tracks(:,:,frame);
-    previous = tracks(:,:,frame - 1);
-    childMask = current == uint32(child);
-    [yy, xx] = find(childMask);
-    childCentre = [mean(xx), mean(yy)];
-    currentLabels = unique(current(:));
-    currentLabels = double(currentLabels(currentLabels > 0));
-    previousLabels = unique(previous(:));
-    previousLabels = double(previousLabels(previousLabels > 0));
-    parentIds = intersect(currentLabels, previousLabels);
-
-    rough = zeros(0,2);
-    for i = 1:numel(parentIds)
-        parent = parentIds(i);
-        if parent == child || stats.start(parent + 1) > frame - param.minParentAge
-            continue;
-        end
-        [py, px] = find(current == uint32(parent));
-        distance = norm(childCentre - [mean(px), mean(py)]);
-        if distance <= param.maxParentCentroidDistance
-            rough(end+1,:) = [distance, parent]; %#ok<AGROW>
-        end
-    end
-    rough = sortrows(rough, [1 2]);
-    rough = rough(1:min(size(rough,1), param.maxCandidates * 3),:);
-
-    candidates = repmat(candidateTemplate(), 0, 1);
-    for i = 1:size(rough,1)
-        parent = rough(i,2);
-        parentMask = current == uint32(parent);
-        contourDistance = min(pdist2(geometry.contour(child, frame), ...
-            geometry.contour(parent, frame)), [], 'all');
-        if contourDistance > param.maxParentContourDistance, continue; end
-        contact = nnz(childMask & imdilate(parentMask, ...
-            [0 1 0; 1 1 1; 0 1 0]));
-        candidate = candidateTemplate();
-        candidate.parent_track_id = parent;
-        candidate.candidate_score = contourDistance + ...
-            0.03 * rough(i,1) - 0.05 * min(contact,20);
-        candidate.centroid_distance = rough(i,1);
-        candidate.contour_distance = contourDistance;
-        candidate.contact_pixels = contact;
-        candidate.parent_age_frames = frame - stats.start(parent + 1);
-        candidate.parent_area = nnz(parentMask);
-        candidates(end+1,1) = candidate; %#ok<AGROW>
-    end
-    if ~isempty(candidates)
-        sorting = [[candidates.candidate_score]', ...
-            [candidates.contour_distance]', [candidates.parent_track_id]'];
-        [~, order] = sortrows(sorting, [1 2 3]);
-        candidates = candidates(order(1:min(numel(order),param.maxCandidates)));
-    end
-
-    edge = edgeTemplate();
-    edge.event_id = sprintf('%s_c%u_f%u', roiId, child, frame);
-    edge.roi = char(string(roiId));
-    edge.child_track_id = child;
-    edge.bud_appearance_frame = frame;
-    edge.lifetime = stats.frames(child + 1);
-    edge.birth_area = stats.birthArea(child + 1);
-    edge.candidate_count = numel(candidates);
-    edge.new_tracks_at_birth = newTracks(frame);
-
-    if isempty(candidates)
-        edge.reason = 'no_candidate';
-        edge.reason_code = edge.reason;
-        edges(end+1,1) = edge; %#ok<AGROW>
-        continue;
-    end
-
-    selectedFrames = frame:min(frame + 7, size(tracks,3));
-    if numel(selectedFrames) < 2
-        edge.reason = 'feature_error:not_enough_frames';
-        edge.reason_code = 'feature_error';
-        edges(end+1,1) = edge; %#ok<AGROW>
-        continue;
-    end
-    if any(arrayfun(@(f) ~geometry.hasCell(child,f), selectedFrames))
-        missing = selectedFrames(find(arrayfun( ...
-            @(f) ~geometry.hasCell(child,f), selectedFrames), 1));
-        edge.reason = sprintf('feature_error:bud_missing_at_%u', missing);
-        edge.reason_code = 'feature_error';
-        edges(end+1,1) = edge; %#ok<AGROW>
-        continue;
-    end
-
-    featureMatrix = zeros(numel(candidates),16);
-    featureError = '';
-    for i = 1:numel(candidates)
-        try
-            [values, names] = geometry.featureVector( ...
-                child, candidates(i).parent_track_id, selectedFrames);
-            if ~isreal(values) || any(~isfinite(values))
-                error('budMotherLinker:NonFiniteFeatures', ...
-                    'Non-finite descriptor values.');
-            end
-            featureMatrix(i,:) = values;
-            candidates(i).features = cell2struct(num2cell(values), names, 2);
-        catch ME
-            featureError = sprintf('%s_parent_%u:%s', ...
-                class(ME), candidates(i).parent_track_id, ME.message);
-            break;
-        end
-    end
-    if ~isempty(featureError)
-        edge.reason = ['feature_error:' featureError];
-        edge.reason_code = 'feature_error';
-        edges(end+1,1) = edge; %#ok<AGROW>
-        continue;
-    end
-
-    scores = budMotherLinker.predictHGB(featureMatrix, param);
-    for i = 1:numel(candidates), candidates(i).hgb_score = scores(i); end
-    sorting = [-scores(:), [candidates.parent_track_id]'];
-    [~, order] = sortrows(sorting, [1 2]);
-    candidates = candidates(order);
-    topScore = candidates(1).hgb_score;
-    if numel(candidates) > 1, secondScore = candidates(2).hgb_score;
-    else, secondScore = 0; end
-    margin = topScore - secondScore;
-    edge.pred_parent_id = candidates(1).parent_track_id;
-    edge.top_score = topScore;
-    edge.margin = margin;
-    edge.ranked_candidates = candidates;
-    if margin < threshold
-        edge.reason = 'low_model_margin';
-    elseif guardEnabled && edge.new_tracks_at_birth > maxNewTracks
-        edge.reason = 'high_tracking_load';
-    else
-        edge.status = 'linked';
-        edge.reason = 'auto_confident';
-    end
-    edge.reason_code = edge.reason;
-    edges(end+1,1) = edge; %#ok<AGROW>
+if ndims(tracks) ~= 3
+    error('budMotherLinker:InvalidTrackStack', ...
+        'Tracked labels must have shape Y-by-X-by-time.');
 end
 
-reasons = struct();
-linked = 0;
-for i = 1:numel(edges)
-    if strcmp(edges(i).status, 'linked'), linked = linked + 1; end
-    key = matlab.lang.makeValidName(edges(i).reason_code);
-    if ~isfield(reasons,key), reasons.(key) = 0; end
-    reasons.(key) = reasons.(key) + 1;
+[workDir, removeWorkDir] = runtimeWorkDir(ctx, roiId);
+cleanup = onCleanup(@() cleanupRuntime(workDir, removeWorkDir));
+inputPath = fullfile(workDir, 'tracks.h5');
+configPath = fullfile(workDir, 'infer_config.json');
+outputPath = fullfile(workDir, 'relations.json');
+stdoutPath = fullfile(workDir, 'runner_stdout.txt');
+
+% MATLAB reverses dimensions in its HDF5 high-level API. Writing X-Y-T
+% therefore exposes the documented T-Y-X contract to h5py.
+stored = permute(tracks, [2 1 3]);
+storedSize = [size(tracks, 2), size(tracks, 1), size(tracks, 3)];
+h5create(inputPath, '/tracks', storedSize, 'Datatype', 'uint32');
+h5write(inputPath, '/tracks', stored);
+h5writeatt(inputPath, '/tracks', 'axis_order', 'time,y,x');
+
+cfg = struct();
+cfg.schema_version = 1;
+cfg.input_path = normalizedPath(inputPath);
+cfg.dataset = '/tracks';
+cfg.output_path = normalizedPath(outputPath);
+cfg.roi_id = char(string(roiId));
+cfg.parameters = struct( ...
+    'frame_end', double(param.frameEnd), ...
+    'min_lifetime', double(param.minLifetime), ...
+    'max_birth_area', double(param.maxBirthArea), ...
+    'min_parent_age', double(param.minParentAge), ...
+    'max_parent_centroid_distance', double(param.maxParentCentroidDistance), ...
+    'max_parent_contour_distance', double(param.maxParentContourDistance), ...
+    'max_candidates', double(param.maxCandidates), ...
+    'rank_margin_threshold', double(param.rankMarginThreshold), ...
+    'tracking_load_guard_enabled', logical(param.trackingLoadGuard), ...
+    'tracking_load_guard_max_new_tracks', ...
+        double(param.maxNewTracksPerFrame));
+cfg.model = struct('source', char(string(param.modelSource)), 'path', '');
+if strcmpi(char(string(param.modelSource)), 'trained')
+    cfg.model.path = normalizedPath(param.modelPath);
 end
-result = struct( ...
-    'schema_version', 1, ...
-    'tool', 'detecdiv_builtin_bud_mother_linker', ...
-    'tool_version', '2.0.0', ...
-    'created_at', char(datetime('now','TimeZone','local','Format','yyyy-MM-dd''T''HH:mm:ssXXX')), ...
-    'roi_id', char(string(roiId)), ...
-    'input', 'tracked label masks only', ...
-    'gfp_used', false, ...
-    'runtime', 'MATLAB', ...
-    'model_manifest_sha256', sha256File(manifestFile), ...
-    'model_tool_version', char(string(modelInfo.tool_version)), ...
-    'feature_implementation', 'detecdiv_builtin_lyn16_geometry_matlab', ...
-    'parameters', struct( ...
-        'frame_end', param.frameEnd, ...
-        'min_lifetime', param.minLifetime, ...
-        'max_birth_area', param.maxBirthArea, ...
-        'min_parent_age', param.minParentAge, ...
-        'max_parent_centroid_distance', param.maxParentCentroidDistance, ...
-        'max_parent_contour_distance', param.maxParentContourDistance, ...
-        'max_candidates', param.maxCandidates, ...
-        'rank_margin_threshold', threshold, ...
-        'tracking_load_guard_enabled', guardEnabled, ...
-        'tracking_load_guard_max_new_tracks', maxNewTracks), ...
-    'summary', struct('events',numel(edges),'linked',linked, ...
-        'review',numel(edges)-linked,'reasons',reasons), ...
-    'edges', edges);
+writeJson(configPath, cfg);
+
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0, ...
+        'Running cell_lineage_linker candidate and relation inference...', ...
+        'Scope', 'event', 'Indeterminate', true);
+end
+detecdiv_check_cancel(ctx, 'budMotherLinker before cell_lineage_linker');
+runtime = budMotherLinker.utils.runPythonModule( ...
+    'infer', configPath, ctx, stdoutPath);
+detecdiv_check_cancel(ctx, 'budMotherLinker after cell_lineage_linker');
+if ~isfile(outputPath)
+    error('budMotherLinker:MissingExternalOutput', ...
+        'cell_lineage_linker completed without producing %s.', outputPath);
+end
+result = jsondecode(fileread(outputPath));
+result.detecdiv_runtime = runtime;
+result.detecdiv_runtime.work_dir = workDir;
+result.detecdiv_runtime.stdout = stdoutPath;
+
+if exist('detecdiv_progress', 'file') == 2
+    total = 0;
+    linked = 0;
+    try total = double(result.summary.events); catch, end
+    try linked = double(result.summary.linked); catch, end
+    detecdiv_progress(ctx, 1, ...
+        sprintf('Linked %d/%d bud events.', linked, total), ...
+        'Scope', 'event', 'Current', total, 'Total', total);
 end
 
-function [stats, newTracks] = trackStatistics(tracks)
-maxLabel = double(max(tracks,[],'all'));
-stats = struct( ...
-    'start', zeros(maxLabel+1,1), ...
-    'frames', zeros(maxLabel+1,1), ...
-    'birthArea', zeros(maxLabel+1,1));
-newTracks = zeros(size(tracks,3),1);
-previous = [];
-for frame = 1:size(tracks,3)
-    plane = tracks(:,:,frame);
-    [labels,~,groups] = unique(plane(:));
-    counts = accumarray(groups,1);
-    keep = labels > 0;
-    labels = double(labels(keep));
-    counts = double(counts(keep));
-    newTracks(frame) = numel(setdiff(labels, previous));
-    previous = labels;
-    for i = 1:numel(labels)
-        row = labels(i) + 1;
-        if stats.start(row) == 0
-            stats.start(row) = frame;
-            stats.birthArea(row) = counts(i);
-        end
-        stats.frames(row) = stats.frames(row) + 1;
+% Runtime files under a pipeline work directory are intentional audit
+% artifacts. Ephemeral command-line calls are cleaned by the onCleanup.
+clear cleanup;
+cleanupRuntime(workDir, removeWorkDir);
+end
+
+function [workDir, removeAtEnd] = runtimeWorkDir(ctx, roiId)
+root = '';
+try
+    if isfield(ctx, 'store') && isstruct(ctx.store) && ...
+            isfield(ctx.store, 'workDir') && ~isempty(ctx.store.workDir)
+        root = char(string(ctx.store.workDir));
     end
+catch
+end
+if isempty(root)
+    root = tempname;
+    mkdir(root);
+    removeAtEnd = true;
+else
+    if ~isfolder(root), mkdir(root); end
+    removeAtEnd = false;
+end
+safeRoi = regexprep(char(string(roiId)), '[^A-Za-z0-9_.-]+', '_');
+stamp = char(datetime('now', 'Format', 'yyyyMMdd''T''HHmmssSSS'));
+workDir = fullfile(root, ['cell_lineage_linker_' safeRoi '_' stamp]);
+mkdir(workDir);
+end
+
+function cleanupRuntime(workDir, removeAtEnd)
+if ~removeAtEnd || ~isfolder(workDir), return; end
+try rmdir(workDir, 's'); catch, end
+parent = fileparts(workDir);
+try
+    if isfolder(parent) && isempty(dir(fullfile(parent, '*')))
+        rmdir(parent);
+    end
+catch
 end
 end
 
-function candidate = candidateTemplate()
-candidate = struct( ...
-    'parent_track_id', 0, ...
-    'candidate_score', NaN, ...
-    'centroid_distance', NaN, ...
-    'contour_distance', NaN, ...
-    'contact_pixels', 0, ...
-    'parent_age_frames', 0, ...
-    'parent_area', 0, ...
-    'hgb_score', NaN, ...
-    'features', struct());
+function writeJson(filename, value)
+fid = fopen(filename, 'w');
+if fid < 0
+    error('budMotherLinker:ConfigWriteFailed', ...
+        'Cannot create external linker configuration: %s', filename);
 end
-
-function edge = edgeTemplate()
-edge = struct( ...
-    'event_id', '', ...
-    'roi', '', ...
-    'child_track_id', 0, ...
-    'bud_appearance_frame', 0, ...
-    'lifetime', 0, ...
-    'birth_area', 0, ...
-    'candidate_count', 0, ...
-    'status', 'review', ...
-    'reason_code', '', ...
-    'reason', '', ...
-    'pred_parent_id', [], ...
-    'top_score', [], ...
-    'margin', [], ...
-    'new_tracks_at_birth', 0, ...
-    'ranked_candidates', repmat(candidateTemplate(),0,1));
-end
-
-function [info, filename] = loadModelInfo(param)
-if strcmp(param.modelSource, 'trained')
-    filename = param.modelPath;
-    payload = load(filename, 'artifact');
-    if ~isfield(payload, 'artifact') || ~isstruct(payload.artifact)
-        error('budMotherLinker:InvalidTrainedModel', ...
-            'Model artifact %s has no artifact structure.', filename);
-    end
-    artifact = payload.artifact;
-    info = struct('tool_version','trained-1', ...
-        'rank_margin_threshold',0, ...
-        'tracking_load_guard_enabled',true, ...
-        'max_new_tracks_per_frame',7);
-    if isfield(artifact,'tool_version'), info.tool_version = artifact.tool_version; end
-    if isfield(artifact,'rank_margin_threshold')
-        info.rank_margin_threshold = artifact.rank_margin_threshold;
-    end
-    if isfield(artifact,'tracking_load_guard_enabled')
-        info.tracking_load_guard_enabled = artifact.tracking_load_guard_enabled;
-    end
-    if isfield(artifact,'max_new_tracks_per_frame')
-        info.max_new_tracks_per_frame = artifact.max_new_tracks_per_frame;
-    end
-    return;
-end
-
-root = fileparts(mfilename('fullpath'));
-filename = fullfile(root, 'model', 'project47_v002', 'manifest.json');
-if ~isfile(filename)
-    error('budMotherLinker:MissingBuiltinModel', ...
-        'Builtin model manifest is missing: %s', filename);
-end
-manifest = jsondecode(fileread(filename));
-info = struct( ...
-    'tool_version', manifest.tool_version, ...
-    'rank_margin_threshold', ...
-        manifest.deployment_calibration.rank_margin_threshold, ...
-    'tracking_load_guard_enabled', manifest.tracking_load_guard.enabled, ...
-    'max_new_tracks_per_frame', ...
-        manifest.tracking_load_guard.max_new_tracks_per_frame);
-end
-
-function value = sha256File(filename)
-fid = fopen(filename, 'r');
-if fid < 0, value = ''; return; end
 cleanup = onCleanup(@() fclose(fid));
-bytes = fread(fid, Inf, '*uint8');
-digest = java.security.MessageDigest.getInstance('SHA-256');
-hash = typecast(digest.digest(bytes), 'uint8');
-value = lower(reshape(dec2hex(hash,2).',1,[]));
+fwrite(fid, jsonencode(value, 'PrettyPrint', true), 'char');
+end
+
+function value = normalizedPath(value)
+value = strrep(char(string(value)), '\', '/');
 end

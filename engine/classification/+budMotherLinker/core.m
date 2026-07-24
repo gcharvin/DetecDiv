@@ -12,12 +12,25 @@ if ~isfolder(fileparts(auditFile)), mkdir(fileparts(auditFile)); end
 if paramout.debug
     fprintf('[budMotherLinker] track channel: %s (pix %d)\n', ...
         paramout.trackChannelName, trackPix);
-    fprintf('[budMotherLinker] runtime: native MATLAB HGB-16\n');
+    fprintf('[budMotherLinker] runtime: external cell_lineage_linker\n');
     fprintf('[budMotherLinker] audit output: %s\n', auditFile);
 end
-result = budMotherLinker.infer(trackStack, paramout, char(string(roiobj.id)));
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0, 'Preparing bud/mother candidates...', ...
+        'Scope', 'event', 'Indeterminate', true);
+end
+result = budMotherLinker.infer(trackStack, paramout, ...
+    char(string(roiobj.id)), ctx);
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.82, ...
+        'Writing bud/mother audit data...', 'Scope', 'integration');
+end
 writeAuditFile(auditFile, result);
 
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.86, ...
+        'Updating the ROI cell model...', 'Scope', 'integration');
+end
 [model, loadReport] = roiobj.loadCellModel('MigrateLegacy', true);
 [model, familyId, applyReport] = applyInference( ...
     model, trackStack, paramout.trackChannelName, paramout.inputFamily, ...
@@ -31,14 +44,23 @@ if isfield(result, 'model_manifest_sha256')
     model.provenance.last_model_manifest_sha256 = ...
         char(string(result.model_manifest_sha256));
 end
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 0.96, ...
+        'Saving the ROI cell model...', 'Scope', 'integration');
+end
 saveReport = roiobj.saveCellModel(model);
+if exist('detecdiv_progress', 'file') == 2
+    detecdiv_progress(ctx, 1, ...
+        'Bud/mother links saved.', 'Scope', 'integration');
+end
 
 paramout.outputFamilyId = double(familyId);
 paramout.auditFile = auditFile;
 paramout.cellModelFile = char(saveReport.filename);
 paramout.artifacts = {auditFile, char(saveReport.filename)};
 paramout.summary = result.summary;
-paramout.runtime = struct('backend', 'MATLAB', ...
+paramout.runtime = struct('backend', 'Python', ...
+    'package', 'cell_lineage_linker', ...
     'model_source', paramout.modelSource, 'model', paramout.modelPath);
 paramout.cellModelReport = struct('load', loadReport, 'apply', applyReport, ...
     'save', saveReport);

@@ -31,7 +31,7 @@ if isempty(p.trackChannelName)
     end
 end
 p = budMotherLinker.normalizeParam(p,ctx,classif);
-scores = budMotherLinker.predictHGB(dataset.X,p);
+scores = budMotherLinker.utils.scoreHGBExternal(dataset.X,p,ctx);
 threshold = p.rankMarginThreshold;
 if threshold < 0
     if strcmp(p.modelSource,'trained')
