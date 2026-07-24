@@ -12,7 +12,8 @@ from cellpose import models
 MODEL = None
 MODEL_PATH = None
 MODEL_GPU = None
-BASE_PRINT = builtins.print
+BASE_PRINT = getattr(builtins, "_detecdiv_base_print", builtins.print)
+builtins._detecdiv_base_print = BASE_PRINT
 TEE_LOG_PATH = None
 TEE_LOG_HANDLE = None
 PROGRESS_MARKER = "@@DETECDIV_PROGRESS@@"
@@ -68,10 +69,16 @@ def install_log_tee(log_path):
     global TEE_LOG_PATH, TEE_LOG_HANDLE
     if not log_path:
         return
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     log_path = os.path.abspath(log_path)
+    log_dir = os.path.dirname(log_path)
+    os.makedirs(log_dir, exist_ok=True)
 
-    if TEE_LOG_PATH == log_path and TEE_LOG_HANDLE is not None:
+    if (
+        TEE_LOG_PATH == log_path
+        and TEE_LOG_HANDLE is not None
+        and not TEE_LOG_HANDLE.closed
+        and os.path.exists(log_path)
+    ):
         return
 
     if TEE_LOG_HANDLE is not None:
@@ -80,6 +87,9 @@ def install_log_tee(log_path):
         except OSError:
             pass
 
+    # The MATLAB fallback may remove the previous live log after an in-session
+    # failure. Recreate the run directory immediately before reopening it.
+    os.makedirs(log_dir, exist_ok=True)
     TEE_LOG_HANDLE = open(log_path, "a", encoding="utf-8", buffering=1)
     TEE_LOG_PATH = log_path
 
@@ -118,26 +128,37 @@ def to_int(v, default=0):
 def to_nhwc(arr, nframes):
     arr = np.asarray(arr)
     if arr.ndim == 4:
-        if arr.shape[0] == nframes:
+        # scipy.io.loadmat preserves MATLAB's H,W,C,T layout. Prefer that
+        # explicit signature before testing the leading dimension: square
+        # 60x60 images with 60 frames otherwise look like NHWC by accident.
+        if arr.shape[-1] == nframes and arr.shape[2] in (1, 3, 4):
+            nhwc = np.transpose(arr, (3, 0, 1, 2))
+        elif arr.shape[0] == nframes and arr.shape[-1] in (1, 3, 4):
             nhwc = arr
+        elif arr.shape[0] == nframes and arr.shape[1] in (1, 3, 4):
+            nhwc = np.transpose(arr, (0, 2, 3, 1))
+        elif arr.shape[2] == nframes and arr.shape[-1] in (1, 3, 4):
+            nhwc = np.transpose(arr, (2, 0, 1, 3))
         elif arr.shape[-1] == nframes:
             nhwc = np.transpose(arr, (3, 0, 1, 2))
-        elif arr.shape[2] == nframes:
-            nhwc = np.transpose(arr, (2, 0, 1, 3))
-        elif arr.shape[0] in (1, 3, 4) and arr.shape[-1] == nframes:
-            nhwc = np.transpose(arr, (3, 1, 2, 0))
         else:
-            nhwc = np.transpose(arr, (3, 0, 1, 2))
+            raise ValueError(
+                f"Cannot infer 4-D gfp layout for shape={arr.shape}, "
+                f"nframes={nframes}; expected MATLAB H,W,C,T or Python N,H,W,C."
+            )
         return nhwc
     if arr.ndim == 3:
-        if arr.shape[0] == nframes:
-            nhw = arr
-        elif arr.shape[-1] == nframes:
+        if arr.shape[-1] == nframes:
             nhw = np.transpose(arr, (2, 0, 1))
+        elif arr.shape[0] == nframes:
+            nhw = arr
         elif arr.shape[2] in (1, 3, 4):
             return arr[np.newaxis, ...]
         else:
-            nhw = np.transpose(arr, (2, 0, 1))
+            raise ValueError(
+                f"Cannot infer 3-D gfp layout for shape={arr.shape}, "
+                f"nframes={nframes}; expected H,W,T or T,H,W."
+            )
         return nhw[..., np.newaxis]
     if arr.ndim == 2:
         return arr[np.newaxis, ..., np.newaxis]

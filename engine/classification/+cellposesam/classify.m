@@ -781,15 +781,23 @@ if strcmpi(mode, 'session')
     try
         runCellposeRunnerInProcess(runnerPath, configPath, cancelPath);
     catch ME
-        if strcmp(ME.identifier, 'runPipeline:Cancelled') || ~fallbackExternal
+        if strcmp(ME.identifier, 'runPipeline:Cancelled') || ...
+                ~fallbackExternal || ~isSessionBootstrapFailureLocal(ME)
             rethrow(ME);
         end
-        disp(['[WARN] cellposesam: session runner failed, falling back to external process: ' ME.message]);
+        disp(['[WARN] cellposesam: session runner bootstrap failed, falling back to external process: ' ME.message]);
         runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
     end
 else
     runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
 end
+end
+
+function tf = isSessionBootstrapFailureLocal(ME)
+% Only retry failures that occurred while importing/resolving the session
+% runner. An inference failure is deterministic; rerunning all frames in an
+% external process hides its original traceback and wastes GPU time.
+tf = startsWith(char(string(ME.identifier)), 'cellposesam:Runner');
 end
 
 function runCellposeRunnerInProcess(runnerPath, configPath, cancelPath)
