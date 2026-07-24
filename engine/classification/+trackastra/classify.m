@@ -171,6 +171,7 @@ outIdx = outIdx(1);
 outImage(:,:,outIdx,frames) = reshape(uint16(tracked), size(tracked,1), size(tracked,2), 1, size(tracked,3));
 
 jointReportPath = fullfile(workDir, 'trackastra_joint_lineage.json');
+jointAudit = struct();
 if cfg.joint_decoder_enabled
     if ~isfile(jointReportPath)
         error('trackastra:MissingJointLineage', ...
@@ -198,6 +199,30 @@ out.metrics.gapClosingEdges = 0;
 try, out.metrics.gapClosingEdges = double(res.n_gap_edges); catch, end
 out.metrics.jointDivisions = 0;
 try, out.metrics.jointDivisions = double(res.n_joint_divisions); catch, end
+out.metrics.rawJointDivisionHypotheses = 0;
+out.metrics.jointCalibrationGuardTriggered = false;
+if cfg.joint_decoder_enabled && isstruct(jointAudit)
+    try
+        out.metrics.rawJointDivisionHypotheses = ...
+            double(jointAudit.raw_accepted_division_hypotheses);
+    catch
+    end
+    try
+        guard = jointAudit.calibration_guard;
+        out.metrics.jointCalibrationGuardTriggered = ...
+            logical(guard.triggered);
+        if out.metrics.jointCalibrationGuardTriggered
+            reasons = strjoin(cellstr(string(guard.reasons)),', ');
+            out.warnings{end+1} = sprintf([ ...
+                'Joint division model is outside its calibrated domain ' ...
+                '(%s). Falling back to global tracking without divisions.'], ...
+                reasons);
+            warning('trackastra:JointDivisionOutOfDomain','%s', ...
+                out.warnings{end});
+        end
+    catch
+    end
+end
 if exist('detecdiv_progress', 'file') == 2
     detecdiv_progress(ctx, 1, ...
         sprintf('Integrated %d Trackastra frames.', numel(frames)), ...

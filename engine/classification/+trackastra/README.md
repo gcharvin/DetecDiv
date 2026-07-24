@@ -28,6 +28,13 @@ new cell-model lineage family referencing the Trackastra output mask; no image
 channel is duplicated. This mode is off by default because its current
 division-event calibration is specific to the 14 MoMA cavity movies.
 
+The joint API monitors accepted-hypothesis density. More than 128 hypotheses
+or more than 25 per 1,000 detections triggers an explicit out-of-domain
+warning and a safe fallback to division-free global tracking. Validation on
+all five Project47 microcolonies triggered this guard (25.2–113.2 per 1,000);
+the MoMA division head must therefore not be interpreted as calibrated for
+Project47.
+
 `divisionIdentityMode=continuing_parent` implements asymmetric budding:
 among two division successors, the spatially most continuous object keeps the
 mother track ID and the other starts a daughter track. Use `symmetric` for
