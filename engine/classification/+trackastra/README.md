@@ -10,6 +10,16 @@ Inference bindings:
 - `instanceChannelName`: indexed instance masks, typically produced by CellposeSAM;
 - `outputName`: indexed `results_<outputName>` channel containing stable tracklet IDs.
 
+`maxFrameGap` controls gap closing. Its default value `1` allows Trackastra
+to link a detection at `t` to one at `t+2` when the object is missing at
+`t+1`. The resulting mask channel uses one stable track ID on both sides of
+the interruption, while the absent frame remains empty. The edge audit records
+the two frames, temporal distance, edge type, association weight, and stable
+track IDs. Set `maxFrameGap=0` to recover strictly adjacent-frame linking.
+The runtime also exports `trackastra_candidate_edges.csv`, containing every
+scored candidate retained by Trackastra and a `selected` flag. This is the
+probabilistic graph needed by a later joint tracking-lineage decoder.
+
 Custom model folders and checkpoints belong to the `classi` artifact. A
 pipeline selects them only by using **Link classifier**; their paths are not
 stored as static node parameters. Without a linked classifier, inference uses

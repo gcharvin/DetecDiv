@@ -83,6 +83,7 @@ cfg = struct();
 cfg.input_mat_path = slashPath(inputPath);
 cfg.output_mat_path = slashPath(resultPath);
 cfg.edge_csv_path = slashPath(fullfile(workDir, 'trackastra_edges.csv'));
+cfg.candidate_edge_csv_path = slashPath(fullfile(workDir, 'trackastra_candidate_edges.csv'));
 cfg.model_source = normalizedChoice(p.modelSource, {'pretrained','custom'}, 'pretrained');
 cfg.pretrained_model = scalarText(p.pretrainedModel);
 cfg.custom_model_path = slashPath(resolveArtifactPath(classif, p.customModelPath));
@@ -92,6 +93,7 @@ cfg.device = normalizedChoice(p.device, {'automatic','cuda','cpu','mps'}, 'autom
 cfg.batch_size = nonnegativeInteger(p.batchSize, 0, 'batchSize');
 cfg.n_workers = nonnegativeInteger(p.nWorkers, 0, 'nWorkers');
 cfg.max_distance = nonnegativeScalar(p.maxDistance, 0, 'maxDistance');
+cfg.max_frame_gap = nonnegativeInteger(p.maxFrameGap, 1, 'maxFrameGap');
 cfg.normalize_images = logicalScalar(p.normalizeImages, true);
 cfg.cancel_path = cancelTokenFile(ctx);
 cfg.progress_base = 0;
@@ -164,8 +166,11 @@ out.patch = [];
 out.status = "OK";
 out.artifacts.workDir = workDir;
 out.artifacts.edges = fullfile(workDir, 'trackastra_edges.csv');
+out.artifacts.candidateEdges = fullfile(workDir, 'trackastra_candidate_edges.csv');
 out.metrics.trackletCount = double(max(tracked(:)));
 out.metrics.frameCount = numel(frames);
+out.metrics.gapClosingEdges = 0;
+try, out.metrics.gapClosingEdges = double(res.n_gap_edges); catch, end
 if exist('detecdiv_progress', 'file') == 2
     detecdiv_progress(ctx, 1, ...
         sprintf('Integrated %d Trackastra frames.', numel(frames)), ...

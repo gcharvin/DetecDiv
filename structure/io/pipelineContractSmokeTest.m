@@ -131,6 +131,11 @@ assert(~any(ismember({'modelSource','customModelPath','checkpointPath','pythonEx
     'Trackastra external artifacts and executable paths must not be static pipeline parameters.');
 assert(any(strcmp(contract.parameters.static,'pretrainedModel')), ...
     'Trackastra pretrained-model selection should remain available without a linked classifier.');
+assert(any(strcmp(contract.parameters.static,'maxFrameGap')), ...
+    'Trackastra gap-closing horizon should be a static execution parameter.');
+defaults = trackastra.utils.defaultExecutionParam();
+assert(defaults.maxFrameGap == 1, ...
+    'Trackastra should bridge one missing frame by default.');
 end
 
 function testTrackastraResolvesCellposeMask()
