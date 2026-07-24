@@ -116,6 +116,7 @@ def _stable_track_masks(
     masks: np.ndarray,
     *,
     division_identity_mode: str = "symmetric",
+    continuing_child_override: dict[int, int] | None = None,
 ) -> tuple[np.ndarray, dict[int, int]]:
     """Relabel graph paths as stable track IDs, including across gaps."""
 
@@ -127,7 +128,11 @@ def _stable_track_masks(
     track_by_node: dict[int, int] = {}
     continuing_child: dict[int, int] = {}
     if division_identity_mode == "continuing_parent":
-        continuing_child = _continuing_children(graph, masks)
+        continuing_child = (
+            dict(continuing_child_override)
+            if continuing_child_override is not None
+            else _continuing_children(graph, masks)
+        )
     next_track = 1
     try:
         ordered_nodes = list(nx.lexicographical_topological_sort(graph))
@@ -289,6 +294,52 @@ def _candidate_edge_table(
     return pd.DataFrame(rows, columns=columns)
 
 
+def _joint_decode(
+    candidate_graph: nx.DiGraph,
+    images: np.ndarray,
+    masks: np.ndarray,
+    roi_id: str,
+) -> tuple[nx.DiGraph, dict[str, object]]:
+    """Apply the packaged latent division head before stable track collapse."""
+
+    from cell_latent_model import decode_tracking_lineage
+
+    nodes = [
+        {
+            "node": int(node),
+            "frame": int(attributes["time"]),
+            "label": int(attributes["label"]),
+        }
+        for node, attributes in candidate_graph.nodes(data=True)
+    ]
+    edges = [
+        {
+            "source": int(source),
+            "target": int(target),
+            "score": float(attributes.get("weight", 0.0)),
+        }
+        for source, target, attributes in candidate_graph.edges(data=True)
+    ]
+    report = decode_tracking_lineage(
+        roi_id=roi_id,
+        images=images,
+        masks=masks,
+        nodes=nodes,
+        edges=edges,
+    )
+    graph = nx.DiGraph()
+    graph.add_nodes_from(candidate_graph.nodes(data=True))
+    for edge in report["selected_edges"]:
+        source = int(edge["source"])
+        target = int(edge["target"])
+        graph.add_edge(
+            source,
+            target,
+            **dict(candidate_graph.edges[source, target]),
+        )
+    return graph, report
+
+
 def run(config_path: Path) -> None:
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     _check_cancel(cfg.get("cancel_path", ""))
@@ -347,6 +398,55 @@ def run(config_path: Path) -> None:
         ),
         kwargs=kwargs,
     )
+    joint_report = None
+    if bool(cfg.get("joint_decoder_enabled", False)):
+        _report_progress(
+            cfg,
+            0.92,
+            "Jointly decoding tracking and divisions...",
+            indeterminate=True,
+        )
+        graph, joint_report = _joint_decode(
+            candidate_graph,
+            images,
+            masks,
+            str(cfg.get("roi_id", "roi")),
+        )
+        typed_mother = {
+            int(row["source"]): int(row["mother"])
+            for row in joint_report["selected_divisions"]
+        }
+        masks_tracked, track_by_node = _stable_track_masks(
+            graph,
+            masks,
+            division_identity_mode="continuing_parent",
+            continuing_child_override=typed_mother,
+        )
+        lineage_edges = []
+        for division in joint_report["selected_divisions"]:
+            source = int(division["source"])
+            mother = int(division["mother"])
+            bud = int(division["bud"])
+            lineage_edges.append(
+                {
+                    "status": "linked",
+                    "pred_parent_id": int(track_by_node[source]),
+                    "child_track_id": int(track_by_node[bud]),
+                    "bud_appearance_frame": (
+                        int(candidate_graph.nodes[bud]["time"]) + 1
+                    ),
+                    "top_score": float(division["score"]),
+                    "source_node": source,
+                    "mother_node": mother,
+                    "bud_node": bud,
+                }
+            )
+        joint_report["lineage_edges"] = lineage_edges
+        joint_path = Path(cfg["joint_report_path"])
+        joint_path.parent.mkdir(parents=True, exist_ok=True)
+        joint_path.write_text(
+            json.dumps(joint_report, indent=2), encoding="utf-8"
+        )
     _check_cancel(cfg.get("cancel_path", ""))
 
     edge_path = Path(cfg["edge_csv_path"])
@@ -372,6 +472,14 @@ def run(config_path: Path) -> None:
             "n_candidate_edges": np.asarray(
                 [[len(candidate_edges)]], dtype=np.uint32
             ),
+            "n_joint_divisions": np.asarray(
+                [[
+                    int(joint_report["selected_division_count"])
+                    if joint_report is not None
+                    else 0
+                ]],
+                dtype=np.uint32,
+            ),
         },
         do_compression=True,
     )
@@ -379,6 +487,7 @@ def run(config_path: Path) -> None:
         f"[Trackastra PY] frames={images.shape[0]} nodes={graph.number_of_nodes()} "
         f"edges={graph.number_of_edges()} candidates={len(candidate_edges)} "
         f"gap_edges={n_gap_edges} "
+        f"joint_divisions={int(joint_report['selected_division_count']) if joint_report else 0} "
         f"max_tracklet={int(matlab_masks.max(initial=0))}",
         flush=True,
     )

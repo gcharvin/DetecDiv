@@ -96,6 +96,14 @@ cfg.max_distance = nonnegativeScalar(p.maxDistance, 0, 'maxDistance');
 cfg.max_frame_gap = nonnegativeInteger(p.maxFrameGap, 1, 'maxFrameGap');
 cfg.division_identity_mode = normalizedChoice(p.divisionIdentityMode, ...
     {'continuing_parent','symmetric'}, 'continuing_parent');
+cfg.joint_decoder_enabled = logicalScalar(p.jointDecoder, false);
+if cfg.joint_decoder_enabled && isempty(scalarText(p.jointOutputFamilyName))
+    error('trackastra:MissingJointOutputFamily', ...
+        'jointOutputFamilyName cannot be empty when jointDecoder is enabled.');
+end
+cfg.roi_id = char(string(roiobj.id));
+cfg.joint_report_path = slashPath(fullfile(workDir, ...
+    'trackastra_joint_lineage.json'));
 cfg.normalize_images = logicalScalar(p.normalizeImages, true);
 cfg.cancel_path = cancelTokenFile(ctx);
 cfg.progress_base = 0;
@@ -162,6 +170,18 @@ end
 outIdx = outIdx(1);
 outImage(:,:,outIdx,frames) = reshape(uint16(tracked), size(tracked,1), size(tracked,2), 1, size(tracked,3));
 
+jointReportPath = fullfile(workDir, 'trackastra_joint_lineage.json');
+if cfg.joint_decoder_enabled
+    if ~isfile(jointReportPath)
+        error('trackastra:MissingJointLineage', ...
+            'Joint decoder did not write %s.', jointReportPath);
+    end
+    jointAudit = jsondecode(fileread(jointReportPath));
+    [jointFamilyId,~] = trackastra.persistJointLineage( ...
+        roiobj,tracked,channelName,p,jointAudit,jointReportPath);
+    out.refs.jointLineageFamilyId = double(jointFamilyId);
+end
+
 out.data = roiobj.data;
 out.image = outImage;
 out.patch = [];
@@ -169,10 +189,15 @@ out.status = "OK";
 out.artifacts.workDir = workDir;
 out.artifacts.edges = fullfile(workDir, 'trackastra_edges.csv');
 out.artifacts.candidateEdges = fullfile(workDir, 'trackastra_candidate_edges.csv');
+if cfg.joint_decoder_enabled
+    out.artifacts.jointLineage = jointReportPath;
+end
 out.metrics.trackletCount = double(max(tracked(:)));
 out.metrics.frameCount = numel(frames);
 out.metrics.gapClosingEdges = 0;
 try, out.metrics.gapClosingEdges = double(res.n_gap_edges); catch, end
+out.metrics.jointDivisions = 0;
+try, out.metrics.jointDivisions = double(res.n_joint_divisions); catch, end
 if exist('detecdiv_progress', 'file') == 2
     detecdiv_progress(ctx, 1, ...
         sprintf('Integrated %d Trackastra frames.', numel(frames)), ...

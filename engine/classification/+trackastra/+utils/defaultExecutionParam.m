@@ -16,6 +16,9 @@ p.nWorkers = 0;
 p.maxDistance = 0;
 p.maxFrameGap = 1;
 p.divisionIdentityMode = 'continuing_parent';
+p.jointDecoder = false;
+p.jointOutputFamilyName = 'Trackastra joint lineage MoMA HGB v001';
+p.jointOverwriteOutputFamily = true;
 p.normalizeImages = true;
 p.pythonExecutable = '';
 end

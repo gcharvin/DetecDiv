@@ -20,6 +20,14 @@ The runtime also exports `trackastra_candidate_edges.csv`, containing every
 scored candidate retained by Trackastra and a `selected` flag. This is the
 probabilistic graph needed by a later joint tracking-lineage decoder.
 
+Set `jointDecoder=true` to run that decoder immediately, before detections are
+collapsed into stable track IDs. It uses the packaged
+`moma_division_hgb_v001` scorer from `cell_latent_model`, then the exact global
+solver from `cell_lineage_linker`. The selected divisions are persisted as a
+new cell-model lineage family referencing the Trackastra output mask; no image
+channel is duplicated. This mode is off by default because its current
+division-event calibration is specific to the 14 MoMA cavity movies.
+
 `divisionIdentityMode=continuing_parent` implements asymmetric budding:
 among two division successors, the spatially most continuous object keeps the
 mother track ID and the other starts a daughter track. Use `symmetric` for
