@@ -64,6 +64,7 @@ def _track_with_gap_closing(
     masks: np.ndarray,
     *,
     max_frame_gap: int,
+    division_identity_mode: str = "continuing_parent",
     kwargs: dict[str, object],
 ) -> tuple[nx.DiGraph, nx.DiGraph, tuple[np.ndarray, dict[int, int]]]:
     """Run Trackastra with identical prediction/graph temporal support.
@@ -105,16 +106,28 @@ def _track_with_gap_closing(
         max_neighbors=int(kwargs.get("max_neighbors", 10)),
         delta_t=delta_t,
     )
-    return graph, candidate_graph, _stable_track_masks(graph, masks)
+    return graph, candidate_graph, _stable_track_masks(
+        graph, masks, division_identity_mode=division_identity_mode
+    )
 
 
 def _stable_track_masks(
-    graph: nx.DiGraph, masks: np.ndarray
+    graph: nx.DiGraph,
+    masks: np.ndarray,
+    *,
+    division_identity_mode: str = "symmetric",
 ) -> tuple[np.ndarray, dict[int, int]]:
     """Relabel graph paths as stable track IDs, including across gaps."""
 
+    if division_identity_mode not in {"symmetric", "continuing_parent"}:
+        raise ValueError(
+            f"Unsupported division identity mode: {division_identity_mode}"
+        )
     tracked = np.zeros_like(masks, dtype=np.uint32)
     track_by_node: dict[int, int] = {}
+    continuing_child: dict[int, int] = {}
+    if division_identity_mode == "continuing_parent":
+        continuing_child = _continuing_children(graph, masks)
     next_track = 1
     try:
         ordered_nodes = list(nx.lexicographical_topological_sort(graph))
@@ -122,8 +135,16 @@ def _stable_track_masks(
         raise ValueError("Trackastra returned a cyclic tracking graph") from exc
     for node_id in ordered_nodes:
         predecessors = list(graph.predecessors(node_id))
-        if len(predecessors) == 1 and graph.out_degree(predecessors[0]) == 1:
-            track_id = track_by_node[predecessors[0]]
+        if len(predecessors) == 1:
+            predecessor = predecessors[0]
+            inherits = graph.out_degree(predecessor) == 1 or (
+                continuing_child.get(predecessor) == node_id
+            )
+            track_id = (
+                track_by_node[predecessor] if inherits else next_track
+            )
+            if not inherits:
+                next_track += 1
         else:
             track_id = next_track
             next_track += 1
@@ -141,6 +162,44 @@ def _stable_track_masks(
             raise ValueError(f"Overlapping Trackastra nodes in frame {frame}")
         tracked[frame][selected] = np.uint32(track_id)
     return tracked, track_by_node
+
+
+def _continuing_children(
+    graph: nx.DiGraph, masks: np.ndarray
+) -> dict[int, int]:
+    """Choose the spatially continuous successor at asymmetric divisions."""
+
+    selected: dict[int, int] = {}
+    for source in graph.nodes:
+        successors = list(graph.successors(source))
+        if len(successors) <= 1:
+            continue
+        source_node = graph.nodes[source]
+        source_mask = (
+            masks[int(source_node["time"])] == int(source_node["label"])
+        )
+        source_y, source_x = np.nonzero(source_mask)
+        source_centre = np.asarray(
+            [source_y.mean(), source_x.mean()], dtype=np.float64
+        )
+        ranked: list[tuple[float, float, float, int]] = []
+        for target in successors:
+            target_node = graph.nodes[target]
+            target_mask = (
+                masks[int(target_node["time"])] == int(target_node["label"])
+            )
+            intersection = int(np.count_nonzero(source_mask & target_mask))
+            union = int(np.count_nonzero(source_mask | target_mask))
+            iou = intersection / union if union else 0.0
+            target_y, target_x = np.nonzero(target_mask)
+            target_centre = np.asarray(
+                [target_y.mean(), target_x.mean()], dtype=np.float64
+            )
+            distance = float(np.linalg.norm(target_centre - source_centre))
+            weight = float(graph.edges[source, target].get("weight", 0.0))
+            ranked.append((-iou, distance, -weight, int(target)))
+        selected[int(source)] = min(ranked)[3]
+    return selected
 
 
 def _edge_audit_table(
@@ -283,6 +342,9 @@ def run(config_path: Path) -> None:
         images,
         masks,
         max_frame_gap=max_frame_gap,
+        division_identity_mode=str(
+            cfg.get("division_identity_mode", "continuing_parent")
+        ),
         kwargs=kwargs,
     )
     _check_cancel(cfg.get("cancel_path", ""))

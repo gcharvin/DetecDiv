@@ -94,6 +94,8 @@ cfg.batch_size = nonnegativeInteger(p.batchSize, 0, 'batchSize');
 cfg.n_workers = nonnegativeInteger(p.nWorkers, 0, 'nWorkers');
 cfg.max_distance = nonnegativeScalar(p.maxDistance, 0, 'maxDistance');
 cfg.max_frame_gap = nonnegativeInteger(p.maxFrameGap, 1, 'maxFrameGap');
+cfg.division_identity_mode = normalizedChoice(p.divisionIdentityMode, ...
+    {'continuing_parent','symmetric'}, 'continuing_parent');
 cfg.normalize_images = logicalScalar(p.normalizeImages, true);
 cfg.cancel_path = cancelTokenFile(ctx);
 cfg.progress_base = 0;

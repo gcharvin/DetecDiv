@@ -1814,7 +1814,7 @@ function keys = trackastraExecutionStaticKeys()
         keys = spec.staticKeys;
     catch
         keys = {'pretrainedModel','trackingMode','device','batchSize','nWorkers','maxDistance', ...
-            'maxFrameGap','normalizeImages'};
+            'maxFrameGap','divisionIdentityMode','normalizeImages'};
     end
 end
 

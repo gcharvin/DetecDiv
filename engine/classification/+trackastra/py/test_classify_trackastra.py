@@ -66,3 +66,21 @@ def test_candidate_table_preserves_unselected_probabilistic_edges():
     assert skipped.delta_t == 3
     assert skipped.is_gap_candidate == 1
     assert skipped.selected == 0
+
+
+def test_asymmetric_division_preserves_spatially_continuous_mother():
+    graph = nx.DiGraph()
+    graph.add_node(0, time=0, label=1)
+    graph.add_node(1, time=1, label=2)
+    graph.add_node(2, time=1, label=3)
+    graph.add_edge(0, 1, weight=0.8)
+    graph.add_edge(0, 2, weight=0.9)
+    masks = np.zeros((2, 8, 8), dtype=np.uint16)
+    masks[0, 2:5, 2:5] = 1
+    masks[1, 2:5, 3:6] = 2
+    masks[1, 5:7, 1:3] = 3
+    _, tracks = MODULE._stable_track_masks(
+        graph, masks, division_identity_mode="continuing_parent"
+    )
+    assert tracks[0] == tracks[1]
+    assert tracks[2] != tracks[0]

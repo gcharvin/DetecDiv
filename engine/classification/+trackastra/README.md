@@ -20,6 +20,11 @@ The runtime also exports `trackastra_candidate_edges.csv`, containing every
 scored candidate retained by Trackastra and a `selected` flag. This is the
 probabilistic graph needed by a later joint tracking-lineage decoder.
 
+`divisionIdentityMode=continuing_parent` implements asymmetric budding:
+among two division successors, the spatially most continuous object keeps the
+mother track ID and the other starts a daughter track. Use `symmetric` for
+mitotic systems where both daughters must start new tracks.
+
 Custom model folders and checkpoints belong to the `classi` artifact. A
 pipeline selects them only by using **Link classifier**; their paths are not
 stored as static node parameters. Without a linked classifier, inference uses
