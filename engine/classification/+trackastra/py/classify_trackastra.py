@@ -283,6 +283,13 @@ def _candidate_edge_table(
                 "proposal_only": int(
                     bool(attributes.get("proposal_only", False))
                 ),
+                "geometric_birth_candidate": int(
+                    bool(
+                        attributes.get(
+                            "geometric_birth_candidate", False
+                        )
+                    )
+                ),
                 "selected": int((source, target) in selected),
             }
         )
@@ -301,6 +308,7 @@ def _candidate_edge_table(
         "division_weight",
         "division_candidate",
         "proposal_only",
+        "geometric_birth_candidate",
         "selected",
     ]
     return pd.DataFrame(rows, columns=columns)
@@ -468,6 +476,7 @@ def run(config_path: Path) -> None:
     base_candidate_count = candidate_graph.number_of_edges()
     proposal_candidate_count = 0
     proposal_only_candidate_count = 0
+    geometric_birth_candidate_count = 0
     if proposal_model is not None:
         _report_progress(
             cfg,
@@ -490,8 +499,18 @@ def run(config_path: Path) -> None:
             candidate_graph,
             proposal_graph,
         )
+        from cell_latent_model import augment_budding_birth_candidates
+
+        candidate_graph = augment_budding_birth_candidates(
+            candidate_graph,
+            masks,
+        )
         proposal_only_candidate_count = sum(
             bool(attributes.get("proposal_only", False))
+            for _, _, attributes in candidate_graph.edges(data=True)
+        )
+        geometric_birth_candidate_count = sum(
+            bool(attributes.get("geometric_birth_candidate", False))
             for _, _, attributes in candidate_graph.edges(data=True)
         )
     joint_report = None
@@ -576,6 +595,9 @@ def run(config_path: Path) -> None:
             ),
             "n_proposal_only_candidate_edges": np.asarray(
                 [[proposal_only_candidate_count]], dtype=np.uint32
+            ),
+            "n_geometric_birth_candidate_edges": np.asarray(
+                [[geometric_birth_candidate_count]], dtype=np.uint32
             ),
             "n_joint_divisions": np.asarray(
                 [[

@@ -60,11 +60,19 @@ def test_candidate_table_preserves_unselected_probabilistic_edges():
     graph, masks = synthetic_graph_and_masks()
     _, track_by_node = MODULE._stable_track_masks(graph, masks)
     candidates = graph.copy()
-    candidates.add_edge(0, 2, weight=0.2)
+    candidates.add_edge(
+        0,
+        2,
+        weight=0.2,
+        division_candidate=True,
+        geometric_birth_candidate=True,
+    )
     table = MODULE._candidate_edge_table(candidates, graph, track_by_node)
     skipped = table[(table.source_node == 0) & (table.target_node == 2)].iloc[0]
     assert skipped.delta_t == 3
     assert skipped.is_gap_candidate == 1
+    assert skipped.division_candidate == 1
+    assert skipped.geometric_birth_candidate == 1
     assert skipped.selected == 0
 
 
@@ -103,7 +111,7 @@ def test_joint_decode_rebuilds_selected_graph(monkeypatch):
         assert first["division_score"] == 0.73
         assert first["division_candidate"]
         assert kwargs["package_path"].name == (
-            "moma_division_hgb_budding_proposal_v002"
+            "moma_division_hgb_birth_augmented_v003"
         )
         return {
             "selected_edges": [

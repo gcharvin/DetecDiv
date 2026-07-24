@@ -216,6 +216,12 @@ try
         double(res.n_proposal_only_candidate_edges);
 catch
 end
+out.metrics.geometricBirthCandidates = 0;
+try
+    out.metrics.geometricBirthCandidates = ...
+        double(res.n_geometric_birth_candidate_edges);
+catch
+end
 out.metrics.rawJointDivisionHypotheses = 0;
 out.metrics.jointCalibrationGuardTriggered = false;
 if cfg.joint_decoder_enabled && isstruct(jointAudit)

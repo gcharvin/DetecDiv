@@ -30,11 +30,13 @@ division-event calibration is specific to the 14 MoMA cavity movies.
 
 Set `buddingProposal=true` together with `jointDecoder=true` to use the
 asymmetric budding ensemble. The pretrained model remains responsible for
-ordinary temporal links. A separately fine-tuned Trackastra model only adds
-or re-scores possible bud edges, and the paired proposal-specific HGB scorer
-feeds those hypotheses to the global solver. The default proposal and HGB
-artifacts are resolved from `cell_latent_model`; no Python repository path is
-stored in the classifier parameters. If the classifier links a custom
+ordinary temporal links. A separately fine-tuned Trackastra model adds or
+re-scores possible bud edges, then a bounded geometric pass restores small
+low-overlap birth candidates that the interaction context may absorb. Those
+extra edges retain conservative temporal weights and are evaluated separately
+by the typed HGB division head before the global solver. The default proposal
+and HGB artifacts are resolved from `cell_latent_model`; no Python repository
+path is stored in the classifier parameters. If the classifier links a custom
 Trackastra artifact, that artifact replaces only the proposal model in this
 mode.
 
