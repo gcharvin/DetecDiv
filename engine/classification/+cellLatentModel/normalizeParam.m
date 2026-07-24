@@ -38,7 +38,8 @@ if isempty(p.modelSource), p.modelSource = 'builtin'; end
 if isempty(p.device), p.device = 'auto'; end
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
-    'maxParentCentroidDistance','maxParentContourDistance','maxCandidates'};
+    'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
+    'maxNewTracksPerFrame'};
 for i = 1:numel(numericNames)
     name = numericNames{i};
     p.(name) = readScalar(p.(name),defaults.(name));
@@ -50,6 +51,8 @@ p.minParentAge = max(1,floor(p.minParentAge));
 p.maxParentCentroidDistance = max(0,p.maxParentCentroidDistance);
 p.maxParentContourDistance = max(0,p.maxParentContourDistance);
 p.maxCandidates = max(1,min(12,floor(p.maxCandidates)));
+p.maxNewTracksPerFrame = max(0,floor(p.maxNewTracksPerFrame));
+p.trackingLoadGuard = logical(p.trackingLoadGuard);
 p.overwriteOutputFamily = logical(p.overwriteOutputFamily);
 p.debug = logical(p.debug);
 
