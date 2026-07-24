@@ -404,9 +404,9 @@ if stCheck == 0
     return;
 end
 
-fprintf('[Detecdiv] Installing canonical WSL packages (Zarr, CellposeSAM, Trackastra)...\n');
-[stInstall, outInstall] = runWslArgs(distro, {pythonExe,'-m','pip','install', ...
-    recipe.packages.zarr, recipe.packages.cellposeWsl, recipe.packages.trackastra}, debug);
+fprintf('[Detecdiv] Installing canonical WSL packages (Zarr, CellposeSAM, Trackastra, scikit-learn)...\n');
+installArgs = [{pythonExe,'-m','pip','install'}, recipe.installSpecs.wsl];
+[stInstall, outInstall] = runWslArgs(distro, installArgs, debug);
 if stInstall ~= 0
     error('select_and_load_conda_env:WslPackageInstallFailed', ...
         'Unable to install canonical WSL packages:\n%s', outInstall);
@@ -1438,9 +1438,10 @@ function ensureDetecdivPackages(condaCmd, debug)
             " python -m pip install --upgrade pip", debug, condaCmd);
         if stPip ~= 0, error('pip upgrade failed:\n%s', oPip); end
 
-        packageCmd = sprintf('run -n %s python -m pip install "%s" "%s" "%s"', ...
-            envName, recipe.packages.zarr, recipe.packages.cellposeWindows, ...
-            recipe.packages.trackastra);
+        quotedSpecs = cellfun(@(value) sprintf('"%s"', char(string(value))), ...
+            recipe.installSpecs.windows, 'UniformOutput', false);
+        packageCmd = sprintf('run -n %s python -m pip install %s', ...
+            envName, strjoin(quotedSpecs, ' '));
         [stPackages,oPackages] = runConda(packageCmd, debug, condaCmd);
         if stPackages ~= 0
             error('Canonical DetecDiv package install failed:\n%s', oPackages);
