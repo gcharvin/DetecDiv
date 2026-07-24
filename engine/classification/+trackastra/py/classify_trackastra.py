@@ -274,6 +274,15 @@ def _candidate_edge_table(
                 "source_track_id": int(track_by_node.get(source, 0)),
                 "target_track_id": int(track_by_node.get(target, 0)),
                 "weight": float(attributes.get("weight", np.nan)),
+                "division_weight": float(
+                    attributes.get("division_weight", np.nan)
+                ),
+                "division_candidate": int(
+                    bool(attributes.get("division_candidate", False))
+                ),
+                "proposal_only": int(
+                    bool(attributes.get("proposal_only", False))
+                ),
                 "selected": int((source, target) in selected),
             }
         )
@@ -289,6 +298,9 @@ def _candidate_edge_table(
         "source_track_id",
         "target_track_id",
         "weight",
+        "division_weight",
+        "division_candidate",
+        "proposal_only",
         "selected",
     ]
     return pd.DataFrame(rows, columns=columns)
@@ -302,7 +314,10 @@ def _joint_decode(
 ) -> tuple[nx.DiGraph, dict[str, object]]:
     """Apply the packaged latent division head before stable track collapse."""
 
-    from cell_latent_model import decode_tracking_lineage
+    from cell_latent_model import (
+        decode_tracking_lineage,
+        default_budding_hgb_division_package_path,
+    )
 
     nodes = [
         {
@@ -317,16 +332,35 @@ def _joint_decode(
             "source": int(source),
             "target": int(target),
             "score": float(attributes.get("weight", 0.0)),
+            "division_score": float(
+                attributes.get(
+                    "division_weight",
+                    attributes.get("weight", 0.0),
+                )
+            ),
+            "division_candidate": bool(
+                attributes.get("division_candidate", True)
+            ),
         }
         for source, target, attributes in candidate_graph.edges(data=True)
     ]
+    uses_budding_proposal = any(
+        bool(attributes.get("division_candidate", False))
+        for _, _, attributes in candidate_graph.edges(data=True)
+    )
     report = decode_tracking_lineage(
         roi_id=roi_id,
         images=images,
         masks=masks,
         nodes=nodes,
         edges=edges,
+        package_path=(
+            default_budding_hgb_division_package_path()
+            if uses_budding_proposal
+            else None
+        ),
     )
+    report["budding_proposal_enabled"] = uses_budding_proposal
     graph = nx.DiGraph()
     graph.add_nodes_from(candidate_graph.nodes(data=True))
     for edge in report["selected_edges"]:
@@ -357,7 +391,13 @@ def run(config_path: Path) -> None:
     _report_progress(
         cfg, 0, "Loading Trackastra model...", indeterminate=True
     )
-    if cfg.get("model_source", "pretrained") == "custom":
+    budding_proposal_enabled = bool(
+        cfg.get("budding_proposal_enabled", False)
+    )
+    if (
+        cfg.get("model_source", "pretrained") == "custom"
+        and not budding_proposal_enabled
+    ):
         model_path = cfg.get("custom_model_path", "")
         if not model_path:
             raise ValueError("custom_model_path is required when model_source=custom")
@@ -368,6 +408,33 @@ def run(config_path: Path) -> None:
     else:
         model_name = cfg.get("pretrained_model") or "general_2d"
         model = Trackastra.from_pretrained(model_name, device=device)
+
+    proposal_model = None
+    if budding_proposal_enabled:
+        if not bool(cfg.get("joint_decoder_enabled", False)):
+            raise ValueError(
+                "budding_proposal_enabled requires joint_decoder_enabled"
+            )
+        if cfg.get("model_source", "pretrained") == "custom":
+            proposal_path = cfg.get("custom_model_path", "")
+            if not proposal_path:
+                raise ValueError(
+                    "custom_model_path is required for a custom budding "
+                    "proposal"
+                )
+            proposal_checkpoint = cfg.get("checkpoint_path") or None
+        else:
+            from cell_latent_model import (
+                default_budding_trackastra_model_path,
+            )
+
+            proposal_path = default_budding_trackastra_model_path()
+            proposal_checkpoint = None
+        proposal_model = Trackastra.from_folder(
+            Path(proposal_path),
+            device=device,
+            checkpoint_path=proposal_checkpoint,
+        )
 
     kwargs: dict[str, object] = {
         "mode": cfg.get("tracking_mode", "greedy"),
@@ -398,6 +465,35 @@ def run(config_path: Path) -> None:
         ),
         kwargs=kwargs,
     )
+    base_candidate_count = candidate_graph.number_of_edges()
+    proposal_candidate_count = 0
+    proposal_only_candidate_count = 0
+    if proposal_model is not None:
+        _report_progress(
+            cfg,
+            0.72,
+            "Proposing budding-specific temporal links...",
+            indeterminate=True,
+        )
+        _, proposal_graph, _ = _track_with_gap_closing(
+            proposal_model,
+            images,
+            masks,
+            max_frame_gap=max_frame_gap,
+            division_identity_mode="continuing_parent",
+            kwargs=kwargs,
+        )
+        from cell_latent_model import merge_proposal_candidates
+
+        proposal_candidate_count = proposal_graph.number_of_edges()
+        candidate_graph = merge_proposal_candidates(
+            candidate_graph,
+            proposal_graph,
+        )
+        proposal_only_candidate_count = sum(
+            bool(attributes.get("proposal_only", False))
+            for _, _, attributes in candidate_graph.edges(data=True)
+        )
     joint_report = None
     if bool(cfg.get("joint_decoder_enabled", False)):
         _report_progress(
@@ -471,6 +567,15 @@ def run(config_path: Path) -> None:
             "n_gap_edges": np.asarray([[n_gap_edges]], dtype=np.uint32),
             "n_candidate_edges": np.asarray(
                 [[len(candidate_edges)]], dtype=np.uint32
+            ),
+            "n_base_candidate_edges": np.asarray(
+                [[base_candidate_count]], dtype=np.uint32
+            ),
+            "n_proposal_candidate_edges": np.asarray(
+                [[proposal_candidate_count]], dtype=np.uint32
+            ),
+            "n_proposal_only_candidate_edges": np.asarray(
+                [[proposal_only_candidate_count]], dtype=np.uint32
             ),
             "n_joint_divisions": np.asarray(
                 [[

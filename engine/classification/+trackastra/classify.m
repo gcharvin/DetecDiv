@@ -97,6 +97,11 @@ cfg.max_frame_gap = nonnegativeInteger(p.maxFrameGap, 1, 'maxFrameGap');
 cfg.division_identity_mode = normalizedChoice(p.divisionIdentityMode, ...
     {'continuing_parent','symmetric'}, 'continuing_parent');
 cfg.joint_decoder_enabled = logicalScalar(p.jointDecoder, false);
+cfg.budding_proposal_enabled = logicalScalar(p.buddingProposal, false);
+if cfg.budding_proposal_enabled && ~cfg.joint_decoder_enabled
+    error('trackastra:BuddingProposalRequiresJointDecoder', ...
+        'buddingProposal requires jointDecoder.');
+end
 if cfg.joint_decoder_enabled && isempty(scalarText(p.jointOutputFamilyName))
     error('trackastra:MissingJointOutputFamily', ...
         'jointOutputFamilyName cannot be empty when jointDecoder is enabled.');
@@ -199,6 +204,18 @@ out.metrics.gapClosingEdges = 0;
 try, out.metrics.gapClosingEdges = double(res.n_gap_edges); catch, end
 out.metrics.jointDivisions = 0;
 try, out.metrics.jointDivisions = double(res.n_joint_divisions); catch, end
+out.metrics.buddingProposalCandidates = 0;
+try
+    out.metrics.buddingProposalCandidates = ...
+        double(res.n_proposal_candidate_edges);
+catch
+end
+out.metrics.buddingProposalOnlyCandidates = 0;
+try
+    out.metrics.buddingProposalOnlyCandidates = ...
+        double(res.n_proposal_only_candidate_edges);
+catch
+end
 out.metrics.rawJointDivisionHypotheses = 0;
 out.metrics.jointCalibrationGuardTriggered = false;
 if cfg.joint_decoder_enabled && isstruct(jointAudit)

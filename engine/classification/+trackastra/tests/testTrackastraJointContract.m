@@ -6,6 +6,7 @@ end
 function testJointDecoderIsExplicitOptIn(testCase)
 p = trackastra.utils.defaultExecutionParam();
 verifyFalse(testCase,p.jointDecoder);
+verifyFalse(testCase,p.buddingProposal);
 verifyTrue(testCase,p.jointOverwriteOutputFamily);
 verifyNotEmpty(testCase,p.jointOutputFamilyName);
 end
@@ -13,6 +14,7 @@ end
 function testExecutionSpecExposesNoRepositoryPath(testCase)
 spec = trackastra.executionSpec([]);
 verifyTrue(testCase,ismember('jointDecoder',spec.staticKeys));
+verifyTrue(testCase,ismember('buddingProposal',spec.staticKeys));
 verifyTrue(testCase,ismember('jointOutputFamilyName',spec.outputKeys));
 allKeys = [spec.staticKeys spec.artifactKeys spec.environmentKeys ...
     spec.outputKeys];

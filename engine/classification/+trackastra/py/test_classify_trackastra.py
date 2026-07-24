@@ -88,10 +88,23 @@ def test_asymmetric_division_preserves_spatially_continuous_mother():
 
 def test_joint_decode_rebuilds_selected_graph(monkeypatch):
     graph, masks = synthetic_graph_and_masks()
+    graph.edges[0, 1]["division_weight"] = 0.73
+    graph.edges[0, 1]["division_candidate"] = True
 
     def fake_decode(**kwargs):
         assert len(kwargs["nodes"]) == graph.number_of_nodes()
         assert len(kwargs["edges"]) == graph.number_of_edges()
+        first = next(
+            row
+            for row in kwargs["edges"]
+            if row["source"] == 0 and row["target"] == 1
+        )
+        assert first["score"] == 0.9
+        assert first["division_score"] == 0.73
+        assert first["division_candidate"]
+        assert kwargs["package_path"].name == (
+            "moma_division_hgb_budding_proposal_v002"
+        )
         return {
             "selected_edges": [
                 {"source": 0, "target": 1, "score": 0.9},
