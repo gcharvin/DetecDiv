@@ -39,7 +39,8 @@ if isempty(p.device), p.device = 'auto'; end
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
     'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
-    'maxNewTracksPerFrame'};
+    'maxNewTracksPerFrame','motherRefractoryFrames','youngMotherFrames', ...
+    'solverBeamSize'};
 for i = 1:numel(numericNames)
     name = numericNames{i};
     p.(name) = readScalar(p.(name),defaults.(name));
@@ -52,7 +53,12 @@ p.maxParentCentroidDistance = max(0,p.maxParentCentroidDistance);
 p.maxParentContourDistance = max(0,p.maxParentContourDistance);
 p.maxCandidates = max(1,min(12,floor(p.maxCandidates)));
 p.maxNewTracksPerFrame = max(0,floor(p.maxNewTracksPerFrame));
+p.motherRefractoryFrames = max(0,floor(p.motherRefractoryFrames));
+p.youngMotherFrames = max(0,floor(p.youngMotherFrames));
+p.solverBeamSize = max(1,floor(p.solverBeamSize));
 p.trackingLoadGuard = logical(p.trackingLoadGuard);
+p.globalSolver = logical(p.globalSolver);
+p.reviewGlobalReassignments = logical(p.reviewGlobalReassignments);
 p.overwriteOutputFamily = logical(p.overwriteOutputFamily);
 p.debug = logical(p.debug);
 

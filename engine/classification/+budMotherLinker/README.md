@@ -30,6 +30,11 @@ The 16 descriptors reproduce the geometric feature family used by LYN-trace.
 Their canonical implementation now belongs to `cell_lineage_linker`.
 LYN-trace remains a scientific reference, not a runtime dependency.
 
+Inference also calls the shared global temporal decoder after local HGB
+ranking. The visible parameters control the mother refractory window,
+new-daughter maturation window, beam size, and review policy. A global
+reassignment is routed to review by default rather than silently persisted.
+
 ## Models
 
 `cell_lineage_linker` ships a frozen Project47 HGB model for immediate inference.
@@ -56,7 +61,9 @@ Accepted links are written to `objects_<roi-id>.h5` in an output family that
 shares the selected mask provider without copying pixels. Existing latent
 state IDs are preserved when an input family can be resolved. Every event,
 including abstentions, ranked candidates, descriptors, margins, reason codes
-and model provenance, is also written to a JSON audit artifact.
+and model provenance, is also written to a JSON audit artifact. The artifact
+also records the local parent, global parent, rejected candidates and temporal
+constraint responsible for every conflict.
 
 `process.m` is retained only as a compatibility entry point for pipelines
 saved before the module became a classifier.

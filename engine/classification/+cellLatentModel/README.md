@@ -14,6 +14,12 @@ The default tracking-load guard routes events with more than seven new track
 IDs in the birth frame to review before relation confidence is considered.
 This threshold is visible and auditable as `maxNewTracksPerFrame`.
 
+Ranked multimodal relation scores are passed to the shared
+`cell_lineage_linker` global temporal decoder before lineage persistence.
+Tracking-error/high-load events are excluded from the decoder state. Changed
+local predictions require review by default; the two biological windows and
+beam size are explicit static execution parameters.
+
 The packaged Python checkpoint is used when no classifier training has been
 performed. A trained classifier stores its checkpoint beneath
 `<classifier>/models/<modelName>/ensemble.pt`.

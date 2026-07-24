@@ -46,7 +46,8 @@ paramout.outputFamilyName = strtrim(char(string(paramout.outputFamilyName)));
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
     'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
-    'rankMarginThreshold','maxNewTracksPerFrame'};
+    'rankMarginThreshold','maxNewTracksPerFrame','motherRefractoryFrames', ...
+    'youngMotherFrames','solverBeamSize'};
 for i = 1:numel(numericNames)
     name = numericNames{i};
     paramout.(name) = readScalar(paramout.(name), defaults.(name));
@@ -62,7 +63,12 @@ if paramout.rankMarginThreshold >= 0
     paramout.rankMarginThreshold = min(1, paramout.rankMarginThreshold);
 end
 paramout.maxNewTracksPerFrame = max(0, floor(paramout.maxNewTracksPerFrame));
+paramout.motherRefractoryFrames = max(0, floor(paramout.motherRefractoryFrames));
+paramout.youngMotherFrames = max(0, floor(paramout.youngMotherFrames));
+paramout.solverBeamSize = max(1, floor(paramout.solverBeamSize));
 paramout.trackingLoadGuard = logical(paramout.trackingLoadGuard);
+paramout.globalSolver = logical(paramout.globalSolver);
+paramout.reviewGlobalReassignments = logical(paramout.reviewGlobalReassignments);
 paramout.overwriteOutputFamily = logical(paramout.overwriteOutputFamily);
 paramout.debug = logical(paramout.debug);
 paramout.modelSource = lower(strtrim(readChoice(paramout.modelSource)));
