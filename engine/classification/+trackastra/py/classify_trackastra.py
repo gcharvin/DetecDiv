@@ -339,6 +339,8 @@ def _joint_decode(
     roi_id: str,
     package_path: str | Path | None = None,
     solver_parameters: dict[str, object] | None = None,
+    division_proposal_policy: str = "threshold",
+    max_accepted_divisions_per_1000_nodes: float | None = 150.0,
 ) -> tuple[nx.DiGraph, dict[str, object]]:
     """Apply the packaged latent division head before stable track collapse."""
 
@@ -383,6 +385,10 @@ def _joint_decode(
         nodes=nodes,
         edges=edges,
         solver_parameters=solver_parameters,
+        division_proposal_policy=division_proposal_policy,
+        max_accepted_divisions_per_1000_nodes=(
+            max_accepted_divisions_per_1000_nodes
+        ),
         package_path=(
             package_path
             if package_path is not None

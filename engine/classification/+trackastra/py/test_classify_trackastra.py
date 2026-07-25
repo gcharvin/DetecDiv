@@ -163,6 +163,33 @@ def test_joint_decode_accepts_frozen_division_package(monkeypatch, tmp_path):
     )
 
 
+def test_joint_decode_forwards_permissive_birth_policy(monkeypatch):
+    graph, masks = synthetic_graph_and_masks()
+
+    def fake_decode(**kwargs):
+        assert kwargs["division_proposal_policy"] == "top_per_source"
+        assert kwargs["max_accepted_divisions_per_1000_nodes"] is None
+        return {
+            "selected_edges": [],
+            "selected_divisions": [],
+            "selected_division_count": 0,
+        }
+
+    import cell_latent_model
+
+    monkeypatch.setattr(
+        cell_latent_model, "decode_tracking_lineage", fake_decode
+    )
+    MODULE._joint_decode(
+        graph,
+        masks.astype(np.float32),
+        masks,
+        "synthetic",
+        division_proposal_policy="top_per_source",
+        max_accepted_divisions_per_1000_nodes=None,
+    )
+
+
 def test_typed_mother_override_controls_track_identity():
     graph = nx.DiGraph()
     graph.add_node(0, time=0, label=1)
