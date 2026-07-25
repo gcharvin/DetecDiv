@@ -137,6 +137,32 @@ def test_joint_decode_rebuilds_selected_graph(monkeypatch):
     assert report["selected_division_count"] == 0
 
 
+def test_joint_decode_accepts_frozen_division_package(monkeypatch, tmp_path):
+    graph, masks = synthetic_graph_and_masks()
+    package = tmp_path / "frozen_division_head"
+
+    def fake_decode(**kwargs):
+        assert kwargs["package_path"] == package
+        return {
+            "selected_edges": [],
+            "selected_divisions": [],
+            "selected_division_count": 0,
+        }
+
+    import cell_latent_model
+
+    monkeypatch.setattr(
+        cell_latent_model, "decode_tracking_lineage", fake_decode
+    )
+    MODULE._joint_decode(
+        graph,
+        masks.astype(np.float32),
+        masks,
+        "synthetic",
+        package_path=package,
+    )
+
+
 def test_typed_mother_override_controls_track_identity():
     graph = nx.DiGraph()
     graph.add_node(0, time=0, label=1)

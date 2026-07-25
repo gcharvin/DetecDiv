@@ -337,6 +337,8 @@ def _joint_decode(
     images: np.ndarray,
     masks: np.ndarray,
     roi_id: str,
+    package_path: str | Path | None = None,
+    solver_parameters: dict[str, object] | None = None,
 ) -> tuple[nx.DiGraph, dict[str, object]]:
     """Apply the packaged latent division head before stable track collapse."""
 
@@ -380,10 +382,15 @@ def _joint_decode(
         masks=masks,
         nodes=nodes,
         edges=edges,
+        solver_parameters=solver_parameters,
         package_path=(
-            default_budding_hgb_division_package_path()
-            if uses_budding_proposal
-            else None
+            package_path
+            if package_path is not None
+            else (
+                default_budding_hgb_division_package_path()
+                if uses_budding_proposal
+                else None
+            )
         ),
     )
     report["budding_proposal_enabled"] = uses_budding_proposal
