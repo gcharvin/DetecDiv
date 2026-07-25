@@ -138,6 +138,7 @@ def _stable_track_masks(
         ordered_nodes = list(nx.lexicographical_topological_sort(graph))
     except nx.NetworkXUnfeasible as exc:
         raise ValueError("Trackastra returned a cyclic tracking graph") from exc
+    nodes_by_frame: dict[int, list[tuple[int, int, int]]] = {}
     for node_id in ordered_nodes:
         predecessors = list(graph.predecessors(node_id))
         if len(predecessors) == 1:
@@ -157,15 +158,32 @@ def _stable_track_masks(
         node = graph.nodes[node_id]
         frame = int(node["time"])
         label = int(node["label"])
-        selected = masks[frame] == label
-        if not np.any(selected):
-            raise ValueError(
-                f"Trackastra node {node_id} references absent label {label} "
-                f"in frame {frame}"
-            )
-        if np.any(tracked[frame][selected] != 0):
-            raise ValueError(f"Overlapping Trackastra nodes in frame {frame}")
-        tracked[frame][selected] = np.uint32(track_id)
+        nodes_by_frame.setdefault(frame, []).append(
+            (int(node_id), label, track_id)
+        )
+
+    for frame, rows in nodes_by_frame.items():
+        plane = np.asarray(masks[frame])
+        maximum_label = int(np.max(plane, initial=0))
+        counts = np.bincount(
+            np.asarray(plane, dtype=np.int64).ravel(),
+            minlength=maximum_label + 1,
+        )
+        label_to_track = np.zeros(maximum_label + 1, dtype=np.uint32)
+        for node_id, label, track_id in rows:
+            if label < 0 or label > maximum_label or counts[label] == 0:
+                raise ValueError(
+                    f"Trackastra node {node_id} references absent label {label} "
+                    f"in frame {frame}"
+                )
+            if label_to_track[label] != 0:
+                raise ValueError(
+                    f"Overlapping Trackastra nodes in frame {frame}"
+                )
+            label_to_track[label] = np.uint32(track_id)
+        tracked[frame] = label_to_track[
+            np.asarray(plane, dtype=np.int64)
+        ]
     return tracked, track_by_node
 
 
