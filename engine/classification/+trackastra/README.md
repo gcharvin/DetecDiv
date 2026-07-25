@@ -41,10 +41,10 @@ Trackastra artifact, that artifact replaces only the proposal model in this
 mode.
 
 The joint API monitors accepted-hypothesis density. More than 128 hypotheses
-or more than 75 per 1,000 detections after source deduplication triggers an
+or more than 150 per 1,000 detections after source deduplication triggers an
 explicit out-of-domain warning and a safe fallback to division-free global
-tracking. The current MoMA division head must not be interpreted as calibrated
-for Project47.
+tracking. This density includes the held-out MoMA operating range. The current
+MoMA division head must not be interpreted as calibrated for Project47.
 
 `divisionIdentityMode=continuing_parent` implements asymmetric budding:
 among two division successors, the spatially most continuous object keeps the
