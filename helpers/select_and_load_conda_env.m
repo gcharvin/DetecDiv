@@ -603,16 +603,33 @@ end
 
 function tf = loadedPythonMatchesCanonicalRecipe(debug)
 recipe = detecdiv_python_recipe();
-tf = true;
+tf = false;
 try
     metadata = py.importlib.import_module('importlib.metadata');
+    importlibUtil = py.importlib.import_module('importlib.util');
     for i = 1:numel(recipe.requiredImports)
-        py.importlib.import_module(recipe.requiredImports{i});
+        spec = importlibUtil.find_spec(recipe.requiredImports{i});
+        if isequal(spec, py.None)
+            tf = false;
+            if debug
+                fprintf('[DEBUG] Canonical package is not importable: %s\n', ...
+                    recipe.requiredImports{i});
+            end
+            return;
+        end
     end
-    % Top-level imports do not expose the Windows MKL/PyTorch OpenMP
-    % collision; importing the actual model modules does.
-    py.importlib.import_module('cellpose.models');
-    py.importlib.import_module('trackastra.model');
+    % On Windows, importing the actual model modules is required to expose
+    % the MKL/PyTorch OpenMP collision that package discovery cannot see.
+    % On Linux, importing every training dependency inside MATLAB can load
+    % MATLAB's older bundled libstdc++ ahead of Conda's and produce a false
+    % CXXABI failure (notably through lightning/matplotlib). The canonical
+    % environment has already been fully import-tested in a Conda subprocess,
+    % so package discovery plus pinned distribution versions is sufficient
+    % for the per-ROI health check there.
+    if ispc
+        py.importlib.import_module('cellpose.models');
+        py.importlib.import_module('trackastra.model');
+    end
     cellposeVersion = string(metadata.version('cellpose'));
     trackastraVersion = string(metadata.version('trackastra'));
     tf = cellposeVersion == string(recipe.packages.cellposeVersion) && ...
