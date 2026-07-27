@@ -813,13 +813,38 @@ try
         runnerPathCached = runnerPath;
         disp(['[INFO] cellposesam: session runner loaded from ' resolvedPath]);
     end
-    runnerCallable(configPath);
+    try
+        runnerCallable(configPath);
+    catch callME
+        if ~isInvalidPythonHandleLocal(callME)
+            rethrow(callME);
+        end
+        % terminate(pyenv) invalidates every MATLAB proxy to the previous
+        % OutOfProcess interpreter. A subsequent health check can recreate
+        % the interpreter with the same executable/path, so the persistent
+        % callable still looks populated even though it is unusable.
+        runnerMod = [];
+        runnerCallable = [];
+        runnerPathCached = '';
+        [runnerMod, runnerCallable, resolvedPath] = ...
+            cellposesam.utils.loadRunnerModule(runnerPath);
+        runnerPathCached = runnerPath;
+        disp(['[INFO] cellposesam: reloaded session runner after Python engine reset from ' resolvedPath]);
+        runnerCallable(configPath);
+    end
 catch ME
     if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
         error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
     end
     rethrow(ME);
 end
+end
+
+function tf = isInvalidPythonHandleLocal(ME)
+id = char(string(ME.identifier));
+msg = lower(char(string(ME.message)));
+tf = strcmp(id, 'MATLAB:class:InvalidHandle') || ...
+    contains(msg, 'invalid or deleted object');
 end
 
 function runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
