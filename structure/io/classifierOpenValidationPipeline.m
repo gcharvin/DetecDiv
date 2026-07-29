@@ -198,7 +198,7 @@ node.guiMode = 'replace';
 node.paramRequired = {'pkg'};
 node.params = params;
 node.inputs = {'roiList'};
-if strcmpi(pkg,'budMotherLinker')
+if any(strcmpi(pkg,{'budMotherLinker','cellLatentModel'}))
     node.outputs = {'roiList','dataSeries'};
 else
     node.outputs = {'roiList','masks'};

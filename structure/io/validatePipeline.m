@@ -3972,6 +3972,11 @@ function tf = resourceRolesCompatible(wantedRole, availableRole)
         tf = any(strcmp(availableRole, roiScorableChannelRoles()));
         return;
     end
+    if any(strcmp(wantedRole, {'legacy_gfp_fluorescence', ...
+            'division_nucleus_fluorescence','bud_neck_fluorescence'}))
+        tf = any(strcmp(availableRole, roiScorableChannelRoles()));
+        return;
+    end
     if strcmp(wantedRole, 'z_stack')
         tf = any(strcmp(availableRole, roiScorableChannelRoles()));
         return;

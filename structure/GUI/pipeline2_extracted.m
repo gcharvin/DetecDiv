@@ -2390,7 +2390,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         case 'deeplab_pixel_classification'
                             p = applyDeeplabPixelExecutionDefaults(app, p, struct(), 'missing');
                         otherwise
-                            if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = char(string(pkg)); end
+                            [p, hasExecutionSpec] = applyClassifierExecutionDefaults(app, p, pkg, [], 'missing');
+                            if ~hasExecutionSpec && (~isfield(p, 'outputName') || isempty(p.outputName))
+                                p.outputName = char(string(pkg));
+                            end
                     end
                 elseif strcmpi(nodeType, 'processor') && strcmpi(char(string(pkg)), 'computeMetrics')
                     if ~isfield(p, 'maskChannelCount') || isempty(p.maskChannelCount), p.maskChannelCount = 2; end
@@ -7810,14 +7813,23 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).pkg = actualPkg;
                     app.Data.nodes(idx).func = [actualPkg '.classify'];
                 end
-                if strcmpi(actualPkg, 'cellposesam')
+                executionPkg = actualPkg;
+                if isempty(executionPkg)
+                    executionPkg = expectedPkg;
+                end
+                if strcmpi(executionPkg, 'cellposesam')
                     app.Data.nodes(idx).params = copyCellposeStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
-                elseif strcmpi(actualPkg, 'deeplab_pixel_classification')
+                elseif strcmpi(executionPkg, 'sam31')
+                    app.Data.nodes(idx).params = copySam31StaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
+                elseif strcmpi(executionPkg, 'deeplab_pixel_classification')
                     app.Data.nodes(idx).params = copyDeeplabPixelStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
-                elseif strcmpi(actualPkg, 'cnn_lstm')
+                elseif strcmpi(executionPkg, 'cnn_lstm')
                     app.Data.nodes(idx).params = copyCnnLstmStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
-                elseif strcmpi(actualPkg, 'trackastra')
+                elseif strcmpi(executionPkg, 'trackastra')
                     app.Data.nodes(idx).params = copyTrackastraStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
+                else
+                    app.Data.nodes(idx).params = applyClassifierExecutionDefaults(app, ...
+                        app.Data.nodes(idx).params, executionPkg, classiObj, 'missing');
                 end
                 try
                     varName = matlab.lang.makeValidName(['classi_' char(string(classiId))]);
@@ -7890,9 +7902,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
                 end
                 pkg = classifierPackageName(app, classiObj);
-                if ~any(strcmpi(pkg, {'cellposesam','sam31','trackastra','deeplab_pixel_classification','cnn_lstm'}))
+                if isempty(pkg)
+                    pkg = char(string(getField(app, app.Data.nodes(idx), 'pkg', '')));
+                end
+                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj);
+                if ~hasExecutionSpec || ~isstruct(spec.defaults) || isempty(fieldnames(spec.defaults))
                     error('pipeline2:UnsupportedClassifierDefaults', ...
-                        'Execution-default import is implemented for CellposeSAM, SAM31, Trackastra, DeepLab pixel, and CNN/LSTM classifiers.');
+                        'Classifier package "%s" does not expose importable execution defaults.', pkg);
                 end
 
                 choice = uiconfirm(app.UIFigure, ...
@@ -7924,11 +7940,135 @@ classdef pipeline2 < matlab.apps.AppBase
                         app.Data.nodes(idx).params = applyDeeplabPixelExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'cnn_lstm'
                         app.Data.nodes(idx).params = applyCnnLstmExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                    otherwise
+                        app.Data.nodes(idx).params = applyClassifierExecutionDefaults(app, ...
+                            app.Data.nodes(idx).params, pkg, classiObj, mode);
                 end
                 refreshAfterModelChange(app);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Import classifier defaults', 'Icon', 'error');
             end
+        end
+
+        function [params, hasExecutionSpec] = applyClassifierExecutionDefaults(app, params, pkg, classiObj, mode)
+            if nargin < 5 || isempty(mode)
+                mode = 'missing';
+            end
+            if nargin < 4
+                classiObj = [];
+            end
+            if ~isstruct(params)
+                params = struct();
+            end
+            [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj);
+            if ~hasExecutionSpec
+                return;
+            end
+            keys = spec.defaultImportKeys;
+            if isempty(keys)
+                keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            end
+            keys = setdiff(keys, unique([spec.artifactKeys spec.environmentKeys], 'stable'), 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
+                    continue;
+                end
+                if isfield(spec.defaults, key)
+                    params.(key) = spec.defaults.(key);
+                end
+            end
+        end
+
+        function [spec, available] = classifierExecutionSpec(app, pkg, classiObj)
+            if nargin < 3
+                classiObj = [];
+            end
+            pkg = canonicalModulePackageName(app, 'classifier', pkg);
+            available = true;
+            switch lower(strtrim(char(string(pkg))))
+                case 'cnn_lstm'
+                    spec = cnnLstmExecutionSpec(app, classiObj);
+                case 'cellposesam'
+                    spec = cellposeExecutionSpec(app, classiObj);
+                case 'sam31'
+                    spec = sam31ExecutionSpec(app, classiObj);
+                case 'trackastra'
+                    spec = trackastraExecutionSpec(app, classiObj);
+                case 'deeplab_pixel_classification'
+                    spec = deeplabPixelExecutionSpec(app, classiObj);
+                otherwise
+                    spec = struct();
+                    specFun = [char(string(pkg)) '.executionSpec'];
+                    try
+                        spec = feval(specFun, classiObj);
+                    catch
+                        try
+                            spec = feval(specFun);
+                        catch
+                            available = false;
+                        end
+                    end
+            end
+            if ~available || ~isstruct(spec) || isempty(spec)
+                available = false;
+                spec = struct();
+            elseif numel(spec) > 1
+                spec = spec(1);
+            end
+            spec = normalizeClassifierExecutionSpec(app, spec);
+        end
+
+        function spec = normalizeClassifierExecutionSpec(app, spec)
+            if ~isstruct(spec) || isempty(spec)
+                spec = struct();
+            end
+            keyFields = {'staticKeys','artifactKeys','environmentKeys','outputKeys','defaultImportKeys'};
+            for i = 1:numel(keyFields)
+                fieldName = keyFields{i};
+                if ~isfield(spec, fieldName)
+                    spec.(fieldName) = {};
+                else
+                    spec.(fieldName) = normalizeClassifierSpecKeys(app, spec.(fieldName));
+                end
+            end
+            if ~isfield(spec, 'defaults') || ~isstruct(spec.defaults) || isempty(spec.defaults)
+                spec.defaults = struct();
+            elseif numel(spec.defaults) > 1
+                spec.defaults = spec.defaults(1);
+            end
+            metadataFields = {'labels','tips','choices'};
+            for i = 1:numel(metadataFields)
+                fieldName = metadataFields{i};
+                if ~isfield(spec, fieldName) || ~isstruct(spec.(fieldName)) || isempty(spec.(fieldName))
+                    spec.(fieldName) = struct();
+                elseif numel(spec.(fieldName)) > 1
+                    spec.(fieldName) = spec.(fieldName)(1);
+                end
+            end
+        end
+
+        function keys = normalizeClassifierSpecKeys(app, value)
+            keys = flattenChoiceList(app, value);
+            keys = cellfun(@(x)char(string(x)), keys, 'UniformOutput', false);
+            keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
+        end
+
+        function [value, found] = classifierSpecMetadataValue(app, spec, section, key) %#ok<INUSD>
+            value = [];
+            found = false;
+            if ~isstruct(spec) || ~isfield(spec, section) || ~isstruct(spec.(section))
+                return;
+            end
+            values = spec.(section);
+            names = fieldnames(values);
+            idx = find(strcmpi(names, char(string(key))), 1);
+            if isempty(idx)
+                return;
+            end
+            value = values.(names{idx});
+            found = true;
         end
 
         function params = applySam31ExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
@@ -11249,10 +11389,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     continue;
                 end
                 param = char(string(getField(app, spec, 'param', '')));
-                resourceLabel = resourceSpecLabel(app, spec);
+                resourceLabel = bindingResourceLabel(app, node, spec, param);
                 value = bindingDisplayedValue(app, node, spec, true);
                 choices = bindingInputChoices(app, node, spec, value);
-                tooltip = ['Input binding for ' resourceLabel '. Symbolic choices are resolved from upstream modules at run time.'];
+                tooltip = bindingResourceTooltip(app, node, param, resourceLabel, true);
                 data(end+1,:) = {'Input', resourceLabel, param, value, {choices}, tooltip}; %#ok<AGROW>
             end
 
@@ -11268,12 +11408,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(param)
                     continue;
                 end
-                resourceLabel = resourceSpecLabel(app, spec);
+                resourceLabel = bindingResourceLabel(app, node, spec, param);
                 value = outputBindingNameForNode(app, node, spec);
                 if isempty(value)
                     value = bindingDisplayedValue(app, node, spec, false);
                 end
-                tooltip = ['Output binding for ' resourceLabel '. This names the concrete resource written by the module.'];
+                tooltip = bindingResourceTooltip(app, node, param, resourceLabel, false);
                 data(end+1,:) = {'Output', resourceLabel, param, value, {}, tooltip}; %#ok<AGROW>
             end
         end
@@ -12290,6 +12430,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 tf = any(strcmp(availableRole, roiScorableChannelRolesForUi(app)));
                 return;
             end
+            if any(strcmp(wantedRole, {'legacy_gfp_fluorescence', ...
+                    'division_nucleus_fluorescence','bud_neck_fluorescence'}))
+                tf = any(strcmp(availableRole, roiScorableChannelRolesForUi(app)));
+                return;
+            end
             tf = false;
         end
 
@@ -12425,6 +12570,47 @@ classdef pipeline2 < matlab.apps.AppBase
                 label = type;
             else
                 label = [type '/' role];
+            end
+        end
+
+        function label = bindingResourceLabel(app, node, spec, param)
+            label = resourceSpecLabel(app, spec);
+            if ~strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                return;
+            end
+            pkgName = char(string(getField(app, node, 'pkg', '')));
+            [executionSpec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+            if ~hasExecutionSpec
+                return;
+            end
+            [declaredLabel, found] = classifierSpecMetadataValue(app, ...
+                executionSpec, 'labels', param);
+            if found && ~isempty(strtrim(char(string(declaredLabel))))
+                label = char(string(declaredLabel));
+            end
+        end
+
+        function tooltip = bindingResourceTooltip(app, node, param, resourceLabel, isInput)
+            if isInput
+                tooltip = ['Input binding for ' resourceLabel '.'];
+            else
+                tooltip = ['Output binding for ' resourceLabel '.'];
+            end
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                pkgName = char(string(getField(app, node, 'pkg', '')));
+                [executionSpec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                if hasExecutionSpec
+                    [declaredTip, found] = classifierSpecMetadataValue(app, ...
+                        executionSpec, 'tips', param);
+                    if found && ~isempty(strtrim(char(string(declaredTip))))
+                        tooltip = [tooltip ' ' char(string(declaredTip))];
+                    end
+                end
+            end
+            if isInput
+                tooltip = [tooltip ' Symbolic choices are resolved from upstream modules at run time.'];
+            else
+                tooltip = [tooltip ' This names the concrete resource written by the module.'];
             end
         end
 
@@ -12657,7 +12843,7 @@ classdef pipeline2 < matlab.apps.AppBase
             for i = 1:size(data, 1)
                 key = char(string(data{i,1}));
                 tooltip = paramTooltip(app, node, key, scope);
-                label = uilabel(grid, 'Text', friendlyParamLabel(app, key));
+                label = uilabel(grid, 'Text', friendlyParamLabel(app, node, key));
                 label.Layout.Row = i;
                 label.Layout.Column = 1;
                 if isempty(tooltip)
@@ -12973,6 +13159,17 @@ classdef pipeline2 < matlab.apps.AppBase
             choices = {};
             switch nodeType
                 case 'classifier'
+                    pkgName = char(string(getField(app, node, 'pkg', '')));
+                    [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                    if hasExecutionSpec
+                        [declaredChoices, found] = classifierSpecMetadataValue(app, spec, 'choices', key);
+                        if found
+                            choices = flattenChoiceList(app, declaredChoices);
+                            if ~isempty(choices)
+                                return;
+                            end
+                        end
+                    end
                     switch keyLower
                         case 'outputmode'
                             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
@@ -13235,7 +13432,7 @@ classdef pipeline2 < matlab.apps.AppBase
             value = min(maxValue, max(minValue, round(value)));
         end
 
-        function tf = staticParamAffectsBindings(app, node, key) %#ok<INUSD>
+        function tf = staticParamAffectsBindings(app, node, key)
             nodeType = char(string(getField(app, node, 'type', '')));
             pkg = char(string(getField(app, node, 'pkg', '')));
             keyText = char(string(key));
@@ -13251,6 +13448,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'cellposesam') && ...
                 strcmpi(keyText, 'outputType')) || ...
+                (strcmpi(nodeType, 'classifier') && ...
+                strcmpi(pkg, 'cellLatentModel') && ...
+                any(strcmpi(keyText, {'backend','temporalVariant'}))) || ...
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'deeplab_pixel_classification') && ...
                 strcmpi(keyText, 'outputType'));
@@ -13284,7 +13484,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function keys = moduleParamKeys(app, node, scope)
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
-            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+            pkgName = char(string(getField(app, node, 'pkg', '')));
+            pkg = lower(pkgName);
             isStatic = strcmpi(scope, 'static');
 
             if isStatic
@@ -13302,7 +13503,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     case 'processor'
                         keys = processorStaticKeys(app, pkg, node);
                     case 'classifier'
-                        keys = classifierStaticKeys(app, pkg);
+                        app.ensureCustomPackagePathForNode(node);
+                        keys = classifierStaticKeys(app, pkgName);
                     otherwise
                         keys = contractParamKeys(app, node, scope);
                 end
@@ -13559,7 +13761,12 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function keys = classifierStaticKeys(app, pkg)
-            switch pkg
+            [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg);
+            if hasExecutionSpec
+                keys = spec.staticKeys;
+                return;
+            end
+            switch lower(char(string(pkg)))
                 case 'cnn_lstm'
                     spec = cnnLstmExecutionSpec(app);
                     keys = spec.staticKeys;
@@ -13713,6 +13920,10 @@ classdef pipeline2 < matlab.apps.AppBase
                             pkg = 'cnn_lstm';
                         case 'cnn'
                             pkg = 'cnn';
+                        case 'celllatentmodel'
+                            pkg = 'cellLatentModel';
+                        case 'budmotherlinker'
+                            pkg = 'budMotherLinker';
                         otherwise
                             pkg = raw;
                     end
@@ -13880,9 +14091,20 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function label = friendlyParamLabel(app, key) %#ok<INUSD>
+        function label = friendlyParamLabel(app, node, key)
             keyText = char(string(key));
             keyLower = lower(keyText);
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                pkgName = char(string(getField(app, node, 'pkg', '')));
+                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                if hasExecutionSpec
+                    [declaredLabel, found] = classifierSpecMetadataValue(app, spec, 'labels', keyText);
+                    if found && ~isempty(strtrim(char(string(declaredLabel))))
+                        label = char(string(declaredLabel));
+                        return;
+                    end
+                end
+            end
             bgMatch = regexp(keyLower, '^mask(\d+)_backgroundlabel$', 'tokens', 'once');
             if ~isempty(bgMatch)
                 label = sprintf('Mask %s background label', bgMatch{1});
@@ -13953,6 +14175,17 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
             keyLower = lower(char(string(key)));
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier')
+                pkgName = char(string(getField(app, node, 'pkg', '')));
+                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                if hasExecutionSpec
+                    [declaredTip, found] = classifierSpecMetadataValue(app, spec, 'tips', key);
+                    if found && ~isempty(strtrim(char(string(declaredTip))))
+                        txt = char(string(declaredTip));
+                        return;
+                    end
+                end
+            end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'processor') && strcmp(pkg, 'computemetrics') && ...
                     ~isempty(regexp(keyLower, '^mask\d+_backgroundlabel$', 'once'))
                 txt = ['Background index excluded from mask measurements. auto uses 0 when present; otherwise it uses 1 for U-Net/DeepLab/pixel-classifier maps. ' ...
@@ -14956,12 +15189,24 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~strcmp(nodeType, 'classifier') || ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
                     continue;
                 end
-                pkg = lower(char(string(getField(app, nodes(i), 'pkg', ''))));
+                pkgName = char(string(getField(app, nodes(i), 'pkg', '')));
+                pkg = lower(pkgName);
                 if isfield(nodes(i).params, 'roiList')
                     nodes(i).params = rmfield(nodes(i).params, 'roiList');
                 end
                 if isfield(nodes(i).params, 'trainingParam')
                     nodes(i).params = rmfield(nodes(i).params, 'trainingParam');
+                end
+                app.ensureCustomPackagePathForNode(nodes(i));
+                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                if hasExecutionSpec
+                    nodes(i).params = applyClassifierExecutionDefaults(app, ...
+                        nodes(i).params, pkgName, [], 'missing');
+                    privateKeys = unique([spec.artifactKeys spec.environmentKeys], 'stable');
+                    privateKeys = privateKeys(isfield(nodes(i).params, privateKeys));
+                    if ~isempty(privateKeys)
+                        nodes(i).params = rmfield(nodes(i).params, privateKeys);
+                    end
                 end
                 if strcmp(pkg, 'cellposesam')
                     nodes(i).params = applyCellposeExecutionDefaults(app, nodes(i).params, struct(), 'missing');

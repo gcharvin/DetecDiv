@@ -113,6 +113,13 @@ function params = representativeParams(typeName, pkgName)
                     params.imageChannelName = 'TL';
                     params.instanceChannelName = 'seg';
                     params.outputName = 'trackastra';
+                case 'celllatentmodel'
+                    params.backend = 'legacy';
+                    params.temporalVariant = 'temporal_geometry';
+                    params.frameIntervalMinutes = 1;
+                    params.trackChannelName = 'seg';
+                    params.gfpChannelName = 'GFP';
+                    params.outputFamilyName = 'Cell latent lineage';
                 case 'cnn_lstm'
                     params.outputMode = 'lstm_only';
                 case 'cnn'
