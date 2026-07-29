@@ -39,6 +39,8 @@ analysis_outputs/
 pipeline_classifier_*/
 _tmp_*/
 _tmp_*.zip
+.cache/
+backups/score_manual_recovery/
 structure/GUI/*.patched.mlapp
 structure/GUI/*_tmp.m
 structure/GUI/pipeline2_layouttest*.mlapp
