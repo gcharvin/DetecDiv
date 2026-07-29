@@ -308,6 +308,32 @@ def _candidate_edge_table(
                         )
                     )
                 ),
+                "trackastra_score": float(
+                    attributes.get("trackastra_score", np.nan)
+                ),
+                "lyn_logit": float(
+                    attributes.get("lyn_logit", np.nan)
+                ),
+                "lyn_percentile": float(
+                    attributes.get("lyn_percentile", np.nan)
+                ),
+                "producer_trackastra": int(
+                    bool(attributes.get("producer_trackastra", False))
+                ),
+                "producer_lyn": int(
+                    bool(attributes.get("producer_lyn", False))
+                ),
+                "agreement": int(
+                    bool(attributes.get("agreement", False))
+                ),
+                "fusion_method": str(
+                    attributes.get("fusion_method", "")
+                ),
+                "fusion_calibrated_probability": float(
+                    attributes.get(
+                        "fusion_calibrated_probability", np.nan
+                    )
+                ),
                 "selected": int((source, target) in selected),
             }
         )
@@ -327,6 +353,14 @@ def _candidate_edge_table(
         "division_candidate",
         "proposal_only",
         "geometric_birth_candidate",
+        "trackastra_score",
+        "lyn_logit",
+        "lyn_percentile",
+        "producer_trackastra",
+        "producer_lyn",
+        "agreement",
+        "fusion_method",
+        "fusion_calibrated_probability",
         "selected",
     ]
     return pd.DataFrame(rows, columns=columns)
@@ -371,6 +405,10 @@ def _joint_decode(
             "division_candidate": bool(
                 attributes.get("division_candidate", True)
             ),
+            "proposal_only": bool(
+                attributes.get("proposal_only", False)
+            ),
+            **_tracking_edge_provenance(attributes),
         }
         for source, target, attributes in candidate_graph.edges(data=True)
     ]
@@ -411,6 +449,34 @@ def _joint_decode(
             **dict(candidate_graph.edges[source, target]),
         )
     return graph, report
+
+
+def _tracking_edge_provenance(
+    attributes: dict[str, object],
+) -> dict[str, object]:
+    """Return JSON-safe tracker evidence without changing solver scores."""
+
+    result: dict[str, object] = {}
+    for field in (
+        "trackastra_score",
+        "lyn_logit",
+        "lyn_percentile",
+        "fusion_calibrated_probability",
+    ):
+        if field in attributes and attributes[field] is not None:
+            result[field] = float(attributes[field])
+    for field in (
+        "producer_trackastra",
+        "producer_lyn",
+        "agreement",
+    ):
+        if field in attributes:
+            result[field] = bool(attributes[field])
+    if "frame_gap" in attributes:
+        result["frame_gap"] = int(attributes["frame_gap"])
+    if "fusion_method" in attributes:
+        result["fusion_method"] = str(attributes["fusion_method"])
+    return result
 
 
 def run(config_path: Path) -> None:

@@ -66,6 +66,14 @@ def test_candidate_table_preserves_unselected_probabilistic_edges():
         weight=0.2,
         division_candidate=True,
         geometric_birth_candidate=True,
+        trackastra_score=0.2,
+        lyn_logit=-0.4,
+        lyn_percentile=0.6,
+        producer_trackastra=True,
+        producer_lyn=True,
+        agreement=True,
+        fusion_method="fixed_max",
+        fusion_calibrated_probability=0.7,
     )
     table = MODULE._candidate_edge_table(candidates, graph, track_by_node)
     skipped = table[(table.source_node == 0) & (table.target_node == 2)].iloc[0]
@@ -73,6 +81,14 @@ def test_candidate_table_preserves_unselected_probabilistic_edges():
     assert skipped.is_gap_candidate == 1
     assert skipped.division_candidate == 1
     assert skipped.geometric_birth_candidate == 1
+    assert skipped.trackastra_score == 0.2
+    assert skipped.lyn_logit == -0.4
+    assert skipped.lyn_percentile == 0.6
+    assert skipped.producer_trackastra == 1
+    assert skipped.producer_lyn == 1
+    assert skipped.agreement == 1
+    assert skipped.fusion_method == "fixed_max"
+    assert skipped.fusion_calibrated_probability == 0.7
     assert skipped.selected == 0
 
 
@@ -98,6 +114,13 @@ def test_joint_decode_rebuilds_selected_graph(monkeypatch):
     graph, masks = synthetic_graph_and_masks()
     graph.edges[0, 1]["division_weight"] = 0.73
     graph.edges[0, 1]["division_candidate"] = True
+    graph.edges[0, 1]["trackastra_score"] = 0.9
+    graph.edges[0, 1]["lyn_logit"] = 1.4
+    graph.edges[0, 1]["lyn_percentile"] = 0.85
+    graph.edges[0, 1]["producer_trackastra"] = True
+    graph.edges[0, 1]["producer_lyn"] = True
+    graph.edges[0, 1]["agreement"] = True
+    graph.edges[0, 1]["fusion_method"] = "fixed_max"
 
     def fake_decode(**kwargs):
         assert len(kwargs["nodes"]) == graph.number_of_nodes()
@@ -110,6 +133,13 @@ def test_joint_decode_rebuilds_selected_graph(monkeypatch):
         assert first["score"] == 0.9
         assert first["division_score"] == 0.73
         assert first["division_candidate"]
+        assert first["trackastra_score"] == 0.9
+        assert first["lyn_logit"] == 1.4
+        assert first["lyn_percentile"] == 0.85
+        assert first["producer_trackastra"]
+        assert first["producer_lyn"]
+        assert first["agreement"]
+        assert first["fusion_method"] == "fixed_max"
         assert kwargs["package_path"].name == (
             "moma_division_hgb_birth_augmented_v003"
         )
