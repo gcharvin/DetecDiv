@@ -1,8 +1,15 @@
 function p = defaultExecutionParam()
 %CELLLATENTMODEL.UTILS.DEFAULTEXECUTIONPARAM Inference defaults.
 p = struct();
+p.backend = 'legacy';
 p.trackChannelName = '';
 p.gfpChannelName = '';
+p.brightfieldChannelName = '';
+p.nucleusChannelName = '';
+p.budneckChannelName = '';
+p.temporalVariant = 'temporal_geometry';
+p.frameIntervalMinutes = [];
+p.causalSolverFeedback = true;
 p.inputFamily = '<auto>';
 p.outputFamilyName = 'Cell latent lineage GFP v001';
 p.frameEnd = -1;

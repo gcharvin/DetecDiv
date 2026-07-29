@@ -5,9 +5,14 @@ Builtin classifier adapter for the independent `cell_latent_model` repository.
 ## Inputs and output
 
 - required: one indexed-mask channel with stable track IDs;
-- optional: one raw nuclear GFP channel;
+- legacy optional input: one raw GFP channel;
+- temporal optional inputs: explicitly typed nucleus and bud-neck channels;
+- continuous optional inputs: explicitly typed brightfield, nucleus, and
+  bud-neck channels; generic GFP is rejected;
 - output: a new canonical `cellModel` lineage family referencing the tracked
   mask provider;
+- continuous state output: a versioned JSON sidecar keyed by
+  `(family_id, track_id, frame)` and referenced by `cellModel.provenance`;
 - image output: none. The classifier never copies or rewrites source channels.
 
 The default tracking-load guard routes events with more than seven new track
@@ -23,6 +28,11 @@ beam size are explicit static execution parameters.
 The packaged Python checkpoint is used when no classifier training has been
 performed. A trained classifier stores its checkpoint beneath
 `<classifier>/models/<modelName>/ensemble.pt`.
+
+`continuous_cell_state` requires a trusted trained schema-6/7 checkpoint and
+an explicit physical `frameIntervalMinutes`. Its checkpoint owns the candidate
+count, contour-distance radius, and temporal sample grid; legacy linker and
+frame-count biology defaults are not forwarded to this backend.
 
 Python executable and repository paths are discovered internally. They are
 not static parameters and do not appear in pipeline JSON.

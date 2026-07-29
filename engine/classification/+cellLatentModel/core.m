@@ -5,9 +5,36 @@ if nargin < 4, classif = []; end
 paramout = cellLatentModel.normalizeParam(param,ctx,classif);
 if isempty(roiobj.image), roiobj.load; end
 [tracks,~] = channelStack(roiobj,paramout.trackChannelName,true);
-gfp = [];
-if ~isempty(paramout.gfpChannelName)
-    [gfp,~] = channelStack(roiobj,paramout.gfpChannelName,false);
+observations = struct( ...
+    'gfp',[],'brightfield',[],'nucleus',[],'budneck',[]);
+switch paramout.backend
+    case 'legacy'
+        if ~isempty(paramout.gfpChannelName)
+            [observations.gfp,~] = channelStack( ...
+                roiobj,paramout.gfpChannelName,false);
+        end
+    case 'temporal_lineage'
+        if ~isempty(paramout.nucleusChannelName)
+            [observations.nucleus,~] = channelStack( ...
+                roiobj,paramout.nucleusChannelName,false);
+        end
+        if ~isempty(paramout.budneckChannelName)
+            [observations.budneck,~] = channelStack( ...
+                roiobj,paramout.budneckChannelName,false);
+        end
+    case 'continuous_cell_state'
+        if ~isempty(paramout.brightfieldChannelName)
+            [observations.brightfield,~] = channelStack( ...
+                roiobj,paramout.brightfieldChannelName,false);
+        end
+        if ~isempty(paramout.nucleusChannelName)
+            [observations.nucleus,~] = channelStack( ...
+                roiobj,paramout.nucleusChannelName,false);
+        end
+        if ~isempty(paramout.budneckChannelName)
+            [observations.budneck,~] = channelStack( ...
+                roiobj,paramout.budneckChannelName,false);
+        end
 end
 auditFile = resolveAuditFile(roiobj,paramout.outputFamilyName,ctx);
 if ~isfolder(fileparts(auditFile)), mkdir(fileparts(auditFile)); end
@@ -16,13 +43,24 @@ if exist('detecdiv_progress','file') == 2
         'Scope','event','Indeterminate',true);
 end
 result = cellLatentModel.infer( ...
-    tracks,gfp,paramout,char(string(roiobj.id)),ctx);
+    tracks,observations,paramout,char(string(roiobj.id)),ctx);
 writeJsonAtomic(auditFile,result);
 [model,loadReport] = roiobj.loadCellModel('MigrateLegacy',true);
 [model,familyId,applyReport] = cellModel.applyLineageResult( ...
     model,tracks,paramout.trackChannelName,paramout.inputFamily, ...
     paramout.outputFamilyName,result,paramout.overwriteOutputFamily, ...
     'cellLatentModel');
+stateReport = struct('filename',"",'records',0,'schema_version',0);
+if strcmp(paramout.backend,'continuous_cell_state')
+    stateReport = cellLatentModel.persistBiologicalState( ...
+        roiobj,familyId,paramout.outputFamilyName, ...
+        paramout.trackChannelName,result,auditFile);
+    model.provenance.last_biological_state_artifact = ...
+        char(stateReport.filename);
+    model.provenance.last_biological_state_family_id = double(familyId);
+    model.provenance.last_biological_state_schema_version = ...
+        double(stateReport.schema_version);
+end
 model.provenance.last_classifier = 'cellLatentModel';
 model.provenance.last_audit_artifact = auditFile;
 model.provenance.last_processor_version = '0.1.0';
@@ -34,23 +72,50 @@ end
 paramout.outputFamilyId = double(familyId);
 paramout.auditFile = auditFile;
 paramout.cellModelFile = char(saveReport.filename);
+paramout.biologicalStateFile = char(stateReport.filename);
 paramout.artifacts = {auditFile,char(saveReport.filename)};
+if strlength(stateReport.filename) > 0
+    paramout.artifacts{end+1} = char(stateReport.filename);
+end
 paramout.summary = result.summary;
 paramout.runtime = struct( ...
-    'backend','Python', ...
+    'backend',paramout.backend, ...
     'package','cell_latent_model', ...
     'model_source',paramout.modelSource, ...
     'model',paramout.modelPath, ...
-    'gfp_used',~isempty(gfp));
+    'variant',paramout.temporalVariant, ...
+    'gfp_used',~isempty(observations.gfp), ...
+    'brightfield_used',~isempty(observations.brightfield), ...
+    'nucleus_used',~isempty(observations.nucleus), ...
+    'budneck_used',~isempty(observations.budneck));
 paramout.cellModelReport = struct( ...
-    'load',loadReport,'apply',applyReport,'save',saveReport);
+    'load',loadReport,'apply',applyReport,'state',stateReport, ...
+    'save',saveReport);
 paramout.saveChannels = {};
-dataout = roiobj.data;
+dataout = [];
 imageout = [];
 if paramout.debug
-    fprintf('[cellLatentModel] %d linked, %d review; family %u; GFP=%d.\n', ...
-        double(result.summary.linked),double(result.summary.review), ...
-        familyId,~isempty(gfp));
+    [linked,review] = summaryCounts(result.summary);
+    fprintf(['[cellLatentModel] %d linked, %d review; family %u; ' ...
+        'backend=%s; GFP=%d; BF=%d; nucleus=%d; budneck=%d.\n'], ...
+        linked,review,familyId,paramout.backend,~isempty(observations.gfp), ...
+        ~isempty(observations.brightfield), ...
+        ~isempty(observations.nucleus),~isempty(observations.budneck));
+end
+end
+
+function [linked,review] = summaryCounts(summary)
+linked = 0;
+review = 0;
+if isfield(summary,'linked')
+    linked = double(summary.linked);
+elseif isfield(summary,'predicted_parent')
+    linked = double(summary.predicted_parent);
+end
+if isfield(summary,'review')
+    review = double(summary.review);
+elseif isfield(summary,'events')
+    review = max(0,double(summary.events)-linked);
 end
 end
 

@@ -13,29 +13,46 @@ catch
 end
 if nargin < 1 || isempty(param), param = struct(); end
 p = cellLatentModel.utils.applyOverrides(defaults,param);
-obsolete = {'pythonExecutable','repositoryRoot','modelPackage', ...
-    'cellLatentRepository'};
+obsolete = {'pythonExecutable','repositoryRoot','packagePath', ...
+    'modelPackage','cellLatentRepository'};
 present = obsolete(isfield(p,obsolete));
 if ~isempty(present), p = rmfield(p,present); end
 
+p.backend = normalizeBackend(readChoice(p.backend));
 p.trackChannelName = readChoice(p.trackChannelName);
 p.gfpChannelName = readChoice(p.gfpChannelName);
+p.brightfieldChannelName = readChoice(p.brightfieldChannelName);
+p.nucleusChannelName = readChoice(p.nucleusChannelName);
+p.budneckChannelName = readChoice(p.budneckChannelName);
 runtimeChannels = collectRuntimeChannels(param,ctx,classif);
 if isMissingChoice(p.trackChannelName)
     p.trackChannelName = preferred(runtimeChannels, ...
         {'trackastra','track','label','mask'},1);
 end
-if isMissingChoice(p.gfpChannelName)
-    p.gfpChannelName = preferred(runtimeChannels,{'gfp','nuc'},2);
+if strcmp(p.backend,'legacy')
+    if isMissingChoice(p.gfpChannelName)
+        p.gfpChannelName = preferred(runtimeChannels,{'gfp','nuc'},2);
+    end
+    if isMissingChoice(p.gfpChannelName), p.gfpChannelName = ''; end
+else
+    % A generic GFP channel has no unambiguous biological role. Temporal and
+    % continuous inference accept only explicitly typed selectors.
+    p.gfpChannelName = '';
 end
-if isMissingChoice(p.gfpChannelName), p.gfpChannelName = ''; end
+if isMissingChoice(p.brightfieldChannelName)
+    p.brightfieldChannelName = '';
+end
+if isMissingChoice(p.nucleusChannelName), p.nucleusChannelName = ''; end
+if isMissingChoice(p.budneckChannelName), p.budneckChannelName = ''; end
 p.inputFamily = readChoice(p.inputFamily);
 p.outputFamilyName = strtrim(char(string(p.outputFamilyName)));
 p.modelSource = lower(readChoice(p.modelSource));
 p.modelPath = strtrim(readChoice(p.modelPath));
 p.device = lower(readChoice(p.device));
+p.temporalVariant = lower(readChoice(p.temporalVariant));
 if isempty(p.modelSource), p.modelSource = 'builtin'; end
 if isempty(p.device), p.device = 'auto'; end
+if isempty(p.temporalVariant), p.temporalVariant = 'temporal_geometry'; end
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
     'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
@@ -45,6 +62,8 @@ for i = 1:numel(numericNames)
     name = numericNames{i};
     p.(name) = readScalar(p.(name),defaults.(name));
 end
+p.frameIntervalMinutes = normalizeFrameInterval( ...
+    p.frameIntervalMinutes,p.backend);
 p.frameEnd = floor(p.frameEnd);
 p.minLifetime = max(2,floor(p.minLifetime));
 p.maxBirthArea = max(1,p.maxBirthArea);
@@ -58,16 +77,39 @@ p.youngMotherFrames = max(0,floor(p.youngMotherFrames));
 p.solverBeamSize = max(1,floor(p.solverBeamSize));
 p.trackingLoadGuard = logical(p.trackingLoadGuard);
 p.globalSolver = logical(p.globalSolver);
+p.causalSolverFeedback = logical(p.causalSolverFeedback);
 p.reviewGlobalReassignments = logical(p.reviewGlobalReassignments);
 p.overwriteOutputFamily = logical(p.overwriteOutputFamily);
 p.debug = logical(p.debug);
 
-if strcmp(p.modelSource,'trained')
+if strcmp(p.backend,'temporal_lineage')
+    validateChannelRoles( ...
+        {p.trackChannelName,p.nucleusChannelName,p.budneckChannelName}, ...
+        {'tracked-label','nucleus','budneck'});
+    if ~any(strcmp(p.temporalVariant,{'temporal_geometry','all_observed'}))
+        error('cellLatentModel:InvalidTemporalVariant', ...
+            ['temporalVariant must be temporal_geometry or ' ...
+             'all_observed.']);
+    end
+elseif strcmp(p.backend,'continuous_cell_state')
+    validateChannelRoles( ...
+        {p.trackChannelName,p.brightfieldChannelName, ...
+         p.nucleusChannelName,p.budneckChannelName}, ...
+        {'tracked-label','brightfield','nucleus','budneck'});
+end
+
+usesTrainedArtifact = ...
+    (strcmp(p.backend,'legacy') && strcmp(p.modelSource,'trained')) || ...
+    strcmp(p.backend,'continuous_cell_state');
+if usesTrainedArtifact
     if isempty(p.modelPath)
-        try
-            candidate = fullfile(classif.path,'models','latest','ensemble.pt');
-            if isfile(candidate), p.modelPath = candidate; end
-        catch
+        if strcmp(p.backend,'legacy')
+            try
+                candidate = fullfile(classif.path, ...
+                    'models','latest','ensemble.pt');
+                if isfile(candidate), p.modelPath = candidate; end
+            catch
+            end
         end
     elseif ~isfile(p.modelPath)
         try
@@ -85,19 +127,89 @@ if isempty(p.outputFamilyName)
     error('cellLatentModel:MissingOutputFamily', ...
         'Output family name cannot be empty.');
 end
-if ~any(strcmp(p.modelSource,{'builtin','trained'}))
+if strcmp(p.backend,'legacy') && ...
+        ~any(strcmp(p.modelSource,{'builtin','trained'}))
     error('cellLatentModel:InvalidModelSource', ...
         'modelSource must be builtin or trained.');
 end
-if strcmp(p.modelSource,'trained') && ...
+if strcmp(p.backend,'legacy') && strcmp(p.modelSource,'trained') && ...
         (isempty(p.modelPath) || ~isfile(p.modelPath))
     error('cellLatentModel:MissingTrainedModel', ...
         'The trained ensemble checkpoint was not found.');
+end
+if strcmp(p.backend,'continuous_cell_state')
+    if ~strcmp(p.modelSource,'trained')
+        error('cellLatentModel:ContinuousRequiresTrainedModel', ...
+            ['continuous_cell_state requires modelSource="trained" and a ' ...
+             'trusted schema-6/7 checkpoint.']);
+    end
+    if isempty(p.modelPath) || ~isfile(p.modelPath)
+        error('cellLatentModel:MissingContinuousCheckpoint', ...
+            'The trained continuous cell-state checkpoint was not found.');
+    end
 end
 if ~any(strcmp(p.device,{'auto','cuda','cpu'}))
     error('cellLatentModel:InvalidDevice', ...
         'device must be auto, cuda, or cpu.');
 end
+end
+
+function backend = normalizeBackend(value)
+backend = lower(strtrim(char(string(value))));
+backend = strrep(backend,'-','_');
+backend = strrep(backend,' ','_');
+if isempty(backend) || any(strcmp(backend, ...
+        {'legacy','relation_ensemble','relationensemble'}))
+    backend = 'legacy';
+elseif strcmp(backend,'continuouscellstate')
+    backend = 'continuous_cell_state';
+elseif ~any(strcmp(backend, ...
+        {'temporal_lineage','continuous_cell_state'}))
+    error('cellLatentModel:InvalidBackend', ...
+        ['backend must be legacy, temporal_lineage, or ' ...
+         'continuous_cell_state.']);
+end
+end
+
+function validateChannelRoles(roles,labels)
+for i = 1:numel(roles)
+    if isempty(roles{i}), continue; end
+    for j = i+1:numel(roles)
+        if isempty(roles{j}), continue; end
+        if strcmpi(roles{i},roles{j})
+            error('cellLatentModel:ConflictingChannelRoles', ...
+                'Channel "%s" cannot be both %s and %s.', ...
+                roles{i},labels{i},labels{j});
+        end
+    end
+end
+end
+
+function value = normalizeFrameInterval(value,backend)
+if iscell(value)
+    if isempty(value), value = []; else, value = value{end}; end
+end
+if ischar(value) || isstring(value)
+    if strlength(strtrim(string(value))) == 0
+        value = [];
+    else
+        value = str2double(string(value));
+    end
+end
+if isempty(value)
+    if strcmp(backend,'continuous_cell_state')
+        error('cellLatentModel:MissingFrameInterval', ...
+            ['frameIntervalMinutes must be set explicitly for ' ...
+             'continuous_cell_state.']);
+    end
+    value = 1;
+end
+if ~isnumeric(value) || ~isscalar(value) || ...
+        ~isfinite(value) || value <= 0
+    error('cellLatentModel:InvalidFrameInterval', ...
+        'frameIntervalMinutes must be finite and strictly positive.');
+end
+value = double(value);
 end
 
 function channels = collectRuntimeChannels(param,ctx,classif)

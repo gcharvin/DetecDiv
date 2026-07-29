@@ -15,9 +15,11 @@ param.outputFamilyName = 'Latent integration';
 param.device = 'cpu';
 param.maxParentContourDistance = 25;
 ctx = struct('store',struct('workDir',fullfile(folder,'runtime')));
-[resolved,~,imageout] = cellLatentModel.core(param,roiobj,ctx);
+[resolved,dataout,imageout] = cellLatentModel.core(param,roiobj,ctx);
+verifyEmpty(testCase,dataout);
 verifyEmpty(testCase,imageout);
 verifyEqual(testCase,resolved.runtime.package,'cell_latent_model');
+verifyEqual(testCase,resolved.runtime.backend,'legacy');
 verifyTrue(testCase,resolved.runtime.gfp_used);
 verifyTrue(testCase,isfile(resolved.auditFile));
 audit = jsondecode(fileread(resolved.auditFile));
@@ -31,6 +33,246 @@ verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex},'results_trackastra');
 verifyEqual(testCase, ...
     model.families.lineage_source{familyIndex},'cellLatentModel');
+end
+
+function testTemporalBuiltinV002PersistsObjectsOnly(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+roiobj = syntheticROI(folder,'temporal_inference',0);
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'temporal_lineage';
+param.temporalVariant = 'all_observed';
+param.trackChannelName = 'results_trackastra';
+param.nucleusChannelName = 'ch2-GFP';
+param.budneckChannelName = '';
+param.frameIntervalMinutes = 3;
+param.outputFamilyName = 'Temporal v002 integration';
+param.device = 'cpu';
+ctx = struct('store',struct('workDir',fullfile(folder,'runtime')));
+
+[resolved,dataout,imageout] = cellLatentModel.core(param,roiobj,ctx);
+
+verifyEmpty(testCase,dataout);
+verifyEmpty(testCase,imageout);
+verifyEqual(testCase,resolved.runtime.backend,'temporal_lineage');
+verifyTrue(testCase,resolved.runtime.nucleus_used);
+verifyFalse(testCase,resolved.runtime.budneck_used);
+verifyTrue(testCase,isfile(resolved.cellModelFile));
+audit = jsondecode(fileread(resolved.auditFile));
+verifyEqual(testCase,audit.backend,'temporal_lineage');
+verifyEqual(testCase,audit.package.package_id, ...
+    'temporal_lineage_multidomain_v002');
+verifyEqual(testCase,audit.package.variant,'all_observed');
+verifyEqual(testCase,double(audit.frame_interval_minutes),3);
+verifyTrue(testCase,audit.marker_inputs.nucleus);
+verifyFalse(testCase,audit.marker_inputs.budneck);
+
+[model,report] = roiobj.loadCellModel('Force',true);
+verifyTrue(testCase,report.validation.ok);
+[familyIndex,~] = cellModel.familyIndex(model,param.outputFamilyName);
+verifyNotEmpty(testCase,familyIndex);
+verifyEqual(testCase, ...
+    model.families.mask_provider{familyIndex},'results_trackastra');
+verifyEqual(testCase, ...
+    model.families.lineage_source{familyIndex},'cellLatentModel');
+end
+
+function testTemporalChannelRolesAreExplicit(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'temporal_lineage';
+param.channels = {'results_trackastra','ch2-GFP'};
+param.trackChannelName = '';
+param.gfpChannelName = 'ch2-GFP';
+
+resolved = cellLatentModel.normalizeParam(param);
+
+verifyEqual(testCase,resolved.trackChannelName,'results_trackastra');
+verifyEmpty(testCase,resolved.gfpChannelName);
+verifyEmpty(testCase,resolved.nucleusChannelName);
+verifyEmpty(testCase,resolved.budneckChannelName);
+end
+
+function testTemporalChannelRoleConflictsAreRejected(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'temporal_lineage';
+param.trackChannelName = 'results_trackastra';
+param.nucleusChannelName = 'ch2-GFP';
+param.budneckChannelName = 'ch2-GFP';
+
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:ConflictingChannelRoles');
+end
+
+function testAllObservedPermitsExplicitMissingMarkers(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'temporal_lineage';
+param.temporalVariant = 'all_observed';
+param.trackChannelName = 'results_trackastra';
+param.nucleusChannelName = '';
+param.budneckChannelName = '';
+
+resolved = cellLatentModel.normalizeParam(param);
+
+verifyEqual(testCase,resolved.temporalVariant,'all_observed');
+verifyEmpty(testCase,resolved.nucleusChannelName);
+verifyEmpty(testCase,resolved.budneckChannelName);
+end
+
+function testContinuousRequiresExplicitFrameInterval(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+checkpoint = fullfile(folder,'continuous.pt');
+touchFile(checkpoint);
+param = continuousParam(checkpoint);
+param.frameIntervalMinutes = [];
+
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:MissingFrameInterval');
+end
+
+function testContinuousRequiresTrainedCheckpoint(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'continuous_cell_state';
+param.trackChannelName = 'results_trackastra';
+param.frameIntervalMinutes = 3;
+
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:ContinuousRequiresTrainedModel');
+end
+
+function testContinuousRolesAreExplicitAndExclusive(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+checkpoint = fullfile(folder,'continuous.pt');
+touchFile(checkpoint);
+param = continuousParam(checkpoint);
+param.brightfieldChannelName = 'ch1-PH';
+param.nucleusChannelName = 'ch2-nucleus';
+param.budneckChannelName = 'ch3-budneck';
+
+resolved = cellLatentModel.normalizeParam(param);
+
+verifyEqual(testCase,resolved.backend,'continuous_cell_state');
+verifyEqual(testCase,resolved.modelSource,'trained');
+verifyEqual(testCase,resolved.frameIntervalMinutes,3);
+verifyEmpty(testCase,resolved.gfpChannelName);
+param.nucleusChannelName = param.brightfieldChannelName;
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:ConflictingChannelRoles');
+end
+
+function testContinuousBiologicalStateSidecar(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+roiobj = roi('continuous_state',[1 1 10 10]);
+roiobj.path = folder;
+records = repmat(struct( ...
+    'track_id',0,'label_id',0,'frame',0,'time_minutes',0, ...
+    'bud_onset_hazard',0,'division_hazard',0, ...
+    'active_bud_probability',0),2,1);
+records(1).track_id = 1;
+records(1).label_id = 1;
+records(1).frame = 1;
+records(2).track_id = 2;
+records(2).label_id = 2;
+records(2).frame = 3;
+records(2).time_minutes = 6;
+result = struct( ...
+    'created_at','2026-07-27T12:00:00+02:00', ...
+    'frame_interval_minutes',3, ...
+    'checkpoint',struct('sha256','abc','model_class', ...
+        'ContinuousBiologicalStateFeedbackModel'), ...
+    'biological_state',struct( ...
+        'enabled',true, ...
+        'state_names',{{'bud_onset_hazard','division_hazard'}}, ...
+        'records',records));
+
+report = cellLatentModel.persistBiologicalState( ...
+    roiobj,uint32(4),'Continuous state','results_trackastra', ...
+    result,fullfile(folder,'audit.json'));
+
+verifyTrue(testCase,isfile(report.filename));
+verifyEqual(testCase,report.records,2);
+saved = jsondecode(fileread(report.filename));
+verifyEqual(testCase,saved.format,'detecdiv_continuous_cell_state');
+verifyEqual(testCase,double(saved.schema_version),1);
+verifyEqual(testCase,double(saved.family_id),4);
+verifyEqual(testCase,double([saved.records.track_id]),[1 2]);
+verifyEqual(testCase,double([saved.records.frame]),[1 3]);
+end
+
+function testDefaultExecutionRemainsPathFreeLegacy(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+
+verifyEqual(testCase,param.backend,'legacy');
+verifyEmpty(testCase,param.frameIntervalMinutes);
+verifyFalse(testCase,isfield(param,'pythonExecutable'));
+verifyFalse(testCase,isfield(param,'repositoryRoot'));
+verifyFalse(testCase,isfield(param,'packagePath'));
+verifyFalse(testCase,isfield(param,'modelPackage'));
+end
+
+function testNormalizeDropsObsoleteRuntimePaths(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.trackChannelName = 'results_trackastra';
+param.pythonExecutable = 'forbidden-python';
+param.repositoryRoot = 'forbidden-repository';
+param.packagePath = 'forbidden-package';
+param.modelPackage = 'forbidden-model-package';
+param.cellLatentRepository = 'forbidden-latent-repository';
+
+resolved = cellLatentModel.normalizeParam(param);
+
+obsolete = {'pythonExecutable','repositoryRoot','packagePath', ...
+    'modelPackage','cellLatentRepository'};
+verifyFalse(testCase,any(isfield(resolved,obsolete)));
+end
+
+function testTemporalExecutionSpecDeclaresTypedRoles(testCase)
+spec = cellLatentModel.executionSpec();
+
+verifyEqual(testCase,spec.inputKeys, ...
+    {'trackChannelName','gfpChannelName', ...
+     'brightfieldChannelName','nucleusChannelName','budneckChannelName'});
+verifyEqual(testCase,spec.choices.backend, ...
+    {'legacy','temporal_lineage','continuous_cell_state'});
+verifyEqual(testCase,spec.choices.temporalVariant, ...
+    {'temporal_geometry','all_observed'});
+verifyTrue(testCase,contains(lower(spec.labels.nucleusChannelName), ...
+    'division/nucleus fluorescence'));
+verifyTrue(testCase,contains(lower(spec.labels.budneckChannelName), ...
+    'bud-neck fluorescence'));
+verifyTrue(testCase,contains(lower(spec.tips.gfpChannelName), ...
+    'never assigned'));
+verifyTrue(testCase,contains(lower(spec.tips.brightfieldChannelName), ...
+    'continuous_cell_state'));
+verifyTrue(testCase,contains(lower(spec.tips.temporalVariant), ...
+    'temporal history'));
+allPipelineKeys = [spec.staticKeys spec.defaultImportKeys];
+privatePathKeys = {'pythonExecutable','repositoryRoot','packagePath', ...
+    'modelPackage','cellLatentRepository'};
+verifyFalse(testCase,any(ismember(privatePathKeys,allPipelineKeys)));
+verifyTrue(testCase,all(ismember(privatePathKeys,spec.environmentKeys)));
+end
+
+function param = continuousParam(checkpoint)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.backend = 'continuous_cell_state';
+param.trackChannelName = 'results_trackastra';
+param.frameIntervalMinutes = 3;
+param.modelSource = 'trained';
+param.modelPath = checkpoint;
+end
+
+function touchFile(filename)
+fid = fopen(filename,'w');
+if fid < 0, error('testCellLatentModel:TouchFailed','Cannot create fixture.'); end
+cleanup = onCleanup(@() fclose(fid));
+fwrite(fid,uint8([1 2 3]),'uint8');
 end
 
 function testClassifierLifecycleFormatsTrainsAndValidates(testCase)

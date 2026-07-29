@@ -22,6 +22,10 @@ out.refs.outputFamilyId = resolved.outputFamilyId;
 out.refs.outputFamilyName = resolved.outputFamilyName;
 out.artifacts.audit = resolved.auditFile;
 out.artifacts.cellModel = resolved.cellModelFile;
+if isfield(resolved,'biologicalStateFile') && ...
+        ~isempty(resolved.biologicalStateFile)
+    out.artifacts.biologicalState = resolved.biologicalStateFile;
+end
 out.metrics = resolved.summary;
 out.status = "OK";
 end
