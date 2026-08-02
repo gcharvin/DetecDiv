@@ -54,17 +54,19 @@ p.adaptiveMarkerModelPath = strtrim(readChoice( ...
     p.adaptiveMarkerModelPath));
 p.device = lower(readChoice(p.device));
 p.temporalVariant = lower(readChoice(p.temporalVariant));
+p.primaryStateAxis = lower(readChoice(p.primaryStateAxis));
 if isempty(p.modelSource), p.modelSource = 'builtin'; end
 if isempty(p.adaptiveMarkerModelSource)
     p.adaptiveMarkerModelSource = 'none';
 end
 if isempty(p.device), p.device = 'auto'; end
 if isempty(p.temporalVariant), p.temporalVariant = 'temporal_geometry'; end
+if isempty(p.primaryStateAxis), p.primaryStateAxis = 'budding'; end
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
     'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
     'maxNewTracksPerFrame','motherRefractoryFrames','youngMotherFrames', ...
-    'solverBeamSize'};
+    'solverBeamSize','statePositiveThreshold','stateNegativeThreshold'};
 for i = 1:numel(numericNames)
     name = numericNames{i};
     p.(name) = readScalar(p.(name),defaults.(name));
@@ -85,9 +87,19 @@ p.solverBeamSize = max(1,floor(p.solverBeamSize));
 p.trackingLoadGuard = logical(p.trackingLoadGuard);
 p.globalSolver = logical(p.globalSolver);
 p.causalSolverFeedback = logical(p.causalSolverFeedback);
+p.materializeCellStates = logical(p.materializeCellStates);
 p.reviewGlobalReassignments = logical(p.reviewGlobalReassignments);
 p.overwriteOutputFamily = logical(p.overwriteOutputFamily);
 p.debug = logical(p.debug);
+if ~any(strcmp(p.primaryStateAxis,{'none','budding'}))
+    error('cellLatentModel:InvalidPrimaryStateAxis', ...
+        'primaryStateAxis must be none or budding.');
+end
+if p.stateNegativeThreshold < 0 || p.statePositiveThreshold > 1 || ...
+        p.stateNegativeThreshold >= p.statePositiveThreshold
+    error('cellLatentModel:InvalidStateThresholds', ...
+        ['State thresholds must satisfy 0 <= negative < positive <= 1.']);
+end
 
 if strcmp(p.backend,'temporal_lineage')
     validateChannelRoles( ...

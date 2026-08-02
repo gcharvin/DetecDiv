@@ -243,6 +243,47 @@ verifyEqual(testCase,double([saved.records.track_id]),[1 2]);
 verifyEqual(testCase,double([saved.records.frame]),[1 3]);
 end
 
+function testContinuousStatesAreMaterializedOnCellObjects(testCase)
+model = cellModel.create('state_materialization');
+tracks = zeros(5,5,3,'uint32');
+tracks(2:3,2:3,1:3) = 1;
+lineageResult = struct('edges',struct([]));
+[model,familyId] = cellModel.applyLineageResult( ...
+    model,tracks,'results_trackastra','<auto>', ...
+    'Latent cells',lineageResult,true,'cellLatentModel');
+records = repmat(struct('track_id',1,'frame',1, ...
+    'active_bud_probability',0),3,1);
+records(1).active_bud_probability = 0.1;
+records(2).frame = 2;
+records(2).active_bud_probability = 0.5;
+records(3).frame = 3;
+records(3).active_bud_probability = 0.9;
+result = struct('biological_state',struct('records',records));
+param = cellLatentModel.utils.defaultExecutionParam();
+
+[model,report] = cellLatentModel.applyBiologicalState( ...
+    model,familyId,result,param);
+
+rows = model.instances.family_id == familyId;
+verifyEqual(testCase,cellstr(string(model.states.name)), ...
+    {'budding: inactive';'budding: active'});
+verifyEqual(testCase,double(model.instances.state_id(rows))',[1 0 2]);
+verifyEqual(testCase,report.inactive,1);
+verifyEqual(testCase,report.uncertain,1);
+verifyEqual(testCase,report.active,1);
+verifyTrue(testCase,cellModel.validate(model).ok);
+end
+
+function testStateThresholdsAreValidated(testCase)
+param = cellLatentModel.utils.defaultExecutionParam();
+param.trackChannelName = 'results_trackastra';
+param.stateNegativeThreshold = 0.8;
+param.statePositiveThreshold = 0.2;
+
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:InvalidStateThresholds');
+end
+
 function testDefaultExecutionRemainsPathFreeLegacy(testCase)
 param = cellLatentModel.utils.defaultExecutionParam();
 
