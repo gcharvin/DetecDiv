@@ -29,22 +29,68 @@ The packaged Python checkpoint is used when no classifier training has been
 performed. A trained classifier stores its checkpoint beneath
 `<classifier>/models/<modelName>/ensemble.pt`.
 
-`continuous_cell_state` requires a trusted trained schema-6/7 checkpoint and
-an explicit physical `frameIntervalMinutes`. Its checkpoint owns the candidate
-count, contour-distance radius, and temporal sample grid; legacy linker and
-frame-count biology defaults are not forwarded to this backend.
+`continuous_cell_state` requires a trusted trained checkpoint and an explicit
+physical `frameIntervalMinutes`. Schema 2/3 checkpoints predict lineage;
+schema 6/7 checkpoints additionally expose biological-state probabilities.
+The checkpoint owns the candidate count, contour-distance radius, and temporal
+sample grid; legacy linker and frame-count biology defaults are not forwarded
+to this backend.
 
 Python executable and repository paths are discovered internally. They are
 not static parameters and do not appear in pipeline JSON.
 
+## Pipeline2 inference
+
+The classifier uses DetecDiv's ordinary classifier and Pipeline2 contracts.
+Runtime bindings independently select:
+
+- the tracked-label mask provider (`trackChannelName`);
+- optional brightfield (`brightfieldChannelName`);
+- optional nuclear/HTB2-like fluorescence (`nucleusChannelName`);
+- optional bud-neck/MYO1-like fluorescence (`budneckChannelName`).
+
+Missing optional modalities are represented explicitly and never guessed from
+a generic GFP channel. `inputFamily` can select lineage metadata associated
+with the mask provider. The output is both a compatible lineage `dataSeries`
+and a canonical `cellModel` object family; both reference the original mask
+channel instead of creating another mask stack.
+
+Trackastra, SAM31, and CellposeSAM are upstream providers, not hidden
+dependencies of this classifier. A Pipeline2 graph may chain any segmentation
+and tracking nodes that produce an indexed mask with stable track IDs. A
+segmentation-only channel whose labels change every frame must first be tracked.
+DetecDiv's shared Python bootstrap manages the common PyTorch,
+CellposeSAM/Cellpose, and Trackastra environment. The latent classifier itself
+resolves the independent sibling `cell_latent_model` and
+`cell_lineage_linker` source distributions (or their installed packages);
+SAM31 is required only when a SAM31 node is present upstream and is managed by
+that node's own runtime adapter.
+
+Model checkpoints and adaptive-marker checkpoints are classifier artifacts,
+not static pipeline parameters or repository paths. Pipeline JSON therefore
+stays portable.
+
 ## ClassifierGUI lifecycle
 
 - `format`: imported training/validation ROIs, reviewed lineage family,
-  tracked masks, and optional GFP are exported to a versioned dataset;
-- `train`: a PyTorch relation ensemble and OOF automatic-link calibration are
-  created by the external repository;
-- `validate`: independent imported ROIs are formatted and scored;
+  tracked masks, physical frame interval, and typed optional modalities are
+  exported to a versioned dataset;
+- `train`: `relation_ensemble` retains the historical linker training;
+  `continuous_lineage` trains the physical-time parent-or-NULL lineage head;
+- `validate`: independent imported ROIs are reformatted and scored with the
+  objective that trained the checkpoint;
 - `classify`: an audit JSON and canonical lineage family are saved.
+
+The continuous DetecDiv objective currently trains the lineage head only. It
+does not manufacture cycle/death/budding state targets from lineage labels;
+those heads remain separately trainable when audited biological-state GT is
+available. Consequently, a newly trained schema 2/3 checkpoint does not
+materialize untrained state labels on DetecDiv objects.
+
+Project47 remains weak supervision and is rejected from the continuous
+training and validation splits by both its declared domain and its source ROI
+path, so it cannot fit, select, or calibrate a checkpoint. It remains usable
+for inference and a held-out audit/test split.
 
 At least two training-side ROIs are required for ROI-level train/validation.
 Automatic-link calibration additionally requires two actual training ROIs;
