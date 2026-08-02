@@ -29,6 +29,8 @@ p.reviewGlobalReassignments = true;
 p.overwriteOutputFamily = true;
 p.modelSource = 'builtin';
 p.modelPath = '';
+p.adaptiveMarkerModelSource = 'none';
+p.adaptiveMarkerModelPath = '';
 p.device = 'auto';
 p.debug = false;
 end

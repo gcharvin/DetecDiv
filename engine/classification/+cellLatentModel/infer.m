@@ -67,6 +67,12 @@ elseif strcmp(backend,'continuous_cell_state')
     cfg.frame_interval_minutes = double(param.frameIntervalMinutes);
     cfg.checkpoint = struct( ...
         'source','trained','path',normalizedPath(param.modelPath));
+    cfg.adaptive_marker_checkpoint = struct('source','none','path','');
+    if strcmpi(char(string(param.adaptiveMarkerModelSource)),'trained')
+        cfg.adaptive_marker_checkpoint.source = 'trained';
+        cfg.adaptive_marker_checkpoint.path = ...
+            normalizedPath(param.adaptiveMarkerModelPath);
+    end
     cfg.brightfield_dataset = '';
     cfg.nucleus_dataset = '';
     cfg.budneck_dataset = '';

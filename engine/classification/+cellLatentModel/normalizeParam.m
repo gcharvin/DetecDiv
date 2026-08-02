@@ -48,9 +48,16 @@ p.inputFamily = readChoice(p.inputFamily);
 p.outputFamilyName = strtrim(char(string(p.outputFamilyName)));
 p.modelSource = lower(readChoice(p.modelSource));
 p.modelPath = strtrim(readChoice(p.modelPath));
+p.adaptiveMarkerModelSource = lower(readChoice( ...
+    p.adaptiveMarkerModelSource));
+p.adaptiveMarkerModelPath = strtrim(readChoice( ...
+    p.adaptiveMarkerModelPath));
 p.device = lower(readChoice(p.device));
 p.temporalVariant = lower(readChoice(p.temporalVariant));
 if isempty(p.modelSource), p.modelSource = 'builtin'; end
+if isempty(p.adaptiveMarkerModelSource)
+    p.adaptiveMarkerModelSource = 'none';
+end
 if isempty(p.device), p.device = 'auto'; end
 if isempty(p.temporalVariant), p.temporalVariant = 'temporal_geometry'; end
 
@@ -148,9 +155,43 @@ if strcmp(p.backend,'continuous_cell_state')
             'The trained continuous cell-state checkpoint was not found.');
     end
 end
+if ~any(strcmp(p.adaptiveMarkerModelSource,{'none','trained'}))
+    error('cellLatentModel:InvalidAdaptiveMarkerModelSource', ...
+        'adaptiveMarkerModelSource must be none or trained.');
+end
+if strcmp(p.adaptiveMarkerModelSource,'trained')
+    if ~strcmp(p.backend,'continuous_cell_state')
+        error('cellLatentModel:AdaptiveMarkerRequiresContinuous', ...
+            ['The adaptive marker residual is supported only by ' ...
+             'continuous_cell_state.']);
+    end
+    p.adaptiveMarkerModelPath = resolveArtifactPath( ...
+        p.adaptiveMarkerModelPath,classif);
+    if isempty(p.adaptiveMarkerModelPath) || ...
+            ~isfile(p.adaptiveMarkerModelPath)
+        error('cellLatentModel:MissingAdaptiveMarkerCheckpoint', ...
+            'The trained adaptive marker checkpoint was not found.');
+    end
+    if p.causalSolverFeedback
+        error('cellLatentModel:AdaptiveMarkerSolverConflict', ...
+            ['Adaptive marker inference and causal solver feedback cannot ' ...
+             'currently be enabled together. Disable causalSolverFeedback.']);
+    end
+else
+    p.adaptiveMarkerModelPath = '';
+end
 if ~any(strcmp(p.device,{'auto','cuda','cpu'}))
     error('cellLatentModel:InvalidDevice', ...
         'device must be auto, cuda, or cpu.');
+end
+end
+
+function value = resolveArtifactPath(value,classif)
+if isempty(value) || isfile(value), return; end
+try
+    candidate = fullfile(classif.path,value);
+    if isfile(candidate), value = candidate; end
+catch
 end
 end
 

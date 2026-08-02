@@ -164,6 +164,44 @@ verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
     'cellLatentModel:ConflictingChannelRoles');
 end
 
+function testAdaptiveMarkerArtifactIsClassifierOwned(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+checkpoint = fullfile(folder,'continuous.pt');
+markerCheckpoint = fullfile(folder,'adaptive_marker.pt');
+touchFile(checkpoint);
+touchFile(markerCheckpoint);
+param = continuousParam(checkpoint);
+param.causalSolverFeedback = false;
+param.adaptiveMarkerModelSource = 'trained';
+param.adaptiveMarkerModelPath = markerCheckpoint;
+
+resolved = cellLatentModel.normalizeParam(param);
+spec = cellLatentModel.executionSpec();
+
+verifyEqual(testCase,resolved.adaptiveMarkerModelSource,'trained');
+verifyEqual(testCase,resolved.adaptiveMarkerModelPath,markerCheckpoint);
+verifyTrue(testCase,ismember('adaptiveMarkerModelPath',spec.artifactKeys));
+verifyFalse(testCase,ismember('adaptiveMarkerModelPath',spec.staticKeys));
+end
+
+function testAdaptiveMarkerRejectsUnsupportedSolverCombination(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+checkpoint = fullfile(folder,'continuous.pt');
+markerCheckpoint = fullfile(folder,'adaptive_marker.pt');
+touchFile(checkpoint);
+touchFile(markerCheckpoint);
+param = continuousParam(checkpoint);
+param.adaptiveMarkerModelSource = 'trained';
+param.adaptiveMarkerModelPath = markerCheckpoint;
+
+verifyError(testCase,@() cellLatentModel.normalizeParam(param), ...
+    'cellLatentModel:AdaptiveMarkerSolverConflict');
+end
+
 function testContinuousBiologicalStateSidecar(testCase)
 folder = tempname;
 mkdir(folder);
