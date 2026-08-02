@@ -390,6 +390,58 @@ verifyGreaterThanOrEqual(testCase, ...
 verifyTrue(testCase,isfinite(double(validated.metrics.top1)));
 end
 
+function testContinuousClassifierLifecycleUsesTypedMarkers(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder));
+classifier = classi(folder,'continuous_lifecycle',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'continuous_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'continuous_validation',1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.channelName = {'results_trackastra','ch2-GFP'};
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.trainingObjective = 'continuous_lineage';
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.nucleusChannelName = 'ch2-GFP';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+classifier.trainingParam.frameIntervalMinutes = 3;
+classifier.trainingParam.trainingDomain = 'synthetic_reviewed';
+classifier.trainingParam.continuousVariant = 'all_observed';
+classifier.trainingParam.decisionLatencyMinutes = 6;
+classifier.trainingParam.temporalWindowMinutes = 12;
+classifier.trainingParam.temporalSampleStepMinutes = 3;
+classifier.trainingParam.continuousStateDim = 8;
+classifier.trainingParam.continuousBlockEmbeddingDim = 4;
+classifier.trainingParam.continuousAttentionDim = 8;
+classifier.trainingParam.maxEventHistoryTokens = 2;
+classifier.trainingParam.epochs = 1;
+classifier.trainingParam.device = 'cpu';
+classifier.trainingParam.modelName = 'continuous_smoke';
+
+formatted = cellLatentModel.format(classifier,1,struct());
+verifyEqual(testCase,formatted.status,"OK");
+verifyTrue(testCase,isfile(formatted.artifacts.manifest));
+manifest = jsondecode(fileread(formatted.artifacts.manifest));
+verifyEqual(testCase,manifest.format, ...
+    'continuous_cell_observation_collection_v1');
+trained = cellLatentModel.train(classifier,struct());
+verifyEqual(testCase,trained.status,"OK");
+verifyTrue(testCase,isfile(trained.artifacts.model));
+verifyEqual(testCase,classifier.executionParam.backend, ...
+    'continuous_cell_state');
+verifyEqual(testCase,classifier.executionParam.nucleusChannelName, ...
+    'ch2-GFP');
+verifyFalse(testCase,classifier.executionParam.materializeCellStates);
+validated = cellLatentModel.validate(classifier,2,struct());
+verifyEqual(testCase,validated.status,"OK");
+verifyEqual(testCase,double(validated.metrics.events),1);
+end
+
 function roiobj = syntheticROI(folder,id,offset)
 if ~isfolder(folder), mkdir(folder); end
 height = 80;

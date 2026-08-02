@@ -12,6 +12,7 @@ tp = cellLatentModel.utils.defaultTrainingParam();
 if isstruct(classif.trainingParam)
     tp = cellLatentModel.utils.applyOverrides(tp,classif.trainingParam);
 end
+objective = trainingChoice(tp.trainingObjective,'relation_ensemble');
 stamp = char(datetime('now','Format','yyyyMMdd''T''HHmmssSSS'));
 root = fullfile(classif.path,'validation',['run_' stamp]);
 formatted = cellLatentModel.formatDataset( ...
@@ -33,17 +34,30 @@ configFile = fullfile(root,'validation_config.json');
 stdoutFile = fullfile(root,'validation_stdout.txt');
 device = char(string(p.device));
 if strcmpi(device,'auto'), device = 'cuda'; end
-cfg = struct( ...
-    'schema_version',1, ...
-    'dataset',normalizedPath(formatted.datasetDir), ...
-    'checkpoint',normalizedPath(checkpoint), ...
-    'output',normalizedPath(inferenceDir), ...
-    'split','validation', ...
-    'device',device);
+if strcmp(objective,'continuous_lineage')
+    cfg = struct( ...
+        'schema_version',1, ...
+        'dataset_manifest',normalizedPath(formatted.manifestFile), ...
+        'checkpoint',normalizedPath(checkpoint), ...
+        'output_dir',normalizedPath(inferenceDir), ...
+        'split','validation', ...
+        'device',device);
+    command = 'validate-detecdiv-continuous';
+    reportFile = fullfile(inferenceDir,'validation_report.json');
+else
+    cfg = struct( ...
+        'schema_version',1, ...
+        'dataset',normalizedPath(formatted.datasetDir), ...
+        'checkpoint',normalizedPath(checkpoint), ...
+        'output',normalizedPath(inferenceDir), ...
+        'split','validation', ...
+        'device',device);
+    command = 'infer-from-config';
+    reportFile = fullfile(inferenceDir,'relations.json');
+end
 writeJson(configFile,cfg);
 cellLatentModel.utils.runPythonModule( ...
-    'infer-from-config',configFile,ctx,stdoutFile);
-reportFile = fullfile(inferenceDir,'relations.json');
+    command,configFile,ctx,stdoutFile);
 if ~isfile(reportFile)
     error('cellLatentModel:ValidationIncomplete', ...
         'Validation produced no relation report.');
@@ -52,9 +66,13 @@ report = jsondecode(fileread(reportFile));
 out = cellLatentModel.utils.outInitSafe('cellLatentModel.validate');
 out.metrics = report.summary;
 out.artifacts.dataset = formatted.datasetDir;
-out.artifacts.relations = reportFile;
-out.artifacts.candidateScores = ...
-    fullfile(inferenceDir,'candidate_scores.csv');
+if strcmp(objective,'continuous_lineage')
+    out.artifacts.validation = reportFile;
+else
+    out.artifacts.relations = reportFile;
+    out.artifacts.candidateScores = ...
+        fullfile(inferenceDir,'candidate_scores.csv');
+end
 out.artifacts.config = configFile;
 out.refs.rois = rois;
 out.status = "OK";
@@ -68,4 +86,11 @@ fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 function value = normalizedPath(value)
 value = strrep(char(string(value)),'\','/');
+end
+function value = trainingChoice(raw,fallback)
+while iscell(raw)
+    if isempty(raw), raw = fallback; else, raw = raw{end}; end
+end
+value = lower(strtrim(char(string(raw))));
+if isempty(value), value = fallback; end
 end

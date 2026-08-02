@@ -10,7 +10,8 @@ catch
 end
 if isfield(ctx,'params') && isstruct(ctx.params)
     runtime = ctx.params;
-    present = {'modelPath','modelSource'};
+    present = {'modelPath','modelSource', ...
+        'adaptiveMarkerModelPath','adaptiveMarkerModelSource'};
     present = present(isfield(runtime,present));
     if ~isempty(present), runtime = rmfield(runtime,present); end
     p = cellLatentModel.utils.applyOverrides(p,runtime);

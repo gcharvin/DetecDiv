@@ -9,6 +9,7 @@ if isempty(trainRois) && isempty(valRois)
         'At least one ROI is required for formatting.');
 end
 if exist(outputDir,'dir') ~= 7, mkdir(outputDir); end
+objective = trainingChoice(tp.trainingObjective,'relation_ensemble');
 stageRoot = fullfile(outputDir,['staging_' ...
     char(datetime('now','Format','yyyyMMddHHmmssSSS'))]);
 mkdir(stageRoot);
@@ -22,13 +23,38 @@ for i = 1:numel(entries)
     roiIndex = entries(i).index;
     roiobj = classif.roi(roiIndex);
     if isempty(roiobj.image), roiobj.load; end
-    [trackName,gfpName] = resolveChannels(classif,tp,roiobj);
+    [trackName,gfpName,brightfieldName,nucleusName,budneckName] = ...
+        resolveChannels(classif,tp,roiobj,objective);
     tracks = readStack(roiobj,trackName,true);
     gfp = [];
-    if ~isempty(gfpName), gfp = readStack(roiobj,gfpName,false); end
+    brightfield = [];
+    nucleus = [];
+    budneck = [];
+    if strcmp(objective,'relation_ensemble')
+        if ~isempty(gfpName), gfp = readStack(roiobj,gfpName,false); end
+    else
+        if ~isempty(brightfieldName)
+            brightfield = readStack(roiobj,brightfieldName,false);
+        end
+        if ~isempty(nucleusName)
+            nucleus = readStack(roiobj,nucleusName,false);
+        end
+        if ~isempty(budneckName)
+            budneck = readStack(roiobj,budneckName,false);
+        end
+    end
     inputFile = fullfile(stageRoot,sprintf('roi_%03d.h5',roiIndex));
     writeStack(inputFile,'/tracks',tracks,'uint32');
     if ~isempty(gfp), writeStack(inputFile,'/gfp',gfp,'single'); end
+    if ~isempty(brightfield)
+        writeStack(inputFile,'/brightfield',brightfield,'single');
+    end
+    if ~isempty(nucleus)
+        writeStack(inputFile,'/nucleus',nucleus,'single');
+    end
+    if ~isempty(budneck)
+        writeStack(inputFile,'/budneck',budneck,'single');
+    end
     [model,~] = roiobj.loadCellModel('MigrateLegacy',true);
     [relations,familyName] = reviewedRelations( ...
         model,tp.groundTruthFamily,trackName);
@@ -39,11 +65,19 @@ for i = 1:numel(entries)
     end
     spec = emptySpec();
     spec.roi_id = char(string(roiobj.id));
+    spec.source_roi_path = normalizedPath(roiobj.path);
     spec.input_path = normalizedPath(inputFile);
     spec.tracks_dataset = '/tracks';
     if ~isempty(gfp), spec.gfp_dataset = '/gfp'; end
+    if ~isempty(brightfield), spec.brightfield_dataset = '/brightfield'; end
+    if ~isempty(nucleus), spec.nucleus_dataset = '/nucleus'; end
+    if ~isempty(budneck), spec.budneck_dataset = '/budneck'; end
+    if strcmp(objective,'continuous_lineage')
+        spec.frame_interval_minutes = positiveScalar( ...
+            tp.frameIntervalMinutes,'frameIntervalMinutes');
+    end
     spec.split = entries(i).split;
-    spec.domain = 'detecdiv';
+    spec.domain = char(string(tp.trainingDomain));
     spec.ground_truth_family = familyName;
     spec.ground_truth_relations = relations;
     specs(end+1,1) = spec; %#ok<AGROW>
@@ -54,18 +88,48 @@ for i = 1:numel(entries)
     end
 end
 
-datasetDir = fullfile(outputDir,'relation_dataset');
+if strcmp(objective,'continuous_lineage')
+    datasetDir = fullfile(outputDir,'continuous_dataset');
+else
+    datasetDir = fullfile(outputDir,'relation_dataset');
+end
 configFile = fullfile(outputDir,'format_config.json');
 stdoutFile = fullfile(outputDir,'format_stdout.txt');
-cfg = struct( ...
-    'schema_version',1, ...
-    'output_dir',normalizedPath(datasetDir), ...
-    'rois',specs, ...
-    'linker_parameters',linkerParameters(tp));
+if strcmp(objective,'continuous_lineage')
+    window = nonnegativeScalar(tp.temporalWindowMinutes, ...
+        'temporalWindowMinutes');
+    step = positiveScalar(tp.temporalSampleStepMinutes, ...
+        'temporalSampleStepMinutes');
+    sampleTimes = 0:step:window;
+    if isempty(sampleTimes) || sampleTimes(end) < window
+        sampleTimes(end+1) = window;
+    end
+    cfg = struct( ...
+        'schema_version',1, ...
+        'output_dir',normalizedPath(datasetDir), ...
+        'rois',specs, ...
+        'sample_times_minutes',sampleTimes, ...
+        'maximum_candidates',positiveInteger( ...
+            tp.continuousMaxCandidates,'continuousMaxCandidates'), ...
+        'centroid_prefilter',positiveInteger( ...
+            tp.continuousCentroidPrefilter, ...
+            'continuousCentroidPrefilter'), ...
+        'maximum_contour_distance_radii',positiveScalar( ...
+            tp.continuousMaxContourDistanceRadii, ...
+            'continuousMaxContourDistanceRadii'));
+    command = 'format-detecdiv-continuous';
+else
+    cfg = struct( ...
+        'schema_version',1, ...
+        'output_dir',normalizedPath(datasetDir), ...
+        'rois',specs, ...
+        'linker_parameters',linkerParameters(tp));
+    command = 'format-detecdiv';
+end
 writeJson(configFile,cfg);
 detecdiv_check_cancel(ctx,'cellLatentModel before dataset formatting');
 runtime = cellLatentModel.utils.runPythonModule( ...
-    'format-detecdiv',configFile,ctx,stdoutFile);
+    command,configFile,ctx,stdoutFile);
 detecdiv_check_cancel(ctx,'cellLatentModel after dataset formatting');
 manifestFile = fullfile(datasetDir,'manifest.json');
 if ~isfile(manifestFile)
@@ -95,9 +159,14 @@ end
 function spec = emptySpec()
 spec = struct( ...
     'roi_id','', ...
+    'source_roi_path','', ...
     'input_path','', ...
     'tracks_dataset','/tracks', ...
     'gfp_dataset','', ...
+    'brightfield_dataset','', ...
+    'nucleus_dataset','', ...
+    'budneck_dataset','', ...
+    'frame_interval_minutes',[], ...
     'split','train', ...
     'domain','detecdiv', ...
     'ground_truth_family','', ...
@@ -105,7 +174,8 @@ spec = struct( ...
         'child_track_id',{},'parent_track_id',{},'event_frame',{}));
 end
 
-function [trackName,gfpName] = resolveChannels(classif,tp,roiobj)
+function [trackName,gfpName,brightfieldName,nucleusName,budneckName] = ...
+        resolveChannels(classif,tp,roiobj,objective)
 names = {};
 try names = cellstr(string(classif.channelName)); catch, end
 try
@@ -120,6 +190,9 @@ end
 names = unique(names(strlength(string(names)) > 0),'stable');
 trackName = strtrim(char(string(tp.trackChannelName)));
 gfpName = strtrim(char(string(tp.gfpChannelName)));
+brightfieldName = strtrim(char(string(tp.brightfieldChannelName)));
+nucleusName = strtrim(char(string(tp.nucleusChannelName)));
+budneckName = strtrim(char(string(tp.budneckChannelName)));
 if isempty(trackName)
     hit = find(contains(lower(string(names)),'trackastra') | ...
         contains(lower(string(names)),'track'),1,'last');
@@ -129,10 +202,17 @@ if isempty(trackName)
     end
     trackName = names{hit};
 end
-if isempty(gfpName)
+if strcmp(objective,'relation_ensemble') && isempty(gfpName)
     hit = find(contains(lower(string(names)),'gfp'),1,'first');
     if ~isempty(hit), gfpName = names{hit}; end
 end
+if strcmp(objective,'continuous_lineage') && isempty(brightfieldName)
+    hit = find(contains(lower(string(names)),'brightfield') | ...
+        contains(lower(string(names)),'phase') | ...
+        contains(lower(string(names)),'-ph'),1,'first');
+    if ~isempty(hit), brightfieldName = names{hit}; end
+end
+if strcmp(objective,'continuous_lineage'), gfpName = ''; end
 end
 
 function stack = readStack(roiobj,name,isLabels)
@@ -221,4 +301,36 @@ end
 
 function value = normalizedPath(value)
 value = strrep(char(string(value)),'\','/');
+end
+
+function value = trainingChoice(raw,fallback)
+while iscell(raw)
+    if isempty(raw), raw = fallback; else, raw = raw{end}; end
+end
+value = lower(strtrim(char(string(raw))));
+if isempty(value), value = fallback; end
+if ~any(strcmp(value,{'relation_ensemble','continuous_lineage'}))
+    error('cellLatentModel:InvalidTrainingObjective', ...
+        'trainingObjective must be relation_ensemble or continuous_lineage.');
+end
+end
+
+function value = positiveScalar(raw,name)
+value = double(raw);
+if ~isscalar(value) || ~isfinite(value) || value <= 0
+    error('cellLatentModel:InvalidTrainingParameter', ...
+        '%s must be positive.',name);
+end
+end
+
+function value = nonnegativeScalar(raw,name)
+value = double(raw);
+if ~isscalar(value) || ~isfinite(value) || value < 0
+    error('cellLatentModel:InvalidTrainingParameter', ...
+        '%s must be non-negative.',name);
+end
+end
+
+function value = positiveInteger(raw,name)
+value = round(positiveScalar(raw,name));
 end

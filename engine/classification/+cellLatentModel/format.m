@@ -30,8 +30,18 @@ out.artifacts.dataset = result.datasetDir;
 out.artifacts.manifest = result.manifestFile;
 out.artifacts.config = result.configFile;
 out.artifacts.stdout = result.stdoutFile;
-out.metrics.rows = double(result.manifest.rows);
-out.metrics.events = double(result.manifest.events);
+if isfield(result.manifest,'rows')
+    out.metrics.rows = double(result.manifest.rows);
+elseif isfield(result.manifest,'counts') && ...
+        isfield(result.manifest.counts,'observations')
+    out.metrics.rows = double(result.manifest.counts.observations);
+end
+if isfield(result.manifest,'events')
+    out.metrics.events = double(result.manifest.events);
+elseif isfield(result.manifest,'counts') && ...
+        isfield(result.manifest.counts,'events')
+    out.metrics.events = double(result.manifest.counts.events);
+end
 out.refs.trainRois = trainRois;
 out.refs.validationRois = valRois;
 out.status = "OK";
