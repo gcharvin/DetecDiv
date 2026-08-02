@@ -291,6 +291,7 @@ verifyEqual(testCase,param.backend,'legacy');
 verifyEmpty(testCase,param.frameIntervalMinutes);
 verifyFalse(testCase,isfield(param,'pythonExecutable'));
 verifyFalse(testCase,isfield(param,'repositoryRoot'));
+verifyFalse(testCase,isfield(param,'lineageRepositoryRoot'));
 verifyFalse(testCase,isfield(param,'packagePath'));
 verifyFalse(testCase,isfield(param,'modelPackage'));
 end
@@ -300,14 +301,15 @@ param = cellLatentModel.utils.defaultExecutionParam();
 param.trackChannelName = 'results_trackastra';
 param.pythonExecutable = 'forbidden-python';
 param.repositoryRoot = 'forbidden-repository';
+param.lineageRepositoryRoot = 'forbidden-lineage-repository';
 param.packagePath = 'forbidden-package';
 param.modelPackage = 'forbidden-model-package';
 param.cellLatentRepository = 'forbidden-latent-repository';
 
 resolved = cellLatentModel.normalizeParam(param);
 
-obsolete = {'pythonExecutable','repositoryRoot','packagePath', ...
-    'modelPackage','cellLatentRepository'};
+obsolete = {'pythonExecutable','repositoryRoot','lineageRepositoryRoot', ...
+    'packagePath','modelPackage','cellLatentRepository'};
 verifyFalse(testCase,any(isfield(resolved,obsolete)));
 end
 
@@ -332,8 +334,9 @@ verifyTrue(testCase,contains(lower(spec.tips.brightfieldChannelName), ...
 verifyTrue(testCase,contains(lower(spec.tips.temporalVariant), ...
     'temporal history'));
 allPipelineKeys = [spec.staticKeys spec.defaultImportKeys];
-privatePathKeys = {'pythonExecutable','repositoryRoot','packagePath', ...
-    'modelPackage','cellLatentRepository'};
+privatePathKeys = {'pythonExecutable','repositoryRoot', ...
+    'lineageRepositoryRoot','packagePath','modelPackage', ...
+    'cellLatentRepository'};
 verifyFalse(testCase,any(ismember(privatePathKeys,allPipelineKeys)));
 verifyTrue(testCase,all(ismember(privatePathKeys,spec.environmentKeys)));
 end

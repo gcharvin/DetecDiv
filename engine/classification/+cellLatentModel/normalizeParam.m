@@ -13,8 +13,8 @@ catch
 end
 if nargin < 1 || isempty(param), param = struct(); end
 p = cellLatentModel.utils.applyOverrides(defaults,param);
-obsolete = {'pythonExecutable','repositoryRoot','packagePath', ...
-    'modelPackage','cellLatentRepository'};
+obsolete = {'pythonExecutable','repositoryRoot','lineageRepositoryRoot', ...
+    'packagePath','modelPackage','cellLatentRepository'};
 present = obsolete(isfield(p,obsolete));
 if ~isempty(present), p = rmfield(p,present); end
 
@@ -160,7 +160,7 @@ if strcmp(p.backend,'continuous_cell_state')
     if ~strcmp(p.modelSource,'trained')
         error('cellLatentModel:ContinuousRequiresTrainedModel', ...
             ['continuous_cell_state requires modelSource="trained" and a ' ...
-             'trusted schema-6/7 checkpoint.']);
+             'trusted continuous checkpoint.']);
     end
     if isempty(p.modelPath) || ~isfile(p.modelPath)
         error('cellLatentModel:MissingContinuousCheckpoint', ...

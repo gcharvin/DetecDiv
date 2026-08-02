@@ -6,6 +6,7 @@ function runtime = resolvePythonRuntime(ctx)
 
 if nargin < 1, ctx = struct(); end
 runtime = struct('pythonExecutable','','repositoryRoot','', ...
+    'lineageRepositoryRoot','', ...
     'packageSource','','backend','local');
 environmentNames = {'CELL_LATENT_MODEL_PYTHON','DETECDIV_PYTHON_EXE'};
 for i = 1:numel(environmentNames)
@@ -77,6 +78,25 @@ if ~hasPackageSource(repo)
     end
 end
 runtime.repositoryRoot = repo;
+
+lineageRepo = strtrim(getenv('CELL_LINEAGE_LINKER_REPO_ROOT'));
+if ~hasPackageSource(lineageRepo,'cell_lineage_linker')
+    candidates = {};
+    if ~isempty(repo)
+        candidates{end+1} = fullfile(fileparts(repo), ...
+            'cell_lineage_linker'); %#ok<AGROW>
+    end
+    candidates{end+1} = fullfile(getenv('USERPROFILE'), ...
+        'Documents','MATLAB','cell_lineage_linker'); %#ok<AGROW>
+    lineageRepo = '';
+    for i = 1:numel(candidates)
+        if hasPackageSource(candidates{i},'cell_lineage_linker')
+            lineageRepo = candidates{i};
+            break;
+        end
+    end
+end
+runtime.lineageRepositoryRoot = lineageRepo;
 end
 
 function args = pythonSelectionArgs(ctx)
@@ -105,10 +125,11 @@ end
 tf = status == 0;
 end
 
-function tf = hasPackageSource(root)
+function tf = hasPackageSource(root,packageName)
+if nargin < 2, packageName = 'cell_latent_model'; end
 root = char(string(root));
 tf = ~isempty(root) && ...
-    isfolder(fullfile(root,'src','cell_latent_model'));
+    isfolder(fullfile(root,'src',packageName));
 end
 
 function value = shellQuote(raw)

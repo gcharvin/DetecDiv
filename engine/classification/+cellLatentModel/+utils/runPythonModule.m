@@ -5,21 +5,27 @@ if nargin < 4, stdoutPath = ''; end
 runtime = cellLatentModel.utils.resolvePythonRuntime(ctx);
 pythonExe = char(string(runtime.pythonExecutable));
 repoRoot = char(string(runtime.repositoryRoot));
+lineageRepoRoot = char(string(runtime.lineageRepositoryRoot));
 moduleArgs = sprintf('-u -m cell_latent_model %s --config %s', ...
     char(string(command)),quoteArg(configPath));
+sourceRoots = {};
+if ~isempty(repoRoot), sourceRoots{end+1} = fullfile(repoRoot,'src'); end
+if ~isempty(lineageRepoRoot)
+    sourceRoots{end+1} = fullfile(lineageRepoRoot,'src');
+end
 if ispc
-    if isempty(repoRoot)
+    if isempty(sourceRoots)
         cmd = sprintf('"%s" %s 2>&1',pythonExe,moduleArgs);
     else
-        sourceRoot = fullfile(repoRoot,'src');
+        sourceRoot = strjoin(sourceRoots,';');
         cmd = sprintf(['set "PYTHONPATH=%s;%%PYTHONPATH%%" && ' ...
             '"%s" %s 2>&1'],sourceRoot,pythonExe,moduleArgs);
     end
 else
-    if isempty(repoRoot)
+    if isempty(sourceRoots)
         cmd = sprintf('%s %s 2>&1',shellQuote(pythonExe),moduleArgs);
     else
-        sourceRoot = fullfile(repoRoot,'src');
+        sourceRoot = strjoin(sourceRoots,':');
         cmd = sprintf('PYTHONPATH=%s:$PYTHONPATH %s %s 2>&1', ...
             shellQuote(sourceRoot),shellQuote(pythonExe),moduleArgs);
     end
