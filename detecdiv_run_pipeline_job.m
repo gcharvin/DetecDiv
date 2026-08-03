@@ -328,7 +328,7 @@ end
 
 function projectMatPath = localResolveProjectMatPath(payload)
     candidates = localProjectMatPathCandidates(payload);
-    projectMatPath = localFirstExistingPath(candidates);
+    projectMatPath = localFirstExistingProjectPath(candidates);
     if ~isempty(projectMatPath)
         return;
     end
@@ -340,7 +340,41 @@ function projectMatPath = localResolveProjectMatPath(payload)
         error('detecdiv_run_pipeline_job:MissingProjectPath', ...
             'project_ref.project_mat_path is required for batch execution.');
     end
-    error('detecdiv_run_pipeline_job:ProjectMissing', 'Project MAT not found: %s', firstCandidate);
+    error('detecdiv_run_pipeline_job:ProjectMissing', ...
+        'Project file not found (checked JSON/MAT variants): %s', firstCandidate);
+end
+
+function pathOut = localFirstExistingProjectPath(candidates)
+    pathOut = '';
+    for i = 1:numel(candidates)
+        variants = localProjectPathVariants(candidates{i});
+        pathOut = localFirstExistingPath(variants);
+        if ~isempty(pathOut)
+            return;
+        end
+    end
+end
+
+function variants = localProjectPathVariants(pathText)
+    pathText = char(string(pathText));
+    variants = {};
+    if isempty(pathText)
+        return;
+    end
+
+    [folder, name, ext] = fileparts(pathText);
+    switch lower(ext)
+        case '.mat'
+            % Lightweight JSON is now the canonical project persistence
+            % format. Hub catalog fields retain the legacy MAT name, so a
+            % newly-created project can legitimately have only this sibling.
+            variants = {fullfile(folder, [name '.json']), pathText};
+        case '.json'
+            variants = {pathText, fullfile(folder, [name '.mat'])};
+        otherwise
+            variants = {pathText, [pathText '.json'], [pathText '.mat']};
+    end
+    variants = unique(variants, 'stable');
 end
 
 function candidates = localProjectMatPathCandidates(payload)
@@ -385,7 +419,7 @@ end
 
 function candidates = localAppendPipelineSiblingCandidates(candidates, payload)
     projectMatPath = localResolveProjectMatPath(payload);
-    projectDir = regexprep(projectMatPath, '\.mat$', '');
+    projectDir = regexprep(projectMatPath, '\.(mat|json)$', '', 'ignorecase');
     keys = { ...
         {'pipeline_ref','export_manifest_uri'}; ...
         {'pipeline_ref','pipeline_bundle_uri'}; ...
