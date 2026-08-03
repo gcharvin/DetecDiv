@@ -172,11 +172,23 @@ function result = detecdiv_run_pipeline_job(jobInput)
         if exist('dependencyAudit', 'var') && ~isempty(dependencyAudit)
             result.dependency_audit = dependencyAudit;
         end
-        result.error = getReport(ME, 'extended', 'hyperlinks', 'off');
+        if isCancelled
+            % Cancellation is a normal terminal state, not a worker error.
+            % The reason remains available in progress/run events and the
+            % report; keeping result.error empty prevents the UI from
+            % presenting a successful cancellation as a failure stack.
+            result.error = '';
+        else
+            result.error = getReport(ME, 'extended', 'hyperlinks', 'off');
+        end
         result.summary = localBuildFailureSummary(report);
         localWriteResultIfRequested(resultPath, result);
-        fprintf(2, '%s\n', result.error);
-        error('detecdiv_run_pipeline_job:ExecutionFailed', '%s', ME.message);
+        if isCancelled
+            fprintf('[worker] Pipeline run cancelled: %s\n', ME.message);
+        else
+            fprintf(2, '%s\n', result.error);
+            error('detecdiv_run_pipeline_job:ExecutionFailed', '%s', ME.message);
+        end
     end
 
     localWriteResultIfRequested(resultPath, result);

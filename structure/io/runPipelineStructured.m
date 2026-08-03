@@ -172,9 +172,13 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
                 'DurationSec', toc(tNode), 'Message', nodeMessage, ...
                 'Before', beforeStats, 'After', afterStats);
         catch ME
-            fprintf('DETECDIV_PIPELINE_PROGRESS node_failed id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
-                char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
             wasCancelled = strcmp(ME.identifier, 'runPipeline:Cancelled');
+            progressState = 'node_failed';
+            if wasCancelled
+                progressState = 'node_cancelled';
+            end
+            fprintf('DETECDIV_PIPELINE_PROGRESS %s id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
+                progressState, char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
             afterStats = captureContextStats(ctx);
             nodeStatus = 'failed';
             if wasCancelled
