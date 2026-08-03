@@ -780,7 +780,28 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
     end
     ctx.allowGUI = false;
     ctx.interactive = false;
-    ctx.pipelineRef = struct('id', char(string(pipeObj.strid)), 'path', char(string(pipeObj.path)), 'version', char(string(pipeObj.version)));
+    templateJsonPath = localGetText(payload, {'pipeline_ref','template_json_path'}, '');
+    templatePath = templateJsonPath;
+    if exist(templatePath, 'file') == 2
+        templatePath = fileparts(templatePath);
+    end
+    if isempty(templatePath)
+        templatePath = char(string(pipeObj.path));
+    end
+    ctx.pipelineRef = struct('id', char(string(pipeObj.strid)), 'path', templatePath, 'version', char(string(pipeObj.version)));
+    templatePipe = [];
+    if ~isempty(templateJsonPath)
+        try
+            [templatePipe, ~] = pipelineLoad(templateJsonPath);
+        catch
+            templatePipe = [];
+        end
+    end
+    if isempty(templatePipe)
+        templatePipe = pipeObj;
+    end
+    ctx.pipelineSpec = struct('name', char(string(templatePipe.strid)), ...
+        'nodes', templatePipe.nodes, 'edges', templatePipe.edges, 'branches', templatePipe.branches);
     if nargin >= 2 && ~isempty(shallowObj)
         ctx.targetRef = struct( ...
             'type', 'shallow', ...
@@ -1014,7 +1035,7 @@ function runObj = localEnsureRunObject(shallowObj, pipeObj, ctx, payload, runId)
 
     descr = localGetText(payload, {'run_request','description'}, '');
     if isempty(existingIdx)
-        runObj = pipelineRunNew(shallowObj, pipeObj.strid, localCanonicalPipelineJsonPath(pipeObj, pipeObj.path), ...
+        runObj = pipelineRunNew(shallowObj, pipeObj.strid, localTemplateJsonPath(ctx, pipeObj), ...
             'runId', runId, ...
             'description', descr, ...
             'ctx', ctx, ...
@@ -1022,7 +1043,7 @@ function runObj = localEnsureRunObject(shallowObj, pipeObj, ctx, payload, runId)
     else
         runObj = shallowObj.processing.pipelineRun(existingIdx);
         runObj.templateId = char(string(pipeObj.strid));
-        runObj.templatePath = localCanonicalPipelineJsonPath(pipeObj, pipeObj.path);
+        runObj.templatePath = localTemplateJsonPath(ctx, pipeObj);
         runObj.pipelineRef = ctx.pipelineRef;
         runObj.targetRef = ctx.targetRef;
         runObj.description = descr;
@@ -1056,7 +1077,7 @@ function runObj = localEnsureClassifierScopedRunObject(pipeObj, ctx, payload, ru
     runObj = pipelineRun('', runId, 1);
     runObj.path = runRoot;
     runObj.templateId = char(string(pipeObj.strid));
-    runObj.templatePath = localCanonicalPipelineJsonPath(pipeObj, pipeObj.path);
+    runObj.templatePath = localTemplateJsonPath(ctx, pipeObj);
     runObj.pipelineRef = ctx.pipelineRef;
     runObj.targetRef = ctx.targetRef;
     runObj.projectPath = '';
@@ -1505,6 +1526,21 @@ function localAddRepoPaths(repoRoot)
     fprintf('[detecdiv_run_pipeline_job] runPipelineStructured: %s\n', which('runPipelineStructured'));
     fprintf('[detecdiv_run_pipeline_job] sam31.train: %s\n', which('sam31.train'));
     doneRoot = repoRoot;
+end
+
+function jsonPath = localTemplateJsonPath(ctx, pipeObj)
+    jsonPath = '';
+    try
+        jsonPath = char(string(ctx.pipelineRef.path));
+    catch
+    end
+    if exist(jsonPath, 'dir') == 7
+        jsonPath = fullfile(jsonPath, 'pipeline.json');
+    end
+    if exist(jsonPath, 'file') == 2
+        return;
+    end
+    jsonPath = localCanonicalPipelineJsonPath(pipeObj, char(string(pipeObj.path)));
 end
 
 function tf = localIsForbiddenRuntimePath(pathStr)

@@ -48,10 +48,16 @@ function payload = pipelineRunJobPayload(runObj, project, pipelineInputPath, var
     end
 
     pipelineRef = localStructProperty(runObj, 'pipelineRef');
+    templatePath = localTextField(pipelineRef, 'path', localTextProperty(runObj, 'templatePath', ''));
+    [~, ~, templateExt] = fileparts(templatePath);
+    if ~isempty(templatePath) && (exist(templatePath, 'dir') == 7 || isempty(templateExt))
+        templatePath = fullfile(templatePath, 'pipeline.json');
+    end
     payload.pipeline_ref = struct( ...
         'pipeline_id', localTextField(pipelineRef, 'id', localTextProperty(runObj, 'templateId', '')), ...
         'pipeline_version', localTextField(pipelineRef, 'version', ''), ...
-        'pipeline_json_path', char(string(pipelineInputPath)));
+        'pipeline_json_path', char(string(pipelineInputPath)), ...
+        'template_json_path', char(string(templatePath)));
 
     request = struct();
     request.run_id = localTextProperty(runObj, 'runId', localTextField(run, 'runId', ''));

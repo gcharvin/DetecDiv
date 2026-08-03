@@ -25,6 +25,21 @@ roundTrip = jsondecode(jsonencode(payload));
 verifyEqual(testCase, roundTrip.run_request.selection.rois, 1);
 end
 
+function testPayloadKeepsCompleteTemplateSeparateFromExecutableSnapshot(testCase)
+runObj = localClassifierRun();
+templateDir = fullfile(tempdir, 'detecdiv_complete_template');
+runObj.pipelineRef = struct('id', 'complete_pipeline', ...
+    'path', templateDir, 'version', '1.0');
+runObj.templatePath = fullfile(templateDir, 'pipeline.json');
+
+payload = pipelineRunJobPayload(runObj, [], fullfile('run', 'pipeline_snapshot', 'pipeline.json'));
+
+verifyEqual(testCase, payload.pipeline_ref.pipeline_json_path, ...
+    fullfile('run', 'pipeline_snapshot', 'pipeline.json'));
+verifyEqual(testCase, payload.pipeline_ref.template_json_path, ...
+    fullfile(templateDir, 'pipeline.json'));
+end
+
 function runObj = localClassifierRun()
 runObj = pipelineRun('', 'selection_test', 1);
 runObj.targetRef = struct( ...

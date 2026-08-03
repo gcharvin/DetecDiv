@@ -595,7 +595,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
-            candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) runSnapshotPaths]; %#ok<AGROW>
+            candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) ...
+                classifierPipelineTemplatePathsForRun(app, runObj) ...
+                recentPipelineTemplatePathsForRun(app, runObj) ...
+                runSnapshotPaths]; %#ok<AGROW>
             candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths);
             [pipeObj, loadMsg] = loadBestPipelineTemplateCandidate(app, candidatePaths, runObj);
             historicalPipe = widestProjectRunPipelineSpecForUi(app, runObj);
@@ -875,6 +878,67 @@ classdef pipeline2 < matlab.apps.AppBase
             d = dir(fullfile(projectRoot, '*', 'pipeline.json'));
             for i = 1:numel(d)
                 paths{end+1} = fullfile(d(i).folder, d(i).name); %#ok<AGROW>
+            end
+        end
+
+        function paths = classifierPipelineTemplatePathsForRun(app, runObj)
+            paths = {};
+            templateId = runTemplateIdForUi(app, runObj);
+            if isempty(strtrim(templateId))
+                return;
+            end
+            classiPath = '';
+            try
+                if isstruct(runObj.targetRef) && isfield(runObj.targetRef, 'classiPath')
+                    classiPath = char(string(runObj.targetRef.classiPath));
+                end
+            catch
+            end
+            if isempty(strtrim(classiPath))
+                try
+                    classiPath = fileparts(fileparts(char(string(runObj.path))));
+                catch
+                    classiPath = '';
+                end
+            end
+            if isempty(strtrim(classiPath))
+                return;
+            end
+            root = classiPath;
+            for level = 1:4
+                paths{end+1} = fullfile(root, 'pipeline_templates', templateId, 'pipeline.json'); %#ok<AGROW>
+                paths{end+1} = fullfile(root, 'pipeline', templateId, 'pipeline.json'); %#ok<AGROW>
+                paths{end+1} = fullfile(root, 'pipeline', templateId, templateId, 'pipeline.json'); %#ok<AGROW>
+                paths{end+1} = fullfile(root, templateId, 'pipeline.json'); %#ok<AGROW>
+                parent = fileparts(root);
+                if isempty(parent) || strcmp(parent, root)
+                    break;
+                end
+                root = parent;
+            end
+        end
+
+        function paths = recentPipelineTemplatePathsForRun(app, runObj) %#ok<INUSD>
+            paths = {};
+            templateId = runTemplateIdForUi(app, runObj);
+            if isempty(strtrim(templateId))
+                return;
+            end
+            try
+                recent = getpref('DetecDiv', 'pipeline2RecentPipelines', {});
+                recent = cellstr(string(recent(:)));
+            catch
+                recent = {};
+            end
+            for i = 1:numel(recent)
+                candidate = char(string(recent{i}));
+                try
+                    [pipeObj, ~] = pipelineLoad(candidate);
+                    if ~isempty(pipeObj) && isa(pipeObj, 'pipeline') && strcmpi(char(string(pipeObj.strid)), templateId)
+                        paths{end+1} = candidate; %#ok<AGROW>
+                    end
+                catch
+                end
             end
         end
 
@@ -1326,6 +1390,26 @@ classdef pipeline2 < matlab.apps.AppBase
                 data{i,4} = char(string(getField(app, nodes(i), 'pkg', '')));
             end
             app.UISelectedModuleTable.Data = data;
+            refreshSelectedModuleTableStyles(app);
+        end
+
+        function refreshSelectedModuleTableStyles(app)
+            try
+                removeStyle(app.UISelectedModuleTable);
+                data = app.UISelectedModuleTable.Data;
+                inactiveRows = [];
+                for i = 1:size(data, 1)
+                    if ~logical(data{i,1})
+                        inactiveRows(end+1) = i; %#ok<AGROW>
+                    end
+                end
+                if ~isempty(inactiveRows)
+                    inactiveStyle = uistyle('BackgroundColor', [0.94 0.94 0.94], ...
+                        'FontColor', [0.50 0.50 0.50]);
+                    addStyle(app.UISelectedModuleTable, inactiveStyle, 'row', inactiveRows);
+                end
+            catch
+            end
         end
 
         function map = currentSelectedRunMap(app)
@@ -1354,6 +1438,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     data = table.Data;
                     data{event.Indices(1), event.Indices(2)} = logical(event.NewData);
                     table.Data = data;
+                    refreshSelectedModuleTableStyles(app);
                     drawnow limitrate nocallbacks;
                 end
             catch
@@ -16238,7 +16323,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function snapshotPath = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj) %#ok<INUSD>
+        function [snapshotPath, templateSnapshotPath] = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj)
             if isempty(pipeObj) || ~isa(pipeObj, 'pipeline') || ...
                     isempty(runObj) || ~isa(runObj, 'pipelineRun')
                 error('pipeline2:LocalSnapshotInput', ...
@@ -16259,6 +16344,22 @@ classdef pipeline2 < matlab.apps.AppBase
             if exist(snapshotPath, 'file') ~= 2
                 error('pipeline2:LocalSnapshotSave', ...
                     'Local process pipeline snapshot was not created: %s', snapshotPath);
+            end
+
+            % The executable snapshot may contain only the modules selected
+            % for this run. Keep a second, complete template snapshot so a
+            % later "New run from this" can restore every template module
+            % and merely uncheck the modules omitted by the previous run.
+            templateSnapshotDir = fullfile(runPath, 'pipeline_template_snapshot');
+            if exist(templateSnapshotDir, 'dir') ~= 7
+                mkdir(templateSnapshotDir);
+            end
+            templateObj = buildPipelineObject(app, templateSnapshotDir, currentPipelineName(app));
+            pipelineSave(templateObj, 'Artifacts', false, 'Audit', false);
+            templateSnapshotPath = fullfile(templateSnapshotDir, 'pipeline.json');
+            if exist(templateSnapshotPath, 'file') ~= 2
+                error('pipeline2:LocalTemplateSnapshotSave', ...
+                    'Complete pipeline template snapshot was not created: %s', templateSnapshotPath);
             end
         end
 
@@ -17470,6 +17571,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             app.UISelectedModuleTable.Data = data;
+            refreshSelectedModuleTableStyles(app);
         end
 
         function disableRawPrepNodesInRunTable(app)
@@ -17488,6 +17590,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             app.UISelectedModuleTable.Data = data;
+            refreshSelectedModuleTableStyles(app);
         end
 
         function policy = resumeModeToRunPolicy(app, value) %#ok<INUSD>
@@ -19818,6 +19921,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 data{i,1} = any(strcmp(selectedNodes, nodeId)) && runtimeRunSelectionAllowsNode(app, nodeId);
             end
             app.UISelectedModuleTable.Data = data;
+            refreshSelectedModuleTableStyles(app);
         end
 
         function txt = selectionToText(app, value) %#ok<INUSD>
@@ -21114,7 +21218,15 @@ classdef pipeline2 < matlab.apps.AppBase
                         shallowSave(app.CurrentProject, 'shallowObj');
                     end
                     updateRunSaveProgress(app, d, 'Writing run-specific pipeline snapshot...', 0.86);
-                    localPipelineSnapshot = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj);
+                    [localPipelineSnapshot, localTemplateSnapshot] = saveLocalProcessPipelineSnapshot(app, pipeObj, runObj);
+                    templateSnapshotDir = fileparts(localTemplateSnapshot);
+                    runObj.pipelineRef.path = templateSnapshotDir;
+                    runObj.templatePath = localTemplateSnapshot;
+                    if isstruct(runObj.ctx)
+                        runObj.ctx.pipelineRef = runObj.pipelineRef;
+                        runObj.ctx.pipelineSpec = buildPipelineStruct(app);
+                    end
+                    pipelineRunSave(runObj);
                     updateRunSaveProgress(app, d, 'Starting local MATLAB worker...', 0.90);
                     app.LocalRunSubmission = detecdiv_local_submit_pipeline_run( ...
                         runObj, app.CurrentProject, localPipelineSnapshot, ...

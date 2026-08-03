@@ -503,6 +503,8 @@ classdef detecdiv < matlab.apps.AppBase
                 m.MenuSelectedFcn = @(~,~)openClassifierPipelineRunInspector(app, classifierIdx, runIdx);
                 m = uimenu(cm,'Text','Edit run...');
                 m.MenuSelectedFcn = @(~,~)openClassifierPipelineRunEditor(app, classifierIdx, runIdx);
+                m = uimenu(cm,'Text','New run from this...');
+                m.MenuSelectedFcn = @(~,~)openClassifierPipelineRunSeed(app, classifierIdx, runIdx);
                 m = uimenu(cm,'Text','Open run log');
                 m.MenuSelectedFcn = @(~,~)openClassifierPipelineRunLog(app, classifierIdx, runIdx);
                 m = uimenu(cm,'Text','Open run folder');
@@ -7550,7 +7552,7 @@ end
                 app.setComponentVisible('EditRunButton', 'on');
                 app.setComponentText('EditRunButton', 'Edit run...');
                 app.OpenButton.Visible='on';
-                app.OpenButton.Text='Open run folder...';
+                app.OpenButton.Text='New run from this...';
 
                 cc=app.Tree.SelectedNodes.UserData;
                 [runObj, clas] = app.getClassifierPipelineRun(cc(1), cc(2));
@@ -7574,7 +7576,8 @@ end
                         t=[t newline];
                     end
                     t=[t 'Review run opens the immutable execution record and artifacts.' newline];
-                    t=[t 'Edit run reopens this run configuration in pipeline2.' newline newline];
+                    t=[t 'Edit run reopens this run configuration in pipeline2.' newline];
+                    t=[t 'New run from this reloads the complete pipeline template and copies this run selection.' newline newline];
                     if isprop(runObj,'description') && ~isempty(runObj.description)
                         t=[t 'Description: ' char(string(runObj.description)) newline newline];
                     end
@@ -9275,7 +9278,7 @@ end
 
         if strcmp(str,'ClassifierpipelineRun')
             app.safeCloseProgressDialog(d);
-            app.openClassifierPipelineRunFolder(arg(1), arg(2));
+            app.openClassifierPipelineRunSeed(arg(1), arg(2));
             return;
         end
 
@@ -9934,6 +9937,19 @@ end
                 RefreshtreewindowMenuSelected(app, []);
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
+            end
+        end
+
+        function openClassifierPipelineRunSeed(app, classifierIdx, runIdx)
+            [runObj, ~] = app.getClassifierPipelineRun(classifierIdx, runIdx);
+            if isempty(runObj)
+                return;
+            end
+            try
+                app.openPipelineEditorWithProgress([], runObj, 'Preparing a new run from classifier run...');
+                RefreshtreewindowMenuSelected(app, []);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'New pipeline run error', 'Icon', 'warning');
             end
         end
 
