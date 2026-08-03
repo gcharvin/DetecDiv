@@ -1234,15 +1234,7 @@ end
                 runStatus = 'unknown';
 
                 try
-                    review = pipelineRunReview(runObj, 'Write', false);
-                    if isstruct(review) && isfield(review, 'status') && ~isempty(review.status)
-                        runStatus = char(string(review.status));
-                    end
-                catch
-                end
-
-                try
-                    if strcmp(runStatus, 'unknown') && isprop(runObj,'status') && ~isempty(runObj.status)
+                    if isprop(runObj,'status') && ~isempty(runObj.status)
                         runStatus = char(string(runObj.status));
                     end
                 catch
@@ -7525,22 +7517,7 @@ end
                         end
                     catch
                     end
-                    try
-                        review = pipelineRunReview(runObj, 'Write', false);
-                        if isstruct(review) && isfield(review,'summary') && isstruct(review.summary)
-                            sumrep = review.summary;
-                            t=[t newline 'Stored review summary:' newline];
-                            t=[t '- totalNodes: ' char(string(numel(review.nodes))) newline];
-                            sumFields = {'doneNodes','skippedNodes','failedNodes','cancelledNodes','startedAt','endedAt'};
-                            for isf = 1:numel(sumFields)
-                                key = sumFields{isf};
-                                if isfield(sumrep, key) && ~isempty(sumrep.(key))
-                                    t=[t '- ' key ': ' char(string(sumrep.(key))) newline]; %#ok<AGROW>
-                                end
-                            end
-                        end
-                    catch
-                    end
+                    t=[t newline 'Open Review run for the event log and live Hub status.' newline];
                     app.ProjectInformationLabel.Text=t;
                 end
             end
@@ -7589,22 +7566,7 @@ end
                             t=[t 'Pipeline path: ' char(string(runObj.pipelineRef.path)) newline];
                         end
                     end
-                    try
-                        review = pipelineRunReview(runObj, 'Write', false);
-                        if isstruct(review) && isfield(review,'summary') && isstruct(review.summary)
-                            sumrep = review.summary;
-                            t=[t newline 'Stored review summary:' newline];
-                            t=[t '- totalNodes: ' char(string(numel(review.nodes))) newline];
-                            sumFields = {'doneNodes','skippedNodes','failedNodes','cancelledNodes','startedAt','endedAt'};
-                            for isf = 1:numel(sumFields)
-                                key = sumFields{isf};
-                                if isfield(sumrep, key) && ~isempty(sumrep.(key))
-                                    t=[t '- ' key ': ' char(string(sumrep.(key))) newline]; %#ok<AGROW>
-                                end
-                            end
-                        end
-                    catch
-                    end
+                    t=[t newline 'Open Review run for the event log and live Hub status.' newline];
                     app.ProjectInformationLabel.Text=t;
                 end
             end
