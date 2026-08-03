@@ -121,7 +121,10 @@ if legacyMode
     list = zeros(H, W, 1, numel(framesid), class(testIm));
 else
     list = images; % H W C T
-    if isempty(list) || ndims(list) < 4 || size(list,1) == 0 || size(list,2) == 0 || size(list,4) == 0
+    % MATLAB drops trailing singleton dimensions from ndims(). Therefore,
+    % valid HxWxCx1 blocks (and HxWx1x1 blocks) must not be rejected merely
+    % because ndims(list) is smaller than four.
+    if isempty(list) || size(list,1) == 0 || size(list,2) == 0 || size(list,4) == 0
         error('computeDrift:EmptyImageBlock', ...
             'Drift correction received an empty image block.');
     end
