@@ -14476,19 +14476,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function params = applyProjectDefaultOutputParams(app, params)
-            if ~isstruct(params)
-                return;
-            end
-            projectFolder = currentProjectFolder(app);
-            if isempty(projectFolder)
-                return;
-            end
-            if isfield(params, 'outputDir') && isempty(strtrim(safeScalarText(app, params.outputDir)))
-                params.outputDir = projectFolder;
-            end
-            if isfield(params, 'outputFolder') && isempty(strtrim(safeScalarText(app, params.outputFolder)))
-                params.outputFolder = projectFolder;
-            end
+            %#ok<INUSD>
+            % Keep empty output paths empty in pipeline templates. Absolute
+            % project paths make templates machine-specific; the pipeline
+            % runner resolves empty outputDir/outputFolder values from the
+            % current runtime project context immediately before execution.
         end
 
         function issues = validateRuntimeInputs(app)
