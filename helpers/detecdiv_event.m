@@ -45,7 +45,14 @@ end
 function id = localSubscribe(eventName, callback)
     eventName = localEventName(eventName);
     listeners = localGetListeners();
-    id = char(java.util.UUID.randomUUID);
+    % A cryptographic Java UUID can block for several seconds on the first
+    % call of a MATLAB session. Listener ids only need to be process-local.
+    persistent listenerCounter
+    if isempty(listenerCounter)
+        listenerCounter = uint64(0);
+    end
+    listenerCounter = listenerCounter + 1;
+    id = sprintf('listener_%0.0f_%u', now * 86400 * 1e6, listenerCounter);
     listeners(end + 1) = struct( ...
         'id', id, ...
         'eventName', eventName, ...

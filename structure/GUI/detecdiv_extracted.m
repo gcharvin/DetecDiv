@@ -83,6 +83,9 @@ classdef detecdiv < matlab.apps.AppBase
         ActivePipelineCancelFile string = ""
         ActivePipelineCancelTimer = []
         ActivePipelineProgressDialog = []
+        RoiTreeBuildTimer = []
+        RoiTreeBuildDialog = []
+        RoiTreeBuildState = struct()
         MainGrid matlab.ui.container.GridLayout
         WorkspaceEventListenerId string = ""
 
@@ -91,6 +94,7 @@ classdef detecdiv < matlab.apps.AppBase
     methods (Access = public)
 
         function displayNodes(app)
+            app.stopRoiTreeBuild();
             cc=1;
             %h1=[];
             %hproj=[];
@@ -2750,6 +2754,96 @@ end
             end
         end
 
+        function startRoiTreeBuild(app, parentNode, roiLabels, childTag, userDataPrefix)
+            if isempty(roiLabels) || isempty(parentNode) || ~isvalid(parentNode)
+                return;
+            end
+            app.stopRoiTreeBuild();
+
+            [pth, ~, ~] = fileparts(which('detecdiv.mlapp'));
+            app.RoiTreeBuildDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please Wait...', ...
+                'Message', sprintf('Generating classifier ROI list... 0/%d', numel(roiLabels)), ...
+                'Value', 0, ...
+                'Cancelable', 'on');
+            app.RoiTreeBuildState = struct( ...
+                'parentNode', parentNode, ...
+                'roiLabels', {roiLabels}, ...
+                'childTag', char(string(childTag)), ...
+                'userDataPrefix', userDataPrefix, ...
+                'roiIcon', fullfile(pth, 'roi.png'), ...
+                'nextIndex', 1, ...
+                'chunkSize', 10);
+            app.RoiTreeBuildTimer = timer( ...
+                'ExecutionMode', 'fixedSpacing', ...
+                'Period', 0.05, ...
+                'StartDelay', 0.01, ...
+                'BusyMode', 'drop', ...
+                'TimerFcn', @(~,~) app.buildNextRoiTreeChunk());
+            start(app.RoiTreeBuildTimer);
+            drawnow limitrate nocallbacks;
+        end
+
+        function buildNextRoiTreeChunk(app)
+            try
+                state = app.RoiTreeBuildState;
+                if isempty(app) || ~isvalid(app) || ~isstruct(state) || ...
+                        ~isfield(state, 'parentNode') || isempty(state.parentNode) || ...
+                        ~isvalid(state.parentNode)
+                    app.stopRoiTreeBuild();
+                    return;
+                end
+
+                nRoi = numel(state.roiLabels);
+                d = app.RoiTreeBuildDialog;
+                if ~isempty(d) && isvalid(d) && d.CancelRequested
+                    app.stopRoiTreeBuild();
+                    return;
+                end
+                firstIndex = state.nextIndex;
+                lastIndex = min(nRoi, firstIndex + state.chunkSize - 1);
+                for n = firstIndex:lastIndex
+                    uitreenode(state.parentNode, ...
+                        'Text', state.roiLabels{n}, ...
+                        'Tag', state.childTag, ...
+                        'UserData', [state.userDataPrefix, n], ...
+                        'Icon', state.roiIcon);
+                end
+
+                state.nextIndex = lastIndex + 1;
+                app.RoiTreeBuildState = state;
+                d = app.RoiTreeBuildDialog;
+                if ~isempty(d) && isvalid(d)
+                    d.Value = lastIndex ./ nRoi;
+                    d.Message = sprintf('Generating classifier ROI list... %d/%d', lastIndex, nRoi);
+                end
+                drawnow limitrate;
+
+                if lastIndex >= nRoi
+                    app.stopRoiTreeBuild();
+                end
+            catch ME
+                warning('DetecDiv:Tree:RoiBuildFailed', ...
+                    'Could not finish the classifier ROI tree: %s', ME.message);
+                app.stopRoiTreeBuild();
+            end
+        end
+
+        function stopRoiTreeBuild(app)
+            t = app.RoiTreeBuildTimer;
+            app.RoiTreeBuildTimer = [];
+            if ~isempty(t)
+                try, stop(t); catch, end
+                try, delete(t); catch, end
+            end
+            d = app.RoiTreeBuildDialog;
+            app.RoiTreeBuildDialog = [];
+            if ~isempty(d)
+                app.safeCloseProgressDialog(d);
+            end
+            app.RoiTreeBuildState = struct();
+        end
+
         function tf = treeNodeHasChildTag(app, node, tagName) %#ok<INUSD>
             tf = false;
             try
@@ -3647,18 +3741,9 @@ end
             if isempty(pipelineJson)
                 return;
             end
-            try
-                if isfile(pipelineJson)
-                    [pipeObj, msg] = pipelineLoad(pipelineJson); %#ok<ASGLU>
-                    if ~isempty(pipeObj) && isa(pipeObj,'pipeline') && isprop(pipeObj,'strid') && ~isempty(pipeObj.strid)
-                        label = strtrim(char(string(pipeObj.strid)));
-                    end
-                end
-            catch
-            end
-            if ~isempty(label)
-                return;
-            end
+            % Recent pipelines are references, not loaded pipeline objects.
+            % Derive their tree label from the path so startup never reads a
+            % pipeline.json (which may live on a slow/offline network share).
             [folder, ~, ~] = fileparts(char(string(pipelineJson)));
             [parentFolder, folderName] = fileparts(folder);
             label = folderName;
@@ -5938,6 +6023,16 @@ end
         rp = string(app.RecentProjects(:));
         rp = rp(rp ~= "");
 
+        if ~validateExisting
+            [~, ia] = unique(rp, 'stable');
+            rp = rp(ia);
+            if numel(rp) > 10
+                rp = rp(1:10);
+            end
+            app.RecentProjects = rp;
+            return;
+        end
+
         out = strings(0,1);
         for k = 1:numel(rp)
             resolved = string(app.resolveRecentProjectPath(rp(k)));
@@ -7030,37 +7125,11 @@ end
                 shallowObj=evalin('base',proj);
                 clas=shallowObj.processing.classification(pos);
 
-                if ~app.treeNodeHasChildTag(app.Tree.SelectedNodes, 'Classifierrois')
+                if ~app.treeNodeHasChildTag(app.Tree.SelectedNodes, 'Projectclassirois')
                     roiLabels = buildRoiTreeLabels(app, clas.roi);
                     if ~isempty(roiLabels)
-                        [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-                        nRoi = numel(roiLabels);
-                        roiProgressDialog = [];
-                        roiProgressCleanup = [];
-                        if nRoi >= 25
-                            roiProgressDialog = uiprogressdlg(app.DetecDivUIFigure, ...
-                                'Title', 'Please Wait...', ...
-                                'Message', 'Generating classifier ROI list...', ...
-                                'Value', 0);
-                            roiProgressCleanup = onCleanup(@() app.safeCloseProgressDialog(roiProgressDialog)); %#ok<NASGU>
-                            drawnow limitrate;
-                        end
-                        for n=1:numel(roiLabels)
-                            if ~isempty(roiProgressDialog) && isvalid(roiProgressDialog) && ...
-                                    (n == 1 || n == nRoi || mod(n, 10) == 0)
-                                roiProgressDialog.Value = n ./ nRoi;
-                                roiProgressDialog.Message = ['Generating classifier ROI list... ' num2str(n) '/' num2str(nRoi)];
-                                drawnow limitrate;
-                            end
-                            % aa=app.Data.Projectclassirois{i}{k}{n}
-                            cm=uicontextmenu(app.DetecDivUIFigure);
-                            m = uimenu(cm,'Text','Open ROI...');
-                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc(1),cc(2),n],'Projectclassirois'};
-                            %  ''ContextMenu',cm'
-                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Projectclassirois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
-                            % disabled because too heavy with large projects
-                        end
-                        clear roiProgressCleanup
+                        app.startRoiTreeBuild(app.Tree.SelectedNodes, roiLabels, ...
+                            'Projectclassirois', [cc(1), cc(2)]);
                     end
                 end
 
@@ -7184,35 +7253,8 @@ end
                 if ~app.treeNodeHasChildTag(app.Tree.SelectedNodes, 'Classifierrois')
                     roiLabels = buildRoiTreeLabels(app, clas.roi);
                     if ~isempty(roiLabels)
-                        nRoi = numel(roiLabels);
-                        roiProgressDialog = [];
-                        roiProgressCleanup = [];
-                        if nRoi >= 25
-                            roiProgressDialog = uiprogressdlg(app.DetecDivUIFigure, ...
-                                'Title', 'Please Wait...', ...
-                                'Message', 'Generating classifier ROI list...', ...
-                                'Value', 0);
-                            roiProgressCleanup = onCleanup(@() app.safeCloseProgressDialog(roiProgressDialog)); %#ok<NASGU>
-                            drawnow limitrate;
-                        end
-                        for n=1:numel(roiLabels)
-                            if ~isempty(roiProgressDialog) && isvalid(roiProgressDialog) && ...
-                                    (n == 1 || n == nRoi || mod(n, 10) == 0)
-                                roiProgressDialog.Value = n ./ nRoi;
-                                roiProgressDialog.Message = ['Generating classifier ROI list... ' num2str(n) '/' num2str(nRoi)];
-                                drawnow limitrate;
-                            end
-                            % aa=app.Data.Projectclassirois{i}{k}{n}
-                            cm=uicontextmenu(app.DetecDivUIFigure);
-                            m = uimenu(cm,'Text','Open ROI...');
-                            m.MenuSelectedFcn={@contextMenuROIFcn,[cc,n],'Classifierrois'};
-                            %  'ContextMenu',cm
-                            [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-
-                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Classifierrois','UserData',[cc,n],'Icon',fullfile(pth,'roi.png'));
-                            % disabled because too heavy with large projects
-                        end
-                        clear roiProgressCleanup
+                        app.startRoiTreeBuild(app.Tree.SelectedNodes, roiLabels, ...
+                            'Classifierrois', cc);
                     end
                 end
 
@@ -11735,6 +11777,7 @@ end
                 app.WorkspaceEventListenerId = "";
             end
             app.stopActivePipelineCancelMonitor(true);
+            app.stopRoiTreeBuild();
 
             % Delete UIFigure when app is deleted
             delete(app.DetecDivUIFigure)
