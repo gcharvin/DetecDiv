@@ -5051,7 +5051,16 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function value = getRuntimeValue(app, key)
             value = '';
-            if isfield(app.RuntimeValues, key)
+            % Selection edit fields are authoritative at launch time. A
+            % user can type a value and immediately press Run before the
+            % ValueChanged callback has copied it into RuntimeValues.
+            % Reading the cache first silently turned that visible subset
+            % into an empty ("all") selection in the worker payload.
+            selectionKey = any(strcmp(char(string(key)), {'fovs','frames','rois'}));
+            if selectionKey && isfield(app.RuntimeFieldHandles, key) && ...
+                    isvalid(app.RuntimeFieldHandles.(key))
+                value = char(string(app.RuntimeFieldHandles.(key).Value));
+            elseif isfield(app.RuntimeValues, key)
                 value = char(string(app.RuntimeValues.(key)));
             elseif isfield(app.RuntimeFieldHandles, key) && isvalid(app.RuntimeFieldHandles.(key))
                 value = char(string(app.RuntimeFieldHandles.(key).Value));
@@ -17565,6 +17574,7 @@ classdef pipeline2 < matlab.apps.AppBase
             ref = struct('type', 'shallow', 'projectPath', getRuntimeValue(app, 'projectPath'), ...
                 'projectName', '', 'fovIds', parseIndexSelection(app, getRuntimeValue(app, 'fovs')), ...
                 'roiIds', {{}}, 'classiPath', '', 'notes', '');
+            ref.roiIds = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
             if runtimeStartsFromClassifier(app) && ~isempty(app.ExplicitRuntimeRoiList)
                 classiPath = classifierScopedRunRoot(app, false);
                 if ~isempty(classiPath)

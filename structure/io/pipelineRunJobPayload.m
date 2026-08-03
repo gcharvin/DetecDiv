@@ -69,6 +69,13 @@ function payload = pipelineRunJobPayload(runObj, project, pipelineInputPath, var
     request.masks = localCellText(localField(ctx, 'masks', {}));
     request.data_series = localCellText(localField(ctx, 'dataSeriesNames', localField(ctx, 'dataSeries', {})));
     request.selection = localSelection(ctx, run);
+    % Keep the target reference as a durable fallback for classifier-scoped
+    % runs. The UI stores the same ROI subset in both places so a later
+    % context sanitization cannot silently broaden an explicit subset to all
+    % classifier ROIs.
+    if classifierScoped && isempty(request.selection.rois)
+        request.selection.rois = localField(targetRef, 'roiIds', []);
+    end
     request.gpu = struct('mode', localTextField(run, 'gpuPolicy', 'module_default'));
     request.python = localPythonPolicy(ctx);
     request.control = localStructField(run, 'control');
@@ -164,7 +171,11 @@ function selection = localSelection(ctx, run)
         'fovs', localField(sel, 'fovs', localField(run, 'fovIndex', [])), ...
         'frames', localField(sel, 'frames', localField(run, 'frames', [])), ...
         'rois', localField(sel, 'rois', localField(run, 'rois', [])), ...
-        'channels', localCellText(localField(sel, 'channels', {})));
+        'channels', {{}});
+    % Passing an empty cell array directly to struct(...) creates a 0x0
+    % struct in MATLAB. That erased the entire selection whenever channels
+    % was empty, including an explicit ROI subset such as ROI 1.
+    selection.channels = localCellText(localField(sel, 'channels', {}));
 end
 
 function python = localPythonPolicy(ctx)
