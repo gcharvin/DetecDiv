@@ -1,8 +1,10 @@
 """Regression tests for CellposeSAM input layout normalization."""
 
 import importlib.util
+import builtins
 import os
 from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -20,6 +22,27 @@ SPEC.loader.exec_module(RUNNER)
 
 
 class TestToNhwc(unittest.TestCase):
+    def test_log_tee_is_resolvable_as_a_module_level_function(self):
+        original_print = builtins.print
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                log_path = Path(tmp_dir) / "runner.log"
+                RUNNER.install_log_tee(str(log_path))
+
+                self.assertIs(builtins.print, RUNNER.tee_print)
+                self.assertEqual(RUNNER.tee_print.__module__, RUNNER.__name__)
+                builtins.print("tee regression check", flush=True)
+                self.assertIn("tee regression check", log_path.read_text(encoding="utf-8"))
+                RUNNER.TEE_LOG_HANDLE.close()
+                RUNNER.TEE_LOG_HANDLE = None
+                RUNNER.TEE_LOG_PATH = None
+        finally:
+            builtins.print = original_print
+            if RUNNER.TEE_LOG_HANDLE is not None:
+                RUNNER.TEE_LOG_HANDLE.close()
+            RUNNER.TEE_LOG_HANDLE = None
+            RUNNER.TEE_LOG_PATH = None
+
     def test_matlab_hwct_wins_when_height_equals_frame_count(self):
         raw = np.arange(60 * 60 * 1 * 60, dtype=np.uint16).reshape(60, 60, 1, 60)
 

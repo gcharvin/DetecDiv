@@ -19,6 +19,17 @@ TEE_LOG_HANDLE = None
 PROGRESS_MARKER = "@@DETECDIV_PROGRESS@@"
 
 
+def tee_print(*args, **kwargs):
+    """Mirror runner output to MATLAB's console and the active ROI log."""
+    BASE_PRINT(*args, **kwargs)
+    if TEE_LOG_HANDLE is None or TEE_LOG_HANDLE.closed:
+        return
+    file_kwargs = dict(kwargs)
+    file_kwargs["file"] = TEE_LOG_HANDLE
+    file_kwargs.setdefault("flush", True)
+    BASE_PRINT(*args, **file_kwargs)
+
+
 def report_progress(
     cfg,
     local_value,
@@ -92,13 +103,6 @@ def install_log_tee(log_path):
     os.makedirs(log_dir, exist_ok=True)
     TEE_LOG_HANDLE = open(log_path, "a", encoding="utf-8", buffering=1)
     TEE_LOG_PATH = log_path
-
-    def tee_print(*args, **kwargs):
-        BASE_PRINT(*args, **kwargs)
-        file_kwargs = dict(kwargs)
-        file_kwargs["file"] = TEE_LOG_HANDLE
-        file_kwargs.setdefault("flush", True)
-        BASE_PRINT(*args, **file_kwargs)
 
     builtins.print = tee_print
 
