@@ -4568,6 +4568,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 catch
                 end
+                % Include channels stored on disk even when the lightweight
+                % ROI snapshot has not loaded their display metadata.
+                channels = [channels roiStoredChannelNames(app, rois(i))]; %#ok<AGROW>
             end
             channels = cellfun(@(x) strtrim(char(string(x))), channels, 'UniformOutput', false);
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
@@ -6109,34 +6112,37 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function issues = classifierAttachedRoiChannelIssues(app)
+        function issues = attachedRoiModuleChannelIssues(app)
             issues = {};
             if ~runtimeStartsFromClassifier(app) || isempty(app.ExplicitRuntimeRoiList)
                 return;
             end
-            classifierIds = selectedRunNodeIdsByType(app, 'classifier');
-            if isempty(classifierIds)
+            moduleIds = selectedRunNodeIdsByType(app, {'classifier','processor'});
+            if isempty(moduleIds)
                 return;
             end
             [roiList, roiIndices] = selectedClassifierRoisForValidation(app);
             if isempty(roiList)
                 return;
             end
-            for ci = 1:numel(classifierIds)
-                nodeIdx = find(strcmp({app.Data.nodes.id}, classifierIds{ci}), 1);
+            for ci = 1:numel(moduleIds)
+                nodeIdx = find(strcmp({app.Data.nodes.id}, moduleIds{ci}), 1);
                 if isempty(nodeIdx)
                     continue;
                 end
                 node = app.Data.nodes(nodeIdx);
                 classiObj = [];
-                try
-                    classiObj = linkedClassifierObject(app, node);
-                catch ME
-                    issues{end+1} = sprintf('Cannot inspect classifier ROI channels for node %s: %s', ...
-                        char(string(classifierIds{ci})), ME.message); %#ok<AGROW>
-                    continue;
+                nodeType = lower(char(string(getField(app, node, 'type', ''))));
+                if strcmp(nodeType, 'classifier')
+                    try
+                        classiObj = linkedClassifierObject(app, node);
+                    catch ME
+                        issues{end+1} = sprintf('Cannot inspect classifier ROI channels for node %s: %s', ...
+                            char(string(moduleIds{ci})), ME.message); %#ok<AGROW>
+                        continue;
+                    end
                 end
-                requiredChannels = classifierNodeInputChannels(app, node, classiObj);
+                requiredChannels = moduleStoredInputChannels(app, node, classiObj);
                 if isempty(requiredChannels)
                     continue;
                 end
@@ -6158,8 +6164,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(missingIdx)
                     continue;
                 end
-                nodeName = char(string(getField(app, node, 'name', classifierIds{ci})));
-                issues{end+1} = formatClassifierRoiChannelIssue(app, nodeName, requiredChannels, ...
+                nodeName = char(string(getField(app, node, 'name', moduleIds{ci})));
+                issues{end+1} = formatRoiModuleChannelIssue(app, nodeName, nodeType, requiredChannels, ...
                     presentIdx, missingIdx, missingFirstChannels); %#ok<AGROW>
             end
         end
@@ -6197,7 +6203,7 @@ classdef pipeline2 < matlab.apps.AppBase
             roiList = allRois(roiIndices);
         end
 
-        function channels = classifierNodeInputChannels(app, node, classiObj)
+        function channels = moduleStoredInputChannels(app, node, classiObj)
             channels = {};
             p = getField(app, node, 'params', struct());
             try
@@ -6213,7 +6219,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         param = char(string(getField(app, inputs(i), 'nameParam', '')));
                     end
                     if ~isempty(param) && isstruct(p) && isfield(p, param) && ~isempty(p.(param))
-                        channels = [channels normalizeChannelCellText(app, p.(param))]; %#ok<AGROW>
+                        values = normalizeChannelCellText(app, p.(param));
+                        values = values(~cellfun(@(value) ...
+                            channelBindingComesFromActiveNode(app, node, inputs(i), value), values));
+                        channels = [channels values]; %#ok<AGROW>
                     end
                 end
             catch
@@ -6244,6 +6253,36 @@ classdef pipeline2 < matlab.apps.AppBase
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
         end
 
+        function tf = channelBindingComesFromActiveNode(app, node, spec, value)
+            tf = false;
+            value = strtrim(char(string(value)));
+            sourceNode = symbolicBindingSourceNode(app, value);
+            if ~isempty(sourceNode)
+                tf = isRunNodeActive(app, sourceNode);
+                return;
+            end
+            try
+                inputReport = currentResourceInputReport(app, node, spec);
+                if ~isstruct(inputReport) || ~isfield(inputReport, 'available')
+                    return;
+                end
+                available = inputReport.available;
+                for i = 1:numel(available)
+                    concrete = char(string(getField(app, available(i), 'concreteName', '')));
+                    producer = char(string(getField(app, available(i), 'sourceNode', '')));
+                    sourceKind = lower(char(string(getField(app, available(i), 'sourceKind', ''))));
+                    if strcmpi(concrete, value) && ~isempty(producer) && ...
+                            ~any(strcmp(sourceKind, {'context','ctx','runtime'})) && ...
+                            isRunNodeActive(app, producer)
+                        tf = true;
+                        return;
+                    end
+                end
+            catch
+                tf = false;
+            end
+        end
+
         function channels = normalizeChannelCellText(app, value) %#ok<INUSD>
             channels = {};
             if isempty(value)
@@ -6267,20 +6306,96 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(channels)
                 return;
             end
+            missing = {};
             try
                 for i = 1:numel(channels)
                     pix = roiObj.findChannelID(channels{i});
                     if iscell(pix)
                         if isempty(pix) || isempty(pix{1})
-                            return;
+                            missing{end+1} = channels{i}; %#ok<AGROW>
                         end
                     elseif isempty(pix)
-                        return;
+                        missing{end+1} = channels{i}; %#ok<AGROW>
                     end
                 end
-                tf = true;
             catch
-                tf = false;
+                missing = channels;
+            end
+            if isempty(missing)
+                tf = true;
+                return;
+            end
+
+            % A classifier snapshot may carry stale, partially loaded ROI
+            % display metadata even though newer result channels already
+            % exist in the ROI HDF5 file.  Inspect only the HDF5 directory
+            % and attributes here; h5info never materializes image arrays.
+            diskChannels = roiStoredChannelNames(app, roiObj);
+            if isempty(diskChannels)
+                return;
+            end
+            tf = all(ismember(lower(string(missing)), ...
+                lower(string(diskChannels))));
+        end
+
+        function channels = roiStoredChannelNames(app, roiObj) %#ok<INUSD>
+            channels = {};
+            h5File = '';
+            try
+                h5File = fullfile(char(string(roiObj.path)), ...
+                    ['im_' char(string(roiObj.id)) '.h5']);
+            catch
+                return;
+            end
+            if exist(h5File, 'file') ~= 2
+                return;
+            end
+
+            % Runtime-input validation may be refreshed repeatedly while
+            % editing a run. Cache the metadata by path and file stamp so a
+            % local or network HDF5 is polled only after it changes.
+            persistent channelCache
+            if isempty(channelCache)
+                channelCache = containers.Map('KeyType', 'char', ...
+                    'ValueType', 'any');
+            end
+            fileInfo = dir(h5File);
+            signature = sprintf('%.15g:%d', fileInfo.datenum, fileInfo.bytes);
+            cacheKey = lower(strrep(h5File, '/', '\'));
+            if isKey(channelCache, cacheKey)
+                cached = channelCache(cacheKey);
+                if isstruct(cached) && isfield(cached, 'signature') && ...
+                        strcmp(cached.signature, signature)
+                    channels = cached.channels;
+                    return;
+                end
+            end
+
+            try
+                info = h5info(h5File);
+                for i = 1:numel(info.Datasets)
+                    dataset = info.Datasets(i);
+                    channels{end+1} = char(string(dataset.Name)); %#ok<AGROW>
+                    try
+                        attributeNames = string({dataset.Attributes.Name});
+                        attributeIndex = find(strcmpi(attributeNames, ...
+                            'channel_name'), 1);
+                        if ~isempty(attributeIndex)
+                            logicalName = strtrim(char(string( ...
+                                dataset.Attributes(attributeIndex).Value)));
+                            if ~isempty(logicalName)
+                                channels{end+1} = logicalName; %#ok<AGROW>
+                            end
+                        end
+                    catch
+                    end
+                end
+                channels = unique(channels(~cellfun(@isempty, channels)), ...
+                    'stable');
+                channelCache(cacheKey) = struct( ...
+                    'signature', signature, 'channels', {channels});
+            catch
+                channels = {};
             end
         end
 
@@ -6300,17 +6415,18 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function message = formatClassifierRoiChannelIssue(app, nodeName, requiredChannels, presentIdx, missingIdx, missingFirstChannels)
+        function message = formatRoiModuleChannelIssue(app, nodeName, nodeType, requiredChannels, presentIdx, missingIdx, missingFirstChannels)
             lines = {};
-            lines{end+1} = sprintf('Channel mismatch in selected classifier ROIs for node %s.', char(string(nodeName)));
-            lines{end+1} = ['Classifier expects input channel(s): ' strjoin(requiredChannels, ', ')];
+            lines{end+1} = sprintf('Channel mismatch in selected classifier ROIs for %s node %s.', ...
+                char(string(nodeType)), char(string(nodeName)));
+            lines{end+1} = ['Module expects stored input channel(s): ' strjoin(requiredChannels, ', ')];
             lines{end+1} = sprintf('%d ROI(s) contain the required channel(s): %s', ...
                 numel(presentIdx), compactNumericSelectionText(app, presentIdx));
             lines{end+1} = sprintf('%d ROI(s) are missing at least one required channel: %s', ...
                 numel(missingIdx), compactNumericSelectionText(app, missingIdx));
             summary = summarizeChannelNamesWithCounts(app, missingFirstChannels, 4);
             if ~isempty(summary)
-                lines{end+1} = ['Missing ROI first channel(s): ' summary];
+                lines{end+1} = ['First loaded channel in affected ROI(s): ' summary];
             end
             lines{end+1} = 'Fix channel names or select compatible ROIs before launching on Hub.';
             message = strjoin(lines, newline);
@@ -11947,6 +12063,7 @@ classdef pipeline2 < matlab.apps.AppBase
                             isfield(roiObj.display, 'channel') && ~isempty(roiObj.display.channel)
                         channels = [channels cellstr(string(roiObj.display.channel(:)'))]; %#ok<AGROW>
                     end
+                    channels = [channels roiStoredChannelNames(app, roiObj)]; %#ok<AGROW>
                 end
                 channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
             catch
@@ -14629,12 +14746,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                     markRuntimeField(app, 'rois', 'missing', 'Classifier mode uses classifier.roi as runtime input.');
                 else
-                    channelIssues = classifierAttachedRoiChannelIssues(app);
+                    channelIssues = attachedRoiModuleChannelIssues(app);
                     for ci = 1:numel(channelIssues)
                         issues{end+1} = channelIssues{ci}; %#ok<AGROW>
                     end
                     if ~isempty(channelIssues)
-                        markRuntimeField(app, 'rois', 'blocked', 'Selected classifier ROIs do not expose the configured classifier input channel.');
+                        markRuntimeField(app, 'rois', 'blocked', 'Selected classifier ROIs do not expose every configured stored module input channel.');
                     end
                 end
             elseif ~selectedRunHasNodeType(app, 'dataLoader')
