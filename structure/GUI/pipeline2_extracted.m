@@ -19021,6 +19021,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(projectMatPath) && isfield(completion, 'projectPath')
                 projectMatPath = char(string(completion.projectPath));
             end
+            previousProject = app.CurrentProject;
             reloadedProject = [];
             if ~runtimeStartsFromClassifier(app) && ~isempty(projectMatPath)
                 try
@@ -19055,7 +19056,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
 
-            emitLocalProcessRunWorkspaceRefresh(app, result, reloadedProject, projectMatPath);
+            mutationManifest = runMutationManifest(app, result, loadedRun);
+            refreshReport = refreshRunMutationHandles(app, mutationManifest, ...
+                previousProject, reloadedProject, false);
+            emitLocalProcessRunWorkspaceRefresh(app, result, reloadedProject, ...
+                projectMatPath, mutationManifest, refreshReport);
             clearRuntimeDataSeriesCache(app);
             try, updateRuntimeResourceInventory(app); catch, end
             stopActiveRunControl(app, terminalButtonText(app, statusText));
@@ -19089,7 +19094,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function emitLocalProcessRunWorkspaceRefresh(app, result, projectObj, projectMatPath)
+        function emitLocalProcessRunWorkspaceRefresh(app, result, projectObj, projectMatPath, mutationManifest, refreshReport)
             if exist('detecdiv_event', 'file') ~= 2
                 return;
             end
@@ -19105,11 +19110,103 @@ classdef pipeline2 < matlab.apps.AppBase
             payload.projectPath = regexprep(payload.projectMatPath, '\.mat$', '', 'ignorecase');
             [~, payload.projectName] = fileparts(payload.projectPath);
             payload.summary = getField(app, result, 'summary', struct());
+            payload.mutationManifest = mutationManifest;
+            payload.refreshReport = refreshReport;
             try
                 detecdiv_event('emit', 'pipelineRunCompleted', payload);
                 detecdiv_event('emit', 'workspaceChanged', payload);
             catch
             end
+        end
+
+        function manifest = runMutationManifest(app, source, runObj)
+            manifest = struct();
+            try
+                manifest = getField(app, source, 'mutation_manifest', struct());
+            catch
+                manifest = struct();
+            end
+            if isstruct(manifest) && ~isempty(fieldnames(manifest))
+                return;
+            end
+            try
+                resultJson = getField(app, source, 'result_json', struct());
+                if isstruct(resultJson)
+                    manifest = getField(app, resultJson, 'mutation_manifest', struct());
+                end
+            catch
+                manifest = struct();
+            end
+            if isstruct(manifest) && ~isempty(fieldnames(manifest))
+                return;
+            end
+            try
+                if ~isempty(runObj) && isa(runObj, 'pipelineRun') && ...
+                        isstruct(runObj.outputs) && isfield(runObj.outputs, 'mutationManifest')
+                    manifest = runObj.outputs.mutationManifest;
+                end
+            catch
+                manifest = struct();
+            end
+        end
+
+        function report = refreshRunMutationHandles(app, manifest, oldProject, newProject, fromHub)
+            report = struct('matchedRois', 0, 'refreshedRois', 0, ...
+                'refreshedChannels', 0, 'refreshedDataRois', 0, ...
+                'pendingRois', {{}}, 'warnings', {{}});
+            if ~isstruct(manifest) || isempty(fieldnames(manifest)) || ...
+                    exist('detecdiv_refresh_run_mutations', 'file') ~= 2
+                return;
+            end
+            retryCount = 1;
+            retryPause = 0;
+            if fromHub
+                retryCount = 8;
+                retryPause = 0.5;
+            end
+            explicitRois = app.ExplicitRuntimeRoiList;
+            classiObj = app.RuntimeClassifierSource;
+            try
+                report = detecdiv_refresh_run_mutations(manifest, ...
+                    'Classifier', classiObj, 'Project', oldProject, ...
+                    'RoiList', explicitRois, 'RetryCount', retryCount, ...
+                    'RetryPause', retryPause);
+            catch ME
+                report.warnings{end+1} = ME.message;
+            end
+            if ~isempty(newProject) && isa(newProject, 'shallow') && ...
+                    (~isequal(oldProject, newProject))
+                try
+                    second = detecdiv_refresh_run_mutations(manifest, ...
+                        'Project', newProject, 'RetryCount', 1, 'RetryPause', 0);
+                    report = mergeMutationRefreshReports(app, report, second);
+                catch ME
+                    report.warnings{end+1} = ME.message;
+                end
+            end
+            if report.refreshedRois > 0
+                appendRunReport(app, sprintf( ...
+                    'Refreshed %d loaded ROI(s), %d output channel(s).', ...
+                    report.refreshedRois, report.refreshedChannels), report);
+            end
+            if ~isempty(report.pendingRois)
+                appendRunReport(app, sprintf( ...
+                    'Output synchronization is still pending for ROI(s): %s', ...
+                    strjoin(report.pendingRois, ', ')), report);
+            end
+        end
+
+        function out = mergeMutationRefreshReports(app, out, incoming) %#ok<INUSD>
+            countFields = {'matchedRois','refreshedRois','refreshedChannels','refreshedDataRois'};
+            for i = 1:numel(countFields)
+                name = countFields{i};
+                out.(name) = double(getField(app, out, name, 0)) + ...
+                    double(getField(app, incoming, name, 0));
+            end
+            out.pendingRois = unique([getField(app, out, 'pendingRois', {}) ...
+                getField(app, incoming, 'pendingRois', {})], 'stable');
+            out.warnings = [getField(app, out, 'warnings', {}) ...
+                getField(app, incoming, 'warnings', {})];
         end
 
         function text = compactLocalProcessError(app, text) %#ok<INUSD>
@@ -19249,6 +19346,10 @@ classdef pipeline2 < matlab.apps.AppBase
             payload.projectVarName = '';
             payload.runId = currentHubRunJobId(app);
             payload.summary = struct();
+            payload.mutationManifest = runMutationManifest(app, job, app.CurrentRun);
+            payload.refreshReport = struct();
+
+            previousProject = app.CurrentProject;
 
             if ~isempty(app.CurrentProjectVarName)
                 payload.projectVarName = char(string(app.CurrentProjectVarName));
@@ -19298,6 +19399,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 payload.summary.resumeError = ME.message;
                 appendRunReport(app, ['Local project refresh after Hub run failed: ' ME.message], struct());
             end
+            payload.refreshReport = refreshRunMutationHandles(app, ...
+                payload.mutationManifest, previousProject, payload.projectObj, true);
             try
                 detecdiv_event('emit', 'pipelineRunCompleted', payload);
                 detecdiv_event('emit', 'workspaceChanged', payload);

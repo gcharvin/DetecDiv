@@ -27,6 +27,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         'pipeline_json_path', '', ...
         'run_json_path', '', ...
         'artifacts', struct('kind', {}, 'path', {}), ...
+        'mutation_manifest', struct(), ...
         'summary', struct(), ...
         'error', '');
 
@@ -82,10 +83,11 @@ function result = detecdiv_run_pipeline_job(jobInput)
         end
 
         [ctxOut, report] = runPipelineDetecDiv(pipeObj, ctx);
-        runObj.ctx = localStripWorkerCallbacks(ctxOut);
-        runObj.outputs = struct('report', report);
-        runObj.progress = struct();
         runObj.status = 'done';
+        mutationManifest = detecdiv_build_run_mutation_manifest(runObj, pipeObj, report, ctxOut);
+        runObj.ctx = localStripWorkerCallbacks(ctxOut);
+        runObj.outputs = struct('report', report, 'mutationManifest', mutationManifest);
+        runObj.progress = struct();
         pipelineRunSave(runObj);
         [saveOk, saveMsg] = localMaybeSaveProject(shallowObj, payload);
         if ~saveOk
@@ -101,6 +103,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         result.pipeline_json_path = localCanonicalPipelineJsonPath(pipeObj, pipelineInputPath);
         result.run_json_path = fullfile(runObj.path, 'run.json');
         result.artifacts = localBuildArtifacts(result.run_json_path);
+        result.mutation_manifest = mutationManifest;
         result.summary = localBuildResultSummary(pipeObj, report, ctxOut);
         result.dependency_audit = dependencyAudit;
         localWriteWorkerProgress(progressPath, struct( ...
@@ -129,7 +132,9 @@ function result = detecdiv_run_pipeline_job(jobInput)
                     runObj.ctx = localStripWorkerCallbacks(ctx);
                 end
                 if isstruct(report) && ~isempty(fieldnames(report))
-                    runObj.outputs = struct('report', report);
+                    failureManifest = detecdiv_build_run_mutation_manifest(runObj, pipeObj, report, ctx);
+                    runObj.outputs = struct('report', report, 'mutationManifest', failureManifest);
+                    result.mutation_manifest = failureManifest;
                 end
                 pipelineRunSave(runObj);
                 if exist('shallowObj', 'var') && ~isempty(shallowObj)

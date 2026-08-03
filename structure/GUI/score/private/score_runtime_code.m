@@ -209,7 +209,7 @@ classdef score < matlab.apps.AppBase
     end
 
     properties (Access = private)
-
+        PipelineRunEventListenerId char = ''
     end
 
     methods (Access = private)
@@ -346,6 +346,36 @@ classdef score < matlab.apps.AppBase
             catch ME
                 warning('Score:RefreshROIData', ...
                     'Could not refresh data for ROI %s from disk: %s', roiobj.id, ME.message);
+            end
+        end
+
+        function onPipelineRunCompleted(app, payload, eventName) %#ok<INUSD>
+            if isempty(app) || ~isvalid(app) || isempty(app.content.ROIList) || ...
+                    ~isstruct(payload) || exist('detecdiv_refresh_run_mutations', 'file') ~= 2
+                return;
+            end
+            manifest = struct();
+            if isfield(payload, 'mutationManifest') && isstruct(payload.mutationManifest)
+                manifest = payload.mutationManifest;
+            elseif isfield(payload, 'mutation_manifest') && isstruct(payload.mutation_manifest)
+                manifest = payload.mutation_manifest;
+            end
+            if isempty(fieldnames(manifest))
+                return;
+            end
+            try
+                rois = [app.content.ROIList{:}];
+                refresh = detecdiv_refresh_run_mutations(manifest, ...
+                    'RoiList', rois, 'RetryCount', 1, 'RetryPause', 0);
+                if refresh.refreshedRois < 1
+                    return;
+                end
+                displayROIChannels(app);
+                score_refreshObjectDisplayUI(app);
+                score_display(app, 'slow');
+            catch ME
+                warning('Score:PipelineRunRefresh', ...
+                    'Could not refresh Score after pipeline completion: %s', ME.message);
             end
         end
 
@@ -3801,6 +3831,16 @@ end
 
             score_refreshObjectDisplayUI(app);
 
+            if exist('detecdiv_event', 'file') == 2
+                try
+                    app.PipelineRunEventListenerId = detecdiv_event('subscribe', ...
+                        'pipelineRunCompleted', ...
+                        @(payload, eventName)app.onPipelineRunCompleted(payload, eventName));
+                catch
+                    app.PipelineRunEventListenerId = '';
+                end
+            end
+
        
 
             if numel(app.MovieFramesEditField.Value)==0 % set default frames for movie
@@ -7103,6 +7143,14 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
 
         % Code that executes before app deletion
         function delete(app)
+
+            try
+                if ~isempty(app.PipelineRunEventListenerId) && exist('detecdiv_event', 'file') == 2
+                    detecdiv_event('unsubscribe', app.PipelineRunEventListenerId);
+                    app.PipelineRunEventListenerId = '';
+                end
+            catch
+            end
 
             % Delete UIFigure when app is deleted
             delete(app.ScoreAppUIFigure)
