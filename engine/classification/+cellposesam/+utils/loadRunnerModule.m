@@ -13,11 +13,24 @@ if exist(runnerPath, 'file') ~= 2
         'CellposeSAM session runner not found: %s', runnerPath);
 end
 
+moduleRegistry = [];
+moduleName = '';
+moduleRegistered = false;
 try
     importlibUtil = py.importlib.import_module('importlib.util');
+    pySys = py.importlib.import_module('sys');
+    moduleRegistry = py.getattr(pySys, 'modules');
     moduleName = localUniqueModuleName();
     spec = importlibUtil.spec_from_file_location(moduleName, runnerPath);
     runnerModule = importlibUtil.module_from_spec(spec);
+    % exec_module does not add a module created from a spec to sys.modules.
+    % Register it first, as Python's import machinery does, because imported
+    % libraries may resolve objects through sys.modules[obj.__module__].
+    % Leaving the uniquely named runner unregistered caused the next pyenv
+    % health check to raise KeyError and terminate the persistent interpreter.
+    setModule = py.getattr(moduleRegistry, '__setitem__');
+    setModule(moduleName, runnerModule);
+    moduleRegistered = true;
     loader = py.getattr(spec, 'loader');
     execModule = py.getattr(loader, 'exec_module');
     execModule(runnerModule);
@@ -34,6 +47,15 @@ try
     end
     runnerCallable = py.getattr(runnerModule, 'run');
 catch ME
+    % Do not retain a partially initialized module when execution fails.
+    if moduleRegistered && ~isempty(moduleRegistry) && ~isempty(moduleName)
+        try
+            popModule = py.getattr(moduleRegistry, 'pop');
+            popModule(moduleName, py.None);
+        catch
+            % Preserve the original runner-loading exception.
+        end
+    end
     if startsWith(ME.identifier, 'cellposesam:')
         rethrow(ME);
     end
