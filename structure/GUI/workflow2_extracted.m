@@ -8328,19 +8328,26 @@ classdef workflow2 < matlab.apps.AppBase
             rect = firstNumericVectorFieldLocal(params, pat, {'rect','crop','patternRect','position'}, 4);
             fovIdx = firstNumericScalarFieldLocal(params, pat, {'fovIndex','sourceFOV','sourceFov','patternSourceFOV'});
             frameIdx = firstNumericScalarFieldLocal(params, pat, {'referenceFrame','frame','sourceFrame','patternSourceFrame'});
-            chanIdx = firstNumericScalarFieldLocal(params, pat, {'channelIndex','sourceChannelIndex','patternSourceChannelIndex'});
-            if isempty(chanIdx)
-                channelName = firstTextFieldLocal(params, pat, {'channel','sourceChannel','patternSourceChannel'});
-                if ~isempty(channelName)
-                    try
-                        names = cellfun(@(x)char(string(x)), {app.ChannelCfg.name}, 'UniformOutput', false);
-                        match = find(strcmp(names, channelName), 1);
-                        if ~isempty(match)
-                            chanIdx = match;
-                        end
-                    catch
+            % Channel names are portable across datasets; numeric indices are
+            % only a legacy fallback. In particular, a current run binding in
+            % params.channel must win over pattern.channelIndex after channels
+            % have been reordered.
+            channelName = firstTextFieldLocal(params, pat, {'channel','sourceChannel','patternSourceChannel'});
+            if ~isempty(channelName)
+                try
+                    names = cellfun(@(x)char(string(x)), {app.ChannelCfg.name}, 'UniformOutput', false);
+                    match = find(strcmp(names, channelName), 1);
+                    if isempty(match)
+                        match = find(strcmpi(names, channelName), 1);
                     end
+                    if ~isempty(match)
+                        chanIdx = match;
+                    end
+                catch
                 end
+            end
+            if isempty(chanIdx) && isempty(channelName)
+                chanIdx = firstNumericScalarFieldLocal(params, pat, {'channelIndex','sourceChannelIndex','patternSourceChannelIndex'});
             end
         end
 

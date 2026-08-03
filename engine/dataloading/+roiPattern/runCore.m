@@ -470,20 +470,31 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetF
         end
     end
 
-    chanIdx = resolveChannelIndex(refFov, p);
-    if isfield(pattern,'channel') && ~isempty(pattern.channel)
-        chanIdx = resolveChannelIndex(refFov, pattern);
-    elseif isfield(pattern,'channelIndex') && ~isempty(pattern.channelIndex)
-        chanIdx = round(double(pattern.channelIndex(1)));
+    % The detection channel belongs to the target/run context. The channel
+    % recorded in pattern is source metadata and is only a fallback when the
+    % run has no explicit channel binding.
+    if (isfield(p,'channel') && ~isempty(p.channel)) || ...
+            (isfield(p,'channelIndex') && ~isempty(p.channelIndex))
+        chanIdx = resolveChannelIndex(targetFov, p);
+    else
+        chanIdx = resolveChannelIndex(targetFov, pattern);
     end
     chanIdx = max(1, round(double(chanIdx)));
+
+    % If the embedded patch is unavailable, rebuild it from its original
+    % source channel, independently from the target detection channel.
+    sourceChanIdx = resolveChannelIndex(refFov, pattern);
+    if isempty(sourceChanIdx) || ~isfinite(sourceChanIdx) || sourceChanIdx < 1
+        sourceChanIdx = resolveChannelIndex(refFov, p);
+    end
+    sourceChanIdx = max(1, round(double(sourceChanIdx)));
 
     [pattimg, ok] = tryLoadEmbeddedPatternPatch(pattern);
     if ~ok
         [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx);
     end
     if ~ok
-        tmp = readImage(refFov, refFrame, chanIdx);
+        tmp = readImage(refFov, refFrame, sourceChanIdx);
         if isempty(tmp)
             error('roiPattern.runCore:PatternImageReadFailed', 'Cannot read pattern reference image.');
         end
@@ -619,6 +630,9 @@ function idx = resolveChannelIndex(fov, p)
         q = char(string(p.channel));
         try
             pix = find(matches(fov.channel, q), 1);
+            if isempty(pix)
+                pix = find(strcmpi(cellstr(string(fov.channel)), q), 1);
+            end
             if ~isempty(pix)
                 idx = pix;
                 return;

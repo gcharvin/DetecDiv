@@ -9279,6 +9279,14 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function params = getRoiPatternParamsForDisplay(app, node)
             params = getField(app, node, 'params', struct());
+            % Review the artifact in the context of the current run. Runtime
+            % bindings (notably channel) must override the static/source
+            % metadata stored with the pattern.
+            nodeId = char(string(getField(app, node, 'id', '')));
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            if isstruct(runtimeParams) && ~isempty(fieldnames(runtimeParams))
+                params = mergeStructOverride(app, params, runtimeParams);
+            end
         end
 
         function syncRoiPatternBindingFromParams(app, nodeId, params)
