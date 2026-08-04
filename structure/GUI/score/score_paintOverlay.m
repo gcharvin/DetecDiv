@@ -123,7 +123,7 @@ if strcmp(seltype,'open')
     %     end
     % end
     % Sinon on sélectionne l'objet sous le curseur
-    displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, hOverlayImg, xinit, yinit);
+    displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, xinit, yinit);
     return;
 end
 
@@ -281,7 +281,7 @@ end
     if ~hasPainted
         if strcmp(seltype,'normal') && currentMask(yinit,xinit) ~= 0
             displaySelectedObject(app, roi, channelIdx, pix, frm, ...
-                axOverlay, hOverlayImg, xinit, yinit);
+                axOverlay, xinit, yinit);
             drawnow limitrate nocallbacks;
         end
         return;
@@ -425,7 +425,7 @@ catch
 end
 end
 
-function displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, hOverlayImg, xinit, yinit)
+function displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, xinit, yinit)
 currentMask = roi.image(:,:,pix,frm);
 
 [H,W] = size(currentMask);
@@ -440,45 +440,14 @@ end
 % Mémos sélection
 app.MasklabelEditField.Value = double(objLabel);
 app.SelectedObjectLabelCell  = double(objLabel);
-score_updateSelectedObjectFields(app);
 app.SelectedObjectChannelIdx = channelIdx;
 app.SelectedObjectRoiId      = string(roi.id);
 app.KeepSelection            = true;
 
-% image title
-str='';
-if ~isnan(app.SelectedObjectLabelCell)
-    str=' - Selected cell: ';
-    str=[str num2str(app.SelectedObjectLabelCell)];
-end
-tmp=['ROI:' char(app.SelectedObjectRoiId) ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) str];
-app.ImageFigure.Name = tmp;
-
-
-% Surbrillance de la composante cliquée (optionnel)
-[L,nlab] = bwlabel(currentMask==objLabel);
-colo = label2color(objLabel);
-selectedComponent = [];
-
-for j=1:nlab
-    bwc = (L==j);
-    if bwc(yinit,xinit)
-        selectedComponent = bwc;
-        yRange = 1:size(bwc,1); xRange = 1:size(bwc,2);
-        for c=1:3
-            hOverlayImg.CData(yRange,xRange,c) = ...
-                hOverlayImg.CData(yRange,xRange,c).*double(~bwc) + double(bwc)*colo(c);
-        end
-        hOverlayImg.AlphaData(yRange,xRange) = ...
-            hOverlayImg.AlphaData(yRange,xRange).*double(~bwc) + double(bwc)*app.Transparency.Value;
-        break
-    end
-end
-
-% Bbox + rectangle
-stats = regionprops(selectedComponent,'BoundingBox');
-if isempty(stats), return; end
-bb = stats(1).BoundingBox;
+% Compute only the clicked connected component. Avoid relabelling and
+% rewriting the complete RGB overlay for a selection-only gesture.
+bb = clickedComponentBoundingBox(currentMask, objLabel, xinit, yinit);
+if isempty(bb), return; end
 
 if isprop(app,'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
     delete(app.SelectedObjectRectangle);
@@ -487,14 +456,44 @@ app.SelectedObjectRectangle = rectangle(axOverlay, 'Position', bb, ...
     'EdgeColor','w','LineWidth',2,'LineStyle','--', ...
     'HitTest','on','PickableParts','all');  % capter les clics
 
-% Attacher le menu (2 entrées) sur rect + overlay
+% Render the visual feedback before model lookup/validation and menu work.
+drawnow nocallbacks;
+
+% Secondary UI updates may load/validate the cell model. They deliberately
+% happen after the rectangle is visible.
+score_updateSelectedObjectFields(app);
+str = [' - Selected cell: ' num2str(app.SelectedObjectLabelCell)];
+app.ImageFigure.Name = ['ROI:' char(app.SelectedObjectRoiId) ...
+    ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) str];
+
+% Attacher le menu après le premier rendu.
 cm = buildDisplayContextMenu(app.ImageFigure, app, roi, channelIdx, pix, frm);
 app.SelectedObjectRectangle.UIContextMenu = cm;
+end
 
-
-%h = getOverlayImageHandle(app);
-%if ~isempty(h) && isgraphics(h), h.UIContextMenu = cm; end
-drawnow limitrate nocallbacks;
+function bb = clickedComponentBoundingBox(mask, objLabel, x, y)
+% Return the regionprops-compatible bbox of the component under (x,y).
+bw = (mask == objLabel);
+cc = bwconncomp(bw, 8);
+clickedPixel = sub2ind(size(bw), y, x);
+componentPixels = [];
+for k = 1:cc.NumObjects
+    pixels = cc.PixelIdxList{k};
+    if any(pixels == clickedPixel)
+        componentPixels = pixels;
+        break;
+    end
+end
+if isempty(componentPixels)
+    bb = [];
+    return;
+end
+[rows, cols] = ind2sub(size(bw), componentPixels);
+xMin = min(cols);
+xMax = max(cols);
+yMin = min(rows);
+yMax = max(rows);
+bb = [xMin-0.5, yMin-0.5, xMax-xMin+1, yMax-yMin+1];
 end
 
 % function onRectMouseDown(srcRect, ~, fig, app, roi, chIdx, pix, frm)
