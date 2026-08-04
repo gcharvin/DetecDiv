@@ -1,6 +1,7 @@
 function score_paintOverlay(src, event, app)
 % Peinture + sélection + menu contextuel (relabel) sur la figure d'affichage.
-% - Clic gauche : peindre (gomme avec Shift/Ctrl)
+% - Clic gauche bref sur un objet : sélectionner
+% - Glisser : peindre (gomme avec Shift/Ctrl)
 % - Double-clic : sélectionner objet + bbox + attacher menu
 % - Clic droit à l'intérieur de la bbox : menu contextuel (2 options)
 % - Clic gauche en dehors de la bbox : déselection (sans empêcher la peinture)
@@ -146,6 +147,13 @@ if exist('iptPointerManager','file')==2, iptPointerManager(src,'disable'); end
 
 paintValue_locked = [];
 paintColor_locked = [];
+hasPainted = false;
+dragThreshold = 4; % Screen pixels; ignore jitter during a click/double-click.
+try
+    dragStartPoint = double(src.CurrentPoint(1,1:2));
+catch
+    dragStartPoint = [xinit yinit];
+end
 
 src.WindowButtonMotionFcn = @wbmcb;
 src.WindowButtonUpFcn     = @wbucb;
@@ -157,6 +165,21 @@ src.WindowButtonUpFcn     = @wbucb;
         cpMotion = get(axOverlay,'CurrentPoint');
         x = round(cpMotion(1,1));
         y = round(cpMotion(1,2));
+
+        % A click often produces motion events. Painting starts only after
+        % a deliberate drag so the first click of a double-click is safe.
+        if ~hasPainted
+            try
+                dragPoint = double(src.CurrentPoint(1,1:2));
+            catch
+                dragPoint = [x y];
+            end
+            if hypot(dragPoint(1)-dragStartPoint(1), ...
+                    dragPoint(2)-dragStartPoint(2)) < dragThreshold
+                return;
+            end
+        end
+        hasPainted = true;
 
         % Modifiers robustes
         mods = get(src,'CurrentModifier');         % {} ou cellstr
@@ -253,6 +276,17 @@ end
     src.WindowButtonUpFcn     = '';
     if exist('iptPointerManager','file')==2, iptPointerManager(src,'enable'); end
     % --- NEW: fin de trait -> on libère l'ID/couleur verrouillés
+    % A short left click selects the object. This also makes the legacy
+    % double-click responsive without letting its first click paint.
+    if ~hasPainted
+        if strcmp(seltype,'normal') && currentMask(yinit,xinit) ~= 0
+            displaySelectedObject(app, roi, channelIdx, pix, frm, ...
+                axOverlay, hOverlayImg, xinit, yinit);
+            drawnow limitrate nocallbacks;
+        end
+        return;
+    end
+
     paintValue_locked = [];
     paintColor_locked = [];
     try
@@ -424,26 +458,25 @@ app.ImageFigure.Name = tmp;
 % Surbrillance de la composante cliquée (optionnel)
 [L,nlab] = bwlabel(currentMask==objLabel);
 colo = label2color(objLabel);
+selectedComponent = [];
 
 for j=1:nlab
     bwc = (L==j);
     if bwc(yinit,xinit)
-        filled = imfill(bwc,'holes');
-        yRange = 1:size(filled,1); xRange = 1:size(filled,2);
+        selectedComponent = bwc;
+        yRange = 1:size(bwc,1); xRange = 1:size(bwc,2);
         for c=1:3
             hOverlayImg.CData(yRange,xRange,c) = ...
-                hOverlayImg.CData(yRange,xRange,c).*double(~filled) + double(filled)*colo(c);
+                hOverlayImg.CData(yRange,xRange,c).*double(~bwc) + double(bwc)*colo(c);
         end
         hOverlayImg.AlphaData(yRange,xRange) = ...
-            hOverlayImg.AlphaData(yRange,xRange).*double(~filled) + double(filled)*app.Transparency.Value;
-        roi.image(yRange,xRange,pix,frm) = ...
-            uint16(~filled).*roi.image(yRange,xRange,pix,frm) + uint16(filled)*objLabel;
+            hOverlayImg.AlphaData(yRange,xRange).*double(~bwc) + double(bwc)*app.Transparency.Value;
         break
     end
 end
 
 % Bbox + rectangle
-stats = regionprops(currentMask==objLabel,'BoundingBox');
+stats = regionprops(selectedComponent,'BoundingBox');
 if isempty(stats), return; end
 bb = stats(1).BoundingBox;
 
