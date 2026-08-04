@@ -1,0 +1,40 @@
+function spec = annotationSpec(classif)
+%SAM31.ANNOTATIONSPEC Tracked-instance mask GT contract.
+
+spec = annotationManager.newSpec(classif);
+outputName = runtimeText(classif, 'outputName', spec.classifierId);
+className = 'cell';
+if ~isempty(spec.classes), className = spec.classes{1}; end
+prediction = ['results_' outputName '_' className];
+candidates = {prediction, ['results_' outputName '_cell'], ...
+    ['results_' spec.classifierId '_' className], ...
+    ['results_' spec.classifierId '_cell']};
+gtName = annotationManager.annotationChannelName(classif, 'cell');
+
+component = annotationManager.newComponent( ...
+    'id', 'tracklets', ...
+    'kind', 'tracked_instances', ...
+    'storage', 'channel', ...
+    'coverageUnit', 'frame', ...
+    'editor', 'tracking', ...
+    'bootstrap', 'copy_channel', ...
+    'classes', {'cell'}, ...
+    'groundTruth', annotationManager.newAsset('channel', gtName), ...
+    'prediction', annotationManager.newAsset( ...
+        'channel', prediction, 'channelCandidates', candidates));
+
+spec.displayName = 'SAM3.1 cell tracking';
+spec.components = component;
+spec.defaultEditor = 'tracking';
+end
+
+function value = runtimeText(classif, name, fallback)
+value = fallback;
+try
+    p = classif.executionParam;
+    if isstruct(p) && isfield(p, name) && ~isempty(p.(name))
+        value = char(string(p.(name)));
+    end
+catch
+end
+end

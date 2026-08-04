@@ -16,7 +16,8 @@ param.device = 'cpu';
 param.maxParentContourDistance = 25;
 ctx = struct('store',struct('workDir',fullfile(folder,'runtime')));
 [resolved,dataout,imageout] = cellLatentModel.core(param,roiobj,ctx);
-verifyEmpty(testCase,dataout);
+verifyClass(testCase,dataout,'dataseries');
+verifyTrue(testCase,any(strcmp({dataout.groupid},'cell_information')));
 verifyEmpty(testCase,imageout);
 verifyEqual(testCase,resolved.runtime.package,'cell_latent_model');
 verifyEqual(testCase,resolved.runtime.backend,'legacy');
@@ -33,6 +34,10 @@ verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex},'results_trackastra');
 verifyEqual(testCase, ...
     model.families.lineage_source{familyIndex},'cellLatentModel');
+ds = dataout(find(strcmp({dataout.groupid},'cell_information'),1));
+sourceKey = matlab.lang.makeValidName(param.outputFamilyName);
+verifyTrue(testCase,isfield(ds.userData.lineageSources,sourceKey));
+verifyEqual(testCase,ds.userData.activeLineageSource,sourceKey);
 end
 
 function testTemporalBuiltinV002PersistsObjectsOnly(testCase)
@@ -53,7 +58,8 @@ ctx = struct('store',struct('workDir',fullfile(folder,'runtime')));
 
 [resolved,dataout,imageout] = cellLatentModel.core(param,roiobj,ctx);
 
-verifyEmpty(testCase,dataout);
+verifyClass(testCase,dataout,'dataseries');
+verifyTrue(testCase,any(strcmp({dataout.groupid},'cell_information')));
 verifyEmpty(testCase,imageout);
 verifyEqual(testCase,resolved.runtime.backend,'temporal_lineage');
 verifyTrue(testCase,resolved.runtime.nucleus_used);
@@ -76,6 +82,29 @@ verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex},'results_trackastra');
 verifyEqual(testCase, ...
     model.families.lineage_source{familyIndex},'cellLatentModel');
+end
+
+function testJsonDecodedHeterogeneousEdgesMaterializeRelations(testCase)
+model = cellModel.create('heterogeneous_json');
+tracks = zeros(4,4,3,'uint32');
+tracks(1:2,1:2,:) = 1;
+tracks(3:4,3:4,2:3) = 2;
+payload = ['{"edges":[' ...
+    '{"status":"linked","pred_parent_id":1,"child_track_id":2,' ...
+    '"bud_appearance_frame":2,"top_score":0.95},' ...
+    '{"status":"review","child_track_id":3,' ...
+    '"bud_appearance_frame":3,"reason":"low_margin"}]}'];
+result = jsondecode(payload);
+verifyClass(testCase,result.edges,'cell');
+
+[model,familyId,report] = cellModel.applyLineageResult( ...
+    model,tracks,'results_trackastra','<auto>', ...
+    'Decoded lineage',result,true,'cellLatentModel');
+
+verifyEqual(testCase,report.linked_relations,1);
+verifyEqual(testCase,sum(model.relations.family_id == familyId),1);
+verifyEqual(testCase,model.relations.parent_track_id,uint64(1));
+verifyEqual(testCase,model.relations.child_track_id,uint64(2));
 end
 
 function testTemporalChannelRolesAreExplicit(testCase)

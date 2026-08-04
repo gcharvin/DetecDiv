@@ -823,10 +823,20 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     if nargin < 9 || isempty(saveMode), saveMode = 'immediate'; end
     if nargin < 10 || isempty(ctx), ctx = struct(); end
 
-    imageCache = image;
-    dataCache = data;
-    roiobj.data  = data;
-    roiobj.image = image;
+    hadDataOutput = ~isempty(data);
+    hadImageOutput = ~isempty(image);
+    if hadDataOutput
+        dataCache = data;
+    else
+        dataCache = roiobj.data;
+    end
+    if hadImageOutput
+        imageCache = image;
+    else
+        imageCache = roiobj.image;
+    end
+    roiobj.data  = dataCache;
+    roiobj.image = imageCache;
     localNormalizeIndexedResultChannels(roiobj);
     lineageDataChanged = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx);
     if lineageDataChanged
@@ -835,15 +845,15 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
 
     if shouldDeferSaveLocal(saveMode)
         imageSaveChannels = {};
-        if numel(image)
+        if hadImageOutput
             imageSaveChannels = localClassifierImageOutputChannels(roiobj, outputName, classiobj);
         end
-        markDeferredDirtyLocal(roiobj, true, numel(image) > 0, imageSaveChannels);
+        markDeferredDirtyLocal(roiobj, hadDataOutput, hadImageOutput, imageSaveChannels);
         disp('[DEBUG] ROIManagement: defer save requested, ROI kept in memory.');
         return;
     end
 
-    if numel(image)
+    if hadImageOutput
         try
             disp(['[DEBUG] ROIManagement: calling roi.save for ROI ' num2str(roiobj.id)]);
         catch

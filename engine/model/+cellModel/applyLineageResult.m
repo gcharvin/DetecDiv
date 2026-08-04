@@ -73,9 +73,19 @@ skipped = 0;
 knownTracks = unique(model.instances.track_id( ...
     model.instances.family_id == familyId));
 for i = 1:numel(edges)
-    edge = edges(i);
+    if iscell(edges)
+        edge = edges{i};
+    else
+        edge = edges(i);
+    end
     if ~isfield(edge,'status') || ...
             ~strcmp(char(string(edge.status)),'linked')
+        continue;
+    end
+    if ~isfield(edge,'pred_parent_id') || ...
+            ~isfield(edge,'child_track_id') || ...
+            ~isfield(edge,'bud_appearance_frame')
+        skipped = skipped + 1;
         continue;
     end
     parent = uint64(edge.pred_parent_id);

@@ -1,0 +1,35 @@
+function asset = newAsset(varargin)
+%ANNOTATIONMANAGER.NEWASSET Create a normalized annotation storage binding.
+
+asset = struct( ...
+    'channel', '', ...
+    'channelCandidates', {{}}, ...
+    'groupId', '', ...
+    'valueField', '', ...
+    'idField', '', ...
+    'family', '', ...
+    'maskProvider', '');
+
+if mod(numel(varargin), 2) ~= 0
+    error('annotationManager:InvalidAssetArguments', ...
+        'Asset overrides must be name/value pairs.');
+end
+for i = 1:2:numel(varargin)
+    key = char(string(varargin{i}));
+    if ~isfield(asset, key)
+        error('annotationManager:UnknownAssetField', ...
+            'Unknown annotation asset field "%s".', key);
+    end
+    value = varargin{i+1};
+    if strcmp(key, 'channelCandidates')
+        if ischar(value) || isstring(value)
+            value = cellstr(string(value));
+        elseif isempty(value)
+            value = {};
+        end
+    elseif isstring(value) && isscalar(value)
+        value = char(value);
+    end
+    asset.(key) = value;
+end
+end

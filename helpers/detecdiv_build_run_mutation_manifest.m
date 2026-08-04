@@ -32,11 +32,11 @@ function manifest = detecdiv_build_run_mutation_manifest(runObj, pipeObj, report
         change.h5File = fullfile(change.path, ['im_' change.id '.h5']);
         change.dataFile = fullfile(change.path, ['data_' change.id '.mat']);
         h5Names = localH5DatasetNames(change.h5File);
-        dataNames = localDataSeriesNames(rois(i));
         for j = 1:numel(completed)
             logicalName = completed(j).logicalName;
             change.channels = [change.channels localMatchingNames(h5Names, logicalName)]; %#ok<AGROW>
-            change.dataSeries = [change.dataSeries localMatchingNames(dataNames, logicalName)]; %#ok<AGROW>
+            change.dataSeries = [change.dataSeries ...
+                localMatchingDataSeriesNames(rois(i), logicalName)]; %#ok<AGROW>
         end
         change.channels = unique(change.channels, 'stable');
         change.dataSeries = unique(change.dataSeries, 'stable');
@@ -49,7 +49,11 @@ function manifest = detecdiv_build_run_mutation_manifest(runObj, pipeObj, report
         dataSeries = {};
         for i = 1:numel(manifest.rois)
             channels = [channels localMatchingNames(manifest.rois(i).channels, manifest.outputs(j).logicalName)]; %#ok<AGROW>
-            dataSeries = [dataSeries localMatchingNames(manifest.rois(i).dataSeries, manifest.outputs(j).logicalName)]; %#ok<AGROW>
+            if i <= numel(rois)
+                dataSeries = [dataSeries ...
+                    localMatchingDataSeriesNames(rois(i), ...
+                    manifest.outputs(j).logicalName)]; %#ok<AGROW>
+            end
         end
         manifest.outputs(j).channels = unique(channels, 'stable');
         manifest.outputs(j).dataSeries = unique(dataSeries, 'stable');
@@ -160,21 +164,59 @@ function names = localH5DatasetNames(h5File)
     end
 end
 
-function names = localDataSeriesNames(roiObj)
-    names = {};
+function matches = localMatchingDataSeriesNames(roiObj, logicalName)
+    matches = {};
     try
         data = roiObj.data;
         for i = 1:numel(data)
             groupId = '';
             try, groupId = char(string(data(i).groupid)); catch, end
-            if ~isempty(groupId)
-                names{end+1} = groupId; %#ok<AGROW>
+            if isempty(groupId)
+                continue;
+            end
+            if ~isempty(localMatchingNames({groupId}, logicalName)) || ...
+                    localDataSeriesHasLogicalSource(data(i), logicalName)
+                matches{end+1} = groupId; %#ok<AGROW>
             end
         end
     catch
-        names = {};
+        matches = {};
     end
-    names = unique(names, 'stable');
+    matches = unique(matches, 'stable');
+end
+
+function tf = localDataSeriesHasLogicalSource(ds, logicalName)
+    tf = false;
+    try
+        if ~isstruct(ds.userData) || ...
+                ~isfield(ds.userData, 'lineageSources') || ...
+                ~isstruct(ds.userData.lineageSources)
+            return;
+        end
+        sources = ds.userData.lineageSources;
+        sourceKeys = fieldnames(sources);
+        logicalText = char(string(logicalName));
+        logicalKey = matlab.lang.makeValidName(logicalText);
+        for i = 1:numel(sourceKeys)
+            source = sources.(sourceKeys{i});
+            candidates = sourceKeys(i);
+            if isstruct(source)
+                if isfield(source, 'outputName')
+                    candidates{end+1} = char(string(source.outputName)); %#ok<AGROW>
+                end
+                if isfield(source, 'displayName')
+                    candidates{end+1} = char(string(source.displayName)); %#ok<AGROW>
+                end
+            end
+            if any(strcmpi(candidates, logicalText)) || ...
+                    any(strcmpi(candidates, logicalKey))
+                tf = true;
+                return;
+            end
+        end
+    catch
+        tf = false;
+    end
 end
 
 function matches = localMatchingNames(names, logicalName)
