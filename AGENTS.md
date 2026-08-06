@@ -110,6 +110,8 @@ Consequences:
 The user preference is to keep App Designer for layout, but preserve code synchronization. For this, local sync helpers were introduced:
 - `sync_mlapp_code.m`
 - `sync_workflow_layout.m`
+- `classifier_gui_layout.m` / `sync_classifier_layout.m`
+- `score_gui_layout.m` / `sync_score_layout.m`
 
 ## 4. Business Logic Principles for Processing Functions
 
@@ -246,6 +248,8 @@ When starting a new DetecDiv thread, these files give the shortest path to the c
 ### App Designer synchronization
 - `sync_mlapp_code.m`
 - `sync_workflow_layout.m`
+- `classifier_gui_layout.m` / `sync_classifier_layout.m`
+- `score_gui_layout.m` / `sync_score_layout.m`
 
 ## 9. Minimal Pipeline Context Schema
 

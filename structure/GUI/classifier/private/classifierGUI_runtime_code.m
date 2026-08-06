@@ -90,6 +90,11 @@ classdef classifierGUI < matlab.apps.AppBase
         SettrainingparametersTab        matlab.ui.container.Tab
         UITableParam                    matlab.ui.control.Table
         SettrainingandvalidationsetROIsTab  matlab.ui.container.Tab
+        AnnotationFilterDropDown        matlab.ui.control.DropDown
+        AnnotationFilterDropDownLabel   matlab.ui.control.Label
+        RefreshAnnotationStatusButton   matlab.ui.control.Button
+        StartBlankGTButton              matlab.ui.control.Button
+        GenerateDraftButton             matlab.ui.control.Button
         BoundsnoticeLabel               matlab.ui.control.Label
         SetboundsselectionrulesButton   matlab.ui.control.Button
         FormattrainingsetfortrainingButton  matlab.ui.control.Button
@@ -1189,11 +1194,20 @@ function displayData(app) % displays rois in the table
 
     t    = app.UITableData;
     Data = {};
+    annotationRows = struct([]);
+    try
+        annotationRows = classiObj.annotationSummary();
+    catch ME
+        warning('classifierGUI:AnnotationSummary', ...
+            'Could not summarize annotations: %s', ME.message);
+    end
 
     if numel(rois) == 1
         if numel(rois.id) == 0
             t.Data = {};
+            app.Data.annotationVisibleRoiIndices = [];
             app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
+            updateAnnotationActionState(app);
             return;
         end
     end
@@ -1208,6 +1222,8 @@ function displayData(app) % displays rois in the table
         isannotated = false;
         isvalidated = false;
         pixdata     = [];
+        [annotationStatus, annotationCoverage, annotationValidation] = ...
+            annotationTableValues(app, annotationRows, i);
 
         if any(trainingrois == i)
             istrainee = true;
@@ -1217,9 +1233,10 @@ function displayData(app) % displays rois in the table
         if strcmp(category,'Pixel')
 
             t.ColumnName     = {'Select for training','Select for test',...
-                                ' ROI index','ROI Id','Frame bounds'};
-            t.ColumnWidth    = {150, 150, 100, 'auto', 150};
-            t.ColumnEditable = [true true false false false];
+                                ' ROI index','ROI Id','Frame bounds', ...
+                                'Annotation status','Coverage','Validation'};
+            t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 90, 90};
+            t.ColumnEditable = [true true false false false false false false];
 
             if numel(rois(i).data)
                 listdata = {rois(i).data.groupid};
@@ -1227,7 +1244,8 @@ function displayData(app) % displays rois in the table
             end
 
             boundsTxt = localBoundsText(app,rois(i), pixdata, classiObj, boundsType, globalBounds);
-            Data(i,:) = {istrainee, istest, i, rois(i).id, boundsTxt};
+            Data(i,:) = {istrainee, istest, i, rois(i).id, boundsTxt, ...
+                annotationStatus, annotationCoverage, annotationValidation};
 
         else
 
@@ -1247,9 +1265,10 @@ function displayData(app) % displays rois in the table
 
                 t.ColumnName = {'Select for training','Select for testing',...
                                 ' ROI index','ROI Id','is annotated',...
-                                'is validated','Frame bounds'};
-                t.ColumnWidth    = {150, 150, 100, 'auto', 100, 100, 100};
-                t.ColumnEditable = [true true false false false false false];
+                                'is validated','Frame bounds','Annotation status',...
+                                'Coverage','Validation'};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 90, 90};
+                t.ColumnEditable = [true true false false false false false false false false];
 
                 labelsTraining = [];
                 labelsPred     = [];
@@ -1290,15 +1309,17 @@ function displayData(app) % displays rois in the table
 
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
-                             isannotated, isvalidated, boundsTxt};
+                             isannotated, isvalidated, boundsTxt, ...
+                             annotationStatus, annotationCoverage, annotationValidation};
 
             else
 
                 t.ColumnName = {'Select for training','Select for testing',...
                                 ' ROI index','ROI Id','is annotated',...
-                                'is validated','Frame bounds'};
-                t.ColumnWidth    = {150, 150, 100, 'auto', 100, 100, 100};
-                t.ColumnEditable = [true true false false false false false];
+                                'is validated','Frame bounds','Annotation status',...
+                                'Coverage','Validation'};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 90, 90};
+                t.ColumnEditable = [true true false false false false false false false false];
 
                 if ~isempty(pixdata)
                     dd = rois(i).data(pixdata(1));
@@ -1329,13 +1350,175 @@ function displayData(app) % displays rois in the table
 
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
-                             isannotated, isvalidated, boundsTxt};
+                             isannotated, isvalidated, boundsTxt, ...
+                             annotationStatus, annotationCoverage, annotationValidation};
             end
         end
     end
 
+    filterValue = 'All';
+    try, filterValue = char(string(app.AnnotationFilterDropDown.Value)); catch, end
+    if ~isempty(Data) && ~strcmpi(filterValue, 'All')
+        statusColumn = size(Data, 2) - 2;
+        keep = strcmpi(string(Data(:, statusColumn)), string(filterValue));
+        Data = Data(keep, :);
+    end
     t.Data = Data;
+    if isempty(Data)
+        app.Data.annotationVisibleRoiIndices = [];
+    else
+        app.Data.annotationVisibleRoiIndices = cell2mat(Data(:, 3)).';
+    end
     app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
+    updateAnnotationActionState(app);
+end
+
+function [statusText, coverageText, validationText] = ...
+        annotationTableValues(app, rows, roiIndex) %#ok<INUSD>
+    status = 'missing';
+    reviewed = 0;
+    total = 0;
+    if ~isempty(rows)
+        match = find([rows.roiIndex] == roiIndex, 1);
+        if ~isempty(match)
+            status = char(string(rows(match).status));
+            reviewed = double(rows(match).reviewed);
+            total = double(rows(match).total);
+        end
+    end
+    if isempty(status), status = 'missing'; end
+    statusText = [upper(status(1)) lower(status(2:end))];
+    coverageText = sprintf('%d/%d', reviewed, total);
+    if strcmpi(status, 'approved')
+        validationText = 'Valid';
+    else
+        validationText = 'Not run';
+    end
+end
+
+function indices = selectedAnnotationRoiIndices(app)
+    indices = [];
+    try
+        selection = app.UITableData.Selection;
+        if ~isempty(selection) && ~isempty(app.UITableData.Data)
+            rows = unique(selection(:,1), 'stable');
+            rows = rows(rows >= 1 & rows <= size(app.UITableData.Data,1));
+            for i = 1:numel(rows)
+                value = app.UITableData.Data{rows(i),3};
+                indices(end+1) = double(value); %#ok<AGROW>
+            end
+        end
+    catch
+        indices = [];
+    end
+    if isempty(indices)
+        try, indices = double(app.Data.selected); catch, end
+    end
+    nRoi = numel(app.Data.classiObj.roi);
+    oldTraining = double(app.Data.classiObj.trainingset(:).');
+    indices = unique(round(indices(:).'), 'stable');
+    indices = indices(isfinite(indices) & indices >= 1 & indices <= nRoi);
+end
+
+function updateAnnotationActionState(app)
+    hasRois = false;
+    try
+        rois = app.Data.classiObj.roi;
+        hasRois = ~isempty(rois) && ~(numel(rois) == 1 && isempty(rois(1).id));
+    catch
+    end
+    app.RefreshAnnotationStatusButton.Enable = localOnOff(app, hasRois);
+    app.GenerateDraftButton.Enable = 'off';
+    app.StartBlankGTButton.Enable = 'off';
+    app.AnnotateselectedROIButton.Enable = 'off';
+    if ~hasRois, return; end
+
+    indices = selectedAnnotationRoiIndices(app);
+    if isempty(indices), return; end
+    app.StartBlankGTButton.Enable = 'on';
+    app.AnnotateselectedROIButton.Enable = localOnOff(app, numel(indices) == 1);
+
+    canBootstrap = false;
+    for roiIndex = indices
+        try
+            session = app.Data.classiObj.annotationSession(roiIndex);
+            context = session.uiContext();
+            summary = session.summary();
+            required = [summary.components.required];
+            if isempty(required), required = true(1, numel(summary.components)); end
+            predictionsReady = ~isempty(summary.components) && ...
+                all([summary.components(required).predictionExists]);
+            canBootstrap = canBootstrap || ...
+                (context.supportsBootstrap && strcmpi(summary.status, 'missing') && ...
+                predictionsReady);
+        catch
+        end
+    end
+    app.GenerateDraftButton.Enable = localOnOff(app, canBootstrap);
+end
+
+function value = localOnOff(app, condition) %#ok<INUSD>
+    if condition, value = 'on'; else, value = 'off'; end
+end
+
+function setClassifierTrainingSelection(app, trainIndices)
+    classiObj = app.Data.classiObj;
+    nRoi = numel(classiObj.roi);
+    trainIndices = unique(round(double(trainIndices(:).')), 'stable');
+    trainIndices = trainIndices(isfinite(trainIndices) & ...
+        trainIndices >= 1 & trainIndices <= nRoi);
+    testIndices = setdiff(1:nRoi, trainIndices, 'stable');
+    classiObj.trainingset = trainIndices;
+    try
+        if ~isprop(classiObj, 'dataset') || ~isstruct(classiObj.dataset)
+            classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
+                'split', struct('train', [], 'val', [], 'test', []));
+        end
+        if ~isfield(classiObj.dataset, 'split') || ...
+                ~isstruct(classiObj.dataset.split)
+            classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
+        end
+        classiObj.dataset.split.train = trainIndices;
+        classiObj.dataset.split.val = [];
+        classiObj.dataset.split.test = testIndices;
+    catch
+    end
+    app.Data.classiObj = classiObj;
+end
+
+function proceed = confirmUnapprovedTrainingRois(app, roiIndices)
+    proceed = true;
+    try
+        rows = app.Data.classiObj.annotationSummary(roiIndices);
+    catch
+        return;
+    end
+    if isempty(rows), return; end
+    notApproved = rows(~strcmpi(string({rows.status}), 'approved'));
+    if isempty(notApproved), return; end
+
+    maxRows = min(numel(notApproved), 15);
+    details = strings(maxRows,1);
+    for i = 1:maxRows
+        details(i) = sprintf('%s: %s', notApproved(i).roiId, ...
+            upperFirst(app, notApproved(i).status));
+    end
+    if numel(notApproved) > maxRows
+        details(end+1) = sprintf('... and %d more ROI(s)', ...
+            numel(notApproved) - maxRows); %#ok<AGROW>
+    end
+    message = sprintf(['The following training ROI(s) do not have approved GT:\n\n%s\n\n' ...
+        'Continue formatting anyway?'], strjoin(details, newline));
+    choice = uiconfirm(app.ClassifierUIFigure, message, ...
+        'Unapproved ground truth', 'Options', {'Cancel','Continue'}, ...
+        'DefaultOption', 1, 'CancelOption', 1, 'Icon', 'warning');
+    proceed = strcmp(choice, 'Continue');
+end
+
+function value = upperFirst(app, value) %#ok<INUSD>
+    value = char(string(value));
+    if isempty(value), return; end
+    value = [upper(value(1)) lower(value(2:end))];
 end
 
 
@@ -1456,51 +1639,20 @@ end
      end
 
 
-     % display statistics
-     % number of annotated ROIs. 
-
-     cn=0;
-     cm=0;
-     [catCell, ~] = classiNormalizeCategory(classiObj.category);
-     cate=catCell{1};
-     switch cate
-    case {'Image','LSTM'}
-     for i=1:numel(classiObj.roi)
-        if isfield(classiObj.roi(i).train,classiObj.strid)
-            if isfield(classiObj.roi(i).train.(classiObj.strid),'id')
-                if numel(classiObj.roi(i).train.(classiObj.strid).id)>0
-                    if numel(find(classiObj.roi(i).train.(classiObj.strid).id>0))
-                     cn=cn+1;
-                    end
-                end
-            end
-           
-        end
-         if isfield(classiObj.roi(i).results,classiObj.strid)
-            if isfield(classiObj.roi(i).results.(classiObj.strid),'id')
-                if numel(classiObj.roi(i).train.(classiObj.strid).id)>0
-                 %   if numel(find(classiObj.roi(i).train.(classiObj.strid).id>0))
-                     cm=cm+1;
-                  %  end
-                end
-            end
-           
-        end
+     % Annotation lifecycle statistics shared by every classifier category.
+     try
+         rows = classiObj.annotationSummary();
+         statuses = string({rows.status});
+         app.NumberofannotatedROIsEditField.Value = ...
+             num2str(nnz(~strcmpi(statuses, 'missing')));
+         app.AnnotatedROIswithvalidationdataEditField.Value = ...
+             num2str(nnz(strcmpi(statuses, 'approved')));
+         app.AnnotatedROIswithvalidationdataEditFieldLabel.Text = ...
+             'Approved annotation ROIs:';
+     catch
+         app.NumberofannotatedROIsEditField.Value = 'Not available';
+         app.AnnotatedROIswithvalidationdataEditField.Value = 'Not available';
      end
-     app.NumberofannotatedROIsEditField.Value=num2str(cn);
-     app.AnnotatedROIswithvalidationdataEditField.Value=num2str(cm);
-
-         case {'Pixel'}
-    for i=1:numel(classiObj.roi)
-    %    pix=classiObj.roi(i).findChannelID(classiObj.strid);
-     %   if numel(pix)
-      %      im=classiObj.
-    %end
-    end
- app.AnnotatedROIswithvalidationdataEditField.Value='Not available' ;% need to load every single ROI, which is too time consuming
-app.NumberofannotatedROIsEditField.Value='Not available'; % need to load every single ROI, which is too time consuming
- 
-        end
         end
 
         function tf = isCellposeSAMClassifier(app, classiObj) %#ok<INUSD>
@@ -2057,50 +2209,23 @@ end
 
         % Cell edit callback: UITableData
         function UITableDataCellEdit(app, event)
- 
-    indices = event.Indices;
-    newData = event.NewData;
+            indices = event.Indices;
+            row = indices(1);
+            col = indices(2);
+            if col ~= 1 && col ~= 2, return; end
 
-    row = indices(1);
-    col = indices(2);
-
-    % Colonnes attendues : Train / Test
-    % 1 = Train, 2 = Test
-    if col == 1
-        app.UITableData.Data{row,1} = logical(newData);
-        app.UITableData.Data{row,2} = ~logical(newData);
-    elseif col == 2
-        app.UITableData.Data{row,2} = logical(newData);
-        app.UITableData.Data{row,1} = ~logical(newData);
-    end
-
-    % Recompute splits
-    trainIdx = find(cellfun(@(x) x==1, app.UITableData.Data(:,1)));
-    testIdx  = find(cellfun(@(x) x==1, app.UITableData.Data(:,2)));
-
-    % Update classif
-    classiObj = app.Data.classiObj;
-    classiObj.trainingset = trainIdx;
-
-    % Ensure dataset struct exists
-    try
-        if ~isfield(classiObj,'dataset') || ~isstruct(classiObj.dataset)
-            classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
-                'split', struct('train', [], 'val', [], 'test', []));
-        end
-        if ~isfield(classiObj.dataset,'split') || ~isstruct(classiObj.dataset.split)
-            classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
-        end
-        classiObj.dataset.split.train = trainIdx;
-        classiObj.dataset.split.val   = [];      % kept empty by design
-        classiObj.dataset.split.test  = testIdx;
-    catch
-    end
-
-    app.Data.classiObj = classiObj;
-
-    checkStatus(app,false);
-    displayData(app);
+            roiIndex = double(app.UITableData.Data{row,3});
+            trainIdx = double(app.Data.classiObj.trainingset(:).');
+            selectForTraining = (col == 1 && logical(event.NewData)) || ...
+                (col == 2 && ~logical(event.NewData));
+            if selectForTraining
+                trainIdx = union(trainIdx, roiIndex, 'stable');
+            else
+                trainIdx = setdiff(trainIdx, roiIndex, 'stable');
+            end
+            setClassifierTrainingSelection(app, trainIdx);
+            checkStatus(app,false);
+            displayData(app);
          
 
 
@@ -2108,23 +2233,30 @@ end
 
         % Button pushed function: AnnotateselectedROIButton
         function AnnotateselectedROIButtonPushed(app, event)
-            sel=app.Data.selected;
-            if numel(sel)==0
+            sel = selectedAnnotationRoiIndices(app);
+            if numel(sel) ~= 1
                 uialert(app.ClassifierUIFigure,'First select an ROI!','Error')
                 return;
             end
             disp(['Launching ROI #' num2str(sel) '.... Please wait...']);
+            app.Data.annotationSession = ...
+                app.Data.classiObj.annotationSession(sel);
+            % Temporary compatibility path until Score accepts Session.
             app.Data.classiObj.userTraining('Roi',sel);
             checkStatus(app,false)
+            displayData(app);
         end
 
         % Cell selection callback: UITableData
         function UITableDataCellSelection(app, event)
             indices = event.Indices;
             if numel(indices)
-            app.Data.selected=indices(1);
+                row = indices(1);
+                if row <= size(app.UITableData.Data,1)
+                    app.Data.selected = double(app.UITableData.Data{row,3});
+                end
             end
-
+            updateAnnotationActionState(app);
         end
 
         % Button pushed function: ImportROIsButton
@@ -2139,29 +2271,20 @@ end
 
         % Button pushed function: SelectallButton
         function SelectallButtonPushed(app, event)
-            
-            n=size(app.UITableData.Data,1);
-            t=cell(1,n);
-            t(:)={true};
-  
-            app.UITableData.Data(:,1)=t';
-            
-            selectedfortraining=cellfun(@(x) x==1,app.UITableData.Data(:,1));
-            app.Data.classiObj.trainingset=find(selectedfortraining');
+            visible = app.Data.annotationVisibleRoiIndices;
+            trainIdx = union(double(app.Data.classiObj.trainingset(:).'), ...
+                double(visible(:).'), 'stable');
+            setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false)
             displayData(app);
         end
 
         % Button pushed function: DeselectallButton
         function DeselectallButtonPushed(app, event)
-            n=size(app.UITableData.Data,1);
-            t=cell(1,n);
-            t(:)={false};
-  
-            app.UITableData.Data(:,1)=t';
-
-            selectedfortraining=cellfun(@(x) x==1,app.UITableData.Data(:,1));
-            app.Data.classiObj.trainingset=find(selectedfortraining');
+            visible = app.Data.annotationVisibleRoiIndices;
+            trainIdx = setdiff(double(app.Data.classiObj.trainingset(:).'), ...
+                double(visible(:).'), 'stable');
+            setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false)
             displayData(app);
         end
@@ -2175,7 +2298,13 @@ end
     if isempty(indices)
         return
     end
-    sel = unique(indices(:,1));           % lignes sélectionnées (peut être plusieurs)
+    selectedRows = unique(indices(:,1));
+    selectedRows = selectedRows(selectedRows >= 1 & ...
+        selectedRows <= size(app.UITableData.Data,1));
+    sel = zeros(1, numel(selectedRows));
+    for i = 1:numel(selectedRows)
+        sel(i) = double(app.UITableData.Data{selectedRows(i),3});
+    end
 
     nRoi = numel(app.Data.classiObj.roi);
 
@@ -2191,12 +2320,14 @@ end
     if isempty(keep)
         % On a tout supprimé
         app.Data.classiObj.roi = roi;
+        app.Data.classiObj.trainingset = [];
         app.Data.classiObj.channelName = {};
         app.UITableData.Selection = [];
         displayClassi(app);
     else
         % On garde seulement les ROIs non sélectionnées
         app.Data.classiObj.roi = app.Data.classiObj.roi(keep);
+        setClassifierTrainingSelection(app, find(ismember(keep, oldTraining)));
         app.UITableData.Selection = [];
         
         % Cas particulier : il ne reste qu’une ROI “placeholder”
@@ -2348,34 +2479,19 @@ end
         function FormattrainingsetMenuSelected(app, event)
   
     classiObj = app.Data.classiObj;
-    if ~isempty(app.UITableData.Data)
-        selectedfortraining = cellfun(@(x) x==1, app.UITableData.Data(:,1));
-        selectedfortest = cellfun(@(x) x==1, app.UITableData.Data(:,2));
-        nrois = find(selectedfortraining');
-        testrois = find(selectedfortest');
-        classiObj.trainingset = nrois;
-        try
-            if ~isprop(classiObj,'dataset') || ~isstruct(classiObj.dataset)
-                classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
-                    'split', struct('train', [], 'val', [], 'test', []));
-            end
-            if ~isfield(classiObj.dataset,'split') || ~isstruct(classiObj.dataset.split)
-                classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
-            end
-            classiObj.dataset.split.train = nrois;
-            classiObj.dataset.split.val = [];
-            classiObj.dataset.split.test = testrois;
-        catch
-        end
-        app.Data.classiObj = classiObj;
-    else
-        nrois = classiObj.getTrainingROIIndices();
+    nrois = double(classiObj.trainingset(:).');
+    if isempty(nrois)
+        try, nrois = classiObj.getTrainingROIIndices(); catch, end
     end
 
     if numel(nrois) == 0
         uialert(app.ClassifierUIFigure, ...
             'You must select at least one ROI in the Dataset panel  !', ...
             'Error');
+        return;
+    end
+
+    if ~confirmUnapprovedTrainingRois(app, nrois)
         return;
     end
 
@@ -3098,6 +3214,96 @@ disp('unable to display folder with this OS');
             value = app.PostprocessingDropDown.Value;
             
         end
+
+        % Button pushed function: GenerateDraftButton
+        function GenerateDraftButtonPushed(app, event)
+            indices = selectedAnnotationRoiIndices(app);
+            if isempty(indices)
+                uialert(app.ClassifierUIFigure, 'Select at least one ROI.', ...
+                    'Generate annotation draft');
+                return;
+            end
+            errors = strings(0,1);
+            changed = 0;
+            for roiIndex = indices
+                try
+                    session = app.Data.classiObj.annotationSession(roiIndex);
+                    summary = session.summary();
+                    if ~strcmpi(summary.status, 'missing'), continue; end
+                    session.bootstrap();
+                    changed = changed + 1;
+                catch ME
+                    errors(end+1) = sprintf('ROI %d: %s', roiIndex, ME.message); %#ok<AGROW>
+                end
+            end
+            checkStatus(app,false);
+            displayData(app);
+            if ~isempty(errors)
+                uialert(app.ClassifierUIFigure, strjoin(errors, newline), ...
+                    'Draft generation incomplete', 'Icon', 'warning');
+            elseif changed > 0
+                uialert(app.ClassifierUIFigure, ...
+                    sprintf('Created %d annotation draft(s).', changed), ...
+                    'Draft generated', 'Icon', 'success');
+            end
+        end
+
+        % Button pushed function: StartBlankGTButton
+        function StartBlankGTButtonPushed(app, event)
+            indices = selectedAnnotationRoiIndices(app);
+            if isempty(indices)
+                uialert(app.ClassifierUIFigure, 'Select at least one ROI.', ...
+                    'Start blank GT');
+                return;
+            end
+            overwrite = false;
+            try
+                rows = app.Data.classiObj.annotationSummary(indices);
+                overwrite = any(~strcmpi(string({rows.status}), 'missing'));
+            catch
+            end
+            if overwrite
+                choice = uiconfirm(app.ClassifierUIFigure, ...
+                    ['At least one selected ROI already contains draft or approved GT. ' ...
+                    'Replace it with blank GT?'], 'Replace ground truth', ...
+                    'Options', {'Cancel','Replace GT'}, 'DefaultOption', 1, ...
+                    'CancelOption', 1, 'Icon', 'warning');
+                if ~strcmp(choice, 'Replace GT'), return; end
+            end
+            errors = strings(0,1);
+            changed = 0;
+            for roiIndex = indices
+                try
+                    session = app.Data.classiObj.annotationSession(roiIndex);
+                    session.startBlank('Overwrite', overwrite);
+                    changed = changed + 1;
+                catch ME
+                    errors(end+1) = sprintf('ROI %d: %s', roiIndex, ME.message); %#ok<AGROW>
+                end
+            end
+            checkStatus(app,false);
+            displayData(app);
+            if ~isempty(errors)
+                uialert(app.ClassifierUIFigure, strjoin(errors, newline), ...
+                    'Blank GT incomplete', 'Icon', 'warning');
+            elseif changed > 0
+                uialert(app.ClassifierUIFigure, ...
+                    sprintf('Created blank GT for %d ROI(s).', changed), ...
+                    'Blank GT created', 'Icon', 'success');
+            end
+        end
+
+        % Button pushed function: RefreshAnnotationStatusButton
+        function RefreshAnnotationStatusButtonPushed(app, event)
+            displayData(app);
+        end
+
+        % Value changed function: AnnotationFilterDropDown
+        function AnnotationFilterDropDownValueChanged(app, event)
+            app.Data.selected = [];
+            app.UITableData.Selection = [];
+            displayData(app);
+        end
     end
 
     % Component initialization
@@ -3111,7 +3317,7 @@ disp('unable to display folder with this OS');
 
             % Create ClassifierUIFigure and hide until all components are created
             app.ClassifierUIFigure = uifigure('Visible', 'off');
-            app.ClassifierUIFigure.Position = [100 100 1103 642];
+            app.ClassifierUIFigure.Position = [100 100 1104 676];
             app.ClassifierUIFigure.Name = 'Classifier';
             app.ClassifierUIFigure.Icon = fullfile(pathToMLAPP, 'brain.png');
             app.ClassifierUIFigure.CloseRequestFcn = createCallbackFcn(app, @ClassifierUIFigureCloseRequest, true);
@@ -3167,7 +3373,7 @@ disp('unable to display folder with this OS');
 
             % Create TabGroup
             app.TabGroup = uitabgroup(app.ClassifierUIFigure);
-            app.TabGroup.Position = [16 59 1066 574];
+            app.TabGroup.Position = [16 53 1066 614];
 
             % Create ClassifierPropertiesTab
             app.ClassifierPropertiesTab = uitab(app.TabGroup);
@@ -3177,7 +3383,7 @@ disp('unable to display folder with this OS');
             % Create ClassifierquickinfoPanel
             app.ClassifierquickinfoPanel = uipanel(app.ClassifierPropertiesTab);
             app.ClassifierquickinfoPanel.Title = 'Classifier quick info';
-            app.ClassifierquickinfoPanel.Position = [38 400 1020 140];
+            app.ClassifierquickinfoPanel.Position = [38 440 1020 140];
 
             % Create PathEditFieldLabel
             app.PathEditFieldLabel = uilabel(app.ClassifierquickinfoPanel);
@@ -3262,7 +3468,7 @@ disp('unable to display folder with this OS');
             % Create TrainingvalidationsetPanel
             app.TrainingvalidationsetPanel = uipanel(app.ClassifierPropertiesTab);
             app.TrainingvalidationsetPanel.Title = 'Training & validation set';
-            app.TrainingvalidationsetPanel.Position = [38 215 1020 170];
+            app.TrainingvalidationsetPanel.Position = [38 255 1020 170];
 
             % Create NumberofROIsusedfortrainingvalidationLabel
             app.NumberofROIsusedfortrainingvalidationLabel = uilabel(app.TrainingvalidationsetPanel);
@@ -3337,7 +3543,7 @@ disp('unable to display folder with this OS');
             % Create OutputandstatisticsPanel
             app.OutputandstatisticsPanel = uipanel(app.ClassifierPropertiesTab);
             app.OutputandstatisticsPanel.Title = 'Output and statistics';
-            app.OutputandstatisticsPanel.Position = [38 25 1020 174];
+            app.OutputandstatisticsPanel.Position = [38 65 1020 174];
 
             % Create DisplayclassifierstatisticsButton
             app.DisplayclassifierstatisticsButton = uibutton(app.OutputandstatisticsPanel, 'push');
@@ -3383,21 +3589,21 @@ disp('unable to display folder with this OS');
             app.Label_3 = uilabel(app.ClassifierPropertiesTab);
             app.Label_3.FontSize = 24;
             app.Label_3.FontWeight = 'bold';
-            app.Label_3.Position = [12 510 25 31];
+            app.Label_3.Position = [12 550 25 31];
             app.Label_3.Text = '1';
 
             % Create Label_4
             app.Label_4 = uilabel(app.ClassifierPropertiesTab);
             app.Label_4.FontSize = 24;
             app.Label_4.FontWeight = 'bold';
-            app.Label_4.Position = [11 357 25 31];
+            app.Label_4.Position = [11 397 25 31];
             app.Label_4.Text = '2';
 
             % Create Label_5
             app.Label_5 = uilabel(app.ClassifierPropertiesTab);
             app.Label_5.FontSize = 24;
             app.Label_5.FontWeight = 'bold';
-            app.Label_5.Position = [9 176 25 31];
+            app.Label_5.Position = [9 216 25 31];
             app.Label_5.Text = '3';
 
             % Create SetclassifierparametersTab
@@ -3407,60 +3613,60 @@ disp('unable to display folder with this OS');
             % Create TypeLabel
             app.TypeLabel = uilabel(app.SetclassifierparametersTab);
             app.TypeLabel.HorizontalAlignment = 'right';
-            app.TypeLabel.Position = [144 519 35 22];
+            app.TypeLabel.Position = [144 559 35 22];
             app.TypeLabel.Text = 'Type:';
 
             % Create TypeDropDown
             app.TypeDropDown = uidropdown(app.SetclassifierparametersTab);
             app.TypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TypeDropDownValueChanged, true);
-            app.TypeDropDown.Position = [186 519 314 22];
+            app.TypeDropDown.Position = [186 559 314 22];
 
             % Create SpaceseparatedclassnamesLabel
             app.SpaceseparatedclassnamesLabel = uilabel(app.SetclassifierparametersTab);
             app.SpaceseparatedclassnamesLabel.HorizontalAlignment = 'right';
-            app.SpaceseparatedclassnamesLabel.Position = [11 453 174 22];
+            app.SpaceseparatedclassnamesLabel.Position = [11 493 174 22];
             app.SpaceseparatedclassnamesLabel.Text = 'Space-separated class names: ';
 
             % Create SpaceseparatedclassnamesEditField
             app.SpaceseparatedclassnamesEditField = uieditfield(app.SetclassifierparametersTab, 'text');
             app.SpaceseparatedclassnamesEditField.ValueChangedFcn = createCallbackFcn(app, @SpaceseparatedclassnamesEditFieldValueChanged, true);
             app.SpaceseparatedclassnamesEditField.Tooltip = {'For classification, class definition is mandaztory; If emtpy, the classifier will output a regression'};
-            app.SpaceseparatedclassnamesEditField.Position = [189 453 444 22];
+            app.SpaceseparatedclassnamesEditField.Position = [189 493 444 22];
 
             % Create PostprocessingcustomfunctionhandleEditFieldLabel
             app.PostprocessingcustomfunctionhandleEditFieldLabel = uilabel(app.SetclassifierparametersTab);
             app.PostprocessingcustomfunctionhandleEditFieldLabel.HorizontalAlignment = 'right';
-            app.PostprocessingcustomfunctionhandleEditFieldLabel.Position = [22 196 224 22];
+            app.PostprocessingcustomfunctionhandleEditFieldLabel.Position = [22 236 224 22];
             app.PostprocessingcustomfunctionhandleEditFieldLabel.Text = 'Post-processing custom function handle:';
 
             % Create PostprocessingcustomfunctionhandleEditField
             app.PostprocessingcustomfunctionhandleEditField = uieditfield(app.SetclassifierparametersTab, 'text');
             app.PostprocessingcustomfunctionhandleEditField.ValueChangedFcn = createCallbackFcn(app, @PostprocessingcustomfunctionhandleEditFieldValueChanged2, true);
-            app.PostprocessingcustomfunctionhandleEditField.Position = [261 196 168 22];
+            app.PostprocessingcustomfunctionhandleEditField.Position = [261 236 168 22];
 
             % Create ClassiDetailsLabel
             app.ClassiDetailsLabel = uilabel(app.SetclassifierparametersTab);
             app.ClassiDetailsLabel.WordWrap = 'on';
-            app.ClassiDetailsLabel.Position = [187 491 495 22];
+            app.ClassiDetailsLabel.Position = [187 531 495 22];
             app.ClassiDetailsLabel.Text = 'ClassiDetails';
 
             % Create PostprocessingDropDownLabel
             app.PostprocessingDropDownLabel = uilabel(app.SetclassifierparametersTab);
             app.PostprocessingDropDownLabel.HorizontalAlignment = 'right';
-            app.PostprocessingDropDownLabel.Position = [23 246 92 22];
+            app.PostprocessingDropDownLabel.Position = [23 286 92 22];
             app.PostprocessingDropDownLabel.Text = 'Post-processing';
 
             % Create PostprocessingDropDown
             app.PostprocessingDropDown = uidropdown(app.SetclassifierparametersTab);
             app.PostprocessingDropDown.Items = {'plain output / probabilities for each class', 'plain output / semantic segmentation', 'postprocessing', 'custom function (see below)'};
             app.PostprocessingDropDown.ValueChangedFcn = createCallbackFcn(app, @PostprocessingDropDownValueChanged, true);
-            app.PostprocessingDropDown.Position = [130 244 299 22];
+            app.PostprocessingDropDown.Position = [130 284 299 22];
             app.PostprocessingDropDown.Value = 'plain output / probabilities for each class';
 
             % Create PostprocessingparametersPanel
             app.PostprocessingparametersPanel = uipanel(app.SetclassifierparametersTab);
             app.PostprocessingparametersPanel.Title = 'Post-processing parameters';
-            app.PostprocessingparametersPanel.Position = [455 165 584 128];
+            app.PostprocessingparametersPanel.Position = [455 205 584 128];
 
             % Create WatershedCheckBox
             app.WatershedCheckBox = uicheckbox(app.PostprocessingparametersPanel);
@@ -3524,52 +3730,52 @@ disp('unable to display folder with this OS');
             % Create AvailablechannelstakenfromtrainingdatasetROIsLabel
             app.AvailablechannelstakenfromtrainingdatasetROIsLabel = uilabel(app.SetclassifierparametersTab);
             app.AvailablechannelstakenfromtrainingdatasetROIsLabel.WordWrap = 'on';
-            app.AvailablechannelstakenfromtrainingdatasetROIsLabel.Position = [20 411 307 42];
+            app.AvailablechannelstakenfromtrainingdatasetROIsLabel.Position = [20 451 307 42];
             app.AvailablechannelstakenfromtrainingdatasetROIsLabel.Text = 'Available channels (taken from training dataset (ROIs):';
 
             % Create ChannelListBox
             app.ChannelListBox = uilistbox(app.SetclassifierparametersTab);
             app.ChannelListBox.Items = {};
             app.ChannelListBox.Tooltip = {'This is only activated after ROIs have been imported to this classifier (see tab #3 in this GUI).'};
-            app.ChannelListBox.Position = [16 305 295 112];
+            app.ChannelListBox.Position = [16 345 295 112];
             app.ChannelListBox.Value = {};
 
             % Create SelectedchannelsasclassificationinputLabel
             app.SelectedchannelsasclassificationinputLabel = uilabel(app.SetclassifierparametersTab);
             app.SelectedchannelsasclassificationinputLabel.HorizontalAlignment = 'center';
             app.SelectedchannelsasclassificationinputLabel.WordWrap = 'on';
-            app.SelectedchannelsasclassificationinputLabel.Position = [381 407 255 42];
+            app.SelectedchannelsasclassificationinputLabel.Position = [381 447 255 42];
             app.SelectedchannelsasclassificationinputLabel.Text = 'Selected channels as classification input:';
 
             % Create ChannelListBoxSel
             app.ChannelListBoxSel = uilistbox(app.SetclassifierparametersTab);
             app.ChannelListBoxSel.Items = {};
             app.ChannelListBoxSel.Tooltip = {'It is not allowed to have more than 3 channels for all classification schemes, except the U-Net model'};
-            app.ChannelListBoxSel.Position = [398 304 301 110];
+            app.ChannelListBoxSel.Position = [398 344 301 110];
             app.ChannelListBoxSel.Value = {};
 
             % Create SelectButton
             app.SelectButton = uibutton(app.SetclassifierparametersTab, 'push');
             app.SelectButton.ButtonPushedFcn = createCallbackFcn(app, @SelectButtonPushed, true);
-            app.SelectButton.Position = [330 369 48 22];
+            app.SelectButton.Position = [330 409 48 22];
             app.SelectButton.Text = '>';
 
             % Create DeSelectButton
             app.DeSelectButton = uibutton(app.SetclassifierparametersTab, 'push');
             app.DeSelectButton.ButtonPushedFcn = createCallbackFcn(app, @DeSelectButtonPushed, true);
-            app.DeSelectButton.Position = [329 335 48 22];
+            app.DeSelectButton.Position = [329 375 48 22];
             app.DeSelectButton.Text = '<';
 
             % Create UsercommentsEditField_2Label
             app.UsercommentsEditField_2Label = uilabel(app.SetclassifierparametersTab);
             app.UsercommentsEditField_2Label.HorizontalAlignment = 'right';
-            app.UsercommentsEditField_2Label.Position = [23 122 93 22];
+            app.UsercommentsEditField_2Label.Position = [23 162 93 22];
             app.UsercommentsEditField_2Label.Text = 'User comments:';
 
             % Create UsercommentsEditField_2
             app.UsercommentsEditField_2 = uieditfield(app.SetclassifierparametersTab, 'text');
             app.UsercommentsEditField_2.ValueChangedFcn = createCallbackFcn(app, @UsercommentsEditField_2ValueChanged, true);
-            app.UsercommentsEditField_2.Position = [131 120 898 28];
+            app.UsercommentsEditField_2.Position = [131 160 898 28];
 
             % Create SettrainingparametersTab
             app.SettrainingparametersTab = uitab(app.TabGroup);
@@ -3581,7 +3787,7 @@ disp('unable to display folder with this OS');
             app.UITableParam = uitable(app.SettrainingparametersTab);
             app.UITableParam.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
             app.UITableParam.RowName = {};
-            app.UITableParam.Position = [14 15 677 525];
+            app.UITableParam.Position = [14 55 677 525];
 
             % Create SettrainingandvalidationsetROIsTab
             app.SettrainingandvalidationsetROIsTab = uitab(app.TabGroup);
@@ -3595,105 +3801,136 @@ disp('unable to display folder with this OS');
             app.UITableData.RowName = {};
             app.UITableData.CellEditCallback = createCallbackFcn(app, @UITableDataCellEdit, true);
             app.UITableData.CellSelectionCallback = createCallbackFcn(app, @UITableDataCellSelection, true);
-            app.UITableData.Position = [8 122 1040 419];
+            app.UITableData.Position = [8 162 1040 419];
 
             % Create ImportROIsButton
             app.ImportROIsButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.ImportROIsButton.ButtonPushedFcn = createCallbackFcn(app, @ImportROIsButtonPushed, true);
-            app.ImportROIsButton.Position = [398 15 100 50];
+            app.ImportROIsButton.Position = [398 8 100 50];
             app.ImportROIsButton.Text = 'Import ROIs...';
 
             % Create AnnotateselectedROIButton
             app.AnnotateselectedROIButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.AnnotateselectedROIButton.ButtonPushedFcn = createCallbackFcn(app, @AnnotateselectedROIButtonPushed, true);
             app.AnnotateselectedROIButton.Tooltip = {'Select a ROI in the ROI Index column first'};
-            app.AnnotateselectedROIButton.Position = [510 16 146 50];
+            app.AnnotateselectedROIButton.Position = [510 9 146 50];
             app.AnnotateselectedROIButton.Text = 'Annotate selected ROI...';
 
             % Create SelectallButton
             app.SelectallButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.SelectallButton.ButtonPushedFcn = createCallbackFcn(app, @SelectallButtonPushed, true);
-            app.SelectallButton.Position = [262 43 100 22];
+            app.SelectallButton.Position = [262 36 100 22];
             app.SelectallButton.Text = 'Select all';
 
             % Create DeselectallButton
             app.DeselectallButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.DeselectallButton.ButtonPushedFcn = createCallbackFcn(app, @DeselectallButtonPushed, true);
-            app.DeselectallButton.Position = [263 15 100 22];
+            app.DeselectallButton.Position = [263 8 100 22];
             app.DeselectallButton.Text = 'Deselect all';
 
             % Create removeselectedROIButton
             app.removeselectedROIButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.removeselectedROIButton.ButtonPushedFcn = createCallbackFcn(app, @removeselectedROIButtonPushed, true);
-            app.removeselectedROIButton.Position = [667 16 128 49];
+            app.removeselectedROIButton.Position = [667 9 128 49];
             app.removeselectedROIButton.Text = 'remove selected ROI';
 
             % Create SelectROIsEditFieldLabel
             app.SelectROIsEditFieldLabel = uilabel(app.SettrainingandvalidationsetROIsTab);
             app.SelectROIsEditFieldLabel.HorizontalAlignment = 'right';
-            app.SelectROIsEditFieldLabel.Position = [45 43 80 22];
+            app.SelectROIsEditFieldLabel.Position = [45 36 80 22];
             app.SelectROIsEditFieldLabel.Text = 'Select ROIs #';
 
             % Create SelectROIsEditField
             app.SelectROIsEditField = uieditfield(app.SettrainingandvalidationsetROIsTab, 'text');
             app.SelectROIsEditField.ValueChangedFcn = createCallbackFcn(app, @SelectROIsEditFieldValueChanged, true);
-            app.SelectROIsEditField.Position = [140 43 100 22];
+            app.SelectROIsEditField.Position = [140 36 100 22];
 
             % Create ShuffleROIsfractionEditFieldLabel
             app.ShuffleROIsfractionEditFieldLabel = uilabel(app.SettrainingandvalidationsetROIsTab);
             app.ShuffleROIsfractionEditFieldLabel.HorizontalAlignment = 'right';
-            app.ShuffleROIsfractionEditFieldLabel.Position = [12 15 116 22];
+            app.ShuffleROIsfractionEditFieldLabel.Position = [12 8 116 22];
             app.ShuffleROIsfractionEditFieldLabel.Text = 'Shuffle ROIs fraction';
 
             % Create ShuffleROIsfractionEditField
             app.ShuffleROIsfractionEditField = uieditfield(app.SettrainingandvalidationsetROIsTab, 'text');
             app.ShuffleROIsfractionEditField.ValueChangedFcn = createCallbackFcn(app, @ShuffleROIsfractionEditFieldValueChanged, true);
-            app.ShuffleROIsfractionEditField.Position = [141 15 100 22];
+            app.ShuffleROIsfractionEditField.Position = [141 8 100 22];
             app.ShuffleROIsfractionEditField.Value = '1';
 
             % Create FormattrainingsetfortrainingButton
             app.FormattrainingsetfortrainingButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.FormattrainingsetfortrainingButton.ButtonPushedFcn = createCallbackFcn(app, @FormattrainingsetfortrainingButtonPushed, true);
-            app.FormattrainingsetfortrainingButton.Position = [804 16 186 49];
+            app.FormattrainingsetfortrainingButton.Position = [804 9 186 49];
             app.FormattrainingsetfortrainingButton.Text = 'Format training set for training...';
 
             % Create SetboundsselectionrulesButton
             app.SetboundsselectionrulesButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.SetboundsselectionrulesButton.ButtonPushedFcn = createCallbackFcn(app, @SetboundsselectionrulesButtonPushed, true);
-            app.SetboundsselectionrulesButton.Position = [13 75 169 33];
+            app.SetboundsselectionrulesButton.Position = [13 68 169 33];
             app.SetboundsselectionrulesButton.Text = 'Set bounds selection rules....';
 
             % Create BoundsnoticeLabel
             app.BoundsnoticeLabel = uilabel(app.SettrainingandvalidationsetROIsTab);
-            app.BoundsnoticeLabel.Position = [203 82 731 22];
+            app.BoundsnoticeLabel.Position = [203 75 731 22];
             app.BoundsnoticeLabel.Text = 'Bounds notice';
+
+            % Create GenerateDraftButton
+            app.GenerateDraftButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
+            app.GenerateDraftButton.ButtonPushedFcn = createCallbackFcn(app, @GenerateDraftButtonPushed, true);
+            app.GenerateDraftButton.Position = [10 121 175 23];
+            app.GenerateDraftButton.Text = 'Generate draft from prediction';
+
+            % Create StartBlankGTButton
+            app.StartBlankGTButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
+            app.StartBlankGTButton.ButtonPushedFcn = createCallbackFcn(app, @StartBlankGTButtonPushed, true);
+            app.StartBlankGTButton.Position = [203 122 100 23];
+            app.StartBlankGTButton.Text = 'Start blank GT';
+
+            % Create RefreshAnnotationStatusButton
+            app.RefreshAnnotationStatusButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
+            app.RefreshAnnotationStatusButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshAnnotationStatusButtonPushed, true);
+            app.RefreshAnnotationStatusButton.Position = [327 122 100 23];
+            app.RefreshAnnotationStatusButton.Text = 'Refresh status';
+
+            % Create AnnotationFilterDropDownLabel
+            app.AnnotationFilterDropDownLabel = uilabel(app.SettrainingandvalidationsetROIsTab);
+            app.AnnotationFilterDropDownLabel.HorizontalAlignment = 'right';
+            app.AnnotationFilterDropDownLabel.Position = [482 122 35 22];
+            app.AnnotationFilterDropDownLabel.Text = 'Show';
+
+            % Create AnnotationFilterDropDown
+            app.AnnotationFilterDropDown = uidropdown(app.SettrainingandvalidationsetROIsTab);
+            app.AnnotationFilterDropDown.Items = {'All', 'Missing', 'Draft', 'Approved'};
+            app.AnnotationFilterDropDown.ValueChangedFcn = createCallbackFcn(app, @AnnotationFilterDropDownValueChanged, true);
+            app.AnnotationFilterDropDown.Position = [532 122 100 22];
+            app.AnnotationFilterDropDown.Value = 'All';
 
             % Create StatusSaved
             app.StatusSaved = uilamp(app.ClassifierUIFigure);
             app.StatusSaved.Tooltip = {'Classifier status'};
-            app.StatusSaved.Position = [146 19 20 20];
+            app.StatusSaved.Position = [146 9 20 20];
             app.StatusSaved.Color = [1 0 0];
 
             % Create StatusLoad
             app.StatusLoad = uilamp(app.ClassifierUIFigure);
             app.StatusLoad.Tooltip = {'Classifier loaded in memory'};
-            app.StatusLoad.Position = [1030 18 20 20];
+            app.StatusLoad.Position = [1030 8 20 20];
             app.StatusLoad.Color = [1 0 0];
 
             % Create ParametersaresavedLabel
             app.ParametersaresavedLabel = uilabel(app.ClassifierUIFigure);
-            app.ParametersaresavedLabel.Position = [17 18 127 22];
+            app.ParametersaresavedLabel.Position = [17 8 127 22];
             app.ParametersaresavedLabel.Text = 'Parameters are saved:';
 
             % Create ClassifierisloadedinworksapcememoryLabel
             app.ClassifierisloadedinworksapcememoryLabel = uilabel(app.ClassifierUIFigure);
-            app.ClassifierisloadedinworksapcememoryLabel.Position = [789 17 240 22];
+            app.ClassifierisloadedinworksapcememoryLabel.Position = [789 7 240 22];
             app.ClassifierisloadedinworksapcememoryLabel.Text = 'Classifier is loaded in worksapce (memory):';
 
             % Create SaveclassifierButton
             app.SaveclassifierButton = uibutton(app.ClassifierUIFigure, 'push');
             app.SaveclassifierButton.ButtonPushedFcn = createCallbackFcn(app, @SaveclassifierButtonPushed, true);
-            app.SaveclassifierButton.Position = [187 12 588 31];
+            app.SaveclassifierButton.Position = [187 2 588 31];
             app.SaveclassifierButton.Text = 'Save classifier';
 
             % Show the figure after all components are created

@@ -60,6 +60,12 @@ callbacks can be wired without introducing classifier-specific UI branches.
 
 Work in the existing **Set training and validation set (ROIs)** tab.
 
+App Designer must open the isolated layout source with
+`classifier_gui_layout("edit")`; never open the runtime
+`structure/GUI/classifierGUI.mlapp` directly. After saving and closing the
+designer, use `classifier_gui_layout("apply")`. The apply step preserves the
+code-rich reference, validates every callback, and rebuilds the runtime app.
+
 #### Keep unchanged
 
 Keep the following controls and their existing selection/import behavior:
@@ -110,7 +116,7 @@ annotation button:
    creates a session for every selected ROI and calls `bootstrap()`. Enable it
    only when at least one selected ROI is `Missing` and its required prediction
    components are available.
-2. `StartBlankButton`, text **Start blank GT**. Its callback calls
+2. `StartBlankGTButton`, text **Start blank GT**. Its callback calls
    `session.startBlank()`. Ask for confirmation before replacing an existing
    draft or approved GT; no confirmation is needed for a `Missing` ROI.
 3. `RefreshAnnotationStatusButton`, text **Refresh status**. Its callback calls
@@ -130,7 +136,7 @@ function GenerateDraftButtonPushed(app, event)
     app.refreshAnnotationTable();
 end
 
-function StartBlankButtonPushed(app, event)
+function StartBlankGTButtonPushed(app, event)
     indices = app.selectedRoiIndices();
     for k = indices
         app.Data.classiObj.annotationSession(k).startBlank();
