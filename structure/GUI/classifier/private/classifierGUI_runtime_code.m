@@ -128,15 +128,35 @@ paramEditorControls = gobjects(0);
 
 
       
-      function [spec, t] = buildParamTable(app, trainingParam)
+function [spec, t] = buildParamTable(app, trainingParam, classiObj)
 % buildParamTable  Build UITable data + spec from trainingParam.
+
+    if nargin < 3, classiObj = []; end
 
     tp = trainingParam;
     if isfield(tp,'tip')
         tp = rmfield(tp,'tip');
     end
 
+    spec = struct();
+    bindingSpec = struct([]);
+    bindingCatalog = struct();
+    try
+        bindingSpec = classifierBinding.trainingSpec(classiObj);
+        if ~isempty(bindingSpec)
+            bindingCatalog = classifierBinding.catalog(classiObj);
+        end
+    catch ME
+        warning('classifierGUI:TrainingBindings', ...
+            'Could not build typed training bindings: %s', ME.message);
+        bindingSpec = struct([]);
+    end
+
     keys = fieldnames(tp);
+    if ~isempty(bindingSpec)
+        virtualKeys = {bindingSpec.param};
+        keys = [keys; virtualKeys(~ismember(virtualKeys, keys)).'];
+    end
     n = numel(keys);
 
     Param = cell(n,1);
@@ -144,11 +164,19 @@ paramEditorControls = gobjects(0);
     Type  = cell(n,1);
     Group = cell(n,1);
 
-    spec = struct();
-
     for i = 1:n
         k = keys{i};
-        v = tp.(k);
+        bindingIndex = [];
+        if ~isempty(bindingSpec)
+            bindingIndex = find(strcmp({bindingSpec.param}, k), 1);
+        end
+        if ~isempty(bindingIndex)
+            v = classifierBinding.value(classiObj, bindingSpec(bindingIndex));
+        elseif isfield(tp, k)
+            v = tp.(k);
+        else
+            v = [];
+        end
 
         Param{i} = k;
 
@@ -164,14 +192,55 @@ paramEditorControls = gobjects(0);
         end
 
         [vStr, vType, choices] = inferParamValueType(app, v);
+        choiceLabels = choices;
+        if ~isempty(bindingIndex)
+            binding = bindingSpec(bindingIndex);
+            vStr = bindingValueToString(app, v);
+            if ~binding.editable
+                vType = 'binding_fixed';
+                choices = {};
+                choiceLabels = {};
+            else
+                resolved = classifierBinding.choices(binding, bindingCatalog, v);
+                choices = resolved.values;
+                choiceLabels = resolved.labels;
+                if strcmpi(binding.cardinality, 'many')
+                    vType = 'binding_multi';
+                else
+                    vType = 'binding';
+                end
+            end
+            Group{i} = binding.group;
+            if isempty(vStr)
+                if any(strcmp(choices, '<none>'))
+                    vStr = '<none>';
+                elseif any(strcmp(choices, '<unconfigured>'))
+                    vStr = '<unconfigured>';
+                elseif any(strcmp(choices, '<auto>'))
+                    vStr = '<auto>';
+                end
+            end
+        end
         Value{i} = vStr;
         Type{i}  = vType;
 
         spec.(k) = struct('type', vType, 'choices', {choices});
+        spec.(k).choiceLabels = choiceLabels;
         spec.(k).raw = v; % keep raw
+        if ~isempty(bindingIndex)
+            spec.(k).binding = bindingSpec(bindingIndex);
+        end
     end
 
     t = table(Param, Value, Type, Group);
+    groupRank = 10 * ones(height(t), 1);
+    groupRank(strcmp(t.Group, 'Data bindings')) = 1;
+    groupRank(strcmp(t.Group, 'Format')) = 2;
+    groupRank(strcmp(t.Group, 'General')) = 3;
+    groupRank(strcmp(t.Group, 'CNN')) = 4;
+    groupRank(strcmp(t.Group, 'LSTM')) = 5;
+    [~, order] = sort(groupRank, 'ascend');
+    t = t(order, :);
 end
 
 
@@ -179,6 +248,13 @@ function [vStr, vType, choices] = inferParamValueType(app, v) %#ok<INUSD>
 % inferParamValueType  Return display string + type + dropdown choices.
 
     choices = {};
+
+    % Several historical defaults used {{choices}}. Normalize them at the
+    % renderer boundary as well as in classifierBinding.normalizeClassifier
+    % so a read-only/struct-backed classifier never displays "{1 cell}".
+    while iscell(v) && numel(v) == 1 && iscell(v{1})
+        v = v{1};
+    end
 
     % dropdown style : cell array of strings, last = selected
     if iscell(v) && ~isempty(v) && all(cellfun(@ischar, v))
@@ -239,6 +315,30 @@ function s = logicalToString(app, v) %#ok<INUSD>
     end
 end
 
+function textValue = bindingValueToString(app, value) %#ok<INUSD>
+    values = bindingValueList(app, value);
+    textValue = strjoin(values, '; ');
+end
+
+function values = bindingValueList(app, raw) %#ok<INUSD>
+    if isempty(raw)
+        values = {};
+    elseif ischar(raw)
+        values = {raw};
+    elseif isstring(raw)
+        values = cellstr(raw(:).');
+    elseif iscell(raw)
+        values = {};
+        for i = 1:numel(raw)
+            values = [values bindingValueList(app, raw{i})]; %#ok<AGROW>
+        end
+    else
+        values = {char(string(raw))};
+    end
+    values = values(~cellfun(@(x)isempty(strtrim(x)), values));
+    values = unique(values, 'stable');
+end
+
 function msg = localGuiErrorMessage(app, ME) %#ok<INUSD>
 % localGuiErrorMessage  Compact error text suitable for uialert.
     parts = {};
@@ -293,6 +393,59 @@ function tf = isSam31Classifier(app, classiObj) %#ok<INUSD>
     end
 end
 
+function tf = hasTypedTrainingBindings(app, classiObj) %#ok<INUSD>
+    tf = false;
+    try
+        tf = ~isempty(classifierBinding.trainingSpec(classiObj));
+    catch
+    end
+end
+
+function tf = usesLegacyTransferLearning(app, classiObj) %#ok<INUSD>
+    pkg = '';
+    try, pkg = lower(strtrim(char(string(classiObj.classifierPkg)))); catch, end
+    % Only these MATLAB network packages use classi.version as an ImageNet
+    % transfer-learning selector. Other packages own their artifact/model
+    % initialization and must not receive a synthetic ImageNet parameter.
+    tf = isempty(pkg) || any(strcmp(pkg, { ...
+        'cnn','cnn_lstm','deeplab_pixel_classification'}));
+end
+
+function setLegacyChannelSelectorVisible(app, visible)
+    state = localOnOff(app, visible);
+    components = { ...
+        app.ChannelListBox, ...
+        app.ChannelListBoxSel, ...
+        app.SelectButton, ...
+        app.DeSelectButton, ...
+        app.AvailablechannelstakenfromtrainingdatasetROIsLabel, ...
+        app.SelectedchannelsasclassificationinputLabel};
+    for i = 1:numel(components)
+        try, components{i}.Visible = state; catch, end
+    end
+end
+
+function refreshTypedTrainingBindingChoices(app)
+    classiObj = app.Data.classiObj;
+    if ~hasTypedTrainingBindings(app, classiObj)
+        return;
+    end
+    selectedKey = app.paramSelectedKey;
+    [app.paramSpec, app.paramTableData] = buildParamTable( ...
+        app, classiObj.trainingParam, classiObj);
+    app.UITableParam.Data = app.paramTableData;
+    row = find(strcmp(app.paramTableData.Param, selectedKey), 1);
+    if isempty(row) && height(app.paramTableData) > 0
+        row = 1;
+        selectedKey = app.paramTableData.Param{1};
+    end
+    if ~isempty(row)
+        app.paramSelectedKey = selectedKey;
+        app.UITableParam.Selection = [row 1];
+        showParamEditor(app, selectedKey);
+    end
+end
+
 
 
 
@@ -313,6 +466,26 @@ function UITableParamCellEdit(app, event)
     row = event.Indices(1);
     key = app.UITableParam.Data.Param{row};
     newValStr = event.NewData;
+
+    if isfield(app.paramSpec, key) && ...
+            startsWith(app.paramSpec.(key).type, 'binding')
+        if strcmp(app.paramSpec.(key).type, 'binding_fixed')
+            app.UITableParam.Data.Value{row} = event.PreviousData;
+            showParamEditor(app, key);
+            return;
+        end
+        allowed = app.paramSpec.(key).choices;
+        candidate = char(string(newValStr));
+        if strcmp(app.paramSpec.(key).type, 'binding_multi') || ...
+                ~any(strcmp(allowed, candidate))
+            app.UITableParam.Data.Value{row} = event.PreviousData;
+            showParamEditor(app, key);
+            uialert(app.ClassifierUIFigure, ...
+                'Select typed data bindings from the dropdown editor.', ...
+                'Invalid data binding');
+            return;
+        end
+    end
 
     applyParamEdit(app, key, newValStr);
 end
@@ -341,6 +514,11 @@ function showParamEditor(app, key)
     lbl = uilabel(app.SettrainingparametersTab, ...
         'Text', key, 'Position',[baseX baseY+h-20 w 20], ...
         'FontWeight','bold');
+    if isfield(spec, 'binding')
+        bindingLabel = char(string(spec.binding.label));
+        if ~isempty(bindingLabel), lbl.Text = bindingLabel; end
+        lbl.Tooltip = char(string(spec.binding.tip));
+    end
     app.paramEditorControls(end+1) = lbl;
 
     % current value (string from table)
@@ -351,6 +529,77 @@ function showParamEditor(app, key)
     end
 
     switch type
+        case 'binding'
+            choiceValues = choices;
+            choiceLabels = choiceValues;
+            if isfield(spec, 'choiceLabels') && ...
+                    numel(spec.choiceLabels) == numel(choiceValues)
+                choiceLabels = spec.choiceLabels;
+            end
+            currentValue = curValStr;
+            if isempty(currentValue)
+                if any(strcmp(choiceValues, '<none>'))
+                    currentValue = '<none>';
+                elseif any(strcmp(choiceValues, '<unconfigured>'))
+                    currentValue = '<unconfigured>';
+                elseif any(strcmp(choiceValues, '<auto>'))
+                    currentValue = '<auto>';
+                end
+            end
+            if ~any(strcmp(choiceValues, currentValue))
+                choiceValues{end+1} = currentValue;
+                choiceLabels{end+1} = currentValue;
+            end
+            dd = uidropdown(app.SettrainingparametersTab, ...
+                'Items', choiceLabels, ...
+                'ItemsData', choiceValues, ...
+                'Position',[baseX baseY+160 w 22], ...
+                'Value', currentValue, ...
+                'ValueChangedFcn', @(src,evt)applyParamEdit(app, key, src.Value));
+            if isfield(spec, 'binding')
+                dd.Tooltip = char(string(spec.binding.tip));
+            end
+            app.paramEditorControls(end+1) = dd;
+
+        case 'binding_multi'
+            choiceValues = choices;
+            choiceLabels = choiceValues;
+            if isfield(spec, 'choiceLabels') && ...
+                    numel(spec.choiceLabels) == numel(choiceValues)
+                choiceLabels = spec.choiceLabels;
+            end
+            selectedValues = bindingValueList(app, spec.raw);
+            selectedValues = selectedValues(ismember(selectedValues, choiceValues));
+            if isempty(selectedValues)
+                if any(strcmp(choiceValues, '<unconfigured>'))
+                    selectedValues = {'<unconfigured>'};
+                elseif any(strcmp(choiceValues, '<none>'))
+                    selectedValues = {'<none>'};
+                elseif any(strcmp(choiceValues, '<auto>'))
+                    selectedValues = {'<auto>'};
+                end
+            end
+            lb = uilistbox(app.SettrainingparametersTab, ...
+                'Items', choiceLabels, ...
+                'ItemsData', choiceValues, ...
+                'Multiselect', 'on', ...
+                'Position',[baseX baseY+70 w 112], ...
+                'Value', selectedValues, ...
+                'ValueChangedFcn', @(src,evt)applyParamEdit(app, key, src.Value));
+            if isfield(spec, 'binding')
+                lb.Tooltip = char(string(spec.binding.tip));
+            end
+            app.paramEditorControls(end+1) = lb;
+
+        case 'binding_fixed'
+            ef = uieditfield(app.SettrainingparametersTab, 'text', ...
+                'Position',[baseX baseY+160 w 22], ...
+                'Value', curValStr, 'Editable', 'off');
+            if isfield(spec, 'binding')
+                ef.Tooltip = char(string(spec.binding.tip));
+            end
+            app.paramEditorControls(end+1) = ef;
+
         case 'enum'
             if isempty(choices)
                 choices = {curValStr};
@@ -388,6 +637,9 @@ end
 function out = updateDropdownValue(app, dropCell, selected) %#ok<INUSD>
 % updateDropdownValue  Update last entry of dropdown cell array.
 
+    while iscell(dropCell) && numel(dropCell) == 1 && iscell(dropCell{1})
+        dropCell = dropCell{1};
+    end
     if ~iscell(dropCell)
         out = dropCell;
         return;
@@ -400,11 +652,31 @@ function applyParamEdit(app, key, newVal)
 % applyParamEdit  Update trainingParam + table row.
 
     c = app.Data.classiObj;
-    if ~isfield(c.trainingParam, key), return; end
-
+    if ~isfield(app.paramSpec, key), return; end
     spec = app.paramSpec.(key);
+    if ~isfield(c.trainingParam, key) && ~isfield(spec, 'binding')
+        return;
+    end
 
     switch spec.type
+        case {'binding','binding_multi'}
+            classifierBinding.applyValue(c, spec.binding, newVal);
+            stored = classifierBinding.value(c, spec.binding);
+            newValStr = bindingValueToString(app, stored);
+            if isempty(newValStr)
+                values = bindingValueList(app, newVal);
+                if any(strcmp(values, '<auto>'))
+                    newValStr = '<auto>';
+                elseif any(strcmp(values, '<none>'))
+                    newValStr = '<none>';
+                else
+                    newValStr = '<unconfigured>';
+                end
+            end
+
+        case 'binding_fixed'
+            return;
+
         case 'enum'
             c.trainingParam.(key) = updateDropdownValue(app, c.trainingParam.(key), newVal);
             newValStr = char(string(newVal));
@@ -493,6 +765,9 @@ function classlist = buildPackageClasslist(app, rootPath) %#ok<INUSD>
     end
 
     pkgDirs = dir(fullfile(rootPath, '+*'));
+    pkgDirs = pkgDirs(arrayfun(@(d) ...
+        isfile(fullfile(d.folder, d.name, 'train.m')) && ...
+        isfile(fullfile(d.folder, d.name, 'classify.m')), pkgDirs));
     if isempty(pkgDirs)
         classlist = {};
         return;
@@ -549,6 +824,9 @@ function classlist = appendPackageClassifiers(app, classlist, rootPath)
     end
 
     pkgDirs = dir(fullfile(rootPath, '+*'));
+    pkgDirs = pkgDirs(arrayfun(@(d) ...
+        isfile(fullfile(d.folder, d.name, 'train.m')) && ...
+        isfile(fullfile(d.folder, d.name, 'classify.m')), pkgDirs));
     if isempty(pkgDirs)
         return;
     end
@@ -726,12 +1004,13 @@ end
         if isempty(c.trainingParam)
             c.trainClassifier('setparam');
         end
+        try, classifierBinding.normalizeClassifier(c); catch, end
         if ~isfield(c.trainingParam,'tip')
             c.trainingParam.tip = {};
         end
 
         % Build table-based editor
-        [app.paramSpec, app.paramTableData] = buildParamTable(app, c.trainingParam);
+        [app.paramSpec, app.paramTableData] = buildParamTable(app, c.trainingParam, c);
         app.UITableParam.Data = app.paramTableData;
         app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
         app.UITableParam.ColumnEditable = [false true false false];
@@ -851,6 +1130,11 @@ end
 
             % channels
 
+            typedTrainingBindings = hasTypedTrainingBindings(app, classiObj);
+            setLegacyChannelSelectorVisible(app, ~typedTrainingBindings);
+
+            if ~typedTrainingBindings
+
             app.ChannelListBoxSel.Items={};
             app.ChannelListBoxSel.Enable='off';
 
@@ -941,6 +1225,13 @@ end
                         app.ChannelListBoxSel.Items=channelName;
                         app.ChannelListBoxSel.Enable='on';
                     end
+            end
+
+            else
+                app.ChannelListBox.Items = {};
+                app.ChannelListBoxSel.Items = {};
+                app.ChannelListBox.Enable = 'off';
+                app.ChannelListBoxSel.Enable = 'off';
             end
 
             % classes
@@ -1884,12 +2175,15 @@ end
         classiObj.trainClassifier('setparam');
     end
 
+    try, classifierBinding.normalizeClassifier(classiObj); catch, end
+
     if isSam31Classifier(app, classiObj)
         try
             sam31.ensureClassMetadata(classiObj);
         catch
         end
-    else
+    end
+    if usesLegacyTransferLearning(app, classiObj)
         % Ensure transfer_learning list for legacy MATLAB/CNN classifiers.
         if ~isfield(classiObj.trainingParam,'transfer_learning')
             [t,~] = classiObj.version;
@@ -1916,7 +2210,7 @@ end
     end
 
     % Build table-based editor
-    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam);
+    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
     app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
     app.UITableParam.ColumnEditable = [false true false false];
@@ -1996,6 +2290,7 @@ end
 
         % Button down function: SettrainingparametersTab
         function SettrainingparametersTabButtonDown(app, event)
+            refreshTypedTrainingBindingChoices(app);
     % 
     % 
     %         % --- 1) Récupérer le classifier ---
@@ -2101,13 +2396,16 @@ end
     app.Data.classiObj.trainClassifier('setparam');
     classiObj = app.Data.classiObj;
 
+    try, classifierBinding.normalizeClassifier(classiObj); catch, end
+
     % set parameter menu:
     if isSam31Classifier(app, classiObj)
         try
             sam31.ensureClassMetadata(classiObj);
         catch
         end
-    else
+    end
+    if usesLegacyTransferLearning(app, classiObj)
         if ~isfield(classiObj.trainingParam,'transfer_learning')
             [t,~]=classiObj.version;
             if numel(t{1,1})==0, str={}; else, str=t(:,4); end
@@ -2125,7 +2423,7 @@ end
     end
 
     % Rebuild table-based editor
-    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam);
+    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
     app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
     app.UITableParam.ColumnEditable = [false true false false];
@@ -2351,6 +2649,7 @@ end
 
             displayData(app);
             displayClassi(app); % uodates the channel in particular in the classi tab
+            refreshTypedTrainingBindingChoices(app);
         end
 
         % Button pushed function: SelectallButton
@@ -2425,6 +2724,7 @@ end
     % Mise à jour de l’état et de l’affichage
     checkStatus(app,false);
     displayData(app);
+    refreshTypedTrainingBindingChoices(app);
 
         end
 

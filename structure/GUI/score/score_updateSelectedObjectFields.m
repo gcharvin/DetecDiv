@@ -32,12 +32,15 @@ if ~isempty(label) && isscalar(label) && isfinite(label) && label > 0
             if isempty(instance)
                 objectText = sprintf('unmapped:%g', label);
                 trackText = '';
+                try app.SelectedTrackIDCell = NaN; catch, end
             else
                 objectText = char(string(instance.object_id));
                 if instance.track_id > 0
                     trackText = char(string(instance.track_id));
+                    try app.SelectedTrackIDCell = double(instance.track_id); catch, end
                 else
                     trackText = '<unassigned>';
+                    try app.SelectedTrackIDCell = NaN; catch, end
                 end
                 stateItems = [{'<none>'}; model.states.name(:)];
                 stateIds = [0; double(model.states.state_id(:))];

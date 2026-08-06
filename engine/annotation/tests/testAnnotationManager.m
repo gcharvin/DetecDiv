@@ -126,7 +126,8 @@ c.executionParam = struct( ...
     'trackChannelName', '', ...
     'outputFamilyName', 'Predicted lineage');
 c.channelName = {'raw'};
-c.trainingParam = struct('groundTruthFamily', '<auto>');
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
 r = roiWithRaw(c.path, 'R1', 4, 4, 3);
 masks = zeros(4,4,1,3, 'uint16');
 masks(1:2,1:2,1,:) = 1;
@@ -169,6 +170,7 @@ verifyEqual(testCase, nnz(model.relations.family_id == sourceId), 1);
 verifyEqual(testCase, nnz(model.relations.family_id == gtId), 1);
 verifyEqual(testCase, c.trainingParam.groundTruthFamily, ...
     'latent_1 reviewed GT');
+verifyEqual(testCase, c.trainingParam.trackChannelName, 'latent_1_cell');
 
 session.markReviewed('Frames', 1:3, 'Components', {'tracked_mask'});
 session.markReviewed('Components', {'lineage'});

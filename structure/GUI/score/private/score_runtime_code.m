@@ -215,6 +215,7 @@ classdef score < matlab.apps.AppBase
         SelectedObjectChannelIdx double = NaN         % index du canal d’annotation
         SelectedObjectLabelCell double = NaN              % label de l’objet
         SelectedObjectRoiId string = ""               % id de la ROI (pour vérifier qu’on est sur la même)
+        SelectedTrackIDCell double = NaN              % persistent human-facing identity
         ShowLineageOverlay logical = false
         ShowBudPairingOverlay logical = true
         AnnotationSession = []
@@ -1873,9 +1874,10 @@ end
             app.setManagedAnnotationLayout(true);
             app.refreshAnnotationSessionUI();
             app.applyAnnotationDisplayPreset();
+            app.selectPanelTab('annotation');
         end
 
-        function notifyAnnotationChanged(app, source, frames)
+        function notifyAnnotationChanged(app, source, frames, varargin)
             % Called by painting, lineage and keyboard editors after a write.
             if nargin < 3, frames = []; end
             if isempty(app.AnnotationSession) || ~isvalid(app.AnnotationSession)
@@ -1885,13 +1887,19 @@ end
             if isempty(ids), return; end
             try
                 app.AnnotationSession.markChanged( ...
-                    'Components', ids, 'Frames', frames);
+                    'Components', ids, 'Frames', frames, varargin{:});
                 app.AnnotationLastValidationValid = false;
                 app.refreshAnnotationSessionUI();
             catch ME
                 warning('score:AnnotationChangeTracking', ...
                     'Could not update annotation review state: %s', ME.message);
             end
+        end
+
+        function key = syncLineageDisplayAfterEdit(app)
+            % Public bridge for editors implemented outside the app class.
+            % The actual display binding remains private to Score.
+            key = app.syncLineageDisplayForPaintChannel();
         end
 
         function refreshAnnotationSessionUI(app)
@@ -1930,6 +1938,27 @@ end
             app.CreateFromPredictionButton.Enable = app.onOff(canBootstrap);
             app.StartBlankGTButton.Enable = 'on';
             app.MarkFrameReviewedButton.Enable = app.onOff(hasDraft);
+            coverageComponents = summary.coverage.components;
+            requiredIds = string({app.AnnotationSession.Spec.components( ...
+                [app.AnnotationSession.Spec.components.required]).id});
+            requiredCoverage = coverageComponents(ismember( ...
+                string({coverageComponents.id}), requiredIds));
+            frameCoverage = requiredCoverage(strcmp({requiredCoverage.unit}, 'frame'));
+            roiCoverage = requiredCoverage(strcmp({requiredCoverage.unit}, 'roi'));
+            framesComplete = isempty(frameCoverage) || all( ...
+                [frameCoverage.reviewed] >= [frameCoverage.total]);
+            roiIncomplete = ~isempty(roiCoverage) && any( ...
+                [roiCoverage.reviewed] < [roiCoverage.total]);
+            if framesComplete && roiIncomplete
+                app.MarkFrameReviewedButton.Text = 'Confirm ROI reviewed...';
+                app.MarkFrameReviewedButton.Tooltip = ...
+                    'Confirm ROI-level tracks and lineage after all frames were reviewed.';
+            else
+                app.MarkFrameReviewedButton.Text = 'Reviewed + next';
+                app.MarkFrameReviewedButton.Tooltip = [ ...
+                    'Mark the current frame reviewed and open the next incomplete frame. ' ...
+                    'Shift+click confirms the complete ROI.'];
+            end
             app.NextIncompleteButton.Enable = app.onOff( ...
                 hasDraft && summary.coverage.reviewed < summary.coverage.total);
             app.ValidateAnnotationButton.Enable = app.onOff(hasDraft);
@@ -1982,10 +2011,15 @@ end
                 roi.display.selectedchannel(idx) = showPrediction;
                 roi.display.alpha(idx) = min(0.25, roi.display.alpha(idx));
             end
-            if ~any(logical(roi.display.selectedchannel))
-                background = find(~logical(roi.display.indexed), 1, 'first');
-                if isempty(background), background = 1; end
+            % Managed mask editing starts with one intensity image under
+            % the indexed overlay. Without it, legacy renderers computed
+            % Nchannel == 0 and frame navigation appeared frozen.
+            background = find(~logical(roi.display.indexed), 1, 'first');
+            if ~isempty(background)
                 roi.display.selectedchannel(background) = true;
+            elseif ~any(logical(roi.display.selectedchannel)) && ...
+                    ~isempty(roi.display.selectedchannel)
+                roi.display.selectedchannel(1) = true;
             end
 
             app.displayROIChannels();
@@ -2078,6 +2112,19 @@ end
                 for i = 1:numel(locked), app.(locked{i}).Enable = 'off'; end
                 app.UIAnnotationTable.ColumnEditable = ...
                     [true false false false false false];
+                % Mask labels and object UUIDs are storage details. Managed
+                % tracking/lineage annotation exposes one stable identity.
+                internalIds = {'MasklabelEditFieldLabel','MasklabelEditField', ...
+                    'SelectedObjectIDLabel','SelectedObjectIDEditField'};
+                for i = 1:numel(internalIds)
+                    app.(internalIds{i}).Visible = 'off';
+                end
+                app.SelectedTrackIDEditFieldLabel.Text = 'Selected track:';
+                app.SelectedTrackIDEditFieldLabel.Position = [8 153 106 22];
+                app.SelectedTrackIDEditField.Position = [149 153 100 22];
+                app.SelectedCellStateDropDownLabel.Position = [28 113 102 22];
+                app.SelectedCellStateDropDown.Position = [145 113 100 22];
+                app.CellModelStatusLabel.Position = [16 71 250 22];
             else
                 app.UIAnnotationTable.Position = [13 519 589 279];
                 positions = {[4 832 95 23],[103 832 109 23], ...
@@ -2087,6 +2134,17 @@ end
                     app.(genericButtons{i}).Position = positions{i};
                 end
                 app.UIAnnotationTable.ColumnEditable = true(1, 6);
+                internalIds = {'MasklabelEditFieldLabel','MasklabelEditField', ...
+                    'SelectedObjectIDLabel','SelectedObjectIDEditField'};
+                for i = 1:numel(internalIds)
+                    app.(internalIds{i}).Visible = 'on';
+                end
+                app.SelectedTrackIDEditFieldLabel.Text = 'Selected Track ID: ';
+                app.SelectedTrackIDEditFieldLabel.Position = [8 71 106 22];
+                app.SelectedTrackIDEditField.Position = [149 71 100 22];
+                app.SelectedCellStateDropDownLabel.Position = [28 34 102 22];
+                app.SelectedCellStateDropDown.Position = [145 34 100 22];
+                app.CellModelStatusLabel.Position = [16 7 133 22];
             end
         end
 
@@ -4186,26 +4244,61 @@ end
             if isempty(app.AnnotationSession), return; end
             roi = app.getSelectedROI();
             if isempty(roi), return; end
-            choice = uiconfirm(app.ScoreAppUIFigure, ...
-                ['Mark only the current frame as reviewed, or confirm that ' ...
-                 'the complete ROI (masks, tracks and lineage) was reviewed?'], ...
-                'Mark annotation reviewed', ...
-                'Options', {'Current frame','Entire ROI','Cancel'}, ...
-                'DefaultOption', 1, 'CancelOption', 3);
-            if strcmp(choice, 'Cancel'), return; end
             try
-                if strcmp(choice, 'Entire ROI')
+                components = app.AnnotationSession.Spec.components;
+                required = [components.required];
+                frameComponents = {components(required & strcmp( ...
+                    {components.coverageUnit}, 'frame')).id};
+                roiComponents = {components(required & strcmp( ...
+                    {components.coverageUnit}, 'roi')).id};
+                summary = app.AnnotationSession.summary();
+                coverageComponents = summary.coverage.components;
+                requiredCoverage = coverageComponents(ismember( ...
+                    string({coverageComponents.id}), string({components(required).id})));
+                frameCoverage = requiredCoverage(strcmp({requiredCoverage.unit}, 'frame'));
+                roiCoverage = requiredCoverage(strcmp({requiredCoverage.unit}, 'roi'));
+                framesComplete = isempty(frameCoverage) || all( ...
+                    [frameCoverage.reviewed] >= [frameCoverage.total]);
+                roiIncomplete = ~isempty(roiCoverage) && any( ...
+                    [roiCoverage.reviewed] < [roiCoverage.total]);
+
+                modifiers = {};
+                try
+                    modifiers = app.ScoreAppUIFigure.CurrentModifier;
+                catch
+                end
+                markEntireRoi = iscell(modifiers) && any(strcmpi(modifiers, 'shift'));
+
+                if markEntireRoi
+                    choice = uiconfirm(app.ScoreAppUIFigure, ...
+                        ['Confirm that the complete ROI (masks, tracks and ' ...
+                         'lineage) was reviewed?'], ...
+                        'Confirm complete ROI', ...
+                        'Options', {'Confirm entire ROI','Cancel'}, ...
+                        'DefaultOption', 1, 'CancelOption', 2);
+                    if strcmp(choice, 'Cancel'), return; end
                     app.AnnotationSession.markReviewed();
+                elseif framesComplete && roiIncomplete
+                    choice = uiconfirm(app.ScoreAppUIFigure, ...
+                        'Confirm that ROI-level tracks and lineage were reviewed?', ...
+                        'Confirm tracks and lineage', ...
+                        'Options', {'Confirm','Cancel'}, ...
+                        'DefaultOption', 1, 'CancelOption', 2);
+                    if strcmp(choice, 'Cancel'), return; end
+                    app.AnnotationSession.markReviewed('Components', roiComponents);
                 else
-                    components = app.AnnotationSession.Spec.components;
-                    frameComponents = {components(strcmp( ...
-                        {components.coverageUnit}, 'frame')).id};
                     app.AnnotationSession.markReviewed( ...
                         'Frames', roi.display.frame, ...
                         'Components', frameComponents);
                 end
                 app.AnnotationLastValidationValid = false;
                 app.refreshAnnotationSessionUI();
+                if ~markEntireRoi && ~(framesComplete && roiIncomplete)
+                    frame = app.nextIncompleteAnnotationFrame();
+                    if ~isempty(frame) && frame ~= roi.display.frame
+                        app.showAnnotationFrame(frame);
+                    end
+                end
             catch ME
                 uialert(app.ScoreAppUIFigure, ME.message, 'Review annotation');
             end
@@ -4214,6 +4307,10 @@ end
         function NextIncompleteButtonPushed(app, event) %#ok<INUSD>
             frame = app.nextIncompleteAnnotationFrame();
             if isempty(frame), return; end
+            app.showAnnotationFrame(frame);
+        end
+
+        function showAnnotationFrame(app, frame)
             roi = app.getSelectedROI();
             if isempty(roi), return; end
             roi.display.frame = frame;
@@ -4309,9 +4406,10 @@ end
                 'Edit the selected object track on the current frame.';
             app.CreateFromPredictionButton.Tooltip = ...
                 'First create an editable GT copy of predicted masks, tracks and parentage.';
-            app.MarkFrameReviewedButton.Text = 'Mark reviewed...';
-            app.MarkFrameReviewedButton.Tooltip = ...
-                'Mark the current frame, or the complete ROI after curation.';
+            app.MarkFrameReviewedButton.Text = 'Reviewed + next';
+            app.MarkFrameReviewedButton.Tooltip = [ ...
+                'Mark the current frame reviewed and open the next incomplete frame. ' ...
+                'Shift+click confirms the complete ROI.'];
             app.AnnotationTargetLabel.Tooltip = ...
                 ['After GT creation: double-click a cell, then right-click its ' ...
                  'selection rectangle for track and parent actions.'];
@@ -5759,6 +5857,12 @@ end
     try
         % Sauvegarder la ROI via la méthode dédiée
         roiObj.save();
+        % Painting reconciles the object model in memory so erasing stays
+        % interactive. Flush that cached model together with explicit Save.
+        if isstruct(roiObj.cellModel) && ...
+                isfield(roiObj.cellModel, 'schema_version')
+            roiObj.saveCellModel(roiObj.cellModel);
+        end
 
         % Mise à jour de la barre (optionnelle)
         d.Message = 'ROI successfully saved!';

@@ -301,7 +301,13 @@ for ch = 1:numel(channel)
         criterion = char(string(objectCfg.criterion));
     end
     if strcmp(renderMode, 'edit')
-        colorStrategy = 'label';
+        % Editability and identity coloring are independent. Tracking GT is
+        % stored as frame-local mask labels but must look stable to a human.
+        if any(strcmpi(criterion, {'Track','New bud','Cell state'}))
+            colorStrategy = 'mapped';
+        else
+            colorStrategy = 'label';
+        end
     elseif strcmp(renderMode, 'multicolor')
         if strcmpi(criterion, 'Frame instance')
             colorStrategy = 'label';

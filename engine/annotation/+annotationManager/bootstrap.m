@@ -281,9 +281,14 @@ try
             spec.components(familyIdx).groundTruth.family;
     end
     trackIdx = find(strcmp({spec.components.kind}, 'tracked_instances'), 1);
-    if ~isempty(trackIdx) && isfield(classif.trainingParam, 'groundTruthChannelName')
-        classif.trainingParam.groundTruthChannelName = ...
-            spec.components(trackIdx).groundTruth.channel;
+    if ~isempty(trackIdx)
+        targetChannel = spec.components(trackIdx).groundTruth.channel;
+        if isfield(classif.trainingParam, 'groundTruthChannelName')
+            classif.trainingParam.groundTruthChannelName = targetChannel;
+        end
+        if isfield(classif.trainingParam, 'trackChannelName')
+            classif.trainingParam.trackChannelName = targetChannel;
+        end
     end
 catch
 end

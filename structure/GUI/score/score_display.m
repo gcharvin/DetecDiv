@@ -69,6 +69,15 @@ if currentFrame < 1 || currentFrame > numFrames
     return;
 end
 
+% A tracked selection follows its stable track identity. The provider mask
+% label is resolved afresh for this frame and remains an internal detail.
+try
+    score_resolveSelectedTrackForFrame(app, selectedROI);
+catch ME
+    warning('score:TrackSelectionRefresh', ...
+        'Could not refresh the selected track: %s', ME.message);
+end
+
 %% build argument list for display
 
  arg=score_gatherArguments(app,selectedROI);
@@ -178,8 +187,21 @@ app.FrameEditField_2.Value = currentFrame;
 
 str='';
 if ~isnan(app.SelectedObjectLabelCell)
-    str=' - Selected cell: ';
-    str=[str num2str(app.SelectedObjectLabelCell)];
+    try
+        score_updateSelectedObjectFields(app);
+    catch
+    end
+end
+try
+    trackId = double(app.SelectedTrackIDCell);
+    sameRoi = app.SelectedObjectRoiId == string(selectedROI.id);
+    if sameRoi && isfinite(trackId) && trackId > 0
+        str = sprintf(' - Selected track: %u', uint64(trackId));
+    elseif sameRoi && ~isnan(app.SelectedObjectLabelCell)
+        str = sprintf(' - Unassigned object (mask %g)', ...
+            app.SelectedObjectLabelCell);
+    end
+catch
 end
 app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames) str];
 

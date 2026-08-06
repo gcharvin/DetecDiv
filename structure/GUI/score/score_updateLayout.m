@@ -339,7 +339,12 @@ end
 
 layoutOptions.tileH = basesize(1);
 layoutOptions.tileW = basesize(2);
-layoutOptions.Nchannel=nChannel;
+% A selected indexed mask is drawn on a raster overlay, but it still needs
+% one image tile underneath it. Treat black as a virtual base tile when no
+% intensity channel is selected; otherwise score_display aborts with
+% Nchannel == 0 and leaves stale/empty overlay handles behind.
+layoutOptions.NintensityChannel = nChannel;
+layoutOptions.Nchannel = max(1, nChannel);
 layoutOut=layoutOptions;
 end
 

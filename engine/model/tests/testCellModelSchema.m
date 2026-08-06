@@ -77,11 +77,15 @@ for frame = 1:3
     [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
         'TrackPolicy', 'preserve_or_label');
 end
+verifyEqual(testCase, cellModel.nextTrackId(model, 1), uint64(3));
 [model, report] = cellModel.reassignTrack(model, 1, 2, 2, 9, 'to-last');
 verifyEqual(testCase, report.frames, [2 3]);
 rows = model.instances.mask_label == 2;
 tracks = model.instances.track_id(rows);
 verifyEqual(testCase, tracks, uint64([2;9;9]));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 1, 2).track_id, uint64(2));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 2, 2).track_id, uint64(9));
+verifyEqual(testCase, cellModel.findTrackInstance(model, 1, 2, 9).mask_label, uint32(2));
 
 [model, parentReport] = cellModel.setParentTrack(model, 1, 2, 9, 1);
 verifyEqual(testCase, parentReport.parent_track_id, uint64(1));
@@ -89,6 +93,41 @@ verifyEqual(testCase, nnz(model.relations.child_track_id == 9), 1);
 [model, parentReport] = cellModel.setParentTrack(model, 1, 2, 9, []);
 verifyEqual(testCase, parentReport.status, 'removed');
 verifyEmpty(testCase, model.relations.relation_id);
+
+% Interactive UI path skips million-row normalization while preserving a
+% model that validates when it is eventually flushed to disk.
+[model, parentReport] = cellModel.setParent(model, 1, 2, 2, 1, 'Fast', true);
+verifyEqual(testCase, parentReport.parent_track_id, uint64(1));
+[model, parentReport] = cellModel.setParent( ...
+    model, 1, 2, 2, 1, 'Fast', true, 'Toggle', true);
+verifyEqual(testCase, parentReport.status, 'removed');
+[model, parentReport] = cellModel.setParent( ...
+    model, 1, 2, 2, 1, 'Fast', true, 'Toggle', true);
+verifyEqual(testCase, parentReport.status, 'set');
+[model, parentReport] = cellModel.setParentTrack( ...
+    model, 1, 2, 9, [], 'Fast', true);
+verifyEqual(testCase, parentReport.status, 'removed');
+verifyTrue(testCase, cellModel.validate(model).ok);
+end
+
+function testCompleteTrackSwapAlsoSwapsLineageReferences(testCase)
+model = modelFixture();
+for frame = 1:3
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+[model, ~] = cellModel.setParentTrack(model, 1, 2, 2, 1);
+
+[model, report] = cellModel.swapTrackIds(model, 1, 1, 2);
+verifyEqual(testCase, report.status, 'swapped');
+verifyEqual(testCase, report.frames, [1 2 3]);
+verifyTrue(testCase, all(model.instances.track_id( ...
+    model.instances.mask_label == 1) == 2));
+verifyTrue(testCase, all(model.instances.track_id( ...
+    model.instances.mask_label == 2) == 1));
+verifyEqual(testCase, model.relations.parent_track_id, uint64(2));
+verifyEqual(testCase, model.relations.child_track_id, uint64(1));
 verifyTrue(testCase, cellModel.validate(model).ok);
 end
 

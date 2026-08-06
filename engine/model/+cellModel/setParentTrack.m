@@ -1,7 +1,15 @@
-function [model, report] = setParentTrack(model, family, frame, childTrackId, parentTrackId)
+function [model, report] = setParentTrack(model, family, frame, childTrackId, parentTrackId, varargin)
 %CELLMODEL.SETPARENTTRACK Set or remove a parent relation using track IDs.
+% 'Fast', true is for an already-normalized live model; persistence will
+% normalize and validate the complete model when it is flushed.
 
-model = cellModel.normalize(model);
+p = inputParser;
+p.addParameter('Fast', false, @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
+fast = p.Results.Fast;
+if ~fast
+    model = cellModel.normalize(model);
+end
 [~, familyId] = cellModel.familyIndex(model, family);
 if isempty(familyId), error('cellModel:UnknownFamily', 'Unknown family.'); end
 childTrackId = validTrackId(childTrackId, 'child');
@@ -17,7 +25,9 @@ existing = find(model.relations.family_id == familyId & ...
 if nargin < 5 || isempty(parentTrackId) || ...
         (isnumeric(parentTrackId) && isscalar(parentTrackId) && parentTrackId == 0)
     if ~isempty(existing), model.relations = removeRow(model.relations, existing); end
-    model = cellModel.normalize(model);
+    if ~fast
+        model = cellModel.normalize(model);
+    end
     report = struct('status', 'removed', 'child_track_id', childTrackId, ...
         'parent_track_id', uint64(0), 'event_frame', uint32(frame));
     return;
@@ -44,8 +54,10 @@ else
 end
 model.relations.parent_track_id(row,1) = parentTrackId;
 model.relations.event_frame(row,1) = uint32(frame);
-model = cellModel.normalize(model);
-cellModel.validate(model, 'Throw', true);
+if ~fast
+    model = cellModel.normalize(model);
+    cellModel.validate(model, 'Throw', true);
+end
 report = struct('status', 'set', 'child_track_id', childTrackId, ...
     'parent_track_id', parentTrackId, 'event_frame', uint32(frame));
 end

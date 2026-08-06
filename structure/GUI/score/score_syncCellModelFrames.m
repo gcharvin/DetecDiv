@@ -1,5 +1,9 @@
-function reports = score_syncCellModelFrames(roiobj, channelName, frames)
+function reports = score_syncCellModelFrames(roiobj, channelName, frames, varargin)
 %SCORE_SYNCCELLMODELFRAMES Reconcile several authoritative mask frames once.
+
+p = inputParser;
+p.addParameter('Save', true, @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
 
 reports = struct([]);
 [model, status] = score_getCellModel(roiobj);
@@ -27,7 +31,11 @@ for frame = frames
     report.status = 'ok';
     if isempty(reports), reports = report; else, reports(end+1) = report; end %#ok<AGROW>
 end
-if ~isempty(frames)
+if ~isempty(frames) && p.Results.Save
     roiobj.saveCellModel(model);
+elseif ~isempty(frames)
+    % Keep rendering and subsequent edits on the reconciled model while
+    % deferring the objects_<roi>.h5 rewrite to explicit Save.
+    roiobj.cellModel = model;
 end
 end

@@ -3,7 +3,7 @@ function score_paintOverlay(src, event, app)
 % - Clic gauche bref sur un objet : sélectionner
 % - Glisser : peindre (gomme avec Shift/Ctrl)
 % - Double-clic : sélectionner objet + bbox + attacher menu
-% - Clic droit à l'intérieur de la bbox : menu contextuel (2 options)
+% - Clic droit à l'intérieur de la bbox : menu masque, track et lignage
 % - Clic gauche en dehors de la bbox : déselection (sans empêcher la peinture)
 % - Clic hors image : déselection et on quitte
 
@@ -75,23 +75,46 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
     mods   = get(src,'CurrentModifier');
     isCtrl = iscell(mods) && any(strcmp(mods,'control'));
     if isCtrl
+        oldPointer = src.Pointer;
+        src.Pointer = 'watch';
+        pointerCleanup = onCleanup(@() restoreFigurePointer(src, oldPointer)); %#ok<NASGU>
+        flashStatus(app, 'Assigning parent track...');
+        drawnow nocallbacks;
+        try
         daughterID = int32(app.SelectedObjectLabelCell);
         labAt      = currentMask(yinit,xinit);
         [model, modelStatus] = score_getCellModel(roi);
         cfg = score_getObjectDisplayConfig(roi, fullChannelName);
         [~, familyId] = score_resolveCellModelFamily(model, cfg, fullChannelName);
         if strcmp(modelStatus, 'ok') && ~isempty(familyId)
-            [model, ~] = cellModel.syncFrame(model, familyId, frm, currentMask, ...
-                'TrackPolicy', 'preserve_or_label');
+            child = cellModel.findInstance(model, familyId, frm, daughterID);
+            parent = [];
             if labAt > 0 && labAt ~= daughterID
-                [model, ~] = cellModel.setParent(model, familyId, frm, daughterID, labAt);
-                flashStatus(app, sprintf('Mère de #%d → #%d (frame %d)', daughterID, labAt, frm));
-            else
-                [model, ~] = cellModel.setParent(model, familyId, frm, daughterID, []);
-                flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
+                parent = cellModel.findInstance(model, familyId, frm, labAt);
             end
-            roi.saveCellModel(model);
-            app.syncLineageDisplayForPaintChannel();
+            if isempty(child) || (labAt > 0 && labAt ~= daughterID && isempty(parent))
+                [model, ~] = cellModel.syncFrame(model, familyId, frm, currentMask, ...
+                    'TrackPolicy', 'preserve_or_label');
+            end
+            if labAt > 0 && labAt ~= daughterID
+                [model, report] = cellModel.setParent( ...
+                    model, familyId, frm, daughterID, labAt, ...
+                    'Fast', true, 'Toggle', true);
+            else
+                [model, report] = cellModel.setParent( ...
+                    model, familyId, frm, daughterID, [], 'Fast', true);
+            end
+            roi.cellModel = model;
+            syncLineageDisplayBindingAfterEdit(app);
+            if strcmp(report.status, 'set')
+                flashStatus(app, sprintf( ...
+                    'Track %u parent = Track %u  OK (unsaved)', ...
+                    report.child_track_id, report.parent_track_id));
+            else
+                flashStatus(app, sprintf( ...
+                    'Parent removed from Track %u  OK (unsaved)', ...
+                    report.child_track_id));
+            end
         else
             % Backward-compatible editing for ROIs not migrated yet.
             ensureCellInformationDataseries(roi);
@@ -104,8 +127,12 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
                 flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
             end
         end
-        app.notifyAnnotationChanged('lineage', frm);
         refreshLineageAfterEdit(app, roi, frm);
+        app.notifyAnnotationChanged('lineage', frm, 'Save', false);
+        catch ME
+            flashStatus(app, ['Parent assignment failed: ' ME.message]);
+            errordlg(ME.message, 'Assign parent track');
+        end
         return;
     end
 end
@@ -237,7 +264,7 @@ if isempty(paintValue_locked)
         else
             paintValue_locked = currentMask(yinit,xinit);
         end
-        paintColor_locked = label2color(paintValue_locked);   % mapping stable
+        paintColor_locked = selectedIdentityColor(app, paintValue_locked);
     end
 end
 
@@ -291,9 +318,9 @@ end
     paintValue_locked = [];
     paintColor_locked = [];
     try
-        score_syncCellModelFrame(roi, fullChannelName, frm);
+        score_syncCellModelFrame(roi, fullChannelName, frm, 'Save', false);
         score_updateSelectedObjectFields(app);
-        app.notifyAnnotationChanged(fullChannelName, frm);
+        app.notifyAnnotationChanged(fullChannelName, frm, 'Save', false);
     catch ME
         warning('score:CellModelMaskSync', ...
             'Could not synchronize the cellular model after painting: %s', ME.message);
@@ -328,6 +355,7 @@ app.ImageFigure.Name = tmp;
 
 app.MasklabelEditField.Value = 0;
 app.SelectedObjectLabelCell  = NaN;
+try app.SelectedTrackIDCell = NaN; catch, end
 score_updateSelectedObjectFields(app);
 app.SelectedObjectChannelIdx = NaN;
 app.SelectedObjectRoiId      = "";
@@ -442,6 +470,7 @@ end
 % Mémos sélection
 app.MasklabelEditField.Value = double(objLabel);
 app.SelectedObjectLabelCell  = double(objLabel);
+try app.SelectedTrackIDCell = NaN; catch, end
 app.SelectedObjectChannelIdx = channelIdx;
 app.SelectedObjectRoiId      = string(roi.id);
 app.KeepSelection            = true;
@@ -464,7 +493,17 @@ drawnow nocallbacks;
 % Secondary UI updates may load/validate the cell model. They deliberately
 % happen after the rectangle is visible.
 score_updateSelectedObjectFields(app);
-str = [' - Selected cell: ' num2str(app.SelectedObjectLabelCell)];
+str = '';
+try
+    trackId = double(app.SelectedTrackIDCell);
+    if isfinite(trackId) && trackId > 0
+        str = sprintf(' - Selected track: %u', uint64(trackId));
+    else
+        str = sprintf(' - Unassigned object (mask %g)', ...
+            app.SelectedObjectLabelCell);
+    end
+catch
+end
 app.ImageFigure.Name = ['ROI:' char(app.SelectedObjectRoiId) ...
     ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) str];
 
@@ -517,15 +556,16 @@ end
 
 
 function cm = buildDisplayContextMenu(fig, app, roi, chIdx, pix, frm)
-% Menu local à la figure (2 choix : frame only / all frames)
+% Separate pixel-label operations from temporal track-identity operations.
 old = findall(fig,'Type','uicontextmenu','Tag','DisplayContextMenu');
 if ~isempty(old), delete(old); end
 cm = uicontextmenu(fig,'Tag','DisplayContextMenu');
-uimenu(cm,'Text','Relabel (current frame)...', ...
+maskMenu = uimenu(cm,'Text','Advanced: frame mask labels');
+uimenu(maskMenu,'Text','Renumber on current frame...', ...
     'MenuSelectedFcn', @(~,~) openRelabelDialog(app, roi, chIdx, pix, frm, 'frame-only'));
-uimenu(cm,'Text','Relabel (this frame --> last appearance)...', ...
+uimenu(maskMenu,'Text','Renumber from this frame to last appearance...', ...
     'MenuSelectedFcn', @(~,~) openRelabelDialog(app, roi, chIdx, pix, frm, 'to-last'));
-uimenu(cm,'Text','Relabel (all frames)...', ...
+uimenu(maskMenu,'Text','Renumber on all appearances...', ...
     'MenuSelectedFcn', @(~,~) openRelabelDialog(app, roi, chIdx, pix, frm, 'all-frames'));
 uimenu(cm,'Separator','on','Text','Split object (watershed)', ...
     'MenuSelectedFcn', @(~,~) splitSelectedObjectWatershed(app, roi, chIdx, pix, frm));
@@ -533,11 +573,12 @@ uimenu(cm,'Text','SAM31 propagate this track...', ...
     'MenuSelectedFcn', @(~,~) propagateSelectedObjectSam31(app, roi, chIdx, pix, frm));
 uimenu(cm,'Text','Repair ID continuity (IoU)...', ...
     'MenuSelectedFcn', @(~,~) repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm));
-uimenu(cm,'Separator','on','Text','Track: assign on current frame...', ...
+trackMenu = uimenu(cm,'Separator','on','Text','Track identity');
+uimenu(trackMenu,'Text','Assign on current frame...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'frame'));
-uimenu(cm,'Text','Track: assign from this frame onward...', ...
+uimenu(trackMenu,'Text','Start/reassign track from this frame onward...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'to-last'));
-uimenu(cm,'Text','Track: assign on all appearances...', ...
+uimenu(trackMenu,'Text','Assign on all appearances...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'all'));
 uimenu(cm,'Separator','on','Text','Lineage: set parent track...', ...
     'MenuSelectedFcn', @(~,~) openSetParentTrackDialog(app));
@@ -552,10 +593,11 @@ uimenu(cm,'Text','Delete object (all frames)', ...
 end
 
 function openAssignTrackDialog(app, scope)
-current = '';
-try, current = char(string(app.SelectedTrackIDEditField.Value)); catch, end
-answer = inputdlg({'Destination track ID:'}, ...
-    sprintf('Assign selected object (%s)', scope), [1 42], {current});
+suggestedTrack = nextFreeTrackIdForSelection(app);
+answer = inputdlg( ...
+    {'Destination track ID (first unused ID suggested):'}, ...
+    sprintf('Assign selected object to a track (%s)', scope), ...
+    [1 54], {num2str(suggestedTrack)});
 if isempty(answer), return; end
 newTrack = str2double(answer{1});
 if ~isfinite(newTrack) || newTrack < 1 || newTrack ~= round(newTrack)
@@ -568,7 +610,61 @@ try
         report.old_track_id, report.new_track_id, report.scope, ...
         numel(report.frames)));
 catch ME
-    errordlg(ME.message, 'Assign track');
+    if strcmp(ME.identifier, 'cellModel:TrackFrameConflict')
+        resolveTrackAssignmentConflict(app, newTrack, ME.message);
+    else
+        errordlg(ME.message, 'Assign track');
+    end
+end
+end
+
+function resolveTrackAssignmentConflict(app, destinationTrack, conflictMessage)
+currentTrack = NaN;
+try
+    currentTrack = str2double(char(string(app.SelectedTrackIDEditField.Value)));
+catch
+end
+if ~isfinite(currentTrack)
+    currentText = 'the selected track';
+else
+    currentText = sprintf('track %d', currentTrack);
+end
+message = sprintf([ ...
+    '%s\n\nA track can contain only one object per frame. ' ...
+    'You can exchange the two COMPLETE track identities (including lineage references), ' ...
+    'or cancel and first move the object currently occupying track %d to a free track.'], ...
+    conflictMessage, destinationTrack);
+choice = questdlg(message, 'Track conflict', ...
+    sprintf('Swap %s <-> %d', currentText, destinationTrack), ...
+    'Cancel', 'Cancel');
+if isempty(choice) || strcmp(choice, 'Cancel')
+    return;
+end
+try
+    report = score_swapSelectedTrackIds(app, destinationTrack);
+    flashStatus(app, sprintf('Tracks %u and %u swapped (%d frame(s))', ...
+        report.track_a, report.track_b, numel(report.frames)));
+catch ME
+    errordlg(ME.message, 'Swap tracks');
+end
+end
+
+function nextTrack = nextFreeTrackIdForSelection(app)
+nextTrack = 1;
+try
+    [roiobj, channelName] = score_selectedObjectChannel(app);
+    [model, status] = score_getCellModel(roiobj);
+    if ~strcmp(status, 'ok')
+        return;
+    end
+    cfg = score_getObjectDisplayConfig(roiobj, channelName);
+    [~, familyId] = score_resolveCellModelFamily(model, cfg, channelName);
+    if isempty(familyId)
+        return;
+    end
+    nextTrack = double(cellModel.nextTrackId(model, familyId));
+catch
+    nextTrack = 1;
 end
 end
 
@@ -1116,7 +1212,7 @@ end
 
 % ---- UI (identique, sauf textes) ----
 dlgW = 380; dlgH = 170;
-d = dialog('Name','Relabel object', ...
+d = dialog('Name','Renumber mask object', ...
     'Position',[100 100 dlgW dlgH], 'WindowStyle','modal');
 
 uicontrol('Parent',d,'Style','text', ...
@@ -1124,7 +1220,7 @@ uicontrol('Parent',d,'Style','text', ...
     'FontWeight','bold','HorizontalAlignment','left', ...
     'Position',[12 dlgH-40 dlgW-24 22]);
 
-uicontrol('Parent',d,'Style','text','String','New ID:', ...
+uicontrol('Parent',d,'Style','text','String','New mask ID:', ...
     'HorizontalAlignment','left','Position',[12 dlgH-75 90 20]);
 
 % Suggestion = prochain ID libre GLOBAL, pas oldLab+1
@@ -1213,7 +1309,7 @@ set(d,'KeyPressFcn',@keyHandler);
         end
         if modelChanged
             roi.saveCellModel(model);
-            app.syncLineageDisplayForPaintChannel();
+            syncLineageDisplayBindingAfterEdit(app);
         end
 
         app.notifyAnnotationChanged(chName, reviewFrames);
@@ -1402,9 +1498,8 @@ end
 end
 
 
-function splitSelectedObjectWatershed(app, roi, chIdx, pix, frm)
-% Split the currently selected object on THIS frame using watershed.
-% Keep old ID for the best-matching component; give new IDs to others.
+function splitSelectedObjectWatershed(app, roi, ~, pix, frm)
+% Split disconnected pieces directly; use watershed only for a connected mask.
 
 oldLab = app.SelectedObjectLabelCell;
 if isempty(oldLab) || isnan(oldLab) || oldLab<=0
@@ -1412,105 +1507,28 @@ if isempty(oldLab) || isnan(oldLab) || oldLab<=0
 end
 
 M = roi.image(:,:,pix,frm);
-origMask = (M == oldLab);
-if ~any(origMask(:))
+if ~any(M(:) == oldLab)
     warndlg('Selected object is not present on this frame.','Split object'); return;
 end
 
-% --- Watershed split using your legacy pipeline ---
-% Params you can tune:
-params.rClose = 2;   % radius for imclose (disk)
-params.hMax   = 1;   % h for imhmax (plateau suppression)
-params.conn   = 8;   % connectivity
-
-[Lsplit, nComp] = watershedSplitMaskLegacy(origMask, params);
-
-if nComp <= 1
+[M, splitReport] = score_splitMaskObject(M, oldLab, ...
+    'UsedLabels', getGlobalUsedLabels(roi, pix));
+if ~strcmp(splitReport.status, 'split')
     warndlg('Nothing to split: this object forms a single component.','Split object');
     return;
-end
-
-% --- Choose which component keeps the old ID (max IoU => largest area)
-S = regionprops(Lsplit,'Area'); areas = [S.Area];
-[~, keepIdx] = max(areas);  % IoU(comp, orig) = area(comp)/area(orig) -> same argmax
-
-% --- Relabel in the mask image: old label cleared, kept gets old ID, others new IDs
-M(M==oldLab) = 0;
-nextID = double(max(M(:))) + 1;
-
-for k = 1:nComp
-    if k == keepIdx
-        M(Lsplit == k) = oldLab;    % keep original id
-    else
-        M(Lsplit == k) = nextID;    % assign fresh id
-        nextID = nextID + 1;
-    end
 end
 
 roi.image(:,:,pix,frm) = M;
 [~, selectedDisplayChannel] = score_selectedObjectChannel(app);
 score_syncCellModelFrames(roi, selectedDisplayChannel, frm);
+app.notifyAnnotationChanged(selectedDisplayChannel, frm);
 
 % Keep selection on the kept component and refresh
 app.SelectedObjectLabelCell = oldLab;
+flashStatus(app, sprintf('Object %d split into %d parts; new ID(s): %s', ...
+    oldLab, splitReport.componentCount, ...
+    strjoin(cellstr(string(splitReport.newLabels)), ', ')));
 score_display(app,'fast');
-end
-
-
-function [Lout, nComp] = watershedSplitMaskLegacy(fgMask, params)
-% Split a single binary foreground mask into multiple parts using:
-%   D = bwdist(~fgMask) -> imclose(D, disk(r)) -> imhmax(D, h) -> watershed(-D)
-% Return a labeled image Lout (1..nComp inside fgMask, 0 elsewhere). All DOUBLE.
-
-fgMask = logical(fgMask);
-if ~any(fgMask(:))
-    Lout = zeros(size(fgMask), 'double');
-    nComp = 0;
-    return;
-end
-
-% Distance inside the foreground
-D = bwdist(~fgMask);
-
-
-% Smoothing and h-minima to control over-segmentation
-if params.rClose > 0
-    D = imclose(D, strel('disk', params.rClose));
-end
-if params.hMax > 0
-    D = imhmax(D, params.hMax);
-end
-
-% Watershed on the negated distance; restrict to foreground
-Lws = watershed(-D, params.conn);
-Lws(~fgMask) = 0;
-
-
-% Remap watershed regions to consecutive labels (and ensure connectivity)
-vals = unique(Lws);
-vals(vals==0) = [];
-
-% Keep everything as DOUBLE to avoid class-mismatch errors
-Lout  = zeros(size(Lws), 'double');
-nComp = 0;
-
-for i = 1:numel(vals)
-    m = (Lws == vals(i));
-    if any(m(:))
-        % bwlabel returns DOUBLE
-        [ci, ni] = bwlabel(m, params.conn);
-        if ni > 0
-            % Shift labels to continue numbering
-            ci(ci>0) = ci(ci>0) + nComp;
-            % Accumulate in DOUBLE
-            Lout = Lout + ci;
-            nComp = nComp + ni;
-        end
-    end
-end
-
-% Safety: keep only inside the original mask
-Lout(~fgMask) = 0;
 end
 
 function deleteSelectedObjectFrame(app, roi, pix, frm)
@@ -1639,6 +1657,17 @@ idx = 1 + mod(max(1,round(id))-1, size(pal,1));
 col = pal(idx,:);
 end
 
+function col = selectedIdentityColor(app, maskLabel)
+% Match transient brush feedback to the stable track-colored render.
+trackId = NaN;
+try trackId = double(app.SelectedTrackIDCell); catch, end
+if isfinite(trackId) && trackId > 0
+    col = label2color(trackId);
+else
+    col = label2color(maskLabel);
+end
+end
+
 function rgb = mask2rgb_stable(L)
 % Convertit un masque de labels (uint16/double) en RGB via label2color(id)
 L = double(L);
@@ -1686,14 +1715,36 @@ end
 
 
 function flashStatus(app, msg)
+shown = false;
 try
     if isprop(app,'StatusLabel') && ~isempty(app.StatusLabel) && isgraphics(app.StatusLabel)
         app.StatusLabel.Text = msg;
-    else
-        disp(msg);
+        shown = true;
+    elseif isprop(app,'CellModelStatusLabel') && ...
+            ~isempty(app.CellModelStatusLabel) && isgraphics(app.CellModelStatusLabel)
+        app.CellModelStatusLabel.Text = msg;
+        app.CellModelStatusLabel.Tooltip = msg;
+        shown = true;
     end
 catch
-    disp(msg);
+end
+if ~shown, disp(msg); end
+drawnow limitrate nocallbacks;
+end
+
+function restoreFigurePointer(fig, pointer)
+try
+    if isgraphics(fig), fig.Pointer = pointer; end
+catch
+end
+end
+
+function syncLineageDisplayBindingAfterEdit(app)
+% Keep external editors compatible with Score instances opened before the
+% public display-sync bridge was added. The subsequent fast overlay refresh
+% remains sufficient for those already-running legacy instances.
+if ismethod(app, 'syncLineageDisplayAfterEdit')
+    app.syncLineageDisplayAfterEdit();
 end
 end
 
