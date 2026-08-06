@@ -30,9 +30,12 @@ fullCode = fileread(codePath);
 
 componentProperties = localExtractComponentProperties(layoutCode);
 createComponents = localExtractCreateComponents(layoutCode);
+componentProperties = localNormalizeAnnotationComponents(componentProperties);
+createComponents = localNormalizeAnnotationComponents(createComponents);
 componentProperties = localRestoreCodeOwnedProperties(componentProperties);
 createComponents = localRestoreCodeOwnedLayout(createComponents);
 createComponents = localConfigureLineageControls(createComponents);
+createComponents = localConfigureAnnotationControls(createComponents);
 
 mergedCode = localReplaceComponentProperties(fullCode, componentProperties);
 mergedCode = localReplaceCreateComponents(mergedCode, createComponents);
@@ -90,6 +93,7 @@ function code = localRestoreCodeOwnedProperties(code)
 % These movie controls predate the current App Designer layout but are used
 % by the code-rich implementation. Keep them until they are migrated into
 % the visual component tree.
+code = localRestoreRoiPropertyOrder(code);
 requiredProperties = { ...
     'MovieeventmarkersEditField      matlab.ui.control.EditField', ...
     'MovieeventmarkersEditFieldLabel  matlab.ui.control.Label'};
@@ -111,8 +115,33 @@ for i = numel(requiredProperties):-1:1
 end
 end
 
+function code = localRestoreRoiPropertyOrder(code)
+names = {'ROIslistTab','ROisPanel','UIROITable'};
+lines = cell(1, numel(names));
+for i = 1:numel(names)
+    pattern = ['(?m)^\s{8}' names{i} '\s+[^\r\n]+\r?\n'];
+    lines{i} = regexp(code, pattern, 'match', 'once');
+    if isempty(lines{i})
+        error('sync_score_layout:RoiProperty', ...
+            'Could not locate component property %s.', names{i});
+    end
+    code = regexprep(code, pattern, '', 'once');
+end
+anchor = regexp(code, '(?m)^\s{8}TabGroup\s+[^\r\n]+\r?\n', ...
+    'match', 'once');
+anchorIndex = strfind(code, anchor);
+if numel(anchorIndex) ~= 1
+    error('sync_score_layout:RoiPropertyAnchor', ...
+        'Could not locate the TabGroup component property.');
+end
+insertAt = anchorIndex + numel(anchor);
+block = [lines{:}];
+code = [code(1:insertAt-1) block code(insertAt:end)];
+end
+
 function code = localRestoreCodeOwnedLayout(code)
 % Preserve settings introduced in code and still required by table logic.
+code = localRestoreRoiTabOrder(code);
 code = localInsertLineAfter(code, ...
     "            app.UIROITable.ColumnName = {'Display'; 'Name'; 'Size'};", ...
     "            app.UIROITable.ColumnWidth = {70, 400, 100};");
@@ -154,6 +183,26 @@ if ~contains(code, 'app.MovieeventmarkersEditField =')
         ''}, newline);
     code = [code(1:markerIndex - 1) block code(markerIndex:end)];
 end
+end
+
+function code = localRestoreRoiTabOrder(code)
+pattern = ['(?s)\r?\n            % Create ROIslistTab\r?\n' ...
+    '.*?(?=\r?\n            % Show the figure after all components are created)'];
+block = regexp(code, pattern, 'match', 'once');
+if isempty(block)
+    error('sync_score_layout:RoiTabBlock', ...
+        'Could not isolate the ROIs list tab creation block.');
+end
+code = regexprep(code, pattern, '', 'once');
+anchor = '            % Create DisplaySettingsTab';
+anchorIndex = strfind(code, anchor);
+if numel(anchorIndex) ~= 1
+    error('sync_score_layout:RoiTabAnchor', ...
+        'Could not locate the Display Settings tab creation block.');
+end
+newline = localNewline(code);
+block = regexprep(block, '^\r?\n', '');
+code = [code(1:anchorIndex-1) block newline newline code(anchorIndex:end)];
 end
 
 function code = localInsertLineAfter(code, anchorLine, insertedLine)
@@ -245,6 +294,66 @@ if contains(code, 'app.DisplayLineageCheckBox = uicheckbox')
 end
 end
 
+function code = localNormalizeAnnotationComponents(code)
+% Normalize the two provisional App Designer names without requiring the
+% visual layout to be reopened. Future layout saves remain safe because the
+% same normalization is applied on every merge.
+code = strrep(code, 'MarkframereviewedButton', 'MarkFrameReviewedButton');
+code = strrep(code, 'PreviousIncompleteButton', 'NextIncompleteButton');
+end
+
+function code = localConfigureAnnotationControls(code)
+controls = { ...
+    'CreateFromPredictionButton', 'uibutton', 'ButtonPushedFcn', ...
+        'CreateFromPredictionButtonPushed'; ...
+    'StartBlankGTButton', 'uibutton', 'ButtonPushedFcn', ...
+        'StartBlankGTButtonPushed'; ...
+    'MarkFrameReviewedButton', 'uibutton', 'ButtonPushedFcn', ...
+        'MarkFrameReviewedButtonPushed'; ...
+    'NextIncompleteButton', 'uibutton', 'ButtonPushedFcn', ...
+        'NextIncompleteButtonPushed'; ...
+    'ValidateAnnotationButton', 'uibutton', 'ButtonPushedFcn', ...
+        'ValidateAnnotationButtonPushed'; ...
+    'ApproveAnnotationButton', 'uibutton', 'ButtonPushedFcn', ...
+        'ApproveAnnotationButtonPushed'; ...
+    'ShowPredictionCheckBox', 'uicheckbox', 'ValueChangedFcn', ...
+        'ShowPredictionCheckBoxValueChanged'};
+for i = 1:size(controls, 1)
+    code = localInsertControlCallback(code, controls{i,1}, controls{i,2}, ...
+        controls{i,3}, controls{i,4});
+end
+
+if ~contains(code, 'app.AnnotationSessionPanel.Visible =')
+    code = localInsertLineAfter(code, ...
+        '            app.AnnotationSessionPanel = uipanel(app.AnnotationPanel);', ...
+        '            app.AnnotationSessionPanel.Visible = ''off'';');
+end
+end
+
+function code = localInsertControlCallback(code, componentName, constructor, ...
+        callbackProperty, callbackName)
+callbackToken = sprintf('app.%s.%s', componentName, callbackProperty);
+if contains(code, callbackToken), return; end
+
+assignmentToken = sprintf('app.%s = %s', componentName, constructor);
+assignmentIndex = strfind(code, assignmentToken);
+if numel(assignmentIndex) ~= 1
+    error('sync_score_layout:AnnotationControl', ...
+        'Expected exactly one creation line for %s.', componentName);
+end
+lineEnd = regexp(code(assignmentIndex:end), '\r?\n', 'end', 'once');
+if isempty(lineEnd)
+    error('sync_score_layout:AnnotationControlLine', ...
+        'Could not find the end of the %s creation line.', componentName);
+end
+lineEnd = assignmentIndex + lineEnd - 1;
+newline = localNewline(code);
+callbackLine = sprintf( ...
+    '            app.%s.%s = createCallbackFcn(app, @%s, true);', ...
+    componentName, callbackProperty, callbackName);
+code = [code(1:lineEnd) callbackLine newline code(lineEnd + 1:end)];
+end
+
 function code = localInsertCallback(code, componentName, callbackName)
 callbackToken = sprintf('app.%s.ValueChangedFcn', componentName);
 if contains(code, callbackToken)
@@ -317,6 +426,10 @@ required = { ...
     'syncLineageDisplayForPaintChannel(app)', ...
     'refreshROIDataFromDisk(app, roiobj)', ...
     'function setupBrushSizeMenu', ...
+    'function setAnnotationSession', ...
+    'AnnotationSessionPanel', ...
+    'CreateFromPredictionButtonPushed', ...
+    'ApproveAnnotationButtonPushed', ...
     'SelectedchannelpropertiesPanel', ...
     'MovieeventmarkersEditField', ...
     '''Scale''; ''Levels''', ...

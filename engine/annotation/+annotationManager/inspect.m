@@ -3,12 +3,17 @@ function summary = inspect(roiObj, spec, varargin)
 
 p = inputParser;
 p.addParameter('VerifyHash', false, @(x) islogical(x) && isscalar(x));
+p.addParameter('CheckAssets', true, @(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 [entry, found] = annotationManager.entryForSpec(roiObj, spec);
-states = componentStates(roiObj, spec);
+if p.Results.CheckAssets
+    states = componentStates(roiObj, spec);
+else
+    states = uncheckedComponentStates(spec);
+end
 legacy = ~found;
-if legacy
+if legacy && p.Results.CheckAssets
     entry = inferredLegacyEntry(entry, states);
 end
 coverage = coverageFromEntry(entry, spec);
@@ -34,6 +39,21 @@ summary = struct( ...
     'staleApproval', staleApproval, ...
     'components', states, ...
     'entry', entry);
+end
+
+function states = uncheckedComponentStates(spec)
+template = struct('id', '', 'kind', '', 'storage', '', ...
+    'required', true, 'groundTruthExists', false, ...
+    'predictionExists', false, 'groundTruthName', '', ...
+    'predictionName', '');
+states = repmat(template, numel(spec.components), 1);
+for i = 1:numel(spec.components)
+    component = spec.components(i);
+    states(i).id = component.id;
+    states(i).kind = component.kind;
+    states(i).storage = component.storage;
+    states(i).required = component.required;
+end
 end
 
 function states = componentStates(roiObj, spec)
@@ -75,14 +95,15 @@ switch char(string(storage))
     case 'cell_model_family'
         family = char(string(asset.family));
         try
-            [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
-            [idx, ~] = cellModel.familyIndex(model, family);
-            tf = ~isempty(idx);
-            if tf, resolvedName = char(string(model.families.name{idx})); end
+            [tf, resolvedName] = cachedOrStoredFamilyExists(roiObj, family);
         catch
             tf = false;
         end
 end
+end
+
+function [tf, resolvedName] = cachedOrStoredFamilyExists(roiObj, family)
+[tf, resolvedName] = cellModel.findStoredFamily(roiObj, family);
 end
 
 function ensureData(roiObj)

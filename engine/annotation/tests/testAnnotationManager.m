@@ -123,8 +123,9 @@ c.classifierPkg = 'cellLatentModel';
 c.category = {'Tracking'};
 c.classes = {'latent lineage link'};
 c.executionParam = struct( ...
-    'trackChannelName', 'results_cellposeSAM_cell', ...
+    'trackChannelName', '', ...
     'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
 c.trainingParam = struct('groundTruthFamily', '<auto>');
 r = roiWithRaw(c.path, 'R1', 4, 4, 3);
 masks = zeros(4,4,1,3, 'uint16');
@@ -143,8 +144,17 @@ r.saveCellModel(model);
 c.roi = r;
 
 session = c.annotationSession(1);
+summary = session.summary();
+maskState = summary.components(strcmp({summary.components.id}, 'tracked_mask'));
+verifyEqual(testCase, maskState.predictionName, 'results_cellposeSAM_cell', ...
+    'The stored family provider must take precedence over raw classifier inputs.');
 report = session.bootstrap();
 verifyTrue(testCase, report.modelChanged);
+[gtChannel, gtExists] = annotationManager.resolveChannel(r, ...
+    annotationManager.newAsset('channel', 'latent_1_cell'));
+verifyTrue(testCase, gtExists);
+verifyEqual(testCase, gtChannel, 'latent_1_cell');
+verifyEqual(testCase, r.image(:,:,r.findChannelID(gtChannel),:), masks);
 [model, ~] = r.loadCellModel();
 [sourceIdx, sourceId] = cellModel.familyIndex(model, 'Predicted lineage');
 [gtIdx, gtId] = cellModel.familyIndex(model, 'latent_1 reviewed GT');
@@ -163,17 +173,29 @@ verifyEqual(testCase, c.trainingParam.groundTruthFamily, ...
 session.markReviewed('Frames', 1:3, 'Components', {'tracked_mask'});
 session.markReviewed('Components', {'lineage'});
 verifyTrue(testCase, session.validate().valid);
+
+gtIdx = r.findChannelID('latent_1_cell');
+r.image(:,:,gtIdx,:) = uint16(17);
+r.save({'latent_1_cell'}, false);
+invalid = session.validate();
+verifyFalse(testCase, invalid.valid);
+verifyTrue(testCase, any(contains(invalid.errors, ...
+    'does not match object family')));
 end
 
 function testClassifierSummaryUsesSharedStatus(testCase)
 [~, c, ~] = maskFixture(testCase);
 rows = c.annotationSummary();
 verifyEqual(testCase, rows.status, 'missing');
+rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
+verifyEqual(testCase, rows.status, 'missing');
 session = c.annotationSession(1);
 session.bootstrap();
 rows = c.annotationSummary();
 verifyEqual(testCase, rows.status, 'draft');
 verifyEqual(testCase, rows.supportsBootstrap, true);
+rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
+verifyEqual(testCase, rows.status, 'draft');
 end
 
 function [roiFolder, c, r] = maskFixture(testCase)

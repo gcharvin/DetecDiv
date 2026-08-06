@@ -75,6 +75,7 @@ if ~sourceExists
     error('annotationManager:MissingPrediction', ...
         'Prediction channel for component "%s" does not exist.', component.id);
 end
+assertFamilyMaskProvider(roiObj, component, sourceName);
 targetName = char(string(component.groundTruth.channel));
 if isempty(targetName)
     error('annotationManager:MissingGroundTruthBinding', ...
@@ -108,6 +109,27 @@ else
 end
 details = struct('source', sourceName, 'target', targetName, ...
     'replacedBlankTarget', replacedBlank, 'size', size(sourceData));
+end
+
+function assertFamilyMaskProvider(roiObj, component, sourceName)
+familyName = '';
+try, familyName = char(string(component.prediction.family)); catch, end
+if isempty(familyName), return; end
+
+try
+    [familyExists, ~, provider] = ...
+        cellModel.findStoredFamily(roiObj, familyName);
+catch
+    familyExists = false;
+    provider = '';
+end
+provider = char(string(provider));
+if familyExists && ~isempty(provider) && ~strcmpi(provider, sourceName)
+    error('annotationManager:PredictionProviderMismatch', ...
+        ['Refusing to create GT for family "%s": resolved channel "%s" ' ...
+         'does not match its mask provider "%s".'], ...
+        familyName, sourceName, provider);
+end
 end
 
 function details = copyFields(roiObj, component, overwrite)

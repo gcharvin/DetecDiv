@@ -30,6 +30,7 @@ graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.textHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.scaleBarHandles = containers.Map('KeyType','double','ValueType','any');
+graphicsHandles.axesLink = [];
 
 
 graphicsHandles.lineageHandles = containers.Map('KeyType','double','ValueType','any');
@@ -320,7 +321,13 @@ newPath = fullfile(folder, [name '.pdf']);
           %  warning('Lineage init failed: %s', ME.message);
         end
 
-        linkaxes(axarray,'xy');
+        if numel(axarray) > 1
+            % linkaxes performs expensive axis-mode bookkeeping (several
+            % seconds for a tiled image plus transparent overlay). Keeping
+            % the returned linkprop alive provides the required pan/zoom
+            % synchronization without that startup penalty.
+            graphicsHandles.axesLink = linkprop(axarray, {'XLim','YLim'});
+        end
         score_syncOverlayAxes(graphicsHandles);
 
 

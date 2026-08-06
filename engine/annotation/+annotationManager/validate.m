@@ -102,6 +102,43 @@ switch char(string(component.storage))
             error('Object family uses mask provider "%s" instead of "%s".', ...
                 model.families.mask_provider{idx}, expected);
         end
+        if ~isempty(expected)
+            validateFamilyMaskLabels(roiObj, model, ...
+                model.families.family_id(idx), expected, ...
+                model.families.name{idx});
+        end
+end
+end
+
+function validateFamilyMaskLabels(roiObj, model, familyId, channel, familyName)
+values = squeeze(readChannel(roiObj, channel));
+if ismatrix(values)
+    values = reshape(values, size(values,1), size(values,2), 1);
+end
+nFrames = size(values, 3);
+rows = model.instances.family_id == familyId;
+instanceFrames = double(model.instances.frame(rows));
+instanceLabels = double(model.instances.mask_label(rows));
+if any(instanceFrames < 1 | instanceFrames > nFrames)
+    error('Object family "%s" references frames outside mask provider "%s".', ...
+        familyName, channel);
+end
+
+mismatched = zeros(0,1);
+for frame = 1:nFrames
+    actual = unique(double(values(:,:,frame)));
+    actual = actual(actual > 0);
+    expected = unique(instanceLabels(instanceFrames == frame));
+    expected = expected(expected > 0);
+    if ~isequal(actual(:), expected(:))
+        mismatched(end+1,1) = frame; %#ok<AGROW>
+    end
+end
+if ~isempty(mismatched)
+    error(['Mask provider "%s" does not match object family "%s" on ' ...
+        '%d/%d frames (first mismatch: frame %d). Recreate the GT from ' ...
+        'the intended prediction before review.'], ...
+        channel, familyName, numel(mismatched), nFrames, mismatched(1));
 end
 end
 

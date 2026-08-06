@@ -3,10 +3,13 @@ function userTraining(classif,varargin)
 % this function load the annotation/curation process for a specified classification
 % task
 classitype=[];
-for i=1:numel(varargin)
+annotationSession=[];
+for i=1:2:numel(varargin)
     %Method
-    if strcmp(varargin{i},'Roi')
+    if i < numel(varargin) && strcmpi(varargin{i},'Roi')
         classitype=varargin{i+1};
+    elseif i < numel(varargin) && strcmpi(varargin{i},'AnnotationSession')
+        annotationSession=varargin{i+1};
     end
 end
 
@@ -72,8 +75,12 @@ else % image based classification and regression
 
     roiObj=classif.roi(classitype);
 
+    % The classifier owns this in-memory ROI. Reuse its image/data cache;
+    % pipeline completion already refreshes open Score instances explicitly.
+    cacheIsFresh = numel(roiObj.image) > 0;
     if numel(roiObj.image)==0
         roiObj.load;
+        cacheIsFresh = ~isempty(roiObj.image);
     end
 
     roiObj.parent=classif;
@@ -88,7 +95,12 @@ else % image based classification and regression
    if isPixelAnnotation
 
         options= 'pixelAnnotation';
-        annotationChannelName = ensureAnnotationChannelForClassifier(roiObj, classif);
+        % In a managed session, GT materialization is explicit: Score must
+        % not create the classifier-named blank channel before the user
+        % chooses prediction bootstrap or a blank draft.
+        if isempty(annotationSession)
+            annotationChannelName = ensureAnnotationChannelForClassifier(roiObj, classif);
+        end
 
          for i = 1:numel(roiObj.data)
             data=roiObj.data(i);
@@ -154,22 +166,23 @@ ensureCellInformationDataseries(roiObj);
     appFigure=findobj(figures,'Name','ScoreApp');
     if isprop(appFigure,'RunningAppInstance')
         if strlength(string(options)) > 0
-            appFigure.RunningAppInstance.addROI(roiObj,options);
+            appFigure.RunningAppInstance.addROI(roiObj, options, ...
+                'CacheIsFresh', cacheIsFresh);
         else
-            appFigure.RunningAppInstance.addROI(roiObj);
+            appFigure.RunningAppInstance.addROI(roiObj, '', ...
+                'CacheIsFresh', cacheIsFresh);
         end
         app=appFigure.RunningAppInstance;
     else
-        try
-            clear score
-            rehash
-        catch
-        end
         if strlength(string(options)) > 0
-            app=score(roiObj,options);
+            app=score(roiObj, options, 'CacheIsFresh', cacheIsFresh);
         else
-            app=score(roiObj);
+            app=score(roiObj, '', 'CacheIsFresh', cacheIsFresh);
         end
+    end
+
+    if ~isempty(annotationSession)
+        app.setAnnotationSession(annotationSession);
     end
 
         % app.updatePanelsLayout();

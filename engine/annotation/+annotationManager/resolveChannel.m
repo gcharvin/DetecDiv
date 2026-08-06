@@ -5,6 +5,31 @@ channelName = '';
 exists = false;
 candidates = normalizeCandidates(asset);
 available = availableChannels(roiObj);
+
+familyName = '';
+if isstruct(asset) && isfield(asset, 'family')
+    familyName = char(string(asset.family));
+end
+if ~isempty(familyName)
+    try
+        [familyExists, ~, provider] = ...
+            cellModel.findStoredFamily(roiObj, familyName);
+        if familyExists
+            providerIdx = find(strcmpi(available, provider), 1, 'first');
+            if ~isempty(providerIdx)
+                channelName = available{providerIdx};
+                exists = true;
+                return;
+            end
+        end
+    catch
+    end
+end
+
+% Explicit candidates remain a compatibility fallback when no stored
+% object family can authoritatively identify its mask provider.  In
+% particular, classifier input channels may be raw intensity images and
+% must not override the provider carried by an existing tracked family.
 for i = 1:numel(candidates)
     idx = find(strcmpi(available, candidates{i}), 1, 'first');
     if ~isempty(idx)
@@ -12,25 +37,6 @@ for i = 1:numel(candidates)
         exists = true;
         return;
     end
-end
-
-familyName = '';
-if isstruct(asset) && isfield(asset, 'family')
-    familyName = char(string(asset.family));
-end
-if isempty(familyName), return; end
-try
-    [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
-    [idx, ~] = cellModel.familyIndex(model, familyName);
-    if ~isempty(idx)
-        provider = char(string(model.families.mask_provider{idx}));
-        providerIdx = find(strcmpi(available, provider), 1, 'first');
-        if ~isempty(providerIdx)
-            channelName = available{providerIdx};
-            exists = true;
-        end
-    end
-catch
 end
 end
 

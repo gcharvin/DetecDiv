@@ -43,6 +43,16 @@ dsC = normalizeChannelScaleForScore(dsC);
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
 layoutOptions.objectDisplay = struct([]);
+layoutOptions.channel = {};
+layoutOptions.channelLabel = {};
+layoutOptions.levels = {};
+layoutOptions.displayLevels = {};
+layoutOptions.RGB = {};
+layoutOptions.colorMode = {};
+layoutOptions.colormapName = {};
+layoutOptions.weights = [];
+layoutOptions.scale = false(1, 0);
+layoutOptions.log = false(1, 0);
 
 %  if size( dsC.displaylim,2)~=numel(roitmp.channelid)
 % roitmp.computeDisplaylim;

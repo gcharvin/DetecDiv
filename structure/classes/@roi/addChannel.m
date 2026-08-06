@@ -210,6 +210,8 @@ end
     obj.display.contour(nNew) = 0;
     obj.display.width(nNew) = 0;
     obj.display.selectedchannel(nNew) = 1;
+    obj.display.log = localEnsureVector(obj.display, 'log', nNew, false);
+    obj.display.scale = localEnsureVector(obj.display, 'scale', nNew, false);
     if idxVal
         obj.display.intensity(nNew,:) = [0 0 0];
         obj.display.contour(nNew) = 1;

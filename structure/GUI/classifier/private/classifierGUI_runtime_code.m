@@ -1184,7 +1184,11 @@ function b = normalizeBounds(app,raw) %#ok<INUSD>
     end
 end
 
-function displayData(app) % displays rois in the table
+function displayData(app, annotationScanMode) % displays rois in the table
+
+    if nargin < 2 || isempty(annotationScanMode)
+        annotationScanMode = 'fast';
+    end
 
     rois         = app.Data.classiObj.roi;
     trainingrois = app.Data.classiObj.trainingset;
@@ -1196,7 +1200,8 @@ function displayData(app) % displays rois in the table
     Data = {};
     annotationRows = struct([]);
     try
-        annotationRows = classiObj.annotationSummary();
+        annotationRows = annotationSummaryRows(app, classiObj, [], ...
+            'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'));
     catch ME
         warning('classifierGUI:AnnotationSummary', ...
             'Could not summarize annotations: %s', ME.message);
@@ -1373,6 +1378,60 @@ function displayData(app) % displays rois in the table
     updateAnnotationActionState(app);
 end
 
+function rows = annotationSummaryRows(app, classiObj, roiIndices, varargin) %#ok<INUSD>
+    % Call the package backend directly. MATLAB caches the method table of
+    % already-loaded classi objects, so recently added @classi convenience
+    % methods may be unavailable until a full `clear classes`.
+    if nargin < 3, roiIndices = []; end
+    ensureAnnotationBackendAvailable(app);
+    rows = annotationManager.summarizeClassifier(classiObj, roiIndices, varargin{:});
+end
+
+function session = annotationSessionForClassifier(app, classiObj, roiIndex) %#ok<INUSD>
+    ensureAnnotationBackendAvailable(app);
+    session = annotationManager.createSession(classiObj, roiIndex);
+end
+
+function ensureAnnotationBackendAvailable(app) %#ok<INUSD>
+    if ~isempty(which('annotationManager.summarizeClassifier'))
+        return;
+    end
+
+    guiPath = which('classifierGUI');
+    if isempty(guiPath)
+        error('classifierGUI:AnnotationBackendPath', ...
+            'Cannot locate classifierGUI on the MATLAB path.');
+    end
+    repoRoot = fileparts(fileparts(fileparts(guiPath)));
+    engineRoot = fullfile(repoRoot, 'engine');
+    if ~isfolder(engineRoot)
+        error('classifierGUI:AnnotationBackendPath', ...
+            'Cannot locate the DetecDiv engine folder: %s', engineRoot);
+    end
+    addpath(genpath(engineRoot));
+    rehash;
+    if isempty(which('annotationManager.summarizeClassifier'))
+        error('classifierGUI:AnnotationBackendPath', ...
+            'DetecDiv annotation backend is unavailable under %s.', engineRoot);
+    end
+end
+
+function finishAnnotationEditorLaunch(app, progressDialog, previousButtonState)
+    try
+        if ~isempty(progressDialog) && isvalid(progressDialog)
+            delete(progressDialog);
+        end
+    catch
+    end
+    try
+        if ~isempty(app) && isvalid(app) && ...
+                isvalid(app.AnnotateselectedROIButton)
+            app.AnnotateselectedROIButton.Enable = previousButtonState;
+        end
+    catch
+    end
+end
+
 function [statusText, coverageText, validationText] = ...
         annotationTableValues(app, rows, roiIndex) %#ok<INUSD>
     status = 'missing';
@@ -1441,7 +1500,8 @@ function updateAnnotationActionState(app)
     canBootstrap = false;
     for roiIndex = indices
         try
-            session = app.Data.classiObj.annotationSession(roiIndex);
+            session = annotationSessionForClassifier( ...
+                app, app.Data.classiObj, roiIndex);
             context = session.uiContext();
             summary = session.summary();
             required = [summary.components.required];
@@ -1489,7 +1549,7 @@ end
 function proceed = confirmUnapprovedTrainingRois(app, roiIndices)
     proceed = true;
     try
-        rows = app.Data.classiObj.annotationSummary(roiIndices);
+        rows = annotationSummaryRows(app, app.Data.classiObj, roiIndices);
     catch
         return;
     end
@@ -1641,7 +1701,7 @@ end
 
      % Annotation lifecycle statistics shared by every classifier category.
      try
-         rows = classiObj.annotationSummary();
+         rows = annotationSummaryRows(app, classiObj);
          statuses = string({rows.status});
          app.NumberofannotatedROIsEditField.Value = ...
              num2str(nnz(~strcmpi(statuses, 'missing')));
@@ -2239,10 +2299,34 @@ end
                 return;
             end
             disp(['Launching ROI #' num2str(sel) '.... Please wait...']);
-            app.Data.annotationSession = ...
-                app.Data.classiObj.annotationSession(sel);
-            % Temporary compatibility path until Score accepts Session.
-            app.Data.classiObj.userTraining('Roi',sel);
+            previousButtonState = app.AnnotateselectedROIButton.Enable;
+            app.AnnotateselectedROIButton.Enable = 'off';
+            progressDialog = uiprogressdlg(app.ClassifierUIFigure, ...
+                'Title', 'Opening annotation editor', ...
+                'Message', sprintf([ ...
+                    'Opening ROI #%d in Score...\n' ...
+                    'The first launch can take 20-30 seconds; later ROIs reuse the open editor.'], ...
+                    sel), ...
+                'Indeterminate', 'on', ...
+                'Cancelable', 'off');
+            progressCleanup = onCleanup(@()finishAnnotationEditorLaunch( ...
+                app, progressDialog, previousButtonState));
+            drawnow;
+
+            try
+                app.Data.annotationSession = annotationSessionForClassifier( ...
+                    app, app.Data.classiObj, sel);
+                app.Data.classiObj.userTraining('Roi', sel, ...
+                    'AnnotationSession', app.Data.annotationSession);
+            catch ME
+                clear progressCleanup
+                uialert(app.ClassifierUIFigure, sprintf( ...
+                    'Could not open ROI #%d in Score.\n\n%s', sel, ME.message), ...
+                    'Annotation editor error');
+                return;
+            end
+
+            clear progressCleanup
             checkStatus(app,false)
             displayData(app);
         end
@@ -3227,7 +3311,8 @@ disp('unable to display folder with this OS');
             changed = 0;
             for roiIndex = indices
                 try
-                    session = app.Data.classiObj.annotationSession(roiIndex);
+                    session = annotationSessionForClassifier( ...
+                        app, app.Data.classiObj, roiIndex);
                     summary = session.summary();
                     if ~strcmpi(summary.status, 'missing'), continue; end
                     session.bootstrap();
@@ -3258,7 +3343,7 @@ disp('unable to display folder with this OS');
             end
             overwrite = false;
             try
-                rows = app.Data.classiObj.annotationSummary(indices);
+                rows = annotationSummaryRows(app, app.Data.classiObj, indices);
                 overwrite = any(~strcmpi(string({rows.status}), 'missing'));
             catch
             end
@@ -3274,7 +3359,8 @@ disp('unable to display folder with this OS');
             changed = 0;
             for roiIndex = indices
                 try
-                    session = app.Data.classiObj.annotationSession(roiIndex);
+                    session = annotationSessionForClassifier( ...
+                        app, app.Data.classiObj, roiIndex);
                     session.startBlank('Overwrite', overwrite);
                     changed = changed + 1;
                 catch ME
@@ -3295,7 +3381,7 @@ disp('unable to display folder with this OS');
 
         % Button pushed function: RefreshAnnotationStatusButton
         function RefreshAnnotationStatusButtonPushed(app, event)
-            displayData(app);
+            displayData(app, 'full');
         end
 
         % Value changed function: AnnotationFilterDropDown

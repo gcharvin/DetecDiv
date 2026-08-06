@@ -104,6 +104,7 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
                 flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
             end
         end
+        app.notifyAnnotationChanged('lineage', frm);
         refreshLineageAfterEdit(app, roi, frm);
         return;
     end
@@ -292,6 +293,7 @@ end
     try
         score_syncCellModelFrame(roi, fullChannelName, frm);
         score_updateSelectedObjectFields(app);
+        app.notifyAnnotationChanged(fullChannelName, frm);
     catch ME
         warning('score:CellModelMaskSync', ...
             'Could not synchronize the cellular model after painting: %s', ME.message);
@@ -531,12 +533,71 @@ uimenu(cm,'Text','SAM31 propagate this track...', ...
     'MenuSelectedFcn', @(~,~) propagateSelectedObjectSam31(app, roi, chIdx, pix, frm));
 uimenu(cm,'Text','Repair ID continuity (IoU)...', ...
     'MenuSelectedFcn', @(~,~) repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm));
+uimenu(cm,'Separator','on','Text','Track: assign on current frame...', ...
+    'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'frame'));
+uimenu(cm,'Text','Track: assign from this frame onward...', ...
+    'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'to-last'));
+uimenu(cm,'Text','Track: assign on all appearances...', ...
+    'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'all'));
+uimenu(cm,'Separator','on','Text','Lineage: set parent track...', ...
+    'MenuSelectedFcn', @(~,~) openSetParentTrackDialog(app));
+uimenu(cm,'Text','Lineage: remove parent', ...
+    'MenuSelectedFcn', @(~,~) removeSelectedParentTrack(app));
 % --- Delete actions ---
 uimenu(cm,'Separator','on','Text','Delete object (this frame)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectFrame(app, roi, pix, frm));
 uimenu(cm,'Text','Delete object (all frames)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectAllFrames(app, roi, pix,frm));
 
+end
+
+function openAssignTrackDialog(app, scope)
+current = '';
+try, current = char(string(app.SelectedTrackIDEditField.Value)); catch, end
+answer = inputdlg({'Destination track ID:'}, ...
+    sprintf('Assign selected object (%s)', scope), [1 42], {current});
+if isempty(answer), return; end
+newTrack = str2double(answer{1});
+if ~isfinite(newTrack) || newTrack < 1 || newTrack ~= round(newTrack)
+    warndlg('Track ID must be a positive integer.', 'Assign track');
+    return;
+end
+try
+    report = score_assignSelectedTrack(app, newTrack, scope);
+    flashStatus(app, sprintf('Track %u -> %u (%s, %d frame(s))', ...
+        report.old_track_id, report.new_track_id, report.scope, ...
+        numel(report.frames)));
+catch ME
+    errordlg(ME.message, 'Assign track');
+end
+end
+
+function openSetParentTrackDialog(app)
+answer = inputdlg({'Parent track ID:'}, ...
+    'Set parent of selected track', [1 42], {''});
+if isempty(answer), return; end
+parentTrack = str2double(answer{1});
+if ~isfinite(parentTrack) || parentTrack < 1 || parentTrack ~= round(parentTrack)
+    warndlg('Parent track ID must be a positive integer.', 'Set parent');
+    return;
+end
+try
+    report = score_setSelectedParentTrack(app, parentTrack);
+    flashStatus(app, sprintf('Parent of track %u -> %u', ...
+        report.child_track_id, report.parent_track_id));
+catch ME
+    errordlg(ME.message, 'Set parent');
+end
+end
+
+function removeSelectedParentTrack(app)
+try
+    report = score_setSelectedParentTrack(app, []);
+    flashStatus(app, sprintf('Parent removed from track %u', ...
+        report.child_track_id));
+catch ME
+    errordlg(ME.message, 'Remove parent');
+end
 end
 
 
@@ -1139,6 +1200,8 @@ set(d,'KeyPressFcn',@keyHandler);
             end
         end
 
+        reviewFrames = affectedFramesForReview(roi, pix, frm, oldLab, mode);
+
         % --- Application selon scope
         switch mode
             case 'frame-only'
@@ -1153,12 +1216,19 @@ set(d,'KeyPressFcn',@keyHandler);
             app.syncLineageDisplayForPaintChannel();
         end
 
+        app.notifyAnnotationChanged(chName, reviewFrames);
+
         % --- Update sélection + refresh
         app.SelectedObjectLabelCell = newLab;
         score_updateSelectedObjectFields(app);
         score_display(app,'fast');
         delete(d);
     end
+end
+
+function frames = affectedFramesForReview(roi, pix, frm, oldLab, mode)
+frames = relabelScopeFrames(roi, pix, frm, oldLab, mode);
+if isempty(frames), frames = frm; end
 end
 
 function frames = relabelScopeFrames(roi, pix, frm, oldLab, mode)

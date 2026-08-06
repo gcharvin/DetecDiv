@@ -19,6 +19,8 @@ verifyEqual(testCase, cellModel.findInstance(model, 1, 1, 3).track_id, uint64(2)
 filename = [tempname '.h5'];
 cleanup = onCleanup(@()deleteIfPresent(filename)); %#ok<NASGU>
 cellModel.writeH5(filename, model, 'KeepBackup', false);
+metadata = cellModel.readMetadata(filename);
+verifyEqual(testCase, char(string(metadata.families.name)), 'buds');
 loaded = cellModel.readH5(filename);
 verifyTrue(testCase, cellModel.validate(loaded).ok);
 verifyEqual(testCase, loaded.instances.state_id(loaded.instances.mask_label == 3), uint16(2));
@@ -66,6 +68,28 @@ score_setObjectDisplayConfig(roiobj, 'mask_a', ...
 verifyEqual(testCase, provider, 'mask_b');
 verifyEqual(testCase, pix, 2);
 verifyEqual(testCase, familyId, uint32(2));
+end
+
+function testTrackReassignmentAndDirectParentEditing(testCase)
+model = modelFixture();
+for frame = 1:3
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+[model, report] = cellModel.reassignTrack(model, 1, 2, 2, 9, 'to-last');
+verifyEqual(testCase, report.frames, [2 3]);
+rows = model.instances.mask_label == 2;
+tracks = model.instances.track_id(rows);
+verifyEqual(testCase, tracks, uint64([2;9;9]));
+
+[model, parentReport] = cellModel.setParentTrack(model, 1, 2, 9, 1);
+verifyEqual(testCase, parentReport.parent_track_id, uint64(1));
+verifyEqual(testCase, nnz(model.relations.child_track_id == 9), 1);
+[model, parentReport] = cellModel.setParentTrack(model, 1, 2, 9, []);
+verifyEqual(testCase, parentReport.status, 'removed');
+verifyEmpty(testCase, model.relations.relation_id);
+verifyTrue(testCase, cellModel.validate(model).ok);
 end
 
 function model = modelFixture()

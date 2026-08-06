@@ -42,9 +42,14 @@ for c=channels
     A=sum(A(:)); %number of pixels =0
     n=numel(tmpimg(:));
         
-    matmp=maxk( tmpimg(:), n- round((satur(2))*n) ); %*A/n... to compensate for the loss of bright pixels from the background, in masked images 
-    ma(cc)=min(matmp);
-    mitmp = mink(tmpimg(:),round((satur(1) +A/n)*n)); %A/n to account for pixels =0, which have to be saturated, + a corrective term
+    % Keep both sample counts in [1,n]. Rounding previously produced
+    % maxk(...,0) for small or constant channels (notably a newly created
+    % blank GT mask), leaving an empty value that could not be assigned.
+    highCount = max(1, min(n, n - round(satur(2) * n)));
+    lowCount = max(1, min(n, round((satur(1) + A/n) * n)));
+    matmp = maxk(tmpimg(:), highCount); % compensate for bright pixels lost to background
+    ma(cc) = min(matmp);
+    mitmp = mink(tmpimg(:), lowCount); % account for zero-valued masked pixels
     if numel(mitmp)==0
         mitmp=0;
     end
