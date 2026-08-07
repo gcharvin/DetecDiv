@@ -1,5 +1,12 @@
-function [model, report] = reassignTrack(model, family, frame, maskLabel, newTrackId, scope)
+function [model, report] = reassignTrack(model, family, frame, maskLabel, newTrackId, scope, varargin)
 %CELLMODEL.REASSIGNTRACK Move selected instances to another track.
+% 'Fast', true is for an already-normalized live model. Persistence will
+% normalize and validate the complete model when it is flushed.
+
+p = inputParser;
+p.addParameter('Fast', false, @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
+fast = p.Results.Fast;
 
 if nargin < 6 || isempty(scope), scope = 'frame'; end
 scope = lower(char(string(scope)));
@@ -11,7 +18,9 @@ if ~isscalar(newTrackId) || ~isfinite(newTrackId) || ...
     error('cellModel:BadTrackId', 'Track ID must be a positive integer.');
 end
 
-model = cellModel.normalize(model);
+if ~fast
+    model = cellModel.normalize(model);
+end
 [~, familyId] = cellModel.familyIndex(model, family);
 if isempty(familyId), error('cellModel:UnknownFamily', 'Unknown family.'); end
 frame = uint32(frame);
@@ -37,12 +46,13 @@ switch scope
 end
 
 affectedFrames = model.instances.frame(rows);
-conflicts = model.instances.family_id == familyId & ...
-    model.instances.track_id == newTrackId & ...
-    ismember(model.instances.frame, affectedFrames);
-conflicts(rows) = false;
-if any(conflicts)
-    frames = unique(model.instances.frame(conflicts));
+destinationRows = find(model.instances.family_id == familyId & ...
+    model.instances.track_id == newTrackId);
+conflictRows = destinationRows(ismember( ...
+    model.instances.frame(destinationRows), affectedFrames));
+conflictRows = setdiff(conflictRows, rows, 'stable');
+if ~isempty(conflictRows)
+    frames = unique(model.instances.frame(conflictRows));
     error('cellModel:TrackFrameConflict', ...
         'Track %u already contains another object at frame(s): %s.', ...
         newTrackId, strjoin(cellstr(string(frames(:).')), ', '));
@@ -57,8 +67,10 @@ if strcmp(scope, 'all') && oldTrackId > 0 && oldTrackId ~= newTrackId && ...
     relationsUpdated = true;
 end
 
-model = cellModel.normalize(model);
-cellModel.validate(model, 'Throw', true);
+if ~fast
+    model = cellModel.normalize(model);
+    cellModel.validate(model, 'Throw', true);
+end
 report = struct('status', 'ok', 'scope', scope, ...
     'family_id', familyId, 'old_track_id', oldTrackId, ...
     'new_track_id', newTrackId, 'rows_changed', numel(rows), ...

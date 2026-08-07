@@ -56,7 +56,8 @@ cfg = struct( ...
     'semanticValue', '<none>', ...
     'semanticColor', [1 0.25 0.25], ...
     'budLinkColor', [1 0.8196 0.051], ...
-    'genealogyLinkColor', [0.051 0.749 1]);
+    'genealogyLinkColor', [0.051 0.749 1], ...
+    'linkWidthPx', 1);
 end
 
 function cfg = normalizeConfig(cfg, roiobj, channelName)
@@ -92,6 +93,7 @@ cfg.familyColor = normalizeColor(cfg.familyColor, defaults.familyColor);
 cfg.semanticColor = normalizeColor(cfg.semanticColor, defaults.semanticColor);
 cfg.budLinkColor = normalizeColor(cfg.budLinkColor, defaults.budLinkColor);
 cfg.genealogyLinkColor = normalizeColor(cfg.genealogyLinkColor, defaults.genealogyLinkColor);
+cfg.linkWidthPx = normalizeLinkWidth(cfg.linkWidthPx, defaults.linkWidthPx);
 end
 
 function color = normalizeColor(color, fallback)
@@ -99,4 +101,11 @@ if ~isnumeric(color) || numel(color) ~= 3 || any(~isfinite(color))
     color = fallback;
 end
 color = max(0, min(1, double(color(:).')));
+end
+
+function value = normalizeLinkWidth(value, fallback)
+if ~isnumeric(value) || ~isscalar(value) || ~isfinite(value)
+    value = fallback;
+end
+value = max(1, min(20, round(double(value))));
 end

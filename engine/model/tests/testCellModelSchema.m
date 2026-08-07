@@ -62,7 +62,11 @@ model.families.lineage_source = {'a';'b'};
 model.families.color_rgb = uint8([255 0 0;0 255 0]);
 roiobj.saveCellModel(model, 'KeepBackup', false);
 score_setObjectDisplayConfig(roiobj, 'mask_a', ...
-    struct('objectFamily','family_b','maskProvider','mask_a'));
+    struct('objectFamily','family_b','maskProvider','mask_a', ...
+    'linkWidthPx', 3));
+
+displayCfg = score_getObjectDisplayConfig(roiobj, 'mask_a');
+verifyEqual(testCase, displayCfg.linkWidthPx, 3);
 
 [provider, ~, pix, familyId] = score_resolveMaskProvider(roiobj, 'mask_a');
 verifyEqual(testCase, provider, 'mask_b');
@@ -78,8 +82,13 @@ for frame = 1:3
         'TrackPolicy', 'preserve_or_label');
 end
 verifyEqual(testCase, cellModel.nextTrackId(model, 1), uint64(3));
+[fastModel, fastReport] = cellModel.reassignTrack( ...
+    model, 1, 2, 2, 9, 'to-last', 'Fast', true);
 [model, report] = cellModel.reassignTrack(model, 1, 2, 2, 9, 'to-last');
 verifyEqual(testCase, report.frames, [2 3]);
+verifyEqual(testCase, fastReport.frames, report.frames);
+verifyEqual(testCase, fastModel.instances.track_id, model.instances.track_id);
+verifyTrue(testCase, cellModel.validate(fastModel).ok);
 rows = model.instances.mask_label == 2;
 tracks = model.instances.track_id(rows);
 verifyEqual(testCase, tracks, uint64([2;9;9]));

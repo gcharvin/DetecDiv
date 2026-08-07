@@ -31,6 +31,7 @@ updates.semanticValue = char(string(app.SemanticValueDropDown.Value));
 updates.semanticColor = double(app.SemanticValueColorPicker.Value);
 updates.budLinkColor = lineage.budLinkColor;
 updates.genealogyLinkColor = lineage.genealogyLinkColor;
+updates.linkWidthPx = lineage.linkWidthPx;
 
 cfg = score_setObjectDisplayConfig(roiobj, channelName, updates);
 app.ShowBudPairingOverlay = lineage.showBudPairing;

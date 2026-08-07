@@ -394,6 +394,7 @@ opts.ShowBudPairingOverlay = lineageUI.showBudPairing;
 opts.ShowLineageOverlay = lineageUI.showGenealogy;
 opts.BudLinkColor = lineageUI.budLinkColor;
 opts.GenealogyLinkColor = lineageUI.genealogyLinkColor;
+opts.LineageLinkWidthPx = lineageUI.linkWidthPx;
 try
     app.ShowBudPairingOverlay = lineageUI.showBudPairing;
     app.ShowLineageOverlay = lineageUI.showGenealogy;

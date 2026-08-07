@@ -573,12 +573,11 @@ uimenu(cm,'Text','SAM31 propagate this track...', ...
     'MenuSelectedFcn', @(~,~) propagateSelectedObjectSam31(app, roi, chIdx, pix, frm));
 uimenu(cm,'Text','Repair ID continuity (IoU)...', ...
     'MenuSelectedFcn', @(~,~) repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm));
-trackMenu = uimenu(cm,'Separator','on','Text','Track identity');
-uimenu(trackMenu,'Text','Assign on current frame...', ...
+uimenu(cm,'Separator','on','Text','Track: assign on current frame...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'frame'));
-uimenu(trackMenu,'Text','Start/reassign track from this frame onward...', ...
+uimenu(cm,'Text','Track: start/reassign from this frame onward...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'to-last'));
-uimenu(trackMenu,'Text','Assign on all appearances...', ...
+uimenu(cm,'Text','Track: assign on all appearances...', ...
     'MenuSelectedFcn', @(~,~) openAssignTrackDialog(app, 'all'));
 uimenu(cm,'Separator','on','Text','Lineage: set parent track...', ...
     'MenuSelectedFcn', @(~,~) openSetParentTrackDialog(app));
@@ -604,17 +603,57 @@ if ~isfinite(newTrack) || newTrack < 1 || newTrack ~= round(newTrack)
     warndlg('Track ID must be a positive integer.', 'Assign track');
     return;
 end
+progress = beginTrackProgress(app, scope);
+progressCleanup = onCleanup(@() closeTrackProgress(app, progress));
 try
     report = score_assignSelectedTrack(app, newTrack, scope);
-    flashStatus(app, sprintf('Track %u -> %u (%s, %d frame(s))', ...
+    closeTrackProgress(app, progress);
+    flashStatus(app, sprintf('Track %u -> %u (%s, %d frame(s))  OK (unsaved)', ...
         report.old_track_id, report.new_track_id, report.scope, ...
         numel(report.frames)));
 catch ME
+    closeTrackProgress(app, progress);
     if strcmp(ME.identifier, 'cellModel:TrackFrameConflict')
         resolveTrackAssignmentConflict(app, newTrack, ME.message);
     else
         errordlg(ME.message, 'Assign track');
     end
+end
+clear progressCleanup
+end
+
+function progress = beginTrackProgress(app, scope)
+progress = [];
+scopeText = char(string(scope));
+if strcmp(scopeText, 'to-last')
+    message = 'Reassigning the selected track from this frame onward...';
+elseif strcmp(scopeText, 'all')
+    message = 'Reassigning all appearances of the selected track...';
+else
+    message = 'Assigning the selected object on this frame...';
+end
+flashStatus(app, message);
+try
+    progress = uiprogressdlg(app.ScoreAppUIFigure, ...
+        'Title', 'Updating track identity', ...
+        'Message', message, 'Indeterminate', 'on', ...
+        'Cancelable', 'off');
+catch
+    try app.ImageFigure.Pointer = 'watch'; catch, end
+end
+drawnow nocallbacks;
+end
+
+function closeTrackProgress(app, progress)
+try
+    if ~isempty(progress) && isvalid(progress)
+        close(progress);
+    end
+catch
+end
+try
+    if isgraphics(app.ImageFigure), app.ImageFigure.Pointer = 'arrow'; end
+catch
 end
 end
 
@@ -1765,6 +1804,7 @@ try
         opts.ShowLineageOverlay = lineageUI.showGenealogy;
         opts.BudLinkColor = lineageUI.budLinkColor;
         opts.GenealogyLinkColor = lineageUI.genealogyLinkColor;
+        opts.LineageLinkWidthPx = lineageUI.linkWidthPx;
     catch
     end
     opts.LineageUseViewport = true;

@@ -48,6 +48,8 @@ app = score(r, 'pixelAnnotation');
 appCleanup = onCleanup(@() deleteScore(app)); %#ok<NASGU>
 app.setAnnotationSession(session);
 
+verifyTrue(testCase, isvalid(app.LineageLinkWidthEditField));
+verifyEqual(testCase, app.LineageLinkWidthEditField.Value, 1);
 verifyEqual(testCase, char(app.AnnotationSessionPanel.Visible), 'on');
 verifyEqual(testCase, app.TabGroup.SelectedTab, app.AnnotationsTab, ...
     'Managed annotation sessions must open on the Annotations tab.');

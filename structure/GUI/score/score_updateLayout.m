@@ -182,6 +182,7 @@ if ~isempty(selCh)
         end
         layoutOptions.BudLinkColor = objectDisplay(styleIdx).budLinkColor;
         layoutOptions.GenealogyLinkColor = objectDisplay(styleIdx).genealogyLinkColor;
+        layoutOptions.LineageLinkWidthPx = objectDisplay(styleIdx).linkWidthPx;
     end
     try
         if isfield(roitmp.display, 'lineage')

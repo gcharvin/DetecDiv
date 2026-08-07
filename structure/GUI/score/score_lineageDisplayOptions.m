@@ -6,7 +6,8 @@ options = struct( ...
     'showBudPairing', false, ...
     'showGenealogy', false, ...
     'budLinkColor', [1 0.8196 0.051], ...
-    'genealogyLinkColor', [0.051 0.749 1]);
+    'genealogyLinkColor', [0.051 0.749 1], ...
+    'linkWidthPx', 1);
 
 try
     if isprop(app, 'LineageDisplayButtonGroup') && ...
@@ -39,6 +40,16 @@ try
     if isprop(app, 'GenealogyLinkColorPicker') && isvalid(app.GenealogyLinkColorPicker)
         options.genealogyLinkColor = double(app.GenealogyLinkColorPicker.Value);
     end
+    if isprop(app, 'LineageLinkWidthEditField') && isvalid(app.LineageLinkWidthEditField)
+        options.linkWidthPx = normalizeLinkWidth(app.LineageLinkWidthEditField.Value);
+    end
 catch
 end
+end
+
+function value = normalizeLinkWidth(value)
+if ~isnumeric(value) || ~isscalar(value) || ~isfinite(value)
+    value = 1;
+end
+value = max(1, min(20, round(double(value))));
 end

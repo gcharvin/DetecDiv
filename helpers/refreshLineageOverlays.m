@@ -77,6 +77,9 @@ if isfield(graphicsHandles,'lineageHandles') && isa(graphicsHandles.lineageHandl
                 if isfield(h,'arrow') && ~isempty(h.arrow) && isgraphics(h.arrow), delete(h.arrow); end
             end
         end
+        if isstruct(L) && isfield(L, 'vectorGroups')
+            purgeLineageVectorGroups(L.vectorGroups);
+        end
     end
     remove(graphicsHandles.lineageHandles, ks);
 end
@@ -281,13 +284,18 @@ if isKey(graphicsHandles.lineageHandles, tileIndex)
     L = graphicsHandles.lineageHandles(tileIndex);
 else
     L = struct('map',containers.Map('KeyType','int32','ValueType','any'), ...
-        'ax',ax,'image',[],'geoms',geoms,'renderMode','raster','rasterSize',[]);
+        'vectorGroups',containers.Map('KeyType','char','ValueType','any'), ...
+        'ax',ax,'image',[],'geoms',geoms,'renderMode','vector','rasterSize',[]);
 end
 
 % axes recréé ?
 if ~isempty(L.ax) && ~isequal(L.ax, ax)
     purgeLineageMap(L.map);
     L.map = containers.Map('KeyType','int32','ValueType','any');
+    if isfield(L, 'vectorGroups')
+        purgeLineageVectorGroups(L.vectorGroups);
+    end
+    L.vectorGroups = containers.Map('KeyType','char','ValueType','any');
     if isfield(L,'image') && ~isempty(L.image) && isgraphics(L.image)
         delete(L.image);
     end
@@ -297,6 +305,9 @@ end
 
 if ~isfield(L,'image')
     L.image = [];
+end
+if ~isfield(L, 'vectorGroups') || ~isa(L.vectorGroups, 'containers.Map')
+    L.vectorGroups = containers.Map('KeyType','char','ValueType','any');
 end
 L.geoms = geoms;
 
@@ -314,6 +325,8 @@ if useRasterLineage(layoutOptions)
     L.renderMode = 'raster';
     purgeLineageMap(L.map);
     L.map = containers.Map('KeyType','int32','ValueType','any');
+    purgeLineageVectorGroups(L.vectorGroups);
+    L.vectorGroups = containers.Map('KeyType','char','ValueType','any');
 
     imgSize = size(roi.image);
     if numel(imgSize) < 3
@@ -376,6 +389,22 @@ end
 L.image = [];
 L.renderMode = 'vector';
 L.rasterSize = [];
+
+usePerObjectVector = isstruct(layoutOptions) && ...
+    isfield(layoutOptions, 'LineagePerObjectVector') && ...
+    logical(layoutOptions.LineagePerObjectVector);
+if usePerObjectVector
+    purgeLineageVectorGroups(L.vectorGroups);
+    L.vectorGroups = containers.Map('KeyType','char','ValueType','any');
+else
+    purgeLineageMap(L.map);
+    L.map = containers.Map('KeyType','int32','ValueType','any');
+    L.vectorGroups = updateVectorLineageGroups(L.vectorGroups, ax, geoms);
+    set(ax,'XLim',oldXLim,'YLim',oldYLim,'XLimMode',oldXMode, ...
+        'YLimMode',oldYMode,'NextPlot',oldNP);
+    graphicsHandles.lineageHandles(tileIndex) = L;
+    return;
+end
 
 alive = int32([]);
 
@@ -467,11 +496,100 @@ for i=1:numel(ks)
 end
 end
 
+function purgeLineageVectorGroups(groups)
+if ~isa(groups, 'containers.Map'), return; end
+keys = groups.keys;
+for i = 1:numel(keys)
+    handles = groups(keys{i});
+    if isfield(handles, 'line') && isgraphics(handles.line), delete(handles.line); end
+    if isfield(handles, 'arrow') && isgraphics(handles.arrow), delete(handles.arrow); end
+end
+end
+
+function groups = updateVectorLineageGroups(groups, ax, geoms)
+% One line/quiver pair per relation made 100 links take seconds to refresh.
+% Equal-style links are now grouped into only two vector graphics objects.
+if ~isa(groups, 'containers.Map')
+    groups = containers.Map('KeyType','char','ValueType','any');
+end
+styleKeys = cell(1, numel(geoms));
+for i = 1:numel(geoms)
+    color = double(geoms(i).color(:).');
+    styleKeys{i} = sprintf('%s|%.6f,%.6f,%.6f|%.3f|%s', ...
+        char(geoms(i).mode), color(1), color(2), color(3), ...
+        double(geoms(i).lineWidth), char(geoms(i).lineStyle));
+end
+activeKeys = unique(styleKeys, 'stable');
+for i = 1:numel(activeKeys)
+    key = activeKeys{i};
+    indices = find(strcmp(styleKeys, key));
+    selected = geoms(indices);
+    xm = [selected.xm];
+    ym = [selected.ym];
+    xd = [selected.xd];
+    yd = [selected.yd];
+    xData = reshape([xm; xd; nan(size(xm))], [], 1);
+    yData = reshape([ym; yd; nan(size(ym))], [], 1);
+    color = double(selected(1).color(:).');
+    lineWidth = vectorLineWidthPoints(selected(1).lineWidth);
+    lineStyle = selected(1).lineStyle;
+    if isKey(groups, key)
+        handles = groups(key);
+    else
+        handles = struct('line', [], 'arrow', []);
+    end
+    if isempty(handles.line) || ~isgraphics(handles.line)
+        handles.line = line(ax, xData, yData, 'Color', color, ...
+            'LineWidth', lineWidth, 'LineStyle', lineStyle, ...
+            'HitTest','off','PickableParts','none');
+    else
+        set(handles.line, 'XData', xData, 'YData', yData, ...
+            'Color', color, 'LineWidth', lineWidth, ...
+            'LineStyle', lineStyle, 'Visible', 'on');
+    end
+    if isempty(handles.arrow) || ~isgraphics(handles.arrow)
+        handles.arrow = quiver(ax, xm, ym, (xd-xm)*0.9, (yd-ym)*0.9, 0, ...
+            'LineWidth',lineWidth,'MaxHeadSize',0.5,'Color',color, ...
+            'HitTest','off','PickableParts','none','AutoScale','off');
+    else
+        set(handles.arrow, 'XData', xm, 'YData', ym, ...
+            'UData', (xd-xm)*0.9, 'VData', (yd-ym)*0.9, ...
+            'Color', color, 'LineWidth', lineWidth, ...
+            'MaxHeadSize', 0.5, 'AutoScale', 'off', 'Visible', 'on');
+    end
+    groups(key) = handles;
+    try
+        uistack(handles.line, 'top');
+        uistack(handles.arrow, 'top');
+    catch
+    end
+end
+
+staleKeys = setdiff(groups.keys, activeKeys);
+for i = 1:numel(staleKeys)
+    handles = groups(staleKeys{i});
+    if isfield(handles, 'line') && isgraphics(handles.line), delete(handles.line); end
+    if isfield(handles, 'arrow') && isgraphics(handles.arrow), delete(handles.arrow); end
+    remove(groups, staleKeys{i});
+end
+end
+
+function widthPoints = vectorLineWidthPoints(widthPx)
+% MATLAB vector LineWidth is expressed in points, whereas the UI is in px.
+dpi = 96;
+try
+    dpi = double(get(groot, 'ScreenPixelsPerInch'));
+catch
+end
+if ~isfinite(dpi) || dpi <= 0, dpi = 96; end
+widthPoints = max(0.5, double(widthPx) * 72 / dpi);
+end
+
 function tf = useRasterLineage(layoutOptions)
-tf = true;
+tf = false;
 if isstruct(layoutOptions) && isfield(layoutOptions, 'LineageRenderMode')
     mode = lower(string(layoutOptions.LineageRenderMode));
-    tf = mode ~= "vector";
+    tf = mode == "raster";
 end
 end
 
@@ -523,8 +641,7 @@ for i = 1:numel(geoms)
     if isempty(rows)
         continue;
     end
-    radius = max(0, round(double(geoms(i).lineWidth) / 2));
-    [rows, cols] = thickenPixels(rows, cols, radius, H, W);
+    [rows, cols] = thickenPixels(rows, cols, geoms(i).lineWidth, H, W);
     idx = sub2ind([H W], rows, cols);
     color = uint8(max(0, min(1, double(geoms(i).color(:).'))) * 255);
     for c = 1:3
@@ -568,16 +685,19 @@ rows = pairs(:,1);
 cols = pairs(:,2);
 end
 
-function [rowsOut, colsOut] = thickenPixels(rows, cols, radius, H, W)
-if radius <= 0
+function [rowsOut, colsOut] = thickenPixels(rows, cols, widthPx, H, W)
+% Keep the user-facing value literal: 1 means a single image pixel.  The
+% older radius conversion made a nominal width of 1 occupy three pixels.
+widthPx = max(1, round(double(widthPx)));
+if widthPx == 1
     rowsOut = rows(:);
     colsOut = cols(:);
     return;
 end
-[dc, dr] = meshgrid(-radius:radius, -radius:radius);
-mask = (dr.^2 + dc.^2) <= radius^2;
-dr = dr(mask);
-dc = dc(mask);
+negativeExtent = floor((widthPx - 1) / 2);
+positiveExtent = widthPx - negativeExtent - 1;
+[dc, dr] = meshgrid(-negativeExtent:positiveExtent, ...
+    -negativeExtent:positiveExtent);
 rowsOut = rows(:) + dr(:).';
 colsOut = cols(:) + dc(:).';
 rowsOut = rowsOut(:);
@@ -627,13 +747,14 @@ for s = 1:numel(sources)
         continue;
     end
 
+    linkWidthPx = resolveLineageLinkWidth(layoutOptions);
     if sources(s).showBudPairing
         geoms = appendBudEventGeoms(geoms, sources(s), s, centroids, frm, ...
-            resolveBudLinkColor(layoutOptions));
+            resolveBudLinkColor(layoutOptions), linkWidthPx);
     end
     if sources(s).showGenealogy
         geoms = appendMotherMapGeoms(geoms, sources(s), s, centroids, ...
-            resolveGenealogyLinkColor(layoutOptions, fallbackColor));
+            resolveGenealogyLinkColor(layoutOptions, fallbackColor), linkWidthPx);
     end
 end
 end
@@ -687,6 +808,7 @@ try
     source = struct('key', char(cfg.sourceKey));
     budColor = resolveBudLinkColor(layoutOptions);
     genealogyColor = resolveGenealogyLinkColor(layoutOptions, fallbackColor);
+    linkWidthPx = resolveLineageLinkWidth(layoutOptions);
     for k = relationRows(:).'
         childTrack = model.relations.child_track_id(k);
         parentTrack = model.relations.parent_track_id(k);
@@ -702,12 +824,12 @@ try
             if frm >= eventFrame - cfg.budWindowBefore && ...
                     frm <= eventFrame + cfg.budWindowAfter
                 geoms = appendPairGeom(geoms, source, 1, centroids, ...
-                    childLabel, parentLabel, "bud", budColor, 2.0, '-');
+                    childLabel, parentLabel, "bud", budColor, linkWidthPx, '-');
             end
         end
         if cfg.showGenealogy
             geoms = appendPairGeom(geoms, source, 1, centroids, ...
-                childLabel, parentLabel, "genealogy", genealogyColor, 1.25, '-');
+                childLabel, parentLabel, "genealogy", genealogyColor, linkWidthPx, '-');
         end
     end
 catch
@@ -715,7 +837,7 @@ catch
 end
 end
 
-function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm, color)
+function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm, color, linkWidthPx)
 if ~isfield(source, 'events') || isempty(source.events)
     return;
 end
@@ -733,17 +855,17 @@ for k = 1:numel(events)
     end
     geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
         int32(events(k).childId), double(events(k).motherId), ...
-        "bud", color, 2.0, '-');
+        "bud", color, linkWidthPx, '-');
 end
 end
 
-function geoms = appendMotherMapGeoms(geoms, source, sourceIndex, centroids, fallbackColor)
+function geoms = appendMotherMapGeoms(geoms, source, sourceIndex, centroids, fallbackColor, linkWidthPx)
 keysD = source.motherOf.keys;
 for k = 1:numel(keysD)
     daughterID = int32(keysD{k});
     motherID = double(source.motherOf(daughterID));
     geoms = appendPairGeom(geoms, source, sourceIndex, centroids, ...
-        daughterID, motherID, "genealogy", fallbackColor, 1.25, '-');
+        daughterID, motherID, "genealogy", fallbackColor, linkWidthPx, '-');
 end
 end
 
@@ -1270,6 +1392,20 @@ try
 catch
 end
 color = max(0, min(1, color));
+end
+
+function widthPx = resolveLineageLinkWidth(layoutOptions)
+widthPx = 1;
+try
+    if isstruct(layoutOptions) && isfield(layoutOptions, 'LineageLinkWidthPx') && ...
+            isnumeric(layoutOptions.LineageLinkWidthPx) && ...
+            isscalar(layoutOptions.LineageLinkWidthPx) && ...
+            isfinite(layoutOptions.LineageLinkWidthPx)
+        widthPx = double(layoutOptions.LineageLinkWidthPx);
+    end
+catch
+end
+widthPx = max(1, min(20, round(widthPx)));
 end
 
 function ax = getTileAxesFromHandles(graphicsHandles, tileIndex)

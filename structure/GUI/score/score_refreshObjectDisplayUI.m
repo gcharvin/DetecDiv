@@ -30,6 +30,7 @@ setLineageMode(app, cfg.lineageMode);
 app.FamilyColorPicker.Value = familyColor(model, familyValue, cfg.familyColor);
 app.BudlinkcolorColorPicker.Value = cfg.budLinkColor;
 app.GenealogyLinkColorPicker.Value = cfg.genealogyLinkColor;
+app.LineageLinkWidthEditField.Value = cfg.linkWidthPx;
 semanticItems = semanticValues(cfg.criterion, families, model);
 setDropDown(app.SemanticValueDropDown, semanticItems, cfg.semanticValue);
 app.SemanticValueColorPicker.Value = cfg.semanticColor;
@@ -200,7 +201,8 @@ function setObjectControlsEnabled(app, tf)
 names = {'ChannelModeButtonGroup','DisplayCriterionDropDown','LineageDisplayButtonGroup', ...
     'ObjectFamilyDropDown','MaskProviderDropDown','LineageSourceDropDown', ...
     'FamilyColorPicker','SemanticValueDropDown','SemanticValueColorPicker', ...
-    'BudlinkcolorColorPicker','GenealogyLinkColorPicker'};
+    'BudlinkcolorColorPicker','GenealogyLinkColorPicker', ...
+    'LineageLinkWidthEditField'};
 for i = 1:numel(names)
     try
         app.(names{i}).Enable = onOff(tf);

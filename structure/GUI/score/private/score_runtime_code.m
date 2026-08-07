@@ -134,6 +134,8 @@ classdef score < matlab.apps.AppBase
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
+        LineageLinkWidthEditFieldLabel   matlab.ui.control.Label
+        LineageLinkWidthEditField        matlab.ui.control.NumericEditField
         MovieeventmarkersEditFieldLabel  matlab.ui.control.Label
         MovieeventmarkersEditField      matlab.ui.control.EditField
         ShowmovieandfolderButton        matlab.ui.control.Button
@@ -4398,6 +4400,10 @@ end
                 @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
             app.GenealogyLinkColorPicker.ValueChangedFcn = ...
                 @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.LineageLinkWidthEditField.ValueChangedFcn = ...
+                @(src, event) ObjectDisplaySettingChanged(app, event); %#ok<NASGU>
+            app.LineageLinkWidthEditField.Tooltip = ...
+                'Mother-bud link width in image pixels (1 to 20).';
             app.SelectedCellStateDropDown.ValueChangedFcn = ...
                 @(src, event) score_updateSelectedCellState(app); %#ok<NASGU>
             app.SelectedTrackIDEditField.ValueChangedFcn = ...
@@ -7333,60 +7339,72 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             % Create ObjectColorsPanel
             app.ObjectColorsPanel = uipanel(app.ObjectspanelPanel);
             app.ObjectColorsPanel.Title = 'Object Colors';
-            app.ObjectColorsPanel.Position = [354 83 218 206];
+            app.ObjectColorsPanel.Position = [354 44 218 245];
 
             % Create FamilyColorPickerLabel
             app.FamilyColorPickerLabel = uilabel(app.ObjectColorsPanel);
             app.FamilyColorPickerLabel.HorizontalAlignment = 'right';
-            app.FamilyColorPickerLabel.Position = [35 147 70 22];
+            app.FamilyColorPickerLabel.Position = [35 184 70 22];
             app.FamilyColorPickerLabel.Text = 'Family color';
 
             % Create FamilyColorPicker
             app.FamilyColorPicker = uicolorpicker(app.ObjectColorsPanel);
-            app.FamilyColorPicker.Position = [120 147 38 22];
+            app.FamilyColorPicker.Position = [120 184 38 22];
 
             % Create SemanticValueDropDownLabel
             app.SemanticValueDropDownLabel = uilabel(app.ObjectColorsPanel);
             app.SemanticValueDropDownLabel.HorizontalAlignment = 'right';
-            app.SemanticValueDropDownLabel.Position = [12 110 87 22];
+            app.SemanticValueDropDownLabel.Position = [12 147 87 22];
             app.SemanticValueDropDownLabel.Text = 'Semantic value';
 
             % Create SemanticValueDropDown
             app.SemanticValueDropDown = uidropdown(app.ObjectColorsPanel);
-            app.SemanticValueDropDown.Position = [120 110 84 22];
+            app.SemanticValueDropDown.Position = [120 147 84 22];
 
             % Create SemanticValueColorPickerLabel
             app.SemanticValueColorPickerLabel = uilabel(app.ObjectColorsPanel);
             app.SemanticValueColorPickerLabel.HorizontalAlignment = 'right';
-            app.SemanticValueColorPickerLabel.Position = [17 74 88 22];
+            app.SemanticValueColorPickerLabel.Position = [17 111 88 22];
             app.SemanticValueColorPickerLabel.Text = 'Semantic Value';
 
             % Create SemanticValueColorPicker
             app.SemanticValueColorPicker = uicolorpicker(app.ObjectColorsPanel);
-            app.SemanticValueColorPicker.Position = [120 74 38 22];
+            app.SemanticValueColorPicker.Position = [120 111 38 22];
 
             % Create BudlinkcolorColorPickerLabel
             app.BudlinkcolorColorPickerLabel = uilabel(app.ObjectColorsPanel);
             app.BudlinkcolorColorPickerLabel.HorizontalAlignment = 'right';
-            app.BudlinkcolorColorPickerLabel.Position = [41 40 77 22];
+            app.BudlinkcolorColorPickerLabel.Position = [41 77 77 22];
             app.BudlinkcolorColorPickerLabel.Text = 'Bud link color';
 
             % Create BudlinkcolorColorPicker
             app.BudlinkcolorColorPicker = uicolorpicker(app.ObjectColorsPanel);
             app.BudlinkcolorColorPicker.Value = [1 0.8196 0.051];
-            app.BudlinkcolorColorPicker.Position = [121 40 38 22];
+            app.BudlinkcolorColorPicker.Position = [121 77 38 22];
 
             % Create GenealogyLinkColorPickerLabel
             app.GenealogyLinkColorPickerLabel = uilabel(app.ObjectColorsPanel);
             app.GenealogyLinkColorPickerLabel.HorizontalAlignment = 'right';
-            app.GenealogyLinkColorPickerLabel.Position = [-1 9 114 22];
+            app.GenealogyLinkColorPickerLabel.Position = [-1 46 114 22];
             app.GenealogyLinkColorPickerLabel.Text = 'Genealogy link color';
 
             % Create GenealogyLinkColorPicker
             app.GenealogyLinkColorPicker = uicolorpicker(app.ObjectColorsPanel);
             app.GenealogyLinkColorPicker.Value = [0.051 0.749 1];
-            app.GenealogyLinkColorPicker.Position = [119 9 38 22];
+            app.GenealogyLinkColorPicker.Position = [119 46 38 22];
 
+            % Create LineageLinkWidthEditFieldLabel
+            app.LineageLinkWidthEditFieldLabel = uilabel(app.ObjectColorsPanel);
+            app.LineageLinkWidthEditFieldLabel.HorizontalAlignment = 'right';
+            app.LineageLinkWidthEditFieldLabel.Position = [12 9 101 22];
+            app.LineageLinkWidthEditFieldLabel.Text = 'Link width (px)';
+
+            % Create LineageLinkWidthEditField
+            app.LineageLinkWidthEditField = uieditfield(app.ObjectColorsPanel, 'numeric');
+            app.LineageLinkWidthEditField.Limits = [1 20];
+            app.LineageLinkWidthEditField.RoundFractionalValues = 'on';
+            app.LineageLinkWidthEditField.Position = [121 9 62 22];
+            app.LineageLinkWidthEditField.Value = 1;
             % Create SelectedObjectIDLabel
             app.SelectedObjectIDLabel = uilabel(app.ObjectspanelPanel);
             app.SelectedObjectIDLabel.HorizontalAlignment = 'right';
