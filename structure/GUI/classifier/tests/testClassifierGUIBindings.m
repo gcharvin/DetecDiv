@@ -44,6 +44,16 @@ app = classifierGUI(c);
 appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
 drawnow;
 
+% Exercise the App Designer callback path used when the ROI tab is opened.
+% Coverage formatters are private app methods after the runtime .mlapp is
+% packed, so their calls must retain the app instance as the first argument.
+tabCallback = app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;
+tabCallback(app.SettrainingandvalidationsetROIsTab, []);
+drawnow;
+coverageColumn = find(strcmp(app.UITableData.ColumnName, 'Coverage'), 1);
+verifyNotEmpty(testCase, coverageColumn);
+verifyTrue(testCase, contains(string(app.UITableData.Data{1, coverageColumn}), '/'));
+
 spec = classifierBinding.trainingSpec(c);
 tableData = app.UITableParam.Data;
 verifyTrue(testCase, all(ismember({spec.param}, tableData.Param)));
@@ -67,6 +77,57 @@ callback(editors(1), []);
 verifyEqual(testCase, c.channelName, {'BF','GFP'});
 verifyEqual(testCase, c.dataset.channels, {'BF','GFP'});
 verifyEqual(testCase, c.getInputChannels(), {'BF','GFP'});
+end
+
+function testManagedDraftSetsLegacyAnnotatedIndicator(testCase)
+folder = tempname;
+mkdir(folder);
+folderCleanup = onCleanup(@()removeFolder(folder)); %#ok<NASGU>
+
+c = classi(folder, 'ui_annotation', 1);
+c.classifierPkg = 'cnn';
+c.trainingFun = 'cnn.train';
+c.classifyFun = 'cnn.classify';
+c.description = {'cnn','','cnn'};
+c.category = {'Image'};
+c.classes = {'negative','positive'};
+c.trainingParam = cnn.utils.defaultTrainingParam();
+
+r = roi('R1', [1 1 4 4]);
+r.path = folder;
+r.image = uint16(ones(4,4,1,2));
+r.channelid = 1;
+r.display.channel = {'BF'};
+r.display.intensity = ones(1,3);
+r.display.rgb = ones(1,3);
+r.display.selectedchannel = true;
+r.display.indexed = false;
+r.display.alpha = 1;
+r.display.contour = false;
+r.display.width = 1;
+c.roi = r;
+c.channelName = {'BF'};
+c.dataset.channels = {'BF'};
+
+spec = annotationManager.specForClassifier(c);
+entry = annotationManager.newEntry(spec, 2);
+entry.status = 'draft';
+manifest = struct('schema_version', uint16(1), 'entries', entry);
+annotationManager.writeManifest(r, manifest);
+
+app = classifierGUI(c);
+appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
+drawnow;
+tabCallback = app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;
+tabCallback(app.SettrainingandvalidationsetROIsTab, []);
+drawnow;
+
+annotatedColumn = find(strcmp(app.UITableData.ColumnName, 'is annotated'), 1);
+validatedColumn = find(strcmp(app.UITableData.ColumnName, 'is validated'), 1);
+statusColumn = find(strcmp(app.UITableData.ColumnName, 'Annotation status'), 1);
+verifyTrue(testCase, app.UITableData.Data{1, annotatedColumn});
+verifyFalse(testCase, app.UITableData.Data{1, validatedColumn});
+verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Draft');
 end
 
 function deleteClassifierGUI(app)

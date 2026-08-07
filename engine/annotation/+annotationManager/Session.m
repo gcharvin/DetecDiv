@@ -6,6 +6,12 @@ classdef Session < handle
         RoiIndex = 1
         Roi
         Spec
+        LastValidationStatus = 'not_run'
+        LastValidationMessage = ''
+    end
+
+    events
+        StateChanged
     end
 
     methods
@@ -26,6 +32,7 @@ classdef Session < handle
             obj.RoiIndex = index;
             obj.Roi = obj.Classifier.roi(index);
             obj.Roi.parent = obj.Classifier;
+            obj.resetValidationState();
         end
 
         function refresh(obj)
@@ -41,6 +48,7 @@ classdef Session < handle
             report = annotationManager.bootstrap( ...
                 obj.Classifier, obj.Roi, obj.Spec, varargin{:});
             obj.refresh();
+            obj.changed();
         end
 
         function catalog = initializationCatalog(obj)
@@ -53,24 +61,37 @@ classdef Session < handle
             report = annotationManager.initialize( ...
                 obj.Classifier, obj.Roi, obj.Spec, recipe, varargin{:});
             obj.refresh();
+            obj.changed();
         end
 
         function report = startBlank(obj, varargin)
             report = annotationManager.startBlank( ...
                 obj.Classifier, obj.Roi, obj.Spec, varargin{:});
             obj.refresh();
+            obj.changed();
         end
 
         function entry = markReviewed(obj, varargin)
             entry = annotationManager.markReviewed(obj.Roi, obj.Spec, varargin{:});
+            obj.changed();
         end
 
         function entry = markChanged(obj, varargin)
             entry = annotationManager.markChanged(obj.Roi, obj.Spec, varargin{:});
+            obj.changed();
         end
 
         function report = validate(obj, varargin)
             report = annotationManager.validate(obj.Roi, obj.Spec, varargin{:});
+            if report.valid
+                obj.LastValidationStatus = 'valid';
+                obj.LastValidationMessage = '';
+            else
+                obj.LastValidationStatus = 'invalid';
+                obj.LastValidationMessage = char(strjoin( ...
+                    cellstr(report.errors), newline));
+            end
+            notify(obj, 'StateChanged');
         end
 
         function report = quickValidate(obj, varargin)
@@ -79,6 +100,9 @@ classdef Session < handle
 
         function [entry, report] = approve(obj, varargin)
             [entry, report] = annotationManager.approve(obj.Roi, obj.Spec, varargin{:});
+            obj.LastValidationStatus = 'valid';
+            obj.LastValidationMessage = '';
+            notify(obj, 'StateChanged');
         end
 
         function context = uiContext(obj)
@@ -97,6 +121,18 @@ classdef Session < handle
                 'components', obj.Spec.components, ...
                 'displayPreset', annotationManager.displayPreset(obj.Roi, obj.Spec), ...
                 'legacyScoreOption', legacyScoreOption(obj.Spec));
+        end
+    end
+
+    methods (Access = private)
+        function changed(obj)
+            obj.resetValidationState();
+            notify(obj, 'StateChanged');
+        end
+
+        function resetValidationState(obj)
+            obj.LastValidationStatus = 'not_run';
+            obj.LastValidationMessage = '';
         end
     end
 end

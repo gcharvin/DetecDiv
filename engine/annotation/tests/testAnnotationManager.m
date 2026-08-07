@@ -37,11 +37,15 @@ verifyEqual(testCase, session.summary().coverage.fraction, 0);
 
 failed = session.validate();
 verifyFalse(testCase, failed.valid);
+verifyEqual(testCase, session.LastValidationStatus, 'invalid');
 session.markReviewed('Frames', 1:3);
+verifyEqual(testCase, session.LastValidationStatus, 'not_run');
 validation = session.validate();
 verifyTrue(testCase, validation.valid, strjoin(cellstr(validation.errors), ' '));
+verifyEqual(testCase, session.LastValidationStatus, 'valid');
 [entry, ~] = session.approve();
 verifyEqual(testCase, entry.status, 'approved');
+verifyEqual(testCase, session.LastValidationStatus, 'valid');
 verifyNotEmpty(testCase, entry.approved_hash);
 verifyEqual(testCase, session.summary('VerifyHash', true).status, 'approved');
 
@@ -296,6 +300,28 @@ verifyEqual(testCase, rows.status, 'draft');
 verifyEqual(testCase, rows.supportsBootstrap, true);
 rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
 verifyEqual(testCase, rows.status, 'draft');
+end
+
+function testClassifierSummaryRefreshesManifestMissingFromMemory(testCase)
+[~, c, r] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+
+% Reproduce a classifier snapshot that has a legitimate legacy dataseries
+% cached in memory but predates the annotation manifest saved by Score.
+stale = roiWithRaw(c.path, r.id, 4, 4, 3);
+legacy = dataseries;
+legacy.groupid = 'cell_information';
+legacy.parentid = r.id;
+stale.data = legacy;
+c.roi = stale;
+
+rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
+verifyEqual(testCase, rows.status, 'draft');
+verifyEqual(testCase, rows.total, 3);
+verifyEqual(testCase, numel(stale.data), 2);
+verifyTrue(testCase, any(strcmp({stale.data.groupid}, ...
+    'detecdiv_annotation_manifest')));
 end
 
 function testInitializeFromExistingFamilyCanBlankParentage(testCase)

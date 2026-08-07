@@ -140,6 +140,34 @@ verifyEqual(testCase, model.relations.child_track_id, uint64(1));
 verifyTrue(testCase, cellModel.validate(model).ok);
 end
 
+function testRemoveTrackBatchesInstancesAndLineage(testCase)
+model = modelFixture();
+for frame = 1:3
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+[model, ~] = cellModel.setParentTrack(model, 1, 2, 2, 1);
+
+[fastModel, fastReport] = cellModel.removeTrack( ...
+    model, 1, 1, 'Fast', true);
+[model, report] = cellModel.removeTrack(model, 1, 1);
+
+verifyEqual(testCase, report.status, 'removed');
+verifyEqual(testCase, report.frames, [1 2 3]);
+verifyEqual(testCase, report.instance_frames, [1 2 3]);
+verifyEqual(testCase, report.mask_labels, [1 1 1]);
+verifyEqual(testCase, report.instances_removed, 3);
+verifyEqual(testCase, report.relations_removed, 1);
+verifyEqual(testCase, fastReport.frames, report.frames);
+verifyEqual(testCase, fastModel.instances.object_id, model.instances.object_id);
+verifyEmpty(testCase, model.relations.relation_id);
+verifyFalse(testCase, any(model.instances.track_id == 1));
+verifyTrue(testCase, all(model.instances.track_id == 2));
+verifyTrue(testCase, cellModel.validate(fastModel).ok);
+verifyTrue(testCase, cellModel.validate(model).ok);
+end
+
 function model = modelFixture()
 model = cellModel.create('test');
 model.families.family_id = uint32(1);

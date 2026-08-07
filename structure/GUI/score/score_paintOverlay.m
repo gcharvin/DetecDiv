@@ -610,7 +610,7 @@ uimenu(cm,'Text','Lineage: remove parent', ...
 uimenu(cm,'Separator','on','Text','Delete object (this frame)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectFrame(app, roi, pix, frm));
 uimenu(cm,'Text','Delete object (all frames)', ...
-    'MenuSelectedFcn', @(~,~) deleteSelectedObjectAllFrames(app, roi, pix,frm));
+    'MenuSelectedFcn', @(~,~) deleteSelectedObjectAllFrames(app, roi, chIdx, pix, frm));
 
 end
 
@@ -1623,33 +1623,130 @@ score_display(app,'fast');
 end
 
 
-function deleteSelectedObjectAllFrames(app, roi, pix,frm)
-% Delete the selected object on every frame where it exists.
+function deleteSelectedObjectAllFrames(app, roi, chIdx, pix, frm)
+% Delete the selected track in one batch instead of resyncing every frame.
 oldLab = app.SelectedObjectLabelCell;
 if isempty(oldLab) || isnan(oldLab) || oldLab<=0
     warndlg('No object is currently selected.','Delete object'); return;
 end
 
-resp = questdlg( ...
-    sprintf('Delete object #%d on ALL frames where it exists?', oldLab), ...
-    'Confirm deletion (all frames)', 'Delete','Cancel','Cancel');
+selectedDisplayChannel = '';
+try
+    selectedDisplayChannel = char(string(roi.display.channel{chIdx}));
+catch
+end
+if isempty(selectedDisplayChannel)
+    [~, selectedDisplayChannel] = score_selectedObjectChannel(app);
+end
+
+selectedTrack = NaN;
+try
+    selectedTrack = double(app.SelectedTrackIDCell);
+catch
+end
+[model, modelStatus] = score_getCellModel(roi);
+familyId = [];
+if strcmp(modelStatus, 'ok') && ~isempty(selectedDisplayChannel)
+    cfg = score_getObjectDisplayConfig(roi, selectedDisplayChannel);
+    [~, familyId] = score_resolveCellModelFamily( ...
+        model, cfg, selectedDisplayChannel);
+end
+useTrack = ~isempty(familyId) && isscalar(selectedTrack) && ...
+    isfinite(selectedTrack) && selectedTrack > 0 && ...
+    any(model.instances.family_id == familyId & ...
+        model.instances.track_id == uint64(selectedTrack));
+
+if useTrack
+    trackRows = model.instances.family_id == familyId & ...
+        model.instances.track_id == uint64(selectedTrack);
+    trackFrameCount = numel(unique(model.instances.frame(trackRows)));
+    prompt = sprintf([ ...
+        'Delete track #%d on ALL %d frame(s)?\n' ...
+        'Parent/child links involving this track will also be removed.'], ...
+        selectedTrack, trackFrameCount);
+else
+    prompt = sprintf('Delete object label #%d on ALL frames where it exists?', oldLab);
+end
+resp = questdlg(prompt, 'Confirm deletion (all frames)', ...
+    'Delete','Cancel','Cancel');
 if ~strcmp(resp,'Delete'), return; end
 
-nf = size(roi.image,4);
-for f = 1:nf
-    M = roi.image(:,:,pix,f);
-    if any(M(:)==oldLab)
-        M(M==oldLab) = 0;         % remove label on this frame
-        roi.image(:,:,pix,f) = M;
+started = tic;
+try
+    set(app.ImageFigure, 'Pointer', 'watch');
+    drawnow limitrate nocallbacks;
+catch
+end
+pointerCleanup = onCleanup(@() restoreImagePointer(app));
+
+relationsRemoved = 0;
+if useTrack
+    [model, report] = cellModel.removeTrack( ...
+        model, familyId, selectedTrack, 'Fast', true);
+    affectedFrames = report.frames;
+    relationsRemoved = report.relations_removed;
+    for i = 1:numel(report.instance_frames)
+        f = report.instance_frames(i);
+        label = report.mask_labels(i);
+        if f < 1 || f > size(roi.image,4), continue; end
+        M = roi.image(:,:,pix,f);
+        if any(M(:) == label)
+            M(M == label) = 0;
+            roi.image(:,:,pix,f) = M;
+        end
+    end
+    % One normalization, validation and HDF5 write replaces one complete
+    % model normalization per movie frame.
+    roi.saveCellModel(model);
+else
+    % Legacy/unassigned fallback: preserve the historical mask-label
+    % semantics, but synchronize only frames that actually changed.
+    nf = size(roi.image,4);
+    changed = false(1, nf);
+    for f = 1:nf
+        M = roi.image(:,:,pix,f);
+        if any(M(:) == oldLab)
+            M(M == oldLab) = 0;
+            roi.image(:,:,pix,f) = M;
+            changed(f) = true;
+        end
+    end
+    affectedFrames = find(changed);
+    if ~isempty(affectedFrames) && ~isempty(selectedDisplayChannel)
+        score_syncCellModelFrames( ...
+            roi, selectedDisplayChannel, affectedFrames);
     end
 end
-[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
-score_syncCellModelFrames(roi, selectedDisplayChannel, 1:nf);
+
+if ~isempty(affectedFrames) && ~isempty(selectedDisplayChannel)
+    app.notifyAnnotationChanged( ...
+        selectedDisplayChannel, affectedFrames, 'Save', false);
+end
+if relationsRemoved > 0
+    app.notifyAnnotationChanged('parentage', affectedFrames, 'Save', false);
+end
 
 % Clear selection + refresh
 safeClearSelection(app,roi,frm);
 app.KeepSelection = false;
 score_display(app,'fast');
+if useTrack
+    flashStatus(app, sprintf( ...
+        'Track %d deleted on %d frame(s) in %.2f s (unsaved masks)', ...
+        selectedTrack, numel(affectedFrames), toc(started)));
+else
+    flashStatus(app, sprintf( ...
+        'Object label %d deleted on %d frame(s) in %.2f s (unsaved masks)', ...
+        oldLab, numel(affectedFrames), toc(started)));
+end
+clear pointerCleanup
+end
+
+function restoreImagePointer(app)
+try
+    set(app.ImageFigure, 'Pointer', 'arrow');
+catch
+end
 end
 
 function used = getGlobalUsedLabels(roi, pix)

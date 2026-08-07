@@ -8,18 +8,67 @@ if isempty(roiObj), return; end
 ensureDataLoaded(roiObj);
 data = roiObj.data;
 if isempty(data), return; end
+[manifest, storeIndex, found] = manifestFromData(data);
+if found, return; end
+
+% A classifier snapshot may retain other ROI dataseries while its annotation
+% manifest was written later by Score to data_<roi>.mat. In that case the
+% non-empty in-memory cache previously prevented any disk refresh and the ROI
+% incorrectly appeared as Missing. Read only the manifest dataseries from the
+% authoritative ROI data file and merge it into the live cache, preserving
+% any unrelated unsaved dataseries already in memory.
+[diskManifest, diskSeries, foundOnDisk] = manifestFromDisk(roiObj);
+if foundOnDisk
+    manifest = diskManifest;
+    try
+        data(end+1) = diskSeries;
+        roiObj.data = data;
+        storeIndex = numel(data);
+    catch
+        % The summary remains correct even if an unusual legacy dataseries
+        % array cannot accept the cache entry; a later call can reread disk.
+        storeIndex = [];
+    end
+end
+end
+
+function [manifest, storeIndex, found] = manifestFromData(data)
+manifest = emptyManifest();
+storeIndex = [];
+found = false;
 for i = 1:numel(data)
     try
-        if strcmp(char(string(data(i).groupid)), manifestGroupId())
-            storeIndex = i;
-            ud = data(i).userData;
-            if isstruct(ud) && isfield(ud, 'annotationManifest')
-                manifest = normalizeManifest(ud.annotationManifest);
-            end
-            return;
+        if ~strcmp(char(string(data(i).groupid)), manifestGroupId()), continue; end
+        storeIndex = i;
+        found = true;
+        ud = data(i).userData;
+        if isstruct(ud) && isfield(ud, 'annotationManifest')
+            manifest = normalizeManifest(ud.annotationManifest);
         end
+        return;
     catch
     end
+end
+end
+
+function [manifest, series, found] = manifestFromDisk(roiObj)
+manifest = emptyManifest();
+series = dataseries.empty;
+found = false;
+try
+    dataFile = fullfile(char(string(roiObj.path)), ...
+        ['data_' char(string(roiObj.id)) '.mat']);
+    if ~isfile(dataFile), return; end
+    stored = load(dataFile, 'data');
+    if ~isfield(stored, 'data') || isempty(stored.data), return; end
+    [manifest, index, found] = manifestFromData(stored.data);
+    if found
+        series = stored.data(index);
+    end
+catch
+    manifest = emptyManifest();
+    series = dataseries.empty;
+    found = false;
 end
 end
 

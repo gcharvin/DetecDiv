@@ -1520,6 +1520,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
         pixdata     = [];
         [annotationStatus, annotationCoverage, annotationValidation] = ...
             annotationTableValues(app, annotationRows, i);
+        managedAnnotated = ~strcmpi(annotationStatus, 'missing');
+        managedValidated = strcmpi(annotationValidation, 'Valid');
 
         if any(trainingrois == i)
             istrainee = true;
@@ -1605,7 +1607,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
 
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
-                             isannotated, isvalidated, boundsTxt, ...
+                             isannotated || managedAnnotated, ...
+                             isvalidated || managedValidated, boundsTxt, ...
                              annotationStatus, annotationCoverage, annotationValidation};
 
             else
@@ -1646,7 +1649,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
 
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
-                             isannotated, isvalidated, boundsTxt, ...
+                             isannotated || managedAnnotated, ...
+                             isvalidated || managedValidated, boundsTxt, ...
                              annotationStatus, annotationCoverage, annotationValidation};
             end
         end
@@ -1681,6 +1685,63 @@ end
 function session = annotationSessionForClassifier(app, classiObj, roiIndex) %#ok<INUSD>
     ensureAnnotationBackendAvailable(app);
     session = annotationManager.createSession(classiObj, roiIndex);
+end
+
+function attachAnnotationSessionListener(app, session)
+    try
+        if isfield(app.Data, 'annotationSessionListener') && ...
+                ~isempty(app.Data.annotationSessionListener)
+            delete(app.Data.annotationSessionListener);
+        end
+    catch
+    end
+    app.Data.annotationSessionListener = addlistener(session, ...
+        'StateChanged', @(~,~)refreshAnnotationTableRow(app, session));
+end
+
+function refreshAnnotationTableRow(app, session)
+    try
+        if isempty(app) || ~isvalid(app) || isempty(app.UITableData.Data)
+            return;
+        end
+        filterValue = 'All';
+        try, filterValue = char(string(app.AnnotationFilterDropDown.Value)); catch, end
+        if ~strcmpi(filterValue, 'All')
+            displayData(app);
+            return;
+        end
+
+        data = app.UITableData.Data;
+        roiIndices = cellfun(@double, data(:,3));
+        tableRow = find(roiIndices == double(session.RoiIndex), 1);
+        if isempty(tableRow), return; end
+        rows = annotationSummaryRows(app, app.Data.classiObj, ...
+            session.RoiIndex, 'Fast', true);
+        [statusText, coverageText, validationText] = ...
+            annotationTableValues(app, rows, session.RoiIndex);
+        names = string(app.UITableData.ColumnName);
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'Annotation status', statusText);
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'Coverage', coverageText);
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'Validation', validationText);
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'is annotated', ~strcmpi(statusText, 'Missing'));
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'is validated', strcmpi(validationText, 'Valid'));
+        app.UITableData.Data = data;
+        drawnow limitrate nocallbacks;
+    catch ME
+        warning('classifierGUI:AnnotationRowRefresh', ...
+            'Could not refresh ROI annotation row: %s', ME.message);
+    end
+
+end
+
+function data = setAnnotationTableColumn(app, data, names, row, name, value) %#ok<INUSD>
+    column = find(strcmpi(strtrim(names), name), 1);
+    if ~isempty(column), data{row, column} = value; end
 end
 
 function ensureAnnotationBackendAvailable(app) %#ok<INUSD>
@@ -1742,15 +1803,34 @@ function [statusText, coverageText, validationText] = ...
     end
     if isempty(status), status = 'missing'; end
     statusText = [upper(status(1)) lower(status(2:end))];
-    coverageText = compactCoverageText(components, reviewed, total);
+    coverageText = compactCoverageText(app, components, reviewed, total);
+    validationText = activeAnnotationValidationText(app, roiIndex, status);
+end
+
+function text = activeAnnotationValidationText(app, roiIndex, status)
     if strcmpi(status, 'approved')
-        validationText = 'Valid';
-    else
-        validationText = 'Not run';
+        text = 'Valid';
+        return;
+    end
+    text = 'Not run';
+    try
+        if ~isfield(app.Data, 'annotationSession') || ...
+                isempty(app.Data.annotationSession) || ...
+                ~isvalid(app.Data.annotationSession) || ...
+                double(app.Data.annotationSession.RoiIndex) ~= double(roiIndex)
+            return;
+        end
+        switch char(string(app.Data.annotationSession.LastValidationStatus))
+            case 'valid'
+                text = 'Valid';
+            case 'invalid'
+                text = 'Invalid';
+        end
+    catch
     end
 end
 
-function text = compactCoverageText(components, reviewed, total)
+function text = compactCoverageText(app, components, reviewed, total) %#ok<INUSD>
     if isempty(components)
         text = sprintf('%d/%d', reviewed, total);
         return;
@@ -2623,6 +2703,8 @@ end
             try
                 app.Data.annotationSession = annotationSessionForClassifier( ...
                     app, app.Data.classiObj, sel);
+                attachAnnotationSessionListener( ...
+                    app, app.Data.annotationSession);
                 app.Data.classiObj.userTraining('Roi', sel, ...
                     'AnnotationSession', app.Data.annotationSession);
             catch ME
@@ -4389,6 +4471,13 @@ disp('unable to display folder with this OS');
         % Code that executes before app deletion
         function delete(app)
 
+            try
+                if isfield(app.Data, 'annotationSessionListener') && ...
+                        ~isempty(app.Data.annotationSessionListener)
+                    delete(app.Data.annotationSessionListener);
+                end
+            catch
+            end
             % Delete UIFigure when app is deleted
             delete(app.ClassifierUIFigure)
         end
