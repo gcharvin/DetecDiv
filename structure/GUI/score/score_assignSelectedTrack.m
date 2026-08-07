@@ -20,7 +20,7 @@ end
 [model, report] = cellModel.reassignTrack(model, familyId, ...
     roiobj.display.frame, label, newTrackId, scope, 'Fast', true);
 roiobj.cellModel = model;
-app.notifyAnnotationChanged('lineage', report.frames, 'Save', false);
+app.notifyAnnotationChanged('tracking', report.frames, 'Save', false);
 score_updateSelectedObjectFields(app);
 score_display(app, 'fast');
 end

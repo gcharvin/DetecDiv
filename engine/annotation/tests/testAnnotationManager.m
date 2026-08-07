@@ -82,6 +82,79 @@ session.markReviewed('Frames', 1:3);
 verifyTrue(testCase, session.validate().valid);
 end
 
+function testChangedFramesReviewOnlyFrameUnits(testCase)
+r = roi('review', [1 1 2 2]);
+r.image = zeros(2,2,1,3,'uint16');
+r.display.channel = {'mask'};
+spec = annotationManager.newSpec(struct('strid','review'));
+frameComponent = annotationManager.newComponent( ...
+    'id','segmentation','kind','instance_mask','storage','channel', ...
+    'coverageUnit','frame', ...
+    'groundTruth',annotationManager.newAsset('channel','mask'));
+roiComponent = annotationManager.newComponent( ...
+    'id','parentage','kind','lineage','storage','cell_model_family', ...
+    'coverageUnit','roi');
+spec.components = [frameComponent; roiComponent];
+
+annotationManager.markReviewed(r, spec, 'Frames', 1, ...
+    'Components', {'segmentation'}, 'Save', false);
+annotationManager.markReviewed(r, spec, 'Components', {'parentage'}, 'Save', false);
+annotationManager.markChanged(r, spec, 'Frames', 2, ...
+    'Components', {'segmentation','parentage'}, 'Save', false);
+summary = annotationManager.inspect(r, spec, 'CheckAssets', false);
+segmentation = summary.coverage.components(strcmp( ...
+    {summary.coverage.components.id}, 'segmentation'));
+parentage = summary.coverage.components(strcmp( ...
+    {summary.coverage.components.id}, 'parentage'));
+verifyEqual(testCase, segmentation.reviewed, 2);
+verifyEqual(testCase, parentage.reviewed, 0, ...
+    'Editing one relation must require a later explicit ROI confirmation.');
+end
+
+function testLegacyLineageCoverageMigration(testCase)
+r = roi('migration', [1 1 2 2]);
+r.image = zeros(2,2,1,3,'uint16');
+r.display.channel = {'mask'};
+
+classifier = struct('strid', 'migration');
+oldSpec = annotationManager.newSpec(classifier);
+oldMask = annotationManager.newComponent( ...
+    'id','tracked_mask','kind','tracked_instances','storage','channel', ...
+    'coverageUnit','frame');
+oldLineage = annotationManager.newComponent( ...
+    'id','lineage','kind','lineage','storage','cell_model_family', ...
+    'coverageUnit','roi');
+oldSpec.components = [oldMask; oldLineage];
+
+newSpec = annotationManager.newSpec(classifier);
+tracking = annotationManager.newComponent( ...
+    'id','tracking','kind','tracking','storage','cell_model_family', ...
+    'coverageUnit','frame');
+parentage = annotationManager.newComponent( ...
+    'id','parentage','kind','lineage','storage','cell_model_family', ...
+    'coverageUnit','roi');
+newSpec.components = [oldMask; tracking; parentage];
+
+legacy = annotationManager.newEntry(oldSpec, 3);
+legacy.status = 'approved';
+legacy.review(1).frames(:) = true;
+legacy.review(1).complete = true;
+legacy.review(2).complete = true;
+annotationManager.setEntry(r, oldSpec, legacy, 'Save', false);
+[migrated, found] = annotationManager.entryForSpec(r, newSpec);
+verifyTrue(testCase, found);
+verifyTrue(testCase, all(migrated.review(1).frames));
+verifyTrue(testCase, all(migrated.review(2).frames));
+verifyTrue(testCase, migrated.review(3).complete);
+
+legacy.status = 'draft';
+annotationManager.setEntry(r, oldSpec, legacy, 'Save', false);
+migrated = annotationManager.entryForSpec(r, newSpec);
+verifyTrue(testCase, all(migrated.review(1).frames));
+verifyFalse(testCase, any(migrated.review(2).frames));
+verifyFalse(testCase, migrated.review(3).complete);
+end
+
 function testFrameLabelBootstrap(testCase)
 folder = freshFolder(testCase);
 c = classi(folder, 'labels', 1);
@@ -146,6 +219,8 @@ c.roi = r;
 
 session = c.annotationSession(1);
 summary = session.summary();
+verifyEqual(testCase, {session.Spec.components.id}, ...
+    {'tracked_mask','tracking','parentage'});
 maskState = summary.components(strcmp({summary.components.id}, 'tracked_mask'));
 verifyEqual(testCase, maskState.predictionName, 'results_cellposeSAM_cell', ...
     'The stored family provider must take precedence over raw classifier inputs.');
@@ -172,8 +247,31 @@ verifyEqual(testCase, c.trainingParam.groundTruthFamily, ...
     'latent_1 reviewed GT');
 verifyEqual(testCase, c.trainingParam.trackChannelName, 'latent_1_cell');
 
-session.markReviewed('Frames', 1:3, 'Components', {'tracked_mask'});
-session.markReviewed('Components', {'lineage'});
+quickTracking = session.quickValidate('Frames', 1:3, ...
+    'Components', {'tracking'});
+verifyTrue(testCase, quickTracking.valid, ...
+    strjoin(cellstr(quickTracking.errors), ' '));
+quickParentage = session.quickValidate('Components', {'parentage'});
+verifyTrue(testCase, quickParentage.valid, ...
+    strjoin(cellstr(quickParentage.errors), ' '));
+
+validModel = model;
+gtRelation = find(model.relations.family_id == gtId, 1, 'first');
+model.relations.child_track_id(gtRelation) = uint64(999);
+r.saveCellModel(model);
+quickParentage = session.quickValidate('Components', {'parentage'});
+verifyFalse(testCase, quickParentage.valid);
+verifyTrue(testCase, any(contains(quickParentage.errors, ...
+    'do not exist: 999')));
+invalidParentage = session.validate('RequireReviewed', false);
+verifyFalse(testCase, invalidParentage.valid);
+verifyTrue(testCase, any(contains(invalidParentage.errors, ...
+    'do not exist: 999')));
+r.saveCellModel(validModel);
+
+session.markReviewed('Frames', 1:3, ...
+    'Components', {'tracked_mask','tracking'});
+session.markReviewed('Components', {'parentage'});
 verifyTrue(testCase, session.validate().valid);
 
 gtIdx = r.findChannelID('latent_1_cell');
@@ -198,6 +296,93 @@ verifyEqual(testCase, rows.status, 'draft');
 verifyEqual(testCase, rows.supportsBootstrap, true);
 rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
 verifyEqual(testCase, rows.status, 'draft');
+end
+
+function testInitializeFromExistingFamilyCanBlankParentage(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'latent_existing', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 4, 4, 3);
+masks = zeros(4,4,1,3, 'uint16');
+masks(1:2,1:2,1,:) = 1;
+masks(3:4,3:4,1,2:3) = 2;
+r.addChannel(masks, 'existing_tracks', [1 1 1], [0 0 0]);
+r.save([], false);
+edge = struct('status', 'linked', 'pred_parent_id', 1, ...
+    'child_track_id', 2, 'bud_appearance_frame', 2, 'top_score', 0.9);
+model = cellModel.create(r.id);
+[model, ~, ~] = cellModel.applyLineageResult(model, squeeze(masks(:,:,1,:)), ...
+    'existing_tracks', '', 'Imported tracking', struct('edges', edge), ...
+    true, 'import');
+r.saveCellModel(model);
+c.roi = r;
+
+session = c.annotationSession(1);
+catalog = session.initializationCatalog();
+verifyTrue(testCase, any(strcmp({catalog.families.name}, 'Imported tracking')));
+family = catalog.families(strcmp({catalog.families.name}, 'Imported tracking'));
+verifyEqual(testCase, family.trackCount, 2);
+verifyEqual(testCase, family.relationCount, 1);
+
+recipe = struct('mode', 'family', 'family', 'Imported tracking', ...
+    'channel', '', 'copyParentage', false);
+report = session.initialize(recipe);
+verifyEqual(testCase, report.entry.source_type, 'existing_family');
+verifyTrue(testCase, contains(report.entry.source_id, 'blank parentage'));
+[model, ~] = r.loadCellModel();
+[sourceIndex, sourceId] = cellModel.familyIndex(model, 'Imported tracking');
+[targetIndex, targetId] = cellModel.familyIndex(model, ...
+    'latent_existing_1 reviewed GT');
+verifyNotEmpty(testCase, sourceIndex);
+verifyNotEmpty(testCase, targetIndex);
+verifyEqual(testCase, nnz(model.instances.family_id == targetId), ...
+    nnz(model.instances.family_id == sourceId));
+verifyEqual(testCase, nnz(model.relations.family_id == targetId), 0);
+end
+
+function testInitializeFromMaskCreatesEmptyTrackingFamily(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'latent_mask', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Absent prediction');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 4, 4, 3);
+masks = zeros(4,4,1,3, 'uint16');
+masks(2:3,2:3,1,:) = 7;
+r.addChannel(masks, 'imported_mask', [1 1 1], [0 0 0]);
+r.save([], false);
+c.roi = r;
+
+session = c.annotationSession(1);
+catalog = session.initializationCatalog();
+verifyFalse(testCase, catalog.prediction.available);
+verifyTrue(testCase, catalog.supports.mask);
+recipe = struct('mode', 'mask', 'family', '', ...
+    'channel', 'imported_mask', 'copyParentage', false);
+report = session.initialize(recipe);
+verifyEqual(testCase, report.entry.source_type, 'existing_mask');
+verifyTrue(testCase, contains(report.entry.source_id, 'tracks: blank'));
+targetChannel = 'latent_mask_1_cell';
+verifyEqual(testCase, r.image(:,:,r.findChannelID(targetChannel),:), masks);
+[model, ~] = r.loadCellModel();
+[targetIndex, targetId] = cellModel.familyIndex(model, ...
+    'latent_mask_1 reviewed GT');
+verifyNotEmpty(testCase, targetIndex);
+verifyEqual(testCase, model.families.mask_provider{targetIndex}, targetChannel);
+verifyEqual(testCase, nnz(model.instances.family_id == targetId), 0);
+verifyEqual(testCase, nnz(model.relations.family_id == targetId), 0);
 end
 
 function [roiFolder, c, r] = maskFixture(testCase)

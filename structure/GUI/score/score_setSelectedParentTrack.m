@@ -23,7 +23,7 @@ end
 [model, report] = cellModel.setParentTrack(model, familyId, ...
     roiobj.display.frame, instance.track_id, parentTrackId, 'Fast', true);
 roiobj.cellModel = model;
-app.notifyAnnotationChanged('lineage', double(roiobj.display.frame), 'Save', false);
+app.notifyAnnotationChanged('parentage', double(roiobj.display.frame), 'Save', false);
 score_updateSelectedObjectFields(app);
 score_display(app, 'fast');
 end

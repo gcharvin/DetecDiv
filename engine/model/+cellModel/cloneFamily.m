@@ -5,6 +5,7 @@ function [model, targetFamilyId, report] = cloneFamily( ...
 p = inputParser;
 p.addParameter('Overwrite', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('LineageSource', 'ground_truth', @(x) ischar(x) || isstring(x));
+p.addParameter('CopyRelations', true, @(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 model = cellModel.normalize(model);
@@ -52,6 +53,9 @@ newInstances.object_id = newObjectStart + uint64((0:numel(sourceInstances)-1)');
 model.instances = appendRows(model.instances, newInstances);
 
 sourceRelations = find(model.relations.family_id == sourceFamilyId);
+if ~p.Results.CopyRelations
+    sourceRelations = zeros(0,1);
+end
 newRelationStart = max([model.relations.relation_id; uint64(0)]) + uint64(1);
 newRelations = subsetRows(model.relations, sourceRelations);
 newRelations.family_id(:) = targetFamilyId;

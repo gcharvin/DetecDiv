@@ -128,7 +128,7 @@ if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
             end
         end
         refreshLineageAfterEdit(app, roi, frm);
-        app.notifyAnnotationChanged('lineage', frm, 'Save', false);
+        app.notifyAnnotationChanged('parentage', frm, 'Save', false);
         catch ME
             flashStatus(app, ['Parent assignment failed: ' ME.message]);
             errordlg(ME.message, 'Assign parent track');
@@ -156,7 +156,7 @@ if strcmp(seltype,'open')
 end
 
 %% --- Déselection si clic gauche en dehors de la bbox (mais dans l'image) ---
-if strcmp(seltype,'normal') & isgraphics(app.SelectedObjectRectangle)
+if strcmp(seltype,'normal') && visibleSelectionRectangle(app)
     bb = app.SelectedObjectRectangle.Position;
     inBox = pointInBBox(xinit, yinit, bb);
     if ~inBox
@@ -175,6 +175,7 @@ if exist('iptPointerManager','file')==2, iptPointerManager(src,'disable'); end
 
 paintValue_locked = [];
 paintColor_locked = [];
+selectedTrack_locked = NaN;
 hasPainted = false;
 dragThreshold = 4; % Screen pixels; ignore jitter during a click/double-click.
 try
@@ -256,7 +257,14 @@ if isempty(paintValue_locked)
         if currentMask(yinit,xinit)==0
             % NOUVELLE RÈGLE : si un objet est sélectionné (même absent ici)
             % et qu'on peint sur le même canal, réutiliser son ID.
-            if hasSelectedObject(app, roi) && app.SelectedObjectChannelIdx == channelIdx
+            [trackMaskLabel, selectedTrack] = ...
+                score_prepareSelectedTrackPaint(app, roi, fullChannelName, ...
+                channelIdx, pix, frm);
+            if isfinite(trackMaskLabel) && isfinite(selectedTrack)
+                paintValue_locked = trackMaskLabel;
+                selectedTrack_locked = selectedTrack;
+            elseif hasSelectedObject(app, roi) && ...
+                    app.SelectedObjectChannelIdx == channelIdx
                 paintValue_locked = app.SelectedObjectLabelCell;
             else
                 paintValue_locked = nextGlobalFreeLabel(roi, pix);  % fallback global
@@ -315,10 +323,15 @@ end
         return;
     end
 
+    paintedLabel = paintValue_locked;
     paintValue_locked = [];
     paintColor_locked = [];
     try
         score_syncCellModelFrame(roi, fullChannelName, frm, 'Save', false);
+        if isfinite(selectedTrack_locked) && isfinite(paintedLabel) && paintedLabel > 0
+            score_applySelectedTrackPaint(app, roi, fullChannelName, ...
+                frm, paintedLabel, selectedTrack_locked);
+        end
         score_updateSelectedObjectFields(app);
         app.notifyAnnotationChanged(fullChannelName, frm, 'Save', false);
     catch ME
@@ -341,6 +354,16 @@ end
 function tf = pointInBBox(x, y, bb)
 % bb = [x y w h]
 tf = x>=bb(1) && x<=bb(1)+bb(3) && y>=bb(2) && y<=bb(2)+bb(4);
+end
+
+function tf = visibleSelectionRectangle(app)
+tf = false;
+try
+    tf = ~isempty(app.SelectedObjectRectangle) && ...
+        isgraphics(app.SelectedObjectRectangle) && ...
+        strcmpi(char(string(app.SelectedObjectRectangle.Visible)), 'on');
+catch
+end
 end
 
 function safeClearSelection(app,roi,frm)

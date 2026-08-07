@@ -11,6 +11,7 @@ roiIndices = roiIndices(isfinite(roiIndices) & roiIndices >= 1 & ...
 spec = annotationManager.specForClassifier(classif);
 template = struct('roiIndex', 0, 'roiId', '', 'status', 'missing', ...
     'coverage', 0, 'reviewed', 0, 'total', 0, 'legacy', false, ...
+    'coverageComponents', struct([]), ...
     'supportsBootstrap', spec.supportsBootstrap);
 rows = repmat(template, numel(roiIndices), 1);
 for i = 1:numel(roiIndices)
@@ -23,6 +24,7 @@ for i = 1:numel(roiIndices)
     rows(i).coverage = summary.coverage.fraction;
     rows(i).reviewed = summary.coverage.reviewed;
     rows(i).total = summary.coverage.total;
+    rows(i).coverageComponents = summary.coverage.components;
     rows(i).legacy = summary.legacy;
 end
 end

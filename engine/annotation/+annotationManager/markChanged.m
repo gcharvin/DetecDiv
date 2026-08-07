@@ -1,25 +1,47 @@
 function entry = markChanged(roiObj, spec, varargin)
-%ANNOTATIONMANAGER.MARKCHANGED Invalidate approval and mark edited units reviewed.
+%ANNOTATIONMANAGER.MARKCHANGED Invalidate approval and review edited frames.
+% ROI-level review is deliberately cleared by an edit: changing one parent
+% relation is not evidence that the complete ROI parentage was reviewed.
 
-saveFlag = true;
-for i = 1:2:numel(varargin)
-    if ischar(varargin{i}) || isstring(varargin{i})
-        if strcmpi(char(string(varargin{i})), 'Save') && i < numel(varargin)
-            saveFlag = logical(varargin{i+1});
-        end
+p = inputParser;
+p.addParameter('Frames', [], @isnumeric);
+p.addParameter('Components', {}, @(x) ischar(x) || isstring(x) || iscell(x));
+p.addParameter('Save', true, @(x) islogical(x) && isscalar(x));
+p.parse(varargin{:});
+
+[entry, ~] = annotationManager.entryForSpec(roiObj, spec);
+componentIds = normalizeIds(p.Results.Components, spec);
+frames = normalizeFrames(p.Results.Frames, annotationManager.frameCount(roiObj));
+for i = 1:numel(entry.review)
+    if ~any(strcmp(componentIds, entry.review(i).component_id)), continue; end
+    if strcmp(entry.review(i).unit, 'roi')
+        entry.review(i).complete = false;
+    else
+        selectedFrames = frames;
+        if isempty(selectedFrames), selectedFrames = 1:numel(entry.review(i).frames); end
+        entry.review(i).frames(selectedFrames) = true;
+        entry.review(i).complete = all(entry.review(i).frames);
     end
 end
-args = varargin;
-saveIdx = find(cellfun(@(x) (ischar(x) || isstring(x)) && ...
-    strcmpi(char(string(x)), 'Save'), args), 1, 'first');
-if isempty(saveIdx)
-    args = [args {'Save', false}];
-else
-    args{saveIdx+1} = false;
-end
-entry = annotationManager.markReviewed(roiObj, spec, args{:});
 entry.status = 'draft';
 entry.approved_at = '';
 entry.approved_hash = '';
-entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', saveFlag);
+entry.revision = uint32(double(entry.revision) + 1);
+entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', p.Results.Save);
+end
+
+function ids = normalizeIds(value, spec)
+if isempty(value)
+    ids = {spec.components.id};
+elseif ischar(value) || isstring(value)
+    ids = cellstr(string(value));
+else
+    ids = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+end
+end
+
+function frames = normalizeFrames(value, total)
+if isempty(value), frames = []; return; end
+frames = unique(round(double(value(:)')), 'stable');
+frames = frames(isfinite(frames) & frames >= 1 & frames <= total);
 end

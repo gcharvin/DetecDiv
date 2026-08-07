@@ -92,20 +92,28 @@ switch char(string(component.storage))
         end
     case 'cell_model_family'
         [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
-        validation = cellModel.validate(model);
-        if ~validation.ok
-            error('Cell model is invalid: %s', strjoin(validation.errors, '; '));
-        end
         [idx, ~] = cellModel.familyIndex(model, component.groundTruth.family);
+        if isempty(idx), error('Ground-truth object family is missing.'); end
         expected = char(string(component.groundTruth.maskProvider));
-        if ~isempty(expected) && ~strcmp(char(string(model.families.mask_provider{idx})), expected)
-            error('Object family uses mask provider "%s" instead of "%s".', ...
-                model.families.mask_provider{idx}, expected);
-        end
-        if ~isempty(expected)
-            validateFamilyMaskLabels(roiObj, model, ...
-                model.families.family_id(idx), expected, ...
-                model.families.name{idx});
+        if strcmp(component.kind, 'lineage')
+            annotationManager.validateParentage(model, ...
+                model.families.family_id(idx), 'Throw', true);
+        else
+            validation = cellModel.validate(model);
+            if ~validation.ok
+                error('Cell model is invalid: %s', ...
+                    strjoin(validation.errors, '; '));
+            end
+            if ~isempty(expected) && ~strcmp( ...
+                    char(string(model.families.mask_provider{idx})), expected)
+                error('Object family uses mask provider "%s" instead of "%s".', ...
+                    model.families.mask_provider{idx}, expected);
+            end
+            if ~isempty(expected)
+                validateFamilyMaskLabels(roiObj, model, ...
+                    model.families.family_id(idx), expected, ...
+                    model.families.name{idx});
+            end
         end
 end
 end

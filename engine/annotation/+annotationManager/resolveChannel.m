@@ -4,7 +4,7 @@ function [channelName, exists] = resolveChannel(roiObj, asset)
 channelName = '';
 exists = false;
 candidates = normalizeCandidates(asset);
-available = availableChannels(roiObj);
+available = annotationManager.availableChannels(roiObj);
 
 familyName = '';
 if isstruct(asset) && isfield(asset, 'family')
@@ -61,31 +61,4 @@ if isfield(asset, 'channelCandidates') && ~isempty(asset.channelCandidates)
     end
 end
 values = unique(values, 'stable');
-end
-
-function names = availableChannels(roiObj)
-names = {};
-try
-    raw = roiObj.display.channel;
-    if ischar(raw) || isstring(raw)
-        names = cellstr(string(raw));
-    elseif iscell(raw)
-        names = cellfun(@(x) char(string(x)), raw, 'UniformOutput', false);
-    end
-catch
-end
-try
-    h5File = fullfile(char(string(roiObj.path)), ...
-        ['im_' char(string(roiObj.id)) '.h5']);
-    if ~isfile(h5File), return; end
-    info = h5info(h5File);
-    for i = 1:numel(info.Datasets)
-        path = ['/' info.Datasets(i).Name];
-        value = info.Datasets(i).Name;
-        try, value = h5readatt(h5File, path, 'channel_name'); catch, end
-        value = char(string(value));
-        if ~any(strcmpi(names, value)), names{end+1} = value; end %#ok<AGROW>
-    end
-catch
-end
 end

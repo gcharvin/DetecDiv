@@ -134,6 +134,8 @@ classdef score < matlab.apps.AppBase
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
+        MarkThroughCurrentButton         matlab.ui.control.Button
+        ReviewWhileNavigatingCheckBox    matlab.ui.control.CheckBox
         LineageLinkWidthEditFieldLabel   matlab.ui.control.Label
         LineageLinkWidthEditField        matlab.ui.control.NumericEditField
         MovieeventmarkersEditFieldLabel  matlab.ui.control.Label
@@ -223,6 +225,9 @@ classdef score < matlab.apps.AppBase
         AnnotationSession = []
         AnnotationDisplayPreset = struct()
         AnnotationLastValidationValid logical = false
+        AnnotationQuickValidationState char = 'idle'
+        AnnotationQuickValidationMessage char = ''
+        AnnotationReviewDirty logical = false
     end
 
     properties (Access = private)
@@ -524,73 +529,12 @@ classdef score < matlab.apps.AppBase
             app.copyROIDataPreset(sourceROI, targetROI);
         end
 
-        function copyROIChannelPreset(app, sourceROI, targetROI)
+        function copyROIChannelPreset(~, sourceROI, targetROI)
             try
-                if ~isprop(sourceROI, 'display') || ~isstruct(sourceROI.display) || ...
-                        ~isprop(targetROI, 'display') || ~isstruct(targetROI.display) || ...
-                        ~isfield(sourceROI.display, 'channel') || ~isfield(targetROI.display, 'channel')
-                    return;
-                end
-
-                sourceNames = cellstr(string(sourceROI.display.channel(:)));
-                targetNames = cellstr(string(targetROI.display.channel(:)));
-                matchedTarget = false(1, numel(targetNames));
-                fields = {'intensity', 'rgb', 'displaylim', 'selectedchannel', 'indexed', ...
-                    'alpha', 'contour', 'log', 'scale', 'width', 'colorMode', 'colormapName'};
-
-                for i = 1:numel(sourceNames)
-                    idx = find(strcmp(targetNames, sourceNames{i}), 1, 'first');
-                    if isempty(idx)
-                        continue;
-                    end
-                    matchedTarget(idx) = true;
-                    for f = 1:numel(fields)
-                        fieldName = fields{f};
-                        if ~isfield(sourceROI.display, fieldName) || ~isfield(targetROI.display, fieldName)
-                            continue;
-                        end
-                        targetROI.display = app.copyDisplayFieldValue( ...
-                            sourceROI.display, targetROI.display, fieldName, i, idx);
-                    end
-                end
-
-                if any(matchedTarget) && isfield(targetROI.display, 'selectedchannel')
-                    sel = false(1, numel(targetNames));
-                    for i = 1:numel(sourceNames)
-                        idx = find(strcmp(targetNames, sourceNames{i}), 1, 'first');
-                        if ~isempty(idx) && isfield(sourceROI.display, 'selectedchannel') && ...
-                                numel(sourceROI.display.selectedchannel) >= i
-                            sel(idx) = logical(sourceROI.display.selectedchannel(i));
-                        end
-                    end
-                    targetROI.display.selectedchannel = sel;
-                end
+                score_copyROIChannelPreset(sourceROI, targetROI);
             catch ME
                 warning('Score:CopyROIPreset:Channels', ...
                     'Could not copy ROI channel display preset: %s', ME.message);
-            end
-        end
-
-        function targetDisplay = copyDisplayFieldValue(app, sourceDisplay, targetDisplay, fieldName, sourceIdx, targetIdx) %#ok<INUSL>
-            value = sourceDisplay.(fieldName);
-            if isempty(value)
-                return;
-            end
-
-            if isnumeric(value) || islogical(value)
-                if ismatrix(value) && size(value, 2) >= sourceIdx && size(targetDisplay.(fieldName), 2) >= targetIdx
-                    targetDisplay.(fieldName)(:, targetIdx) = value(:, sourceIdx);
-                elseif numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
-                    targetDisplay.(fieldName)(targetIdx) = value(sourceIdx);
-                end
-            elseif iscell(value)
-                if numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
-                    targetDisplay.(fieldName){targetIdx} = value{sourceIdx};
-                end
-            elseif isstring(value)
-                if numel(value) >= sourceIdx && numel(targetDisplay.(fieldName)) >= targetIdx
-                    targetDisplay.(fieldName)(targetIdx) = value(sourceIdx);
-                end
             end
         end
 
@@ -1833,6 +1777,9 @@ end
                 app.AnnotationSession = [];
                 app.AnnotationDisplayPreset = struct();
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationQuickValidationState = 'idle';
+                app.AnnotationQuickValidationMessage = '';
+                app.AnnotationReviewDirty = false;
                 app.setManagedAnnotationLayout(false);
                 return;
             end
@@ -1844,6 +1791,9 @@ end
             session.refresh();
             app.AnnotationSession = session;
             app.AnnotationLastValidationValid = false;
+            app.AnnotationQuickValidationState = 'idle';
+            app.AnnotationQuickValidationMessage = '';
+            app.AnnotationReviewDirty = false;
             context = session.uiContext();
             app.AnnotationDisplayPreset = context.displayPreset;
 
@@ -1891,6 +1841,18 @@ end
                 app.AnnotationSession.markChanged( ...
                     'Components', ids, 'Frames', frames, varargin{:});
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationReviewDirty = true;
+                quickReport = app.AnnotationSession.quickValidate( ...
+                    'Components', ids, 'Frames', frames);
+                if quickReport.valid
+                    app.AnnotationQuickValidationState = 'valid';
+                    app.AnnotationQuickValidationMessage = ...
+                        'Edited content passed lightweight checks.';
+                else
+                    app.AnnotationQuickValidationState = 'invalid';
+                    app.AnnotationQuickValidationMessage = char(strjoin( ...
+                        cellstr(quickReport.errors), newline));
+                end
                 app.refreshAnnotationSessionUI();
             catch ME
                 warning('score:AnnotationChangeTracking', ...
@@ -1923,23 +1885,40 @@ end
                 context.displayName, context.roiId);
             statusText = char(string(context.status));
             if isempty(statusText), statusText = 'missing'; end
-            app.AnnotationStatusLabel.Text = sprintf('Status: %s', upper(statusText));
-            app.AnnotationCoverageLabel.Text = sprintf('Coverage: %d / %d (%.0f%%)', ...
-                summary.coverage.reviewed, summary.coverage.total, ...
-                100 * summary.coverage.fraction);
+            quickSuffix = '';
+            if strcmp(app.AnnotationQuickValidationState, 'valid')
+                quickSuffix = '  |  checks OK';
+            elseif strcmp(app.AnnotationQuickValidationState, 'invalid')
+                quickSuffix = '  |  check issue';
+            end
+            app.AnnotationStatusLabel.Text = sprintf('Status: %s%s', ...
+                upper(statusText), quickSuffix);
+            app.AnnotationStatusLabel.Tooltip = app.AnnotationQuickValidationMessage;
+            coverageText = app.annotationCoverageText(summary.coverage.components);
+            sourceText = '';
+            try, sourceText = char(string(summary.entry.source_id)); catch, end
+            if isempty(sourceText)
+                app.AnnotationCoverageLabel.Text = coverageText;
+                app.AnnotationCoverageLabel.Tooltip = '';
+            else
+                app.AnnotationCoverageLabel.Text = sprintf('%s\nSource: %s', ...
+                    coverageText, sourceText);
+                app.AnnotationCoverageLabel.Tooltip = sourceText;
+            end
 
             required = [summary.components.required];
             predictions = [summary.components.predictionExists];
             if isempty(required), required = true(size(predictions)); end
-            canBootstrap = context.supportsBootstrap && ...
-                any(required) && all(predictions(required));
             hasPrediction = any(predictions);
             hasDraft = any(strcmp(statusText, {'draft','approved'}));
             isDraft = strcmp(statusText, 'draft');
 
-            app.CreateFromPredictionButton.Enable = app.onOff(canBootstrap);
+            app.CreateFromPredictionButton.Enable = 'on';
             app.StartBlankGTButton.Enable = 'on';
+            app.StartBlankGTButton.Visible = 'off';
             app.MarkFrameReviewedButton.Enable = app.onOff(hasDraft);
+            app.MarkThroughCurrentButton.Enable = app.onOff(hasDraft);
+            app.ReviewWhileNavigatingCheckBox.Enable = app.onOff(hasDraft);
             coverageComponents = summary.coverage.components;
             requiredIds = string({app.AnnotationSession.Spec.components( ...
                 [app.AnnotationSession.Spec.components.required]).id});
@@ -2105,7 +2084,8 @@ end
                     app.DisplaySettings.panels.AnnotationPanel = 'on';
                 catch
                 end
-                app.UIAnnotationTable.Position = [13 517 589 162];
+                app.UIAnnotationTable.Position = [13 490 589 175];
+                app.StartBlankGTButton.Visible = 'off';
                 for i = 1:numel(genericButtons)
                     app.(genericButtons{i}).Visible = 'off';
                 end
@@ -2168,14 +2148,98 @@ end
                             [char(string(component.groundTruth.groupId)) '.' ...
                              char(string(component.groundTruth.valueField))]}]; %#ok<AGROW>
                     case 'cell_model_family'
-                        candidates = [candidates, {'lineage', ...
-                            char(string(component.groundTruth.family))}]; %#ok<AGROW>
+                        candidates{end+1} = char(string(component.groundTruth.family)); %#ok<AGROW>
+                        if strcmp(component.kind, 'tracking')
+                            candidates = [candidates, { ...
+                                char(string(component.groundTruth.maskProvider)), ...
+                                'tracking','track','track_identity'}]; %#ok<AGROW>
+                        elseif strcmp(component.kind, 'lineage')
+                            candidates = [candidates, {'lineage','parentage','parent'}]; %#ok<AGROW>
+                        end
                 end
                 if any(strcmpi(source, candidates))
                     ids{end+1} = char(string(component.id)); %#ok<AGROW>
                 end
             end
             ids = unique(ids, 'stable');
+        end
+
+        function ids = annotationFrameComponentIds(app)
+            ids = {};
+            if isempty(app.AnnotationSession), return; end
+            components = app.AnnotationSession.Spec.components;
+            keep = [components.required] & strcmp({components.coverageUnit}, 'frame');
+            ids = {components(keep).id};
+        end
+
+        function text = annotationCoverageText(~, components)
+            lines = strings(0,1);
+            for i = 1:numel(components)
+                id = char(string(components(i).id));
+                switch id
+                    case {'tracked_mask','instances','semantic_mask','mask'}
+                        label = 'Segmentation';
+                    case {'tracking','tracklets'}
+                        label = 'Tracking';
+                    case {'parentage','lineage'}
+                        label = 'Parentage';
+                    otherwise
+                        label = strrep(id, '_', ' ');
+                        if ~isempty(label), label(1) = upper(label(1)); end
+                end
+                lines(end+1,1) = sprintf('%s: %d/%d', label, ...
+                    components(i).reviewed, components(i).total); %#ok<AGROW>
+            end
+            text = char(strjoin(lines, newline));
+        end
+
+        function reviewFrameBeforeNavigation(app, frame, newFrame)
+            if frame == newFrame || isempty(app.AnnotationSession) || ...
+                    ~isvalid(app.AnnotationSession)
+                return;
+            end
+            if app.reviewWhileNavigatingEnabled() == false
+                return;
+            end
+            ids = app.annotationFrameComponentIds();
+            if isempty(ids), return; end
+            app.AnnotationSession.markReviewed('Frames', frame, ...
+                'Components', ids, 'Save', false);
+            app.AnnotationReviewDirty = true;
+            app.AnnotationLastValidationValid = false;
+            app.refreshAnnotationSessionUI();
+        end
+
+        function tf = reviewWhileNavigatingEnabled(app)
+            % Old live Score instances may predate this UI component. A
+            % stale/partially rebuilt control must never break navigation.
+            tf = false;
+            try
+                control = app.ReviewWhileNavigatingCheckBox;
+                if isempty(control) || ~isgraphics(control)
+                    return;
+                end
+                value = control.Value;
+                if (islogical(value) || isnumeric(value)) && isscalar(value)
+                    tf = logical(value);
+                end
+            catch
+                tf = false;
+            end
+        end
+
+        function flushAnnotationReview(app)
+            if ~app.AnnotationReviewDirty || isempty(app.AnnotationSession) || ...
+                    ~isvalid(app.AnnotationSession)
+                return;
+            end
+            try
+                app.AnnotationSession.Roi.save('data', false);
+                app.AnnotationReviewDirty = false;
+            catch ME
+                warning('score:AnnotationReviewSave', ...
+                    'Could not save annotation review metadata: %s', ME.message);
+            end
         end
 
         function name = annotationTableChannelName(app, row)
@@ -4207,19 +4271,33 @@ end
             if isempty(app.AnnotationSession), return; end
             summary = app.AnnotationSession.summary();
             overwrite = any([summary.components.groundTruthExists]);
-            if overwrite && ~app.confirmAnnotationOverwrite( ...
-                    'Replace the current GT with the model prediction?')
+            try
+                catalog = app.AnnotationSession.initializationCatalog();
+                if isempty(event)
+                    recipe = catalog.defaultRecipe;
+                    accepted = true;
+                else
+                    [recipe, accepted] = annotationInitializationDialog( ...
+                        app.ScoreAppUIFigure, catalog, ...
+                        'HasExistingGT', overwrite, 'RoiCount', 1);
+                end
+                if ~accepted, return; end
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, ...
+                    'Initialize ground truth');
                 return;
             end
             try
-                app.AnnotationSession.bootstrap('Overwrite', overwrite);
+                app.AnnotationSession.initialize(recipe, 'Overwrite', overwrite);
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationQuickValidationState = 'idle';
+                app.AnnotationQuickValidationMessage = '';
                 app.replaceAnnotationSessionROI();
                 app.refreshAnnotationSessionUI();
                 app.applyAnnotationDisplayPreset();
             catch ME
                 uialert(app.ScoreAppUIFigure, ME.message, ...
-                    'Create GT from prediction');
+                    'Initialize ground truth');
             end
         end
 
@@ -4234,6 +4312,8 @@ end
             try
                 app.AnnotationSession.startBlank('Overwrite', overwrite);
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationQuickValidationState = 'idle';
+                app.AnnotationQuickValidationMessage = '';
                 app.replaceAnnotationSessionROI();
                 app.refreshAnnotationSessionUI();
                 app.applyAnnotationDisplayPreset();
@@ -4294,6 +4374,7 @@ end
                         'Components', frameComponents);
                 end
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationReviewDirty = false;
                 app.refreshAnnotationSessionUI();
                 if ~markEntireRoi && ~(framesComplete && roiIncomplete)
                     frame = app.nextIncompleteAnnotationFrame();
@@ -4306,6 +4387,32 @@ end
             end
         end
 
+        function MarkThroughCurrentButtonPushed(app, event) %#ok<INUSD>
+            if isempty(app.AnnotationSession), return; end
+            roi = app.getSelectedROI();
+            if isempty(roi), return; end
+            frame = round(double(roi.display.frame));
+            ids = app.annotationFrameComponentIds();
+            if isempty(ids), return; end
+            choice = uiconfirm(app.ScoreAppUIFigure, sprintf( ...
+                ['Confirm that frames 1 through %d were reviewed for all ' ...
+                 'frame-level GT components?'], frame), ...
+                'Review through current frame', ...
+                'Options', {'Confirm 1 -> current','Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 2);
+            if strcmp(choice, 'Cancel'), return; end
+            try
+                app.AnnotationSession.markReviewed('Frames', 1:frame, ...
+                    'Components', ids, 'Save', false);
+                app.AnnotationReviewDirty = true;
+                app.AnnotationLastValidationValid = false;
+                app.refreshAnnotationSessionUI();
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, ...
+                    'Review through current frame');
+            end
+        end
+
         function NextIncompleteButtonPushed(app, event) %#ok<INUSD>
             frame = app.nextIncompleteAnnotationFrame();
             if isempty(frame), return; end
@@ -4315,6 +4422,7 @@ end
         function showAnnotationFrame(app, frame)
             roi = app.getSelectedROI();
             if isempty(roi), return; end
+            app.reviewFrameBeforeNavigation(roi.display.frame, frame);
             roi.display.frame = frame;
             app.FrameSlider.Value = frame;
             app.FrameEditField.Value = frame;
@@ -4328,6 +4436,8 @@ end
                 report = app.AnnotationSession.validate();
                 app.AnnotationLastValidationValid = logical(report.valid);
                 if report.valid
+                    app.AnnotationQuickValidationState = 'valid';
+                    app.AnnotationQuickValidationMessage = 'Full validation passed.';
                     message = 'GT is valid and can be approved.';
                     titleText = 'Annotation valid';
                     icon = 'success';
@@ -4336,6 +4446,9 @@ end
                             strjoin(cellstr(report.warnings), '\n'));
                     end
                 else
+                    app.AnnotationQuickValidationState = 'invalid';
+                    app.AnnotationQuickValidationMessage = char(strjoin( ...
+                        cellstr(report.errors), newline));
                     message = sprintf('Validation failed:\n%s', ...
                         strjoin(cellstr(report.errors), '\n'));
                     titleText = 'Annotation validation';
@@ -4355,6 +4468,7 @@ end
             try
                 app.AnnotationSession.approve();
                 app.AnnotationLastValidationValid = false;
+                app.AnnotationReviewDirty = false;
                 app.refreshAnnotationSessionUI();
                 uialert(app.ScoreAppUIFigure, ...
                     'GT approved and ready for training.', 'Annotation approved', ...
@@ -4411,11 +4525,17 @@ end
             app.SelectedTrackIDEditField.Tooltip = ...
                 'Edit the selected object track on the current frame.';
             app.CreateFromPredictionButton.Tooltip = ...
-                'First create an editable GT copy of predicted masks, tracks and parentage.';
+                ['Initialize editable GT from the model prediction, an existing ' ...
+                 'object family, a segmentation mask, or blank content.'];
             app.MarkFrameReviewedButton.Text = 'Reviewed + next';
             app.MarkFrameReviewedButton.Tooltip = [ ...
                 'Mark the current frame reviewed and open the next incomplete frame. ' ...
                 'Shift+click confirms the complete ROI.'];
+            app.MarkThroughCurrentButton.Tooltip = ...
+                'Confirm all frame-level GT components from frame 1 through the current frame.';
+            app.ReviewWhileNavigatingCheckBox.Tooltip = [ ...
+                'When enabled, leaving a frame with the keyboard or review navigation ' ...
+                'marks its frame-level GT components reviewed.'];
             app.AnnotationTargetLabel.Tooltip = ...
                 ['After GT creation: double-click a cell, then right-click its ' ...
                  'selection rectangle for track and parent actions.'];
@@ -4892,6 +5012,7 @@ end
             if specialevent % frame events
                 numFrames = size(selectedROI.image, 4);
                 newFrame = max(1, min(currentFrame + increment, numFrames));
+                app.reviewFrameBeforeNavigation(currentFrame, newFrame);
                 selectedROI.display.frame = newFrame;
                 app.FrameSlider.Value = newFrame;
                 app.FrameEditField.Value = newFrame;
@@ -5395,6 +5516,7 @@ end
 
         % Close request function: ScoreAppUIFigure
         function ScoreAppUIFigureCloseRequest(app, event)
+            app.flushAnnotationReview();
             % Supprimer la figure annexe si elle existe et est valide
             if isprop(app, 'ImageFigure') && isvalid(app.ImageFigure)
 
@@ -7552,64 +7674,77 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.AnnotationSessionPanel = uipanel(app.AnnotationPanel);
             app.AnnotationSessionPanel.Visible = 'off';
             app.AnnotationSessionPanel.Title = 'Annotation Session';
-            app.AnnotationSessionPanel.Position = [11 717 599 138];
+            app.AnnotationSessionPanel.Position = [11 680 599 175];
 
             % Create AnnotationTargetLabel
             app.AnnotationTargetLabel = uilabel(app.AnnotationSessionPanel);
-            app.AnnotationTargetLabel.Position = [11 87 183 22];
+            app.AnnotationTargetLabel.Position = [13 124 210 22];
             app.AnnotationTargetLabel.Text = 'Annotation Target';
 
             % Create AnnotationStatusLabel
             app.AnnotationStatusLabel = uilabel(app.AnnotationSessionPanel);
-            app.AnnotationStatusLabel.Position = [13 57 183 22];
+            app.AnnotationStatusLabel.Position = [13 101 220 22];
             app.AnnotationStatusLabel.Text = 'Status';
 
             % Create AnnotationCoverageLabel
             app.AnnotationCoverageLabel = uilabel(app.AnnotationSessionPanel);
-            app.AnnotationCoverageLabel.Position = [13 25 183 22];
+            app.AnnotationCoverageLabel.WordWrap = 'on';
+            app.AnnotationCoverageLabel.Position = [13 38 220 60];
             app.AnnotationCoverageLabel.Text = 'Coverage';
 
             % Create CreateFromPredictionButton
             app.CreateFromPredictionButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.CreateFromPredictionButton.ButtonPushedFcn = createCallbackFcn(app, @CreateFromPredictionButtonPushed, true);
-            app.CreateFromPredictionButton.Position = [247 87 154 23];
-            app.CreateFromPredictionButton.Text = 'Create GT from prediction';
+            app.CreateFromPredictionButton.Position = [247 124 154 23];
+            app.CreateFromPredictionButton.Text = 'Initialize GT...';
 
             % Create StartBlankGTButton
             app.StartBlankGTButton = uibutton(app.AnnotationSessionPanel, 'push');
+            app.StartBlankGTButton.Visible = 'off';
             app.StartBlankGTButton.ButtonPushedFcn = createCallbackFcn(app, @StartBlankGTButtonPushed, true);
-            app.StartBlankGTButton.Position = [251 58 145 23];
+            app.StartBlankGTButton.Position = [251 95 145 23];
             app.StartBlankGTButton.Text = 'Start blank GT';
 
             % Create MarkFrameReviewedButton
             app.MarkFrameReviewedButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.MarkFrameReviewedButton.ButtonPushedFcn = createCallbackFcn(app, @MarkFrameReviewedButtonPushed, true);
-            app.MarkFrameReviewedButton.Position = [253 28 143 23];
+            app.MarkFrameReviewedButton.Position = [253 66 143 23];
             app.MarkFrameReviewedButton.Text = 'Mark frame reviewed';
 
             % Create NextIncompleteButton
             app.NextIncompleteButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.NextIncompleteButton.ButtonPushedFcn = createCallbackFcn(app, @NextIncompleteButtonPushed, true);
-            app.NextIncompleteButton.Position = [421 87 170 23];
+            app.NextIncompleteButton.Position = [421 124 170 23];
             app.NextIncompleteButton.Text = 'Next Incomplete';
 
             % Create ValidateAnnotationButton
             app.ValidateAnnotationButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.ValidateAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @ValidateAnnotationButtonPushed, true);
-            app.ValidateAnnotationButton.Position = [423 58 100 23];
+            app.ValidateAnnotationButton.Position = [423 95 100 23];
             app.ValidateAnnotationButton.Text = 'Validate';
 
             % Create ApproveAnnotationButton
             app.ApproveAnnotationButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.ApproveAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @ApproveAnnotationButtonPushed, true);
-            app.ApproveAnnotationButton.Position = [424 28 100 23];
+            app.ApproveAnnotationButton.Position = [424 66 100 23];
             app.ApproveAnnotationButton.Text = 'Approve GT';
 
+            % Create MarkThroughCurrentButton
+            app.MarkThroughCurrentButton = uibutton(app.AnnotationSessionPanel, 'push');
+            app.MarkThroughCurrentButton.ButtonPushedFcn = createCallbackFcn(app, @MarkThroughCurrentButtonPushed, true);
+            app.MarkThroughCurrentButton.Position = [247 36 154 23];
+            app.MarkThroughCurrentButton.Text = 'Review 1 -> current...';
+
+            % Create ReviewWhileNavigatingCheckBox
+            app.ReviewWhileNavigatingCheckBox = uicheckbox(app.AnnotationSessionPanel);
+            app.ReviewWhileNavigatingCheckBox.Text = 'Review while navigating';
+            app.ReviewWhileNavigatingCheckBox.Position = [421 36 166 22];
+            app.ReviewWhileNavigatingCheckBox.Value = false;
             % Create ShowPredictionCheckBox
             app.ShowPredictionCheckBox = uicheckbox(app.AnnotationSessionPanel);
             app.ShowPredictionCheckBox.ValueChangedFcn = createCallbackFcn(app, @ShowPredictionCheckBoxValueChanged, true);
             app.ShowPredictionCheckBox.Text = 'Show Prediction Overlay';
-            app.ShowPredictionCheckBox.Position = [256 2 153 22];
+            app.ShowPredictionCheckBox.Position = [256 5 153 22];
 
             % Create MovieoutputTab
             app.MovieoutputTab = uitab(app.TabGroup);
@@ -7895,6 +8030,8 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
 
         % Code that executes before app deletion
         function delete(app)
+
+            app.flushAnnotationReview();
 
             try
                 if ~isempty(app.PipelineRunEventListenerId) && exist('detecdiv_event', 'file') == 2

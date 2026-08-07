@@ -58,6 +58,9 @@ verifyEqual(testCase, char(app.CreateFromPredictionButton.Enable), 'on');
 verifyEmpty(testCase, r.findChannelID(gtName), ...
     'Opening managed Score must not materialize GT implicitly.');
 verifyNotEmpty(testCase, app.CreateFromPredictionButton.ButtonPushedFcn);
+verifyTrue(testCase, isvalid(app.MarkThroughCurrentButton));
+verifyNotEmpty(testCase, app.MarkThroughCurrentButton.ButtonPushedFcn);
+verifyTrue(testCase, isvalid(app.ReviewWhileNavigatingCheckBox));
 
 callback = app.CreateFromPredictionButton.ButtonPushedFcn;
 callback(app.CreateFromPredictionButton, []);
@@ -65,6 +68,7 @@ callback(app.CreateFromPredictionButton, []);
 verifyNotEmpty(testCase, r.findChannelID(gtName));
 verifyEqual(testCase, session.summary().status, 'draft');
 verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'DRAFT'));
+verifyTrue(testCase, contains(app.AnnotationCoverageLabel.Text, 'Segmentation'));
 verifyEqual(testCase, app.ChannelModeButtonGroup.SelectedObject, app.EditButton);
 verifyEqual(testCase, char(app.ChannelModeButtonGroup.Enable), 'off');
 verifyEqual(testCase, char(app.MasklabelEditField.Visible), 'off');
@@ -107,6 +111,29 @@ verifyEmpty(testCase, score_resolveSelectedTrackForFrame(app, r), ...
     'The same mask label on another track must not remain selected.');
 verifyTrue(testCase, isnan(app.SelectedObjectLabelCell));
 verifyEqual(testCase, app.SelectedTrackIDCell, 1);
+
+% Painting after the selected track disappears must create a free provider
+% label and bind it back to the persistent track, rather than inventing a
+% new trajectory or stealing a label already used by another track.
+[paintLabel, paintTrack] = score_prepareSelectedTrackPaint( ...
+    app, r, gtName, gtIdx, gtIdx, 2);
+verifyEqual(testCase, paintTrack, 1);
+verifyEqual(testCase, paintLabel, 2, ...
+    'Provider label 1 is occupied by track 2 on this frame.');
+r.image(1,1,gtIdx,2) = uint16(paintLabel);
+score_syncCellModelFrame(r, gtName, 2, 'Save', false);
+paintReport = score_applySelectedTrackPaint( ...
+    app, r, gtName, 2, paintLabel, paintTrack);
+verifyEqual(testCase, paintReport.status, 'propagated');
+[paintedModel, status] = score_getCellModel(r);
+verifyEqual(testCase, status, 'ok');
+[~, familyId] = cellModel.familyIndex(paintedModel, 'reviewed tracks');
+paintedInstance = cellModel.findInstance( ...
+    paintedModel, familyId, 2, paintLabel);
+verifyEqual(testCase, paintedInstance.track_id, uint64(1));
+verifyEqual(testCase, app.SelectedTrackIDCell, 1);
+verifyEqual(testCase, app.SelectedObjectLabelCell, paintLabel);
+
 r.display.frame = 1;
 instance = score_resolveSelectedTrackForFrame(app, r);
 verifyEqual(testCase, instance.track_id, uint64(1));
@@ -128,10 +155,13 @@ score_display(app, 'slow');
 verifyNotEmpty(testCase, app.graphicsHandles.overlayHandles);
 verifyGreaterThan(testCase, app.graphicsHandles.overlayHandles.Count, 0);
 frameBefore = r.display.frame;
+app.ReviewWhileNavigatingCheckBox.Value = true;
 keyCallback = app.ImageFigure.KeyPressFcn;
 keyCallback(app.ImageFigure, struct('Key', 'rightarrow'));
 verifyEqual(testCase, r.display.frame, frameBefore + 1);
 verifyGreaterThan(testCase, app.graphicsHandles.overlayHandles.Count, 0);
+verifyEqual(testCase, session.summary().coverage.reviewed, 2, ...
+    'Leaving a frame in review-on-navigation mode must review it once.');
 
 % A deliberately empty channel selection should still leave a live black
 % canvas rather than an orphaned figure with no overlay handle.
@@ -141,12 +171,61 @@ verifyGreaterThan(testCase, app.graphicsHandles.overlayHandles.Count, 0);
 
 app.notifyAnnotationChanged(gtName, 1);
 summary = session.summary();
-verifyEqual(testCase, summary.coverage.reviewed, 1);
+verifyEqual(testCase, summary.coverage.reviewed, 2);
 verifyEqual(testCase, summary.coverage.total, 3);
 
 % External painting/lineage callbacks must use the public bridge rather
 % than calling Score's private display-binding method directly.
 verifyWarningFree(testCase, @() app.syncLineageDisplayAfterEdit());
+
+% A visible ROI preset may be copied to a ROI with fewer/reordered channels.
+% RGB/intensity use channel rows, whereas displaylim uses channel columns.
+source = roi('presetSource', [1 1 4 4]);
+source.image = uint16(ones(4,4,4,3));
+source.channelid = 1:4;
+source.display.channel = {'raw','sourceOnly','other','extraB'};
+source.display.intensity = [1 2 3; 4 5 6; 7 8 9; 10 11 12];
+source.display.rgb = [0.1 0.2 0.3; 0.4 0.5 0.6; ...
+    0.7 0.8 0.9; 1.0 0.9 0.8];
+source.display.displaylim = [0.01 0.02 0.03 0.04; 0.91 0.92 0.93 0.94];
+source.display.selectedchannel = [true false true true];
+source.display.indexed = [false false true true];
+source.display.alpha = [1 0.8 0.5 0.35];
+source.display.contour = [false false true true];
+source.display.width = [0 0 1 1.5];
+source.display.log = false(1,4);
+source.display.scale = false(1,4);
+source.display.colorMode = {'rgb','rgb','rgb','rgb'};
+source.display.colormapName = {'','','',''};
+
+target = roi('R2', [1 1 4 4]);
+target.path = folder;
+target.image = uint16(ones(4,4,3,3));
+target.channelid = 1:3;
+target.display.channel = {'extraB','raw','targetOnly'};
+target.display.intensity = -ones(3,3);
+target.display.rgb = -ones(3,3);
+target.display.displaylim = repmat([0.2;0.8], 1, 3);
+target.display.selectedchannel = true(1,3);
+target.display.indexed = false(1,3);
+target.display.alpha = ones(1,3);
+target.display.contour = false(1,3);
+target.display.width = ones(1,3);
+target.display.log = false(1,3);
+target.display.scale = false(1,3);
+target.display.colorMode = {'rgb','rgb','rgb'};
+target.display.colormapName = {'','',''};
+copyReport = score_copyROIChannelPreset(source, target);
+
+verifyEqual(testCase, copyReport.matched, {'raw','extraB'});
+verifySize(testCase, target.display.intensity, [3 3]);
+verifyEqual(testCase, target.display.intensity(1,:), [10 11 12]);
+verifyEqual(testCase, target.display.intensity(2,:), [1 2 3]);
+verifyEqual(testCase, target.display.intensity(3,:), [-1 -1 -1]);
+verifyEqual(testCase, target.display.rgb(1,:), [1.0 0.9 0.8]);
+verifyEqual(testCase, target.display.displaylim(:,1), [0.04;0.94]);
+verifyEqual(testCase, target.display.displaylim(:,2), [0.01;0.91]);
+verifyEqual(testCase, target.display.displaylim(:,3), [0.2;0.8]);
 end
 
 function deleteScore(app)

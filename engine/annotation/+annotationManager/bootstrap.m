@@ -5,6 +5,9 @@ p = inputParser;
 p.addParameter('Overwrite', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('Save', true, @(x) islogical(x) && isscalar(x));
 p.addParameter('SourceRunId', '', @(x) ischar(x) || isstring(x));
+p.addParameter('CopyRelations', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('SourceType', 'prediction', @(x) ischar(x) || isstring(x));
+p.addParameter('SourceId', '', @(x) ischar(x) || isstring(x));
 p.parse(varargin{:});
 
 componentReports = repmat(struct('id', '', 'operation', '', ...
@@ -34,7 +37,8 @@ for i = 1:numel(spec.components)
             componentReports(i).details = details;
             dataChanged = true;
         case 'clone_family'
-            details = cloneFamily(roiObj, component, p.Results.Overwrite);
+            details = cloneFamily(roiObj, component, p.Results.Overwrite, ...
+                p.Results.CopyRelations);
             componentReports(i).source = details.source;
             componentReports(i).target = details.target;
             componentReports(i).changed = true;
@@ -57,8 +61,11 @@ entry.status = 'draft';
 entry.revision = uint32(double(entry.revision) + 1);
 entry.approved_at = '';
 entry.approved_hash = '';
-entry.source_type = 'prediction';
-entry.source_id = sourceDescription(componentReports);
+entry.source_type = char(string(p.Results.SourceType));
+entry.source_id = char(string(p.Results.SourceId));
+if isempty(entry.source_id)
+    entry.source_id = sourceDescription(componentReports);
+end
 entry.source_run_id = char(string(p.Results.SourceRunId));
 entry = resetReview(entry);
 entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', p.Results.Save);
@@ -198,13 +205,14 @@ ds.groupProperties = {'id','Plot','auto','auto'; 'label','Plot','auto','auto'};
 ds.show = true;
 end
 
-function details = cloneFamily(roiObj, component, overwrite)
+function details = cloneFamily(roiObj, component, overwrite, copyRelations)
 [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
 source = char(string(component.prediction.family));
 target = char(string(component.groundTruth.family));
 provider = char(string(component.groundTruth.maskProvider));
 [model, ~, cloneReport] = cellModel.cloneFamily(model, source, target, provider, ...
-    'Overwrite', overwrite, 'LineageSource', 'ground_truth');
+    'Overwrite', overwrite, 'LineageSource', 'ground_truth', ...
+    'CopyRelations', copyRelations);
 roiObj.cellModel = model;
 details = struct('source', source, 'target', target, 'report', cloneReport);
 end

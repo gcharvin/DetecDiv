@@ -43,6 +43,18 @@ classdef Session < handle
             obj.refresh();
         end
 
+        function catalog = initializationCatalog(obj)
+            catalog = annotationManager.initializationCatalog(obj.Roi, obj.Spec);
+            catalog.defaultRecipe = annotationManager.defaultInitializationRecipe( ...
+                obj.Classifier, catalog);
+        end
+
+        function report = initialize(obj, recipe, varargin)
+            report = annotationManager.initialize( ...
+                obj.Classifier, obj.Roi, obj.Spec, recipe, varargin{:});
+            obj.refresh();
+        end
+
         function report = startBlank(obj, varargin)
             report = annotationManager.startBlank( ...
                 obj.Classifier, obj.Roi, obj.Spec, varargin{:});
@@ -59,6 +71,10 @@ classdef Session < handle
 
         function report = validate(obj, varargin)
             report = annotationManager.validate(obj.Roi, obj.Spec, varargin{:});
+        end
+
+        function report = quickValidate(obj, varargin)
+            report = annotationManager.quickValidate(obj.Roi, obj.Spec, varargin{:});
         end
 
         function [entry, report] = approve(obj, varargin)

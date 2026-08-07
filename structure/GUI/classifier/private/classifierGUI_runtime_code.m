@@ -1531,7 +1531,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
             t.ColumnName     = {'Select for training','Select for test',...
                                 ' ROI index','ROI Id','Frame bounds', ...
                                 'Annotation status','Coverage','Validation'};
-            t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 90, 90};
+            t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 190, 90};
             t.ColumnEditable = [true true false false false false false false];
 
             if numel(rois(i).data)
@@ -1563,7 +1563,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
                                 ' ROI index','ROI Id','is annotated',...
                                 'is validated','Frame bounds','Annotation status',...
                                 'Coverage','Validation'};
-                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 90, 90};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
                 t.ColumnEditable = [true true false false false false false false false false];
 
                 labelsTraining = [];
@@ -1614,7 +1614,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
                                 ' ROI index','ROI Id','is annotated',...
                                 'is validated','Frame bounds','Annotation status',...
                                 'Coverage','Validation'};
-                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 90, 90};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
                 t.ColumnEditable = [true true false false false false false false false false];
 
                 if ~isempty(pixdata)
@@ -1728,22 +1728,49 @@ function [statusText, coverageText, validationText] = ...
     status = 'missing';
     reviewed = 0;
     total = 0;
+    components = struct([]);
     if ~isempty(rows)
         match = find([rows.roiIndex] == roiIndex, 1);
         if ~isempty(match)
             status = char(string(rows(match).status));
             reviewed = double(rows(match).reviewed);
             total = double(rows(match).total);
+            if isfield(rows, 'coverageComponents')
+                components = rows(match).coverageComponents;
+            end
         end
     end
     if isempty(status), status = 'missing'; end
     statusText = [upper(status(1)) lower(status(2:end))];
-    coverageText = sprintf('%d/%d', reviewed, total);
+    coverageText = compactCoverageText(components, reviewed, total);
     if strcmpi(status, 'approved')
         validationText = 'Valid';
     else
         validationText = 'Not run';
     end
+end
+
+function text = compactCoverageText(components, reviewed, total)
+    if isempty(components)
+        text = sprintf('%d/%d', reviewed, total);
+        return;
+    end
+    parts = strings(0,1);
+    for i = 1:numel(components)
+        switch char(string(components(i).id))
+            case {'tracked_mask','instances','semantic_mask','mask'}
+                prefix = 'S';
+            case {'tracking','tracklets'}
+                prefix = 'T';
+            case {'parentage','lineage'}
+                prefix = 'P';
+            otherwise
+                prefix = upper(extractBefore(string(components(i).id) + "_", 2));
+        end
+        parts(end+1,1) = sprintf('%s%d/%d', prefix, ...
+            components(i).reviewed, components(i).total); %#ok<AGROW>
+    end
+    text = char(strjoin(parts, ' '));
 end
 
 function indices = selectedAnnotationRoiIndices(app)
@@ -1780,32 +1807,14 @@ function updateAnnotationActionState(app)
     app.RefreshAnnotationStatusButton.Enable = localOnOff(app, hasRois);
     app.GenerateDraftButton.Enable = 'off';
     app.StartBlankGTButton.Enable = 'off';
+    app.StartBlankGTButton.Visible = 'off';
     app.AnnotateselectedROIButton.Enable = 'off';
     if ~hasRois, return; end
 
     indices = selectedAnnotationRoiIndices(app);
     if isempty(indices), return; end
-    app.StartBlankGTButton.Enable = 'on';
     app.AnnotateselectedROIButton.Enable = localOnOff(app, numel(indices) == 1);
-
-    canBootstrap = false;
-    for roiIndex = indices
-        try
-            session = annotationSessionForClassifier( ...
-                app, app.Data.classiObj, roiIndex);
-            context = session.uiContext();
-            summary = session.summary();
-            required = [summary.components.required];
-            if isempty(required), required = true(1, numel(summary.components)); end
-            predictionsReady = ~isempty(summary.components) && ...
-                all([summary.components(required).predictionExists]);
-            canBootstrap = canBootstrap || ...
-                (context.supportsBootstrap && strcmpi(summary.status, 'missing') && ...
-                predictionsReady);
-        catch
-        end
-    end
-    app.GenerateDraftButton.Enable = localOnOff(app, canBootstrap);
+    app.GenerateDraftButton.Enable = 'on';
 end
 
 function value = localOnOff(app, condition) %#ok<INUSD>
@@ -3604,32 +3613,64 @@ disp('unable to display folder with this OS');
             indices = selectedAnnotationRoiIndices(app);
             if isempty(indices)
                 uialert(app.ClassifierUIFigure, 'Select at least one ROI.', ...
-                    'Generate annotation draft');
+                    'Initialize ground truth');
+                return;
+            end
+            try
+                firstSession = annotationSessionForClassifier( ...
+                    app, app.Data.classiObj, indices(1));
+                catalog = firstSession.initializationCatalog();
+                rows = annotationSummaryRows(app, app.Data.classiObj, indices);
+                overwrite = any(~strcmpi(string({rows.status}), 'missing'));
+                if isempty(event)
+                    recipe = catalog.defaultRecipe;
+                    accepted = true;
+                else
+                    [recipe, accepted] = annotationInitializationDialog( ...
+                        app.ClassifierUIFigure, catalog, ...
+                        'RoiCount', numel(indices), 'HasExistingGT', overwrite);
+                end
+                if ~accepted, return; end
+            catch ME
+                uialert(app.ClassifierUIFigure, ME.message, ...
+                    'Initialize ground truth');
                 return;
             end
             errors = strings(0,1);
             changed = 0;
+            progress = [];
+            if numel(indices) > 1
+                progress = uiprogressdlg(app.ClassifierUIFigure, ...
+                    'Title', 'Initialize ground truth', ...
+                    'Message', 'Preparing selected ROIs...', 'Value', 0);
+            end
             for roiIndex = indices
                 try
                     session = annotationSessionForClassifier( ...
                         app, app.Data.classiObj, roiIndex);
-                    summary = session.summary();
-                    if ~strcmpi(summary.status, 'missing'), continue; end
-                    session.bootstrap();
+                    session.initialize(recipe, 'Overwrite', overwrite);
                     changed = changed + 1;
                 catch ME
                     errors(end+1) = sprintf('ROI %d: %s', roiIndex, ME.message); %#ok<AGROW>
                 end
+                if ~isempty(progress) && isvalid(progress)
+                    position = find(indices == roiIndex, 1, 'first');
+                    progress.Value = position / numel(indices);
+                    progress.Message = sprintf('Processed ROI %d/%d', ...
+                        position, numel(indices));
+                    drawnow limitrate;
+                end
             end
+            if ~isempty(progress) && isvalid(progress), close(progress); end
             checkStatus(app,false);
             displayData(app);
             if ~isempty(errors)
                 uialert(app.ClassifierUIFigure, strjoin(errors, newline), ...
-                    'Draft generation incomplete', 'Icon', 'warning');
+                    'GT initialization incomplete', 'Icon', 'warning');
             elseif changed > 0
                 uialert(app.ClassifierUIFigure, ...
-                    sprintf('Created %d annotation draft(s).', changed), ...
-                    'Draft generated', 'Icon', 'success');
+                    sprintf('Initialized GT for %d ROI(s).', changed), ...
+                    'Ground truth initialized', 'Icon', 'success');
             end
         end
 
@@ -4263,14 +4304,15 @@ disp('unable to display folder with this OS');
             % Create GenerateDraftButton
             app.GenerateDraftButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.GenerateDraftButton.ButtonPushedFcn = createCallbackFcn(app, @GenerateDraftButtonPushed, true);
-            app.GenerateDraftButton.Position = [10 121 175 23];
-            app.GenerateDraftButton.Text = 'Generate draft from prediction';
+            app.GenerateDraftButton.Position = [10 121 293 23];
+            app.GenerateDraftButton.Text = 'Initialize GT...';
 
             % Create StartBlankGTButton
             app.StartBlankGTButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.StartBlankGTButton.ButtonPushedFcn = createCallbackFcn(app, @StartBlankGTButtonPushed, true);
             app.StartBlankGTButton.Position = [203 122 100 23];
             app.StartBlankGTButton.Text = 'Start blank GT';
+            app.StartBlankGTButton.Visible = 'off';
 
             % Create RefreshAnnotationStatusButton
             app.RefreshAnnotationStatusButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');

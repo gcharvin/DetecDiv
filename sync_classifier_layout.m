@@ -23,6 +23,7 @@ componentProperties = localNormalizeLayoutNames( ...
     localExtractComponentProperties(layoutCode));
 createComponents = localNormalizeLayoutNames( ...
     localExtractCreateComponents(layoutCode));
+createComponents = localConfigureAnnotationInitialization(createComponents);
 mergedCode = localReplaceComponentProperties(referenceCode, componentProperties);
 mergedCode = localReplaceCreateComponents(mergedCode, createComponents);
 localValidateMergedCode(mergedCode);
@@ -149,6 +150,29 @@ function code = localNormalizeLayoutNames(code)
 % Correct the initial App Designer component typo at every layout merge.
 code = strrep(code, 'GenarateDraftButton', 'GenerateDraftButton');
 code = strrep(code, 'StartblankGTButton', 'StartBlankGTButton');
+end
+
+function code = localConfigureAnnotationInitialization(code)
+code = regexprep(code, ...
+    '(?m)^\s*app\.GenerateDraftButton\.Text\s*=\s*''[^'']*'';', ...
+    '            app.GenerateDraftButton.Text = ''Initialize GT...'';', 'once');
+code = regexprep(code, ...
+    '(?m)^\s*app\.GenerateDraftButton\.Position\s*=\s*\[[^\]]+\];', ...
+    '            app.GenerateDraftButton.Position = [10 121 293 23];', 'once');
+if contains(code, 'app.StartBlankGTButton.Visible =')
+    code = regexprep(code, ...
+        '(?m)^\s*app\.StartBlankGTButton\.Visible\s*=\s*''[^'']*'';', ...
+        '            app.StartBlankGTButton.Visible = ''off'';', 'once');
+else
+    marker = '            app.StartBlankGTButton.Text = ''Start blank GT'';';
+    if contains(code, sprintf('\r\n'))
+        newline = sprintf('\r\n');
+    else
+        newline = sprintf('\n');
+    end
+    code = strrep(code, marker, [marker newline ...
+        '            app.StartBlankGTButton.Visible = ''off'';']);
+end
 end
 
 function text = localNormalize(text)

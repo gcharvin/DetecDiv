@@ -33,8 +33,10 @@ Score should retain the `session` handle and call:
 ```matlab
 session.bootstrap();                         % prediction -> editable draft
 session.startBlank();                        % empty editable draft
-session.markChanged('Frames', frame);        % after an edit
+session.markChanged('Frames', frame);        % edited frame -> draft + reviewed
 session.markReviewed('Frames', frame);       % reviewed without changing pixels
+quickReport = session.quickValidate(...
+    'Components', {'tracking'}, 'Frames', frame);
 report = session.validate();
 [entry, report] = session.approve();
 ```
@@ -112,38 +114,34 @@ Keep the following controls and their existing selection/import behavior:
 Place these controls immediately below `UITableData`, next to the existing
 annotation button:
 
-1. `GenerateDraftButton`, text **Generate draft from prediction**. Its callback
-   creates a session for every selected ROI and calls `bootstrap()`. Enable it
-   only when at least one selected ROI is `Missing` and its required prediction
-   components are available.
-2. `StartBlankGTButton`, text **Start blank GT**. Its callback calls
-   `session.startBlank()`. Ask for confirmation before replacing an existing
-   draft or approved GT; no confirmation is needed for a `Missing` ROI.
+1. `GenerateDraftButton`, text **Initialize GT...**. Its callback opens the
+   shared initialization dialog once, then applies the selected recipe to every
+   selected ROI with `session.initialize(recipe)`. Keep it enabled whenever one
+   or more ROIs are selected because blank initialization is always available.
+2. Keep `StartBlankGTButton` as an internal compatibility component, but hide
+   it. Blank initialization is now one of the choices in **Initialize GT...**.
 3. `RefreshAnnotationStatusButton`, text **Refresh status**. Its callback calls
    `refreshAnnotationTable` without reloading images.
 4. `AnnotationFilterDropDown`, label **Show**, with values `All`, `Missing`,
    `Draft`, and `Approved`. Filtering changes only the visible rows and must
    preserve the underlying ROI indices.
 
-Suggested callbacks are deliberately thin:
+The initialization dialog offers only coherent starting points:
 
-```matlab
-function GenerateDraftButtonPushed(app, event)
-    indices = app.selectedRoiIndices();
-    for k = indices
-        app.Data.classiObj.annotationSession(k).bootstrap();
-    end
-    app.refreshAnnotationTable();
-end
+- **Model prediction** copies every prediction component declared by the
+  classifier.
+- **Existing tracked objects** selects one object family. Its `mask_provider`
+  supplies segmentation, its instances supply tracks, and its relations may be
+  copied or deliberately replaced by blank parentage.
+- **Existing segmentation mask** copies one channel and creates empty tracking
+  and parentage GT around it.
+- **Blank GT** creates every required component empty.
 
-function StartBlankGTButtonPushed(app, event)
-    indices = app.selectedRoiIndices();
-    for k = indices
-        app.Data.classiObj.annotationSession(k).startBlank();
-    end
-    app.refreshAnnotationTable();
-end
-```
+Never expose independent mask and object-family selectors in the simple path:
+selecting an object family must lock segmentation to its own `mask_provider`.
+The dialog preview shows mask name, family name, track count, and parent-link
+count before any write. Replacing draft or approved GT changes the action text
+to **Replace GT** and displays a destructive-action warning.
 
 #### Remove or retire
 
@@ -190,32 +188,47 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
 1. `AnnotationTargetLabel`: classifier, ROI, and target component currently
    being edited.
 2. `AnnotationStatusLabel`: `Missing`, `Draft`, or `Approved`.
-3. `AnnotationCoverageLabel`: for example `Reviewed: 415 / 762 frames`.
-4. `CreateFromPredictionButton`, text **Create GT from prediction**. Call
-   `AnnotationSession.bootstrap()`, reload the ROI data, then apply the returned
-   display preset.
-5. `StartBlankGTButton`, text **Start blank GT**. Call
-   `AnnotationSession.startBlank()` after confirmation when GT already exists.
+3. `AnnotationCoverageLabel`: show one counter per required component, for
+   example `Segmentation: 241/762`, `Tracking: 241/762`, and
+   `Parentage: 0/1`. Do not merge these into one opaque percentage.
+4. `CreateFromPredictionButton`, text **Initialize GT...**. The internal name is
+   retained for App Designer compatibility. Open `annotationInitializationDialog`,
+   call `AnnotationSession.initialize(recipe)`, reload the ROI data, and apply
+   the returned display preset.
+5. Keep `StartBlankGTButton` hidden as a compatibility component. Blank GT is a
+   choice in the shared initialization dialog rather than a separate action.
 6. `MarkFrameReviewedButton`, text **Mark frame reviewed**. Call
    `markReviewed('Frames', currentFrame)` without changing image pixels.
-7. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
+7. `MarkThroughCurrentButton`, text **Review 1 -> current...**. After
+   confirmation, mark every required frame-level component reviewed from frame
+   1 through the current frame. ROI-level components such as parentage remain
+   explicit.
+8. `ReviewWhileNavigatingCheckBox`, text **Review while navigating**. When
+   enabled, leaving a frame with keyboard or incomplete-frame navigation marks
+   all required frame-level components reviewed. It is off by default.
+9. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
    incomplete** and **Next incomplete**. Navigate through frames not covered by
-   every required component.
-8. `ValidateAnnotationButton`, text **Validate**. Call `validate()` and show the
-   returned errors/warnings in a dialog or status area.
-9. `ApproveAnnotationButton`, text **Approve GT**. Enable it only for a valid
-   draft. Call `approve()`, refresh the status label, and keep the ROI open.
-10. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only
+   every required frame-level component.
+10. `ValidateAnnotationButton`, text **Validate**. Call `validate()` and show the
+    returned errors/warnings in a dialog or status area.
+11. `ApproveAnnotationButton`, text **Approve GT**. Enable it only for a valid
+    draft. Call `approve()`, refresh the status label, and keep the ROI open.
+12. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only
     the read-only prediction overlays from `context.displayPreset`; it must
     never select a prediction channel for painting.
 
 Button state rules:
 
-| Status | Create from prediction | Start blank | Mark reviewed | Validate | Approve |
-| --- | --- | --- | --- | --- | --- |
-| Missing | enabled if prediction is available | enabled | disabled | disabled | disabled |
-| Draft | disabled | confirmation required | enabled | enabled | enabled only if valid |
-| Approved | disabled | confirmation required | enabled after reopening as draft | enabled | disabled |
+| Status | Initialize GT | Mark reviewed | Validate | Approve |
+| --- | --- | --- | --- | --- |
+| Missing | enabled | disabled | disabled | disabled |
+| Draft | enabled; replacement warning | enabled | enabled | enabled only if valid |
+| Approved | enabled; replacement warning | enabled after reopening as draft | enabled | disabled |
+
+After initialization, append the persisted provenance to the session display,
+for example `mask: results_cellposeSAM_cell | tracks: Imported tracking (17) |
+14 links`. Prediction assets remain untouched; all edits target the cloned GT
+channel and family.
 
 #### Modify existing Score callbacks
 
@@ -228,7 +241,10 @@ Button state rules:
    ```
 
    Add this call after the existing pixel write/save logic, not on mouse hover
-   or display-only changes.
+   or display-only changes. Frame-level edited units become reviewed
+   automatically and receive a lightweight, non-modal validation. An edited
+   ROI-level unit (notably parentage) is instead made incomplete until the user
+   explicitly confirms the full ROI.
 2. In CNN/LSTM keyboard class assignment, call the same method for the frame
    label component. A frame is therefore changed and reviewed in one action.
 3. In object-state, track, mother-bud, or lineage editing callbacks, pass the
@@ -236,7 +252,8 @@ Button state rules:
    `markChanged`.
 4. When navigating to another ROI, select the matching session ROI (or attach a
    new session created by `classifierGUI`) before refreshing the display.
-   Normal frame navigation does not modify annotation status.
+   Normal frame navigation does not modify annotation status unless **Review
+   while navigating** is enabled.
 5. Keep the existing ROI save action. Session methods save lifecycle metadata;
    the current raster/dataseries/object save paths remain responsible for GT
    content.
@@ -281,15 +298,20 @@ Score sessions. When `AnnotationSession` is non-empty:
    is created and status becomes `Draft`.
 3. Click **Annotate selected ROI**: Score opens in managed mode, selects the GT
    mask/family automatically, and optionally shows prediction read-only.
-4. Paint one mask frame or assign one keyboard class: coverage and status update
-   without changing channels used only for prediction.
-5. Mark an unchanged empty frame reviewed: coverage increases even though no
+4. Paint one mask frame or assign one keyboard class: the corresponding
+   frame-level coverage and check status update without changing prediction-only
+   channels.
+5. Enable **Review while navigating**, inspect two unchanged frames, and leave
+   each one: segmentation/tracking coverage increases once per frame.
+6. Use **Review 1 -> current...** after jumping ahead: only the frame-level
+   counters advance; parentage still requires explicit ROI confirmation.
+7. Mark an unchanged empty frame reviewed: coverage increases even though no
    foreground pixels were added.
-6. Validate, resolve reported errors, then click **Approve GT**: both Score and
+8. Validate, resolve reported errors, then click **Approve GT**: both Score and
    `classifierGUI` show `Approved` after refresh.
-7. Edit the approved ROI once: status returns to `Draft` and training formatting
+9. Edit the approved ROI once: status returns to `Draft` and training formatting
    warns until it is approved again.
-8. Repeat once for a frame-label classifier and once for an object/lineage
+10. Repeat once for a frame-label classifier and once for an object/lineage
    classifier to verify that the same UI drives their different GT components.
 
 ## Classifier contract

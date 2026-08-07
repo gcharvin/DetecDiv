@@ -31,7 +31,7 @@ if stateId > 0 && ~any(model.states.state_id == stateId)
 end
 model.instances.state_id(row) = stateId;
 roiobj.saveCellModel(model);
-app.notifyAnnotationChanged('lineage', double(frame));
+app.notifyAnnotationChanged('tracking', double(frame));
 score_updateSelectedObjectFields(app);
 score_display(app, 'refresh');
 end

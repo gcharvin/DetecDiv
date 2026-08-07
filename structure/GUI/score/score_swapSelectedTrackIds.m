@@ -23,7 +23,7 @@ end
 [model, report] = cellModel.swapTrackIds( ...
     model, familyId, instance.track_id, destinationTrackId);
 roiobj.saveCellModel(model);
-app.notifyAnnotationChanged('lineage', report.frames);
+app.notifyAnnotationChanged('tracking', report.frames);
 score_updateSelectedObjectFields(app);
 score_display(app, 'refresh');
 end
