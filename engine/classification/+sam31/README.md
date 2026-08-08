@@ -2,6 +2,34 @@
 
 This package is intentionally a thin DetecDiv adapter.
 
+## Interactive track repair in Score
+
+`SAM31 propagate this track...` uses a deliberately ordered hybrid strategy:
+
+1. run a fresh native SAM31 text-prompt session and select the detected track
+   with the highest IoU against the selected seed mask;
+2. if the seed is not detected (or a detected track has gaps), follow instance
+   masks from the configured read-only mask candidate provider by geometry,
+   even when its local label changes;
+3. use direct SAM31 mask injection only as an experimental final fallback.
+
+The routine dialog only asks for the number of following frames and shows the
+resolved mask provider. `SAM31 propagation settings...` contains the infrequent
+model, resolution, object-slot, collision and runner controls; they are saved
+once and the default runner is the reusable `session` mode. For annotation
+sessions, the provider is resolved from the annotation prediction-family
+contract before any channel-name heuristic is attempted. A network checkpoint
+selected from a non-`C:` drive is cached once under
+`%LOCALAPPDATA%\DetecDiv\sam31_checkpoint_cache` so WSL never loads multi-GB
+weights directly through a mapped network drive. The correction work folder
+contains `track_correction_stats.json`, including the selected strategy and
+frame-level association diagnostics.
+
+When a propagated candidate strongly matches an object already present under
+another GT label, Score performs an explicit identity transfer to the selected
+track. Ambiguous multi-object overlaps are still rejected by the collision
+guard.
+
 The generic SAM3.1 repository remains independent from DetecDiv:
 
 - DetecDiv exports annotations as SAM31-ready JSON plus a HDF5 framebank. The legacy CTC `SEG`, `TRA`, and `man_track.txt` export can still be enabled as a compatibility/debug artifact with the internal `writeLegacyCtc` flag.

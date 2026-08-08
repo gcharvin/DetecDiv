@@ -112,7 +112,13 @@ def latest_checkpoint(classifier_root: Path | None, image_size: int, kind: str) 
     return resolved
 
 
-def resolve_checkpoint(value: str | None, output_dir: Path, image_size: int, kind: str) -> Path | None:
+def resolve_checkpoint(
+    value: str | None,
+    output_dir: Path,
+    image_size: int,
+    kind: str,
+    search_roots: list[Path] | None = None,
+) -> Path | None:
     explicit = optional_path(value)
     if explicit is not None:
         print(f"[SAM31 classify] using explicit {kind} checkpoint: {explicit}", flush=True)
@@ -120,6 +126,12 @@ def resolve_checkpoint(value: str | None, output_dir: Path, image_size: int, kin
     resolved = latest_checkpoint(classifier_root_from_output_dir(output_dir), image_size, kind)
     if resolved is not None:
         print(f"[SAM31 classify] using auto {kind} checkpoint: {resolved}", flush=True)
+        return resolved
+    for root in search_roots or []:
+        resolved = latest_checkpoint(root, image_size, kind)
+        if resolved is not None:
+            print(f"[SAM31 classify] using searched {kind} checkpoint: {resolved}", flush=True)
+            return resolved
     return resolved
 
 
@@ -732,62 +744,176 @@ def prompt_points_from_seed_mask(mask: np.ndarray, margin: int = 4) -> tuple[lis
     return points, labels
 
 
-def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Path | None) -> None:
-    input_mat_path = as_local_path(cfg["input_mat_path"])
-    seed_mask_path = as_local_path(cfg["seed_mask_mat_path"])
-    if input_mat_path is None or seed_mask_path is None:
-        raise SystemExit("Missing input_mat_path or seed_mask_mat_path")
+def load_provider_labels(
+    path: Path | None,
+    fallback_shape: tuple[int, int],
+    num_frames: int,
+) -> np.ndarray | None:
+    if path is None or not path.exists():
+        return None
+    mat = loadmat(path)
+    raw = mat.get("providerLabels", mat.get("provider_labels"))
+    if raw is None:
+        raise ValueError(f"{path} has no providerLabels variable")
+    labels = np.squeeze(np.asarray(raw))
+    if labels.ndim == 2:
+        labels = labels[:, :, None]
+    if labels.ndim != 3:
+        raise ValueError(f"Expected provider labels as [H,W,T], got {labels.shape}")
+    if labels.shape[2] != num_frames and labels.shape[0] == num_frames:
+        labels = np.moveaxis(labels, 0, 2)
+    if labels.shape[2] != num_frames:
+        raise ValueError(
+            f"Provider has {labels.shape[2]} frames but correction input has {num_frames}"
+        )
+    resized = np.zeros((fallback_shape[0], fallback_shape[1], num_frames), dtype=np.uint16)
+    for frame_idx in range(num_frames):
+        resized[:, :, frame_idx] = resize_labels_nearest(labels[:, :, frame_idx], fallback_shape)
+    return resized
 
-    raw, frames = load_raw_stack(input_mat_path)
-    seed_mask = load_seed_mask(seed_mask_path)
-    if seed_mask.shape != (raw.shape[0], raw.shape[1]):
-        seed_mask = resize_labels_nearest(seed_mask.astype(np.uint16), (raw.shape[0], raw.shape[1])) > 0
 
-    image_dir = output_dir / "sam31_track_correction_images"
-    write_image_sequence(raw, image_dir, cancel_path=cancel_path)
-    check_cancel(cancel_path, "after correction image export")
+def mask_centroid(mask: np.ndarray) -> tuple[float, float]:
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return float("nan"), float("nan")
+    return float(xs.mean()), float(ys.mean())
 
-    video_kwargs = {
-        "score_threshold_detection": scalar_number(cfg.get("video_score_threshold"), 0.40, "video_score_threshold", minimum=0.0),
-        "new_det_thresh": scalar_number(cfg.get("video_new_det_threshold"), 0.40, "video_new_det_threshold", minimum=0.0),
-        "det_nms_thresh": scalar_number(cfg.get("video_det_nms_threshold"), 0.10, "video_det_nms_threshold", minimum=0.0),
-        "assoc_iou_thresh": scalar_number(cfg.get("video_assoc_iou_threshold"), 0.50, "video_assoc_iou_threshold", minimum=0.0),
-        "hotstart_unmatch_thresh": scalar_number(cfg.get("hotstart_unmatch_thresh"), 3, "hotstart_unmatch_thresh", integer=True, minimum=1.0),
-        "max_num_objects": scalar_number(cfg.get("max_num_objects"), 120, "max_num_objects", integer=True, minimum=1.0),
+
+def provider_track_candidates(
+    provider_labels: np.ndarray | None,
+    seed_mask: np.ndarray,
+    *,
+    min_seed_iou: float = 0.02,
+    min_iou: float = 0.01,
+    dilation_radius: int = 3,
+    max_centroid_distance: float = 0.0,
+    max_gap: int = 2,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Follow the seed through an instance-label provider, allowing label changes."""
+    stats: dict[str, Any] = {
+        "available": provider_labels is not None,
+        "selected_labels": [],
+        "frame_scores": [],
     }
-    image_size = scalar_number(cfg.get("image_size"), 560, "image_size", integer=True, minimum=1.0)
-    detector_checkpoint_path = resolve_checkpoint(
-        cfg.get("detector_checkpoint_path"),
-        output_dir=output_dir,
-        image_size=image_size,
-        kind="detector",
-    )
-    tracker_checkpoint_path = resolve_checkpoint(
-        cfg.get("tracker_checkpoint_path"),
-        output_dir=output_dir,
-        image_size=image_size,
-        kind="tracker",
-    )
-    predictor = get_predictor(
-        detector_checkpoint_path=detector_checkpoint_path,
-        tracker_checkpoint_path=tracker_checkpoint_path,
-        image_size=image_size,
-        video_kwargs=video_kwargs,
-    )
+    if provider_labels is None:
+        stats["reason"] = "provider_unavailable"
+        return None, stats
 
+    from scipy.ndimage import binary_dilation  # noqa: WPS433
+
+    height, width, num_frames = provider_labels.shape
+    seed_labels = provider_labels[:, :, 0]
+    best_seed_label = 0
+    best_seed_iou = 0.0
+    for label in [int(v) for v in np.unique(seed_labels) if v != 0]:
+        iou = label_iou(seed_labels == label, seed_mask)
+        if iou > best_seed_iou:
+            best_seed_iou = iou
+            best_seed_label = label
+    stats["best_seed_label"] = int(best_seed_label)
+    stats["best_seed_iou"] = float(best_seed_iou)
+    if best_seed_label == 0 or best_seed_iou < min_seed_iou:
+        stats["reason"] = "no_provider_object_overlaps_seed"
+        return None, stats
+
+    masks = np.zeros((height, width, num_frames), dtype=np.uint8)
+    masks[:, :, 0] = seed_mask.astype(np.uint8)
+    reference = seed_mask.astype(bool)
+    previous_label = best_seed_label
+    gap = 0
+    selected_labels = [best_seed_label]
+    frame_scores: list[dict[str, Any]] = [
+        {"frame_index": 0, "label": best_seed_label, "seed_iou": float(best_seed_iou)}
+    ]
+
+    for frame_idx in range(1, num_frames):
+        labels = provider_labels[:, :, frame_idx]
+        ref_area = max(1, int(reference.sum()))
+        auto_distance = max(4.0, 2.5 * np.sqrt(ref_area / np.pi))
+        allowed_distance = float(max_centroid_distance) if max_centroid_distance > 0 else auto_distance
+        ref_center = mask_centroid(reference)
+        if dilation_radius > 0:
+            dilated_reference = binary_dilation(reference, iterations=int(dilation_radius))
+        else:
+            dilated_reference = reference
+        best: tuple[float, int, np.ndarray, dict[str, Any]] | None = None
+
+        for label in [int(v) for v in np.unique(labels) if v != 0]:
+            candidate = labels == label
+            candidate_area = int(candidate.sum())
+            if candidate_area == 0:
+                continue
+            area_ratio = candidate_area / ref_area
+            if area_ratio < 0.30 or area_ratio > 3.0:
+                continue
+            raw_iou = label_iou(reference, candidate)
+            dilated_iou = label_iou(dilated_reference, candidate)
+            center = mask_centroid(candidate)
+            distance = float(np.hypot(center[0] - ref_center[0], center[1] - ref_center[1]))
+            if raw_iou < min_iou and dilated_iou <= 0 and distance > allowed_distance:
+                continue
+            area_similarity = min(area_ratio, 1.0 / max(area_ratio, 1e-9))
+            distance_score = float(np.exp(-distance / max(allowed_distance, 1e-6)))
+            score = 5.0 * raw_iou + 2.0 * dilated_iou + 1.5 * distance_score + area_similarity
+            if label == previous_label:
+                score += 0.15
+            details = {
+                "frame_index": frame_idx,
+                "label": label,
+                "score": float(score),
+                "iou": float(raw_iou),
+                "dilated_iou": float(dilated_iou),
+                "centroid_distance": distance,
+                "allowed_distance": allowed_distance,
+                "area_ratio": float(area_ratio),
+            }
+            if best is None or score > best[0]:
+                best = (score, label, candidate, details)
+
+        if best is None:
+            gap += 1
+            selected_labels.append(0)
+            frame_scores.append({"frame_index": frame_idx, "missing": True, "gap": gap})
+            if gap > max_gap:
+                break
+            continue
+
+        _, previous_label, reference, details = best
+        gap = 0
+        masks[:, :, frame_idx] = reference.astype(np.uint8)
+        selected_labels.append(int(previous_label))
+        frame_scores.append(details)
+
+    stats["selected_labels"] = selected_labels
+    stats["frame_scores"] = frame_scores
+    stats["candidate_pixels_by_frame"] = masks.sum(axis=(0, 1)).astype(int).tolist()
+    if int(masks[:, :, 1:].sum()) == 0:
+        stats["reason"] = "provider_has_no_following_candidate"
+        return None, stats
+    return masks, stats
+
+
+def mask_prompt_track_candidates(
+    predictor,
+    image_dir: Path,
+    num_frames: int,
+    seed_mask: np.ndarray,
+    min_score: float,
+    fallback_shape: tuple[int, int],
+    cancel_path: Path | None,
+    prompt_margin: int = 4,
+    prompt_obj_id: int = 0,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Experimental mask-only SAM31 propagation retained as the last fallback."""
     from sam31_ctc_benchmark.sam31_runner import mark_seed_frame_ready, output_to_label_mask
     import torch
 
-    prompt_margin = scalar_number(cfg.get("prompt_margin"), 4, "prompt_margin", integer=True, minimum=0.0)
-    prompt_obj_id = scalar_number(cfg.get("prompt_obj_id"), 0, "prompt_obj_id", integer=True, minimum=0.0)
-    points, point_labels = prompt_points_from_seed_mask(seed_mask, margin=int(prompt_margin))
-    min_score = scalar_number(cfg.get("min_score"), 0.0, "min_score", minimum=0.0)
-
+    points, point_labels = prompt_points_from_seed_mask(seed_mask, margin=prompt_margin)
     response = predictor.handle_request(request={"type": "start_session", "resource_path": str(image_dir)})
     session_id = response["session_id"]
     try:
         predictor.handle_request(request={"type": "reset_session", "session_id": session_id})
-        check_cancel(cancel_path, "before correction prompt")
+        check_cancel(cancel_path, "before mask-only correction prompt")
         predictor.handle_request(
             request={
                 "type": "add_prompt",
@@ -806,79 +932,240 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         tracker_states = predictor.model._get_sam2_inference_states_by_obj_ids(inference_state, obj_ids)
         if len(tracker_states) == 1:
             predictor.model.tracker.add_new_masks(
-                tracker_states[0],
-                frame_idx=0,
-                obj_ids=obj_ids,
-                masks=mask_tensor,
+                tracker_states[0], frame_idx=0, obj_ids=obj_ids, masks=mask_tensor
             )
         elif len(tracker_states) == len(obj_ids):
             for tracker_state, obj_id, mask in zip(tracker_states, obj_ids, mask_tensor):
                 predictor.model.tracker.add_new_masks(
-                    tracker_state,
-                    frame_idx=0,
-                    obj_ids=[obj_id],
-                    masks=mask[None],
+                    tracker_state, frame_idx=0, obj_ids=[obj_id], masks=mask[None]
                 )
         else:
-            raise RuntimeError(f"Expected one tracker state or one per object, got {len(tracker_states)}")
+            raise RuntimeError(
+                f"Expected one tracker state or one per object, got {len(tracker_states)}"
+            )
         predictor.model.add_action_history(inference_state, "refine", frame_idx=0, obj_ids=obj_ids)
         mark_seed_frame_ready(predictor, session_id, 0)
-        check_cancel(cancel_path, "before correction propagation")
         outputs = stream_propagate_in_video(
             predictor,
             session_id,
-            total_frames=raw.shape[3],
+            total_frames=num_frames,
             min_score=min_score,
             cancel_path=cancel_path,
-            prefix="[SAM31 correction PY]",
+            prefix="[SAM31 mask fallback PY]",
         )
-        check_cancel(cancel_path, "after correction propagation")
     finally:
         predictor.handle_request(request={"type": "close_session", "session_id": session_id})
 
-    height, width = raw.shape[0], raw.shape[1]
-    candidate_masks = np.zeros((height, width, raw.shape[3]), dtype=np.uint8)
+    height, width = fallback_shape
+    masks = np.zeros((height, width, num_frames), dtype=np.uint8)
     stats_by_frame: list[dict[str, Any]] = []
-    for frame_idx in range(raw.shape[3]):
+    for frame_idx in range(num_frames):
         output = outputs.get(frame_idx)
         if output is None:
             stats_by_frame.append({"frame_index": frame_idx, "missing_output": True})
             continue
-        labels = output_to_label_mask(output, min_score=min_score)
-        labels = resize_labels_nearest(labels, (height, width))
+        labels = resize_labels_nearest(output_to_label_mask(output, min_score=min_score), fallback_shape)
         target_label = int(prompt_obj_id) + 1
         candidate = labels == target_label
         if not np.any(candidate):
             candidate = labels > 0
-        candidate_masks[:, :, frame_idx] = candidate.astype(np.uint8)
-        stats = dict(output.get("frame_stats") or {})
-        stats["frame_index"] = frame_idx
-        stats["output_debug"] = output_debug_summary(output)
-        stats["num_candidate_pixels"] = int(candidate_masks[:, :, frame_idx].sum())
-        stats_by_frame.append(stats)
-
-    future_pixels = int(candidate_masks[:, :, 1:].sum()) if raw.shape[3] > 1 else 0
-    if future_pixels == 0 and bool_value(cfg.get("fallback_text_track"), True):
-        fallback_masks, fallback_stats = fallback_text_track_candidates(
-            predictor=predictor,
-            image_dir=image_dir,
-            num_frames=raw.shape[3],
-            seed_mask=seed_mask,
-            min_score=min_score,
-            fallback_shape=(height, width),
-            cancel_path=cancel_path,
-            prompt=str(cfg.get("prompt", "cell")),
-            min_seed_iou=scalar_number(cfg.get("fallback_min_seed_iou"), 0.02, "fallback_min_seed_iou", minimum=0.0),
+        masks[:, :, frame_idx] = candidate.astype(np.uint8)
+        stats_by_frame.append(
+            {
+                "frame_index": frame_idx,
+                "num_candidate_pixels": int(candidate.sum()),
+                "output_debug": output_debug_summary(output),
+            }
         )
-        if fallback_masks is not None and int(fallback_masks[:, :, 1:].sum()) > 0:
-            candidate_masks = fallback_masks
-            stats_by_frame.append(
-                {
-                    "frame_index": -1,
-                    "fallback_text_track": True,
-                    "fallback_stats": fallback_stats,
-                }
+    stats = {
+        "stats_by_frame": stats_by_frame,
+        "candidate_pixels_by_frame": masks.sum(axis=(0, 1)).astype(int).tolist(),
+    }
+    if int(masks[:, :, 1:].sum()) == 0:
+        stats["reason"] = "mask_prompt_has_no_following_candidate"
+        return None, stats
+    return masks, stats
+
+
+def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Path | None) -> None:
+    input_mat_path = as_local_path(cfg["input_mat_path"])
+    seed_mask_path = as_local_path(cfg["seed_mask_mat_path"])
+    if input_mat_path is None or seed_mask_path is None:
+        raise SystemExit("Missing input_mat_path or seed_mask_mat_path")
+
+    raw, frames = load_raw_stack(input_mat_path)
+    seed_mask = load_seed_mask(seed_mask_path)
+    if seed_mask.shape != (raw.shape[0], raw.shape[1]):
+        seed_mask = resize_labels_nearest(seed_mask.astype(np.uint16), (raw.shape[0], raw.shape[1])) > 0
+
+    image_dir = output_dir / "sam31_track_correction_images"
+    write_image_sequence(raw, image_dir, cancel_path=cancel_path)
+    check_cancel(cancel_path, "after correction image export")
+    height, width = raw.shape[0], raw.shape[1]
+    provider_path = as_local_path(cfg.get("candidate_provider_mat_path"))
+    provider_labels = load_provider_labels(
+        provider_path,
+        fallback_shape=(height, width),
+        num_frames=raw.shape[3],
+    )
+
+    video_kwargs = {
+        "score_threshold_detection": scalar_number(cfg.get("video_score_threshold"), 0.40, "video_score_threshold", minimum=0.0),
+        "new_det_thresh": scalar_number(cfg.get("video_new_det_threshold"), 0.40, "video_new_det_threshold", minimum=0.0),
+        "det_nms_thresh": scalar_number(cfg.get("video_det_nms_threshold"), 0.10, "video_det_nms_threshold", minimum=0.0),
+        "assoc_iou_thresh": scalar_number(cfg.get("video_assoc_iou_threshold"), 0.50, "video_assoc_iou_threshold", minimum=0.0),
+        "hotstart_unmatch_thresh": scalar_number(cfg.get("hotstart_unmatch_thresh"), 3, "hotstart_unmatch_thresh", integer=True, minimum=1.0),
+        "max_num_objects": scalar_number(cfg.get("max_num_objects"), 120, "max_num_objects", integer=True, minimum=1.0),
+    }
+    image_size = scalar_number(cfg.get("image_size"), 560, "image_size", integer=True, minimum=1.0)
+    min_score = scalar_number(cfg.get("min_score"), 0.0, "min_score", minimum=0.0)
+    search_roots = [
+        path
+        for path in (as_local_path(value) for value in cfg.get("checkpoint_search_roots", []))
+        if path is not None
+    ]
+
+    # Hybrid order: native text detection first, then the existing mask
+    # provider, and only then the experimental mask injection path.
+    attempts: dict[str, Any] = {}
+    predictor = None
+    text_masks = None
+    if bool_value(cfg.get("fallback_text_track"), True):
+        try:
+            detector_checkpoint_path = resolve_checkpoint(
+                cfg.get("detector_checkpoint_path"),
+                output_dir=output_dir,
+                image_size=image_size,
+                kind="detector",
+                search_roots=search_roots,
             )
+            tracker_checkpoint_path = resolve_checkpoint(
+                cfg.get("tracker_checkpoint_path"),
+                output_dir=output_dir,
+                image_size=image_size,
+                kind="tracker",
+                search_roots=search_roots,
+            )
+            predictor = get_predictor(
+                detector_checkpoint_path=detector_checkpoint_path,
+                tracker_checkpoint_path=tracker_checkpoint_path,
+                image_size=image_size,
+                video_kwargs=video_kwargs,
+            )
+            text_masks, attempts["text"] = text_track_candidates(
+                predictor=predictor,
+                image_dir=image_dir,
+                num_frames=raw.shape[3],
+                seed_mask=seed_mask,
+                min_score=min_score,
+                fallback_shape=(height, width),
+                cancel_path=cancel_path,
+                prompt=str(cfg.get("prompt", "cell")),
+                min_seed_iou=scalar_number(
+                    cfg.get("fallback_min_seed_iou"), 0.02, "fallback_min_seed_iou", minimum=0.0
+                ),
+            )
+        except Exception as exc:  # provider tracking must remain usable without a model
+            attempts["text"] = {"reason": "sam31_text_failed", "error": str(exc)}
+            print(f"[SAM31 correction PY] text strategy failed: {exc}", flush=True)
+
+    provider_masks = None
+    if bool_value(cfg.get("fallback_provider_track"), True):
+        provider_masks, attempts["provider"] = provider_track_candidates(
+            provider_labels,
+            seed_mask,
+            min_seed_iou=scalar_number(
+                cfg.get("provider_min_seed_iou"), 0.02, "provider_min_seed_iou", minimum=0.0
+            ),
+            min_iou=scalar_number(cfg.get("provider_min_iou"), 0.01, "provider_min_iou", minimum=0.0),
+            dilation_radius=scalar_number(
+                cfg.get("provider_dilation_radius"), 3, "provider_dilation_radius", integer=True, minimum=0.0
+            ),
+            max_centroid_distance=scalar_number(
+                cfg.get("provider_max_centroid_distance"),
+                0.0,
+                "provider_max_centroid_distance",
+                minimum=0.0,
+            ),
+            max_gap=scalar_number(cfg.get("provider_max_gap"), 2, "provider_max_gap", integer=True, minimum=0.0),
+        )
+
+    candidate_masks = None
+    strategy_method = "none"
+    if text_masks is not None and int(text_masks[:, :, 1:].sum()) > 0:
+        candidate_masks = text_masks.copy()
+        strategy_method = "text"
+        if provider_masks is not None:
+            filled = 0
+            for frame_idx in range(1, raw.shape[3]):
+                if not np.any(candidate_masks[:, :, frame_idx]) and np.any(provider_masks[:, :, frame_idx]):
+                    candidate_masks[:, :, frame_idx] = provider_masks[:, :, frame_idx]
+                    filled += 1
+            if filled:
+                strategy_method = "text+provider"
+                attempts["provider"]["filled_text_gaps"] = int(filled)
+    elif provider_masks is not None and int(provider_masks[:, :, 1:].sum()) > 0:
+        candidate_masks = provider_masks
+        strategy_method = "provider"
+
+    if candidate_masks is not None:
+        candidate_masks[:, :, 0] = seed_mask.astype(np.uint8)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        savemat(
+            output_dir / "track_correction.mat",
+            {
+                "candidate_masks": candidate_masks,
+                "frames_list": frames.reshape(1, -1),
+                "strategy_method": strategy_method,
+            },
+            do_compression=True,
+        )
+        (output_dir / "track_correction_stats.json").write_text(
+            json.dumps(
+                {
+                    "frames": int(raw.shape[3]),
+                    "strategy_method": strategy_method,
+                    "provider_name": str(cfg.get("candidate_provider_name", "")),
+                    "attempts": attempts,
+                },
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+        return
+
+    if predictor is None:
+        raise RuntimeError(
+            "SAM31 text detection failed and no usable mask provider candidate was found; "
+            f"attempts={attempts}"
+        )
+    if not bool_value(cfg.get("fallback_mask_prompt"), True):
+        raise RuntimeError(f"No text/provider candidate was found; attempts={attempts}")
+
+    prompt_margin = scalar_number(cfg.get("prompt_margin"), 4, "prompt_margin", integer=True, minimum=0.0)
+    prompt_obj_id = scalar_number(cfg.get("prompt_obj_id"), 0, "prompt_obj_id", integer=True, minimum=0.0)
+    candidate_masks, mask_stats = mask_prompt_track_candidates(
+        predictor=predictor,
+        image_dir=image_dir,
+        num_frames=raw.shape[3],
+        seed_mask=seed_mask,
+        min_score=min_score,
+        fallback_shape=(height, width),
+        cancel_path=cancel_path,
+        prompt_margin=int(prompt_margin),
+        prompt_obj_id=int(prompt_obj_id),
+    )
+    if candidate_masks is None:
+        candidate_masks = np.zeros((height, width, raw.shape[3]), dtype=np.uint8)
+
+    candidate_masks[:, :, 0] = seed_mask.astype(np.uint8)
+    future_pixels = int(candidate_masks[:, :, 1:].sum()) if raw.shape[3] > 1 else 0
+    strategy_method = "mask_prompt" if future_pixels > 0 else "none"
+    attempts["mask_prompt"] = {
+        "candidate_pixels_by_frame": candidate_masks.sum(axis=(0, 1)).astype(int).tolist(),
+        "details": mask_stats,
+    }
 
     output_dir.mkdir(parents=True, exist_ok=True)
     savemat(
@@ -886,16 +1173,26 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
         {
             "candidate_masks": candidate_masks,
             "frames_list": frames.reshape(1, -1),
+            "strategy_method": strategy_method,
         },
         do_compression=True,
     )
     (output_dir / "track_correction_stats.json").write_text(
-        json.dumps({"frames": int(raw.shape[3]), "stats_by_frame": stats_by_frame}, indent=2, default=str),
+        json.dumps(
+            {
+                "frames": int(raw.shape[3]),
+                "strategy_method": strategy_method,
+                "provider_name": str(cfg.get("candidate_provider_name", "")),
+                "attempts": attempts,
+            },
+            indent=2,
+            default=str,
+        ),
         encoding="utf-8",
     )
 
 
-def fallback_text_track_candidates(
+def text_track_candidates(
     predictor,
     image_dir: Path,
     num_frames: int,

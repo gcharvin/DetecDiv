@@ -594,6 +594,8 @@ uimenu(cm,'Separator','on','Text','Split object (watershed)', ...
     'MenuSelectedFcn', @(~,~) splitSelectedObjectWatershed(app, roi, chIdx, pix, frm));
 uimenu(cm,'Text','SAM31 propagate this track...', ...
     'MenuSelectedFcn', @(~,~) propagateSelectedObjectSam31(app, roi, chIdx, pix, frm));
+uimenu(cm,'Text','SAM31 propagation settings...', ...
+    'MenuSelectedFcn', @(~,~) configureSam31Propagation(app, roi, pix, frm));
 uimenu(cm,'Text','Repair ID continuity (IoU)...', ...
     'MenuSelectedFcn', @(~,~) repairSelectedObjectContinuityIoU(app, roi, chIdx, pix, frm));
 uimenu(cm,'Separator','on','Text','Track: assign on current frame...', ...
@@ -900,34 +902,18 @@ defaults = defaultSam31PropagationOptions(roi, pix, frm);
 defaults = mergeStoredSam31PropagationOptions(app, defaults, remaining);
 defaultFrames = min(defaults.maxFrames, remaining);
 answer = inputdlg( ...
-    {'Following frames to update:', 'Resolution:', 'Object slots:', 'Collision overlap threshold (0-1):', 'Runner (external/session):'}, ...
+    {'Following frames to update:', 'Mask candidate provider:'}, ...
     'SAM31 propagate selected track', ...
-    [1 42], ...
-    {num2str(defaultFrames), num2str(defaults.resolution), ...
-    num2str(defaults.maxNumObjects), num2str(defaults.collisionThreshold), defaults.runnerMode});
+    [1 56], ...
+    {num2str(defaultFrames), defaults.candidateProviderName});
 if isempty(answer)
     return;
 end
 
 nFrames = round(str2double(answer{1}));
-resolution = round(str2double(answer{2}));
-maxObjects = round(str2double(answer{3}));
-collisionThreshold = str2double(answer{4});
-runnerMode = lower(strtrim(char(string(answer{5}))));
+candidateProviderName = strtrim(char(string(answer{2})));
 if ~isfinite(nFrames) || nFrames < 1
     warndlg('Frame count must be a positive integer.','SAM31 propagation'); return;
-end
-if ~isfinite(resolution) || resolution < 1
-    warndlg('Resolution must be a positive integer.','SAM31 propagation'); return;
-end
-if ~isfinite(maxObjects) || maxObjects < 1
-    warndlg('Object slots must be a positive integer.','SAM31 propagation'); return;
-end
-if ~isfinite(collisionThreshold) || collisionThreshold < 0 || collisionThreshold > 1
-    warndlg('Collision overlap threshold must be between 0 and 1.','SAM31 propagation'); return;
-end
-if ~any(strcmp(runnerMode, {'external','session'}))
-    warndlg('Runner must be either external or session.','SAM31 propagation'); return;
 end
 nFrames = min(nFrames, remaining);
 
@@ -937,10 +923,8 @@ opts.annotationPix = pix;
 opts.annotationChannelName = roi.display.channel{chIdx};
 opts.startFrame = frm;
 opts.maxFrames = nFrames;
-opts.resolution = resolution;
-opts.maxNumObjects = maxObjects;
-opts.collisionThreshold = collisionThreshold;
-opts.runnerMode = runnerMode;
+opts.candidateProviderName = candidateProviderName;
+opts.candidateProviderPix = [];
 storeSam31PropagationOptions(app, opts);
 
 try
@@ -972,6 +956,15 @@ score_display(app,'fast');
 safeClearSelection(app, roi, frm);
 msg = sprintf('SAM31 propagation applied to %d/%d frames.', ...
     summary.appliedFrames, summary.totalTargetFrames);
+try
+    if ~isempty(result.method)
+        msg = sprintf('%s\nStrategy used: %s.', msg, result.method);
+    end
+    if ~isempty(result.providerName)
+        msg = sprintf('%s\nMask candidate provider: %s.', msg, result.providerName);
+    end
+catch
+end
 if summary.appliedFrames == 0 && summary.emptyCandidateFrames == summary.totalTargetFrames
     msg = sprintf('%s\nSAM31 produced no candidate mask after the seed frame.', msg);
 end
@@ -979,13 +972,69 @@ if summary.clippedFrames > 0 || summary.skippedFrames > 0
     msg = sprintf('%s\nClipped: %d frame(s). Skipped on collision: %d frame(s).', ...
         msg, summary.clippedFrames, summary.skippedFrames);
 end
+if summary.reassignedFrames > 0
+    msg = sprintf('%s\nReassigned an existing GT identity on %d frame(s).', ...
+        msg, summary.reassignedFrames);
+end
 helpdlg(msg, 'SAM31 propagation');
+end
+
+function configureSam31Propagation(app, roi, annotationPix, frm)
+remaining = max(1, size(roi.image, 4) - frm);
+opts = defaultSam31PropagationOptions(roi, annotationPix, frm);
+opts = mergeStoredSam31PropagationOptions(app, opts, remaining);
+answer = inputdlg( ...
+    {'SAM31 model/classifier folder (optional):', 'Resolution:', ...
+    'Object slots:', 'Collision overlap threshold (0-1):', ...
+    'Runner (external/session):'}, ...
+    'SAM31 propagation settings', [1 72], ...
+    {opts.modelRoot, num2str(opts.resolution), num2str(opts.maxNumObjects), ...
+    num2str(opts.collisionThreshold), opts.runnerMode});
+if isempty(answer)
+    return;
+end
+
+modelRoot = strtrim(char(string(answer{1})));
+resolution = round(str2double(answer{2}));
+maxObjects = round(str2double(answer{3}));
+collisionThreshold = str2double(answer{4});
+runnerMode = lower(strtrim(char(string(answer{5}))));
+if ~isfinite(resolution) || resolution < 1
+    warndlg('Resolution must be a positive integer.','SAM31 settings'); return;
+end
+if ~isfinite(maxObjects) || maxObjects < 1
+    warndlg('Object slots must be a positive integer.','SAM31 settings'); return;
+end
+if ~isfinite(collisionThreshold) || collisionThreshold < 0 || collisionThreshold > 1
+    warndlg('Collision threshold must be between 0 and 1.','SAM31 settings'); return;
+end
+if ~any(strcmp(runnerMode, {'external','session'}))
+    warndlg('Runner must be either external or session.','SAM31 settings'); return;
+end
+
+opts.modelRoot = modelRoot;
+opts.resolution = resolution;
+opts.maxNumObjects = maxObjects;
+opts.collisionThreshold = collisionThreshold;
+opts.runnerMode = runnerMode;
+storeSam31PropagationOptions(app, opts);
+helpdlg(sprintf(['SAM31 propagation settings saved.\n' ...
+    'Runner: %s\nResolution: %d\nModel: %s'], ...
+    opts.runnerMode, opts.resolution, displayOptionalPath(opts.modelRoot)), ...
+    'SAM31 settings');
+end
+
+function value = displayOptionalPath(pathValue)
+value = char(string(pathValue));
+if isempty(value)
+    value = '<automatic/base model>';
+end
 end
 
 function opts = defaultSam31PropagationOptions(roi, annotationPix, frm)
 opts = struct();
 opts.backend = 'wsl';
-opts.resolution = 560;
+opts.resolution = 280;
 opts.maxNumObjects = 120;
 opts.minScore = 0;
 opts.videoScoreThreshold = 0.40;
@@ -993,9 +1042,13 @@ opts.videoNewDetThreshold = 0.40;
 opts.videoDetNmsThreshold = 0.10;
 opts.videoAssocIouThreshold = 0.50;
 opts.collisionThreshold = 0.35;
-opts.runnerMode = 'external';
+opts.reassignmentIouThreshold = 0.50;
+opts.runnerMode = 'session';
 opts.inputPix = defaultSam31InputPix(roi, annotationPix);
 opts.classif = [];
+opts.candidateProviderName = '';
+opts.candidateProviderPix = [];
+opts.modelRoot = defaultSam31PropagationModelRoot();
 
 try
     if isa(roi.parent, 'classi')
@@ -1014,6 +1067,13 @@ end
 
 if isempty(opts.inputPix)
     opts.inputPix = defaultSam31InputPix(roi, annotationPix);
+end
+try
+    [opts.candidateProviderPix, opts.candidateProviderName] = ...
+        sam31.resolveCorrectionProvider(roi, opts);
+catch
+    opts.candidateProviderPix = [];
+    opts.candidateProviderName = '';
 end
 opts.startFrame = frm;
 end
@@ -1036,11 +1096,22 @@ end
 
 opts.maxFrames = min(20, remaining);
 opts = copyStoredNumericOption(opts, stored, 'maxFrames');
-opts = copyStoredNumericOption(opts, stored, 'resolution');
-opts = copyStoredNumericOption(opts, stored, 'maxNumObjects');
-opts = copyStoredNumericOption(opts, stored, 'collisionThreshold');
+settingsVersion = storedNumericOption(stored, 'settingsVersion', 0);
+if settingsVersion >= 2
+    opts = copyStoredNumericOption(opts, stored, 'resolution');
+    opts = copyStoredNumericOption(opts, stored, 'maxNumObjects');
+    opts = copyStoredNumericOption(opts, stored, 'collisionThreshold');
+end
 try
-    if isfield(stored, 'runnerMode') && ~isempty(stored.runnerMode)
+    if isfield(stored, 'modelRoot') && ~isempty(stored.modelRoot)
+        opts.modelRoot = char(string(stored.modelRoot));
+    end
+catch
+end
+try
+    if settingsVersion < 2
+        opts.runnerMode = 'session';
+    elseif isfield(stored, 'runnerMode') && ~isempty(stored.runnerMode)
         runnerMode = lower(strtrim(char(string(stored.runnerMode))));
         if any(strcmp(runnerMode, {'external','session'}))
             opts.runnerMode = runnerMode;
@@ -1060,7 +1131,9 @@ mapping = { ...
     'sam31_propagation_resolution', 'resolution'; ...
     'sam31_propagation_max_num_objects', 'maxNumObjects'; ...
     'sam31_propagation_collision_threshold', 'collisionThreshold'; ...
-    'sam31_propagation_runner_mode', 'runnerMode'};
+    'sam31_propagation_runner_mode', 'runnerMode'; ...
+    'sam31_propagation_model_root', 'modelRoot'; ...
+    'sam31_propagation_settings_version', 'settingsVersion'};
 for i = 1:size(mapping, 1)
     prefName = mapping{i, 1};
     optName = mapping{i, 2};
@@ -1085,13 +1158,28 @@ catch
 end
 end
 
+function value = storedNumericOption(stored, name, fallback)
+value = fallback;
+try
+    if isfield(stored, name) && ~isempty(stored.(name))
+        candidate = str2double(char(string(stored.(name))));
+        if isfinite(candidate)
+            value = candidate;
+        end
+    end
+catch
+end
+end
+
 function storeSam31PropagationOptions(app, opts)
 stored = struct( ...
+    'settingsVersion', 2, ...
     'maxFrames', opts.maxFrames, ...
     'resolution', opts.resolution, ...
     'maxNumObjects', opts.maxNumObjects, ...
     'collisionThreshold', opts.collisionThreshold, ...
-    'runnerMode', opts.runnerMode);
+    'runnerMode', opts.runnerMode, ...
+    'modelRoot', opts.modelRoot);
 try
     if isprop(app, 'DisplaySettings') && isstruct(app.DisplaySettings)
         app.DisplaySettings.SAM31Propagation = stored;
@@ -1106,8 +1194,28 @@ try
     userprefs.sam31_propagation_max_num_objects = stored.maxNumObjects;
     userprefs.sam31_propagation_collision_threshold = stored.collisionThreshold;
     userprefs.sam31_propagation_runner_mode = stored.runnerMode;
+    userprefs.sam31_propagation_model_root = stored.modelRoot;
+    userprefs.sam31_propagation_settings_version = stored.settingsVersion;
     detecdiv_prefs_save(userprefs);
 catch
+end
+end
+
+function root = defaultSam31PropagationModelRoot()
+root = getenv('SAM31_PROPAGATION_MODEL_ROOT');
+if ~isempty(root) && exist(root, 'dir') == 7
+    return;
+end
+root = '';
+candidates = { ...
+    'X:\Gilles\sam31\sam31_1', ...
+    fullfile(getenv('USERPROFILE'), 'SynologyDrive', 'Data', ...
+        'cellcycle_detecdiv', 'classifier', 'sam31_phylocell_1')};
+for i = 1:numel(candidates)
+    if exist(candidates{i}, 'dir') == 7
+        root = candidates{i};
+        return;
+    end
 end
 end
 
@@ -1217,7 +1325,8 @@ if ndims(masks) == 2
 end
 
 summary = struct('totalTargetFrames', 0, 'appliedFrames', 0, ...
-    'clippedFrames', 0, 'skippedFrames', 0, 'emptyCandidateFrames', 0);
+    'clippedFrames', 0, 'skippedFrames', 0, 'emptyCandidateFrames', 0, ...
+    'reassignedFrames', 0, 'reassignedLabels', []);
 for k = 1:numel(frames)
     f = frames(k);
     if f <= opts.startFrame || f < 1 || f > size(roi.image,4)
@@ -1230,20 +1339,18 @@ for k = 1:numel(frames)
         continue;
     end
     M = roi.image(:,:,pix,f);
-    selfMask = (M == oldLab);
-    otherMask = (M > 0) & (M ~= oldLab);
-    overlap = candidate & otherMask;
-    overlapFraction = nnz(overlap) / max(1, nnz(candidate));
-    if overlapFraction > opts.collisionThreshold
+    [M, action] = sam31.mergeTrackCorrectionFrame(M, candidate, oldLab, opts);
+    if action.skipped
         summary.skippedFrames = summary.skippedFrames + 1;
         continue;
     end
-    if any(overlap(:))
-        candidate(overlap) = false;
+    if action.clipped
         summary.clippedFrames = summary.clippedFrames + 1;
     end
-    M(selfMask) = 0;
-    M(candidate) = oldLab;
+    if action.reassignedLabel > 0
+        summary.reassignedFrames = summary.reassignedFrames + 1;
+        summary.reassignedLabels(end+1) = action.reassignedLabel;
+    end
     roi.image(:,:,pix,f) = M;
     summary.appliedFrames = summary.appliedFrames + 1;
 end
