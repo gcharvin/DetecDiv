@@ -968,6 +968,11 @@ end
 if summary.appliedFrames == 0 && summary.emptyCandidateFrames == summary.totalTargetFrames
     msg = sprintf('%s\nSAM31 produced no candidate mask after the seed frame.', msg);
 end
+borderExitFrame = sam31PossibleBorderExitFrame(result);
+if ~isempty(borderExitFrame)
+    msg = sprintf(['%s\nPropagation stopped at frame %d: the last mask was at the image ' ...
+        'edge, so the cell may have left the field.'], msg, borderExitFrame);
+end
 if summary.clippedFrames > 0 || summary.skippedFrames > 0
     msg = sprintf('%s\nClipped: %d frame(s). Skipped on collision: %d frame(s).', ...
         msg, summary.clippedFrames, summary.skippedFrames);
@@ -977,6 +982,24 @@ if summary.reassignedFrames > 0
         msg, summary.reassignedFrames);
 end
 helpdlg(msg, 'SAM31 propagation');
+end
+
+function frame = sam31PossibleBorderExitFrame(result)
+frame = [];
+try
+    fallbacks = result.stats.attempts.box_prompt.geometric_fallbacks;
+    for i = 1:numel(fallbacks)
+        reason = char(string(fallbacks(i).reason));
+        if strcmp(reason, 'possible_exit_at_border')
+            relativeIndex = round(double(fallbacks(i).frame_index)) + 1;
+            if relativeIndex >= 1 && relativeIndex <= numel(result.frames)
+                frame = double(result.frames(relativeIndex));
+            end
+            return;
+        end
+    end
+catch
+end
 end
 
 function configureSam31Propagation(app, roi, annotationPix, frm)
@@ -1043,6 +1066,7 @@ opts.videoDetNmsThreshold = 0.10;
 opts.videoAssocIouThreshold = 0.50;
 opts.collisionThreshold = 0.35;
 opts.reassignmentIouThreshold = 0.50;
+opts.allowIdentityReassignment = false;
 opts.runnerMode = 'session';
 opts.inputPix = defaultSam31InputPix(roi, annotationPix);
 opts.classif = [];

@@ -80,10 +80,12 @@ cfg.prompt = char(string(opts.prompt));
 cfg.correction_strategy = 'text_provider_mask_prompt';
 cfg.fallback_text_track = true;
 cfg.fallback_provider_track = true;
+cfg.fallback_box_prompt = true;
 cfg.fallback_mask_prompt = true;
 cfg.fallback_min_seed_iou = opts.textMinSeedIou;
 cfg.provider_min_seed_iou = opts.providerMinSeedIou;
 cfg.provider_min_iou = opts.providerMinIou;
+cfg.provider_min_dilated_iou = opts.providerMinDilatedIou;
 cfg.provider_dilation_radius = opts.providerDilationRadius;
 cfg.provider_max_centroid_distance = opts.providerMaxCentroidDistance;
 cfg.provider_max_gap = opts.providerMaxGap;
@@ -160,6 +162,7 @@ defaults = struct( ...
     'textMinSeedIou', 0.02, ...
     'providerMinSeedIou', 0.02, ...
     'providerMinIou', 0.01, ...
+    'providerMinDilatedIou', 0.05, ...
     'providerDilationRadius', 3, ...
     'providerMaxCentroidDistance', 0, ...
     'providerMaxGap', 2);
@@ -187,6 +190,7 @@ opts.cacheCheckpoints = logical(opts.cacheCheckpoints);
 opts.textMinSeedIou = double(opts.textMinSeedIou);
 opts.providerMinSeedIou = double(opts.providerMinSeedIou);
 opts.providerMinIou = double(opts.providerMinIou);
+opts.providerMinDilatedIou = double(opts.providerMinDilatedIou);
 opts.providerDilationRadius = round(double(opts.providerDilationRadius));
 opts.providerMaxCentroidDistance = double(opts.providerMaxCentroidDistance);
 opts.providerMaxGap = round(double(opts.providerMaxGap));

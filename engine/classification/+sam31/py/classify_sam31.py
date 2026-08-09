@@ -785,6 +785,7 @@ def provider_track_candidates(
     *,
     min_seed_iou: float = 0.02,
     min_iou: float = 0.01,
+    min_dilated_iou: float = 0.05,
     dilation_radius: int = 3,
     max_centroid_distance: float = 0.0,
     max_gap: int = 2,
@@ -850,7 +851,11 @@ def provider_track_candidates(
             dilated_iou = label_iou(dilated_reference, candidate)
             center = mask_centroid(candidate)
             distance = float(np.hypot(center[0] - ref_center[0], center[1] - ref_center[1]))
-            if raw_iou < min_iou and dilated_iou <= 0 and distance > allowed_distance:
+            has_overlap_support = raw_iou >= min_iou or dilated_iou >= min_dilated_iou
+            has_nearby_support = (
+                distance <= 0.75 * allowed_distance and 0.50 <= area_ratio <= 1.75
+            )
+            if not has_overlap_support and not has_nearby_support:
                 continue
             area_similarity = min(area_ratio, 1.0 / max(area_ratio, 1e-9))
             distance_score = float(np.exp(-distance / max(allowed_distance, 1e-6)))
@@ -987,6 +992,320 @@ def mask_prompt_track_candidates(
     return masks, stats
 
 
+def box_prompt_once(
+    predictor,
+    image_dir: Path,
+    num_frames: int,
+    seed_frame: int,
+    reference_mask: np.ndarray,
+    min_score: float,
+    fallback_shape: tuple[int, int],
+    cancel_path: Path | None,
+    min_seed_iou: float = 0.02,
+    margin: int = 2,
+    min_seed_area_ratio: float = 1.0 / 3.0,
+    max_seed_area_ratio: float = 3.0,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Run one fresh box-prompt session from an arbitrary seed frame."""
+    from sam31_ctc_benchmark.sam31_runner import output_to_label_mask
+
+    ys, xs = np.nonzero(reference_mask)
+    if len(xs) == 0:
+        return None, {"reason": "empty_seed"}
+    height, width = fallback_shape
+    x0 = max(0, int(xs.min()) - margin)
+    y0 = max(0, int(ys.min()) - margin)
+    x1 = min(width, int(xs.max()) + 1 + margin)
+    y1 = min(height, int(ys.max()) + 1 + margin)
+    box = [x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height]
+
+    response = predictor.handle_request(request={"type": "start_session", "resource_path": str(image_dir)})
+    session_id = response["session_id"]
+    try:
+        predictor.handle_request(request={"type": "reset_session", "session_id": session_id})
+        predictor.handle_request(
+            request={
+                "type": "add_prompt",
+                "session_id": session_id,
+                "frame_index": int(seed_frame),
+                "bounding_boxes": [box],
+                "bounding_box_labels": [1],
+                "output_prob_thresh": min_score,
+            }
+        )
+        outputs = stream_propagate_in_video(
+            predictor,
+            session_id,
+            total_frames=num_frames,
+            min_score=min_score,
+            cancel_path=cancel_path,
+            prefix="[SAM31 box correction PY]",
+        )
+    finally:
+        predictor.handle_request(request={"type": "close_session", "session_id": session_id})
+
+    labels_by_frame: list[np.ndarray] = []
+    stats_by_frame: list[dict[str, Any]] = []
+    for frame_idx in range(num_frames):
+        output = outputs.get(frame_idx)
+        if output is None:
+            labels = np.zeros(fallback_shape, dtype=np.uint16)
+            stats_by_frame.append({"frame_index": frame_idx, "missing_output": True})
+        else:
+            labels = resize_labels_nearest(output_to_label_mask(output, min_score=min_score), fallback_shape)
+            stats_by_frame.append(
+                {
+                    "frame_index": frame_idx,
+                    "num_output_objects": int(np.count_nonzero(np.unique(labels))),
+                    "output_debug": output_debug_summary(output),
+                }
+            )
+        labels_by_frame.append(labels)
+
+    seed_labels = labels_by_frame[seed_frame]
+    best_label = 0
+    best_iou = 0.0
+    for label in [int(v) for v in np.unique(seed_labels) if v != 0]:
+        iou = label_iou(seed_labels == label, reference_mask)
+        if iou > best_iou:
+            best_iou = iou
+            best_label = label
+    stats = {
+        "box_xywh_normalized": box,
+        "seed_frame": int(seed_frame),
+        "best_seed_label": int(best_label),
+        "best_seed_iou": float(best_iou),
+        "stats_by_frame": stats_by_frame,
+    }
+    candidate_area = int(np.count_nonzero(seed_labels == best_label)) if best_label else 0
+    reference_area = max(1, int(np.count_nonzero(reference_mask)))
+    seed_area_ratio = float(candidate_area / reference_area)
+    stats["seed_candidate_area"] = candidate_area
+    stats["seed_reference_area"] = reference_area
+    stats["seed_area_ratio"] = seed_area_ratio
+    if best_label == 0 or best_iou < min_seed_iou:
+        stats["reason"] = "no_box_track_overlaps_seed"
+        return None, stats
+    if seed_area_ratio < min_seed_area_ratio or seed_area_ratio > max_seed_area_ratio:
+        stats["reason"] = "box_seed_area_mismatch"
+        return None, stats
+
+    masks = np.zeros((height, width, num_frames), dtype=np.uint8)
+    for frame_idx, labels in enumerate(labels_by_frame):
+        masks[:, :, frame_idx] = (labels == best_label).astype(np.uint8)
+    stats["candidate_pixels_by_frame"] = masks.sum(axis=(0, 1)).astype(int).tolist()
+    return masks, stats
+
+
+def box_prompt_track_candidates(
+    predictor,
+    image_dir: Path,
+    num_frames: int,
+    seed_mask: np.ndarray,
+    min_score: float,
+    fallback_shape: tuple[int, int],
+    cancel_path: Path | None,
+    raw_stack: np.ndarray | None = None,
+    min_seed_iou: float = 0.02,
+    margin: int = 2,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Propagate with box prompts, re-seeding whenever the target is lost.
+
+    A SAM31 propagation can return a good mask for one or more following
+    frames and then lose a small object.  In that case, prompt the first
+    missing frame directly with the last accepted mask's box.  This keeps
+    the correction local to the selected object instead of borrowing an
+    unrelated provider track.
+    """
+    height, width = fallback_shape
+    combined = np.zeros((height, width, num_frames), dtype=np.uint8)
+    combined[:, :, 0] = seed_mask.astype(np.uint8)
+    seed_frame = 0
+    reference = seed_mask.astype(bool)
+    sessions: list[dict[str, Any]] = []
+
+    while seed_frame < num_frames - 1 and len(sessions) < num_frames:
+        session_masks, session_stats = box_prompt_once(
+            predictor=predictor,
+            image_dir=image_dir,
+            num_frames=num_frames,
+            seed_frame=seed_frame,
+            reference_mask=reference,
+            min_score=min_score,
+            fallback_shape=fallback_shape,
+            cancel_path=cancel_path,
+            min_seed_iou=min_seed_iou,
+            margin=margin,
+        )
+        session_stats["prompt_mode"] = "propagate_from_last_success"
+        sessions.append(session_stats)
+        if session_masks is None:
+            next_frame = seed_frame + 1
+            direct_masks, direct_stats = box_prompt_once(
+                predictor=predictor,
+                image_dir=image_dir,
+                num_frames=num_frames,
+                seed_frame=next_frame,
+                reference_mask=reference,
+                min_score=min_score,
+                fallback_shape=fallback_shape,
+                cancel_path=cancel_path,
+                min_seed_iou=min_seed_iou,
+                margin=margin,
+            )
+            direct_stats["prompt_mode"] = "recover_first_missing_frame"
+            direct_stats["reference_frame"] = int(seed_frame)
+            sessions.append(direct_stats)
+            if direct_masks is None or not np.any(direct_masks[:, :, next_frame]):
+                break
+            session_masks = direct_masks
+            seed_frame = next_frame
+            combined[:, :, seed_frame] = session_masks[:, :, seed_frame]
+
+        for frame_idx in range(seed_frame + 1, num_frames):
+            if np.any(session_masks[:, :, frame_idx]):
+                combined[:, :, frame_idx] = session_masks[:, :, frame_idx]
+
+        missing = next(
+            (idx for idx in range(seed_frame + 1, num_frames) if not np.any(combined[:, :, idx])),
+            None,
+        )
+        if missing is None:
+            break
+        last_success = missing - 1
+        if last_success < seed_frame or not np.any(combined[:, :, last_success]):
+            break
+        if last_success == seed_frame:
+            reference = combined[:, :, seed_frame].astype(bool)
+            continue
+        seed_frame = last_success
+        reference = combined[:, :, seed_frame].astype(bool)
+
+    geometric_fallbacks: list[dict[str, Any]] = []
+    if raw_stack is not None:
+        # A one-frame conservative draft is preferable to silently dropping
+        # the selected track.  Do not extrapolate repeatedly: the MATLAB
+        # merge still rejects collisions with any existing identity.
+        for frame_idx in range(1, num_frames):
+            if np.any(combined[:, :, frame_idx]):
+                continue
+            if not np.any(combined[:, :, frame_idx - 1]):
+                break
+            previous_mask = combined[:, :, frame_idx - 1].astype(bool)
+            edge_distance = mask_edge_distance(previous_mask)
+            if edge_distance <= 2:
+                geometric_fallbacks.append(
+                    {
+                        "frame_index": int(frame_idx),
+                        "reason": "possible_exit_at_border",
+                        "edge_distance_pixels": int(edge_distance),
+                        "applied": False,
+                    }
+                )
+                break
+            translated, motion_stats = translate_mask_by_local_registration(
+                previous_mask,
+                raw_stack[:, :, 0, frame_idx - 1],
+                raw_stack[:, :, 0, frame_idx],
+            )
+            combined[:, :, frame_idx] = translated.astype(np.uint8)
+            motion_stats["frame_index"] = int(frame_idx)
+            motion_stats["applied"] = True
+            geometric_fallbacks.append(motion_stats)
+            break
+
+    stats = {
+        "sessions": sessions,
+        "geometric_fallbacks": geometric_fallbacks,
+        "candidate_pixels_by_frame": combined.sum(axis=(0, 1)).astype(int).tolist(),
+    }
+    if int(combined[:, :, 1:].sum()) == 0:
+        stats["reason"] = "box_track_has_no_following_candidate"
+        return None, stats
+    return combined, stats
+
+
+def mask_edge_distance(mask: np.ndarray) -> int:
+    """Return the minimum pixel gap between a non-empty mask and the image edge."""
+    mask = np.asarray(mask, dtype=bool)
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return -1
+    height, width = mask.shape
+    return int(
+        min(
+            int(xs.min()),
+            int(ys.min()),
+            width - 1 - int(xs.max()),
+            height - 1 - int(ys.max()),
+        )
+    )
+
+
+def translate_mask_by_local_registration(
+    mask: np.ndarray,
+    previous_image: np.ndarray,
+    current_image: np.ndarray,
+    search_radius: int = 4,
+    context_margin: int = 4,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Translate a mask by the best local normalized image correlation."""
+    mask = np.asarray(mask, dtype=bool)
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0:
+        return mask.copy(), {"reason": "empty_reference", "shift_xy": [0, 0]}
+
+    height, width = mask.shape
+    x0 = max(0, int(xs.min()) - context_margin - search_radius)
+    x1 = min(width, int(xs.max()) + 1 + context_margin + search_radius)
+    y0 = max(0, int(ys.min()) - context_margin - search_radius)
+    y1 = min(height, int(ys.max()) + 1 + context_margin + search_radius)
+    previous = np.asarray(previous_image, dtype=np.float32)[y0:y1, x0:x1]
+    previous = previous - float(previous.mean())
+    previous_scale = float(np.sqrt(np.mean(previous * previous)))
+    if previous_scale > 0:
+        previous = previous / previous_scale
+
+    best_score = -np.inf
+    best_dx = 0
+    best_dy = 0
+    current = np.asarray(current_image, dtype=np.float32)
+    for dy in range(-search_radius, search_radius + 1):
+        cy0, cy1 = y0 + dy, y1 + dy
+        if cy0 < 0 or cy1 > height:
+            continue
+        for dx in range(-search_radius, search_radius + 1):
+            cx0, cx1 = x0 + dx, x1 + dx
+            if cx0 < 0 or cx1 > width:
+                continue
+            candidate = current[cy0:cy1, cx0:cx1]
+            candidate = candidate - float(candidate.mean())
+            candidate_scale = float(np.sqrt(np.mean(candidate * candidate)))
+            if candidate_scale > 0:
+                candidate = candidate / candidate_scale
+            score = float(np.mean(previous * candidate)) - 0.001 * float(dx * dx + dy * dy)
+            if score > best_score:
+                best_score = score
+                best_dx = dx
+                best_dy = dy
+
+    translated = np.zeros_like(mask)
+    src_y0 = max(0, -best_dy)
+    src_y1 = min(height, height - best_dy)
+    src_x0 = max(0, -best_dx)
+    src_x1 = min(width, width - best_dx)
+    translated[
+        src_y0 + best_dy : src_y1 + best_dy,
+        src_x0 + best_dx : src_x1 + best_dx,
+    ] = mask[src_y0:src_y1, src_x0:src_x1]
+    return translated, {
+        "method": "local_translation",
+        "shift_xy": [int(best_dx), int(best_dy)],
+        "correlation": float(best_score),
+        "pixels": int(np.count_nonzero(translated)),
+    }
+
+
 def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Path | None) -> None:
     input_mat_path = as_local_path(cfg["input_mat_path"])
     seed_mask_path = as_local_path(cfg["seed_mask_mat_path"])
@@ -1078,6 +1397,12 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
                 cfg.get("provider_min_seed_iou"), 0.02, "provider_min_seed_iou", minimum=0.0
             ),
             min_iou=scalar_number(cfg.get("provider_min_iou"), 0.01, "provider_min_iou", minimum=0.0),
+            min_dilated_iou=scalar_number(
+                cfg.get("provider_min_dilated_iou"),
+                0.05,
+                "provider_min_dilated_iou",
+                minimum=0.0,
+            ),
             dilation_radius=scalar_number(
                 cfg.get("provider_dilation_radius"), 3, "provider_dilation_radius", integer=True, minimum=0.0
             ),
@@ -1107,6 +1432,44 @@ def run_track_correction(cfg: dict[str, Any], output_dir: Path, cancel_path: Pat
     elif provider_masks is not None and int(provider_masks[:, :, 1:].sum()) > 0:
         candidate_masks = provider_masks
         strategy_method = "provider"
+
+    if (
+        candidate_masks is None
+        and predictor is not None
+        and bool_value(cfg.get("fallback_box_prompt"), True)
+    ):
+        try:
+            box_masks, attempts["box_prompt"] = box_prompt_track_candidates(
+                predictor=predictor,
+                image_dir=image_dir,
+                num_frames=raw.shape[3],
+                seed_mask=seed_mask,
+                min_score=min_score,
+                fallback_shape=(height, width),
+                cancel_path=cancel_path,
+                raw_stack=raw,
+                min_seed_iou=scalar_number(
+                    cfg.get("fallback_min_seed_iou"),
+                    0.02,
+                    "fallback_min_seed_iou",
+                    minimum=0.0,
+                ),
+                margin=scalar_number(
+                    cfg.get("prompt_margin"), 2, "prompt_margin", integer=True, minimum=0.0
+                ),
+            )
+            if box_masks is not None and int(box_masks[:, :, 1:].sum()) > 0:
+                candidate_masks = box_masks
+                if any(
+                    bool(item.get("applied", True))
+                    for item in attempts["box_prompt"].get("geometric_fallbacks", [])
+                ):
+                    strategy_method = "box_prompt+local_motion"
+                else:
+                    strategy_method = "box_prompt"
+        except Exception as exc:
+            attempts["box_prompt"] = {"reason": "sam31_box_failed", "error": str(exc)}
+            print(f"[SAM31 correction PY] box strategy failed: {exc}", flush=True)
 
     if candidate_masks is not None:
         candidate_masks[:, :, 0] = seed_mask.astype(np.uint8)
@@ -1202,6 +1565,8 @@ def text_track_candidates(
     cancel_path: Path | None,
     prompt: str = "cell",
     min_seed_iou: float = 0.02,
+    min_seed_area_ratio: float = 1.0 / 3.0,
+    max_seed_area_ratio: float = 3.0,
 ) -> tuple[np.ndarray | None, dict[str, Any]]:
     labels_by_frame, text_stats = run_sam31_text_movie(
         predictor=predictor,
@@ -1228,8 +1593,17 @@ def text_track_candidates(
         "best_seed_iou": float(best_iou),
         "text_stats_by_frame": text_stats,
     }
+    candidate_area = int(np.count_nonzero(seed_labels == best_label)) if best_label else 0
+    seed_area = max(1, int(np.count_nonzero(seed_mask)))
+    seed_area_ratio = float(candidate_area / seed_area)
+    stats["seed_candidate_area"] = candidate_area
+    stats["seed_reference_area"] = seed_area
+    stats["seed_area_ratio"] = seed_area_ratio
     if best_label == 0 or best_iou < min_seed_iou:
         stats["reason"] = "no_text_track_overlaps_seed"
+        return None, stats
+    if seed_area_ratio < min_seed_area_ratio or seed_area_ratio > max_seed_area_ratio:
+        stats["reason"] = "text_seed_area_mismatch"
         return None, stats
 
     masks = np.zeros((fallback_shape[0], fallback_shape[1], num_frames), dtype=np.uint8)

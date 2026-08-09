@@ -6,6 +6,7 @@ if nargin < 4 || ~isstruct(opts)
 end
 collisionThreshold = numericOption(opts, 'collisionThreshold', 0.35);
 reassignmentIouThreshold = numericOption(opts, 'reassignmentIouThreshold', 0.50);
+allowIdentityReassignment = logicalOption(opts, 'allowIdentityReassignment', false);
 
 candidate = logical(candidate);
 trackLabel = double(trackLabel);
@@ -22,7 +23,7 @@ end
 % intentional identity transfer instead of rejecting it as a collision.
 overlapLabels = unique(double(labels(candidate)));
 overlapLabels(overlapLabels == 0 | overlapLabels == trackLabel) = [];
-if isscalar(overlapLabels)
+if allowIdentityReassignment && isscalar(overlapLabels)
     otherLabel = overlapLabels(1);
     otherObject = labels == otherLabel;
     overlapCount = nnz(candidate & otherObject);
@@ -58,6 +59,19 @@ try
     if isfield(opts, name) && ~isempty(opts.(name))
         candidate = double(opts.(name));
         if isscalar(candidate) && isfinite(candidate)
+            value = candidate;
+        end
+    end
+catch
+end
+end
+
+function value = logicalOption(opts, name, fallback)
+value = fallback;
+try
+    if isfield(opts, name) && ~isempty(opts.(name))
+        candidate = logical(opts.(name));
+        if isscalar(candidate)
             value = candidate;
         end
     end
