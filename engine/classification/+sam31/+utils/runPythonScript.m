@@ -115,7 +115,7 @@ stamp = 'missing';
 try
     info = dir(pathValue);
     if ~isempty(info)
-        stamp = sprintf('%.12g', info.datenum);
+        stamp = sprintf('%.12g:%d', info.datenum, info.bytes);
     end
 catch
 end
@@ -258,13 +258,23 @@ deleteIfExists(stdoutPath);
 ensurePyenv(runtime.pythonExe);
 ensurePythonPath(runtime, scriptPath);
 
-persistent moduleCache modulePathCache
+persistent moduleCache modulePathCache moduleStampCache
 [runnerDir, moduleName, ~] = fileparts(scriptPath);
-if isempty(moduleCache) || isempty(modulePathCache) || ~strcmp(modulePathCache, scriptPath)
+sourceStamp = fileStamp(scriptPath);
+moduleChanged = isempty(moduleCache) || isempty(modulePathCache) || ...
+    ~strcmp(modulePathCache, scriptPath) || isempty(moduleStampCache) || ...
+    ~strcmp(moduleStampCache, sourceStamp);
+if moduleChanged
     py.importlib.invalidate_caches();
     py.sys.path().insert(int32(0), runnerDir);
     moduleCache = py.importlib.import_module(moduleName);
+    % import_module returns sys.modules when MATLAB's persistent Python
+    % interpreter has already seen this bridge. Reload explicitly so a
+    % code update cannot keep executing stale propagation logic.
+    moduleCache = py.importlib.reload(moduleCache);
     modulePathCache = scriptPath;
+    moduleStampCache = sourceStamp;
+    disp('[SAM31] session runner: Python bridge loaded/reloaded');
 end
 
 disp('[SAM31] session runner: reusing MATLAB Python interpreter');

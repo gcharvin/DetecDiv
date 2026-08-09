@@ -683,6 +683,8 @@ def get_predictor(
 
     from sam31_ctc_benchmark.sam31_runner import build_predictor  # noqa: WPS433
 
+    enable_compatible_sdpa_fallback()
+
     print("[SAM31 classify] loading SAM31 predictor", flush=True)
     PREDICTOR = build_predictor(
         detector_checkpoint_path=detector_checkpoint_path,
@@ -692,6 +694,36 @@ def get_predictor(
     )
     PREDICTOR_KEY = key
     return PREDICTOR
+
+
+def enable_compatible_sdpa_fallback() -> None:
+    """Allow PyTorch's math SDPA kernel when Flash Attention is unavailable.
+
+    The upstream SAM3 decoder explicitly requests Flash Attention only.
+    Windows PyTorch builds commonly do not provide that kernel, which makes
+    box and mask prompts fail with ``No available kernel``.  Keeping Flash
+    first preserves the fast path while the math backend provides a portable
+    fallback.
+    """
+    try:
+        import sam3.model.decoder as decoder  # noqa: WPS433
+
+        if bool(getattr(decoder, "_detecdiv_sdpa_fallback_enabled", False)):
+            return
+        original_sdpa_kernel = decoder.sdpa_kernel
+        math_backend = decoder.SDPBackend.MATH
+
+        def compatible_sdpa_kernel(backends, *args, **kwargs):
+            requested = list(backends) if isinstance(backends, (list, tuple)) else [backends]
+            if math_backend not in requested:
+                requested.append(math_backend)
+            return original_sdpa_kernel(requested, *args, **kwargs)
+
+        decoder.sdpa_kernel = compatible_sdpa_kernel
+        decoder._detecdiv_sdpa_fallback_enabled = True
+        print("[SAM31 classify] enabled portable SDPA math fallback", flush=True)
+    except Exception as exc:
+        print(f"[SAM31 classify] could not enable SDPA fallback: {exc}", flush=True)
 
 
 def load_seed_mask(path: Path) -> np.ndarray:
@@ -1193,12 +1225,15 @@ def box_prompt_track_candidates(
                 break
             previous_mask = combined[:, :, frame_idx - 1].astype(bool)
             edge_distance = mask_edge_distance(previous_mask)
-            if edge_distance <= 2:
+            object_radius = float(np.sqrt(np.count_nonzero(previous_mask) / np.pi))
+            edge_guard = max(2, int(np.ceil(0.5 * object_radius)))
+            if edge_distance <= edge_guard:
                 geometric_fallbacks.append(
                     {
                         "frame_index": int(frame_idx),
                         "reason": "possible_exit_at_border",
                         "edge_distance_pixels": int(edge_distance),
+                        "edge_guard_pixels": int(edge_guard),
                         "applied": False,
                     }
                 )
