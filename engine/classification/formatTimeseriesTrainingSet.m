@@ -1,4 +1,9 @@
-function output= formatTimeseriesTrainingSet(foldername,classif,rois)
+function output= formatTimeseriesTrainingSet(foldername,classif,rois,varargin)
+
+p = inputParser;
+p.addParameter('Frames', []);
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 output=0;
 % if ~isfolder([classif.path '/' foldername '/data'])
@@ -33,7 +38,8 @@ str{cc+1}=strfield(pix(cc)+1:end);
 cc=1;
 
 
-for i=rois
+for roiPosition=1:numel(rois)
+    i=rois(roiPosition);
 
     tmp=classif.roi(i);
 
@@ -54,7 +60,10 @@ for i=rois
     if numel(tmp)
 
        % tmp
+      selectedFrames = trainingBounds.frames(classif,i,numel(tmp),framesSpec, ...
+          'RoiPosition',roiPosition);
       pix=find(~isnan(classif.roi(i).train.(classif.strid).id));
+      pix=intersect(selectedFrames,pix,'stable');
       %pix=pix(1:numel(tmp));
       
       xtmp=tmp(pix);

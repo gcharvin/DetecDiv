@@ -8,7 +8,9 @@ params = trainingInferenceParams(classif, tp);
 eventOffset = 0;
 externalGt = loadExternalGroundTruth(tp.groundTruthSource);
 
-for r = roiIndices(:)'
+roiIndices = roiIndices(:)';
+for roiPosition = 1:numel(roiIndices)
+    r = roiIndices(roiPosition);
     roiobj = classif.roi(r);
     wasLoaded = ~isempty(roiobj.image);
     if ~wasLoaded, roiobj.load; end
@@ -34,7 +36,8 @@ for r = roiIndices(:)'
     end
 
     result = budMotherLinker.infer(stack, params, char(string(roiobj.id)));
-    selectedFrames = normalizeFrames(frames,size(stack,3));
+    selectedFrames = trainingBounds.frames(classif,r,size(stack,3),frames, ...
+        'RoiPosition',roiPosition,'SplitName',splitName);
     dataset.summary.rois = dataset.summary.rois + 1;
     for e = 1:numel(result.edges)
         edge = result.edges(e);
@@ -248,17 +251,6 @@ roiId = char(string(roiId));
 aliases = {roiId};
 trimmed = regexprep(roiId,'_1$','');
 if ~strcmp(trimmed,roiId), aliases{end+1}=trimmed; end
-end
-
-function frames = normalizeFrames(value,n)
-if isempty(value), frames=[]; return; end
-if ischar(value) || isstring(value)
-    txt = strtrim(char(string(value)));
-    if isempty(txt) || strcmpi(txt,'all'), frames=[]; return; end
-    value = str2num(txt); %#ok<ST2NM>
-end
-frames = unique(round(double(value(:)')),'stable');
-frames = frames(isfinite(frames) & frames >= 1 & frames <= n);
 end
 
 function clearIfNeeded(roiobj,wasLoaded)

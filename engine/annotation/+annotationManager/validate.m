@@ -5,9 +5,11 @@ p = inputParser;
 p.addParameter('RequireReviewed', true, @(x) islogical(x) && isscalar(x));
 p.addParameter('AllowPartial', spec.allowPartialApproval, ...
     @(x) islogical(x) && isscalar(x));
+p.addParameter('ReviewFrames', [], @isnumeric);
 p.parse(varargin{:});
 
-summary = annotationManager.inspect(roiObj, spec);
+summary = annotationManager.inspect(roiObj, spec, ...
+    'ReviewFrames',p.Results.ReviewFrames);
 errors = strings(0,1);
 warnings = strings(0,1);
 for i = 1:numel(summary.components)
@@ -42,7 +44,7 @@ for i = 1:numel(spec.components)
     component = spec.components(i);
     if ~summary.components(i).groundTruthExists, continue; end
     try
-        validateComponent(roiObj, component, summary.entry);
+        validateComponent(roiObj, component, summary.entry,summary.reviewFrames);
     catch ME
         errors(end+1) = sprintf('%s: %s', component.id, ME.message); %#ok<AGROW>
     end
@@ -52,14 +54,14 @@ report = struct('valid', isempty(errors), 'errors', errors, ...
     'warnings', warnings, 'summary', summary);
 end
 
-function validateComponent(roiObj, component, entry)
+function validateComponent(roiObj, component, entry,reviewFrames)
 switch char(string(component.storage))
     case 'channel'
         [channel, exists] = annotationManager.resolveChannel(roiObj, component.groundTruth);
         if ~exists, return; end
         if any(strcmp(component.kind, {'semantic_mask','instance_mask', ...
                 'tracked_instances'}))
-            values = readChannel(roiObj, channel);
+            values = selectChannelFrames(readChannel(roiObj, channel),reviewFrames);
             if ~isnumeric(values) && ~islogical(values)
                 error('Mask data must be numeric.');
             end
@@ -82,6 +84,7 @@ switch char(string(component.storage))
             string(component.id)), 1, 'first');
         if ~isempty(reviewIdx) && strcmp(entry.review(reviewIdx).unit, 'frame')
             reviewed = find(entry.review(reviewIdx).frames);
+            reviewed = intersect(reviewed,reviewFrames,'stable');
             reviewed = reviewed(reviewed <= numel(values));
             if any(undefinedValues(values(reviewed)))
                 error('Reviewed frames still contain undefined labels.');
@@ -97,13 +100,11 @@ switch char(string(component.storage))
         expected = char(string(component.groundTruth.maskProvider));
         if strcmp(component.kind, 'lineage')
             annotationManager.validateParentage(model, ...
-                model.families.family_id(idx), 'Throw', true);
+                model.families.family_id(idx), 'Frames',reviewFrames, ...
+                'Throw', true);
         else
-            validation = cellModel.validate(model);
-            if ~validation.ok
-                error('Cell model is invalid: %s', ...
-                    strjoin(validation.errors, '; '));
-            end
+            validateTrackingFamily(model,model.families.family_id(idx), ...
+                reviewFrames);
             if ~isempty(expected) && ~strcmp( ...
                     char(string(model.families.mask_provider{idx})), expected)
                 error('Object family uses mask provider "%s" instead of "%s".', ...
@@ -112,13 +113,35 @@ switch char(string(component.storage))
             if ~isempty(expected)
                 validateFamilyMaskLabels(roiObj, model, ...
                     model.families.family_id(idx), expected, ...
-                    model.families.name{idx});
+                    model.families.name{idx},reviewFrames);
             end
         end
 end
 end
 
-function validateFamilyMaskLabels(roiObj, model, familyId, channel, familyName)
+function validateTrackingFamily(model,familyId,frames)
+rows = model.instances.family_id == familyId & ...
+    ismember(double(model.instances.frame),frames);
+tracks = model.instances.track_id(rows);
+frameValues = model.instances.frame(rows);
+labels = model.instances.mask_label(rows);
+if any(tracks == 0)
+    error('A reviewed object has no track identity.');
+end
+if any(labels == 0)
+    error('A reviewed object uses the reserved background mask label.');
+end
+trackKeys = [double(frameValues(:)) double(tracks(:))];
+if size(unique(trackKeys,'rows'),1) ~= size(trackKeys,1)
+    error('A reviewed frame contains several objects assigned to the same track.');
+end
+labelKeys = [double(frameValues(:)) double(labels(:))];
+if size(unique(labelKeys,'rows'),1) ~= size(labelKeys,1)
+    error('A reviewed frame contains duplicate mask-label references.');
+end
+end
+
+function validateFamilyMaskLabels(roiObj, model, familyId, channel, familyName,frames)
 values = squeeze(readChannel(roiObj, channel));
 if ismatrix(values)
     values = reshape(values, size(values,1), size(values,2), 1);
@@ -127,13 +150,15 @@ nFrames = size(values, 3);
 rows = model.instances.family_id == familyId;
 instanceFrames = double(model.instances.frame(rows));
 instanceLabels = double(model.instances.mask_label(rows));
-if any(instanceFrames < 1 | instanceFrames > nFrames)
+relevantRows = ismember(instanceFrames,frames);
+if any(instanceFrames(relevantRows) < 1 | instanceFrames(relevantRows) > nFrames)
     error('Object family "%s" references frames outside mask provider "%s".', ...
         familyName, channel);
 end
 
 mismatched = zeros(0,1);
-for frame = 1:nFrames
+frames = frames(frames >= 1 & frames <= nFrames);
+for frame = frames
     actual = unique(double(values(:,:,frame)));
     actual = actual(actual > 0);
     expected = unique(instanceLabels(instanceFrames == frame));
@@ -146,7 +171,18 @@ if ~isempty(mismatched)
     error(['Mask provider "%s" does not match object family "%s" on ' ...
         '%d/%d frames (first mismatch: frame %d). Recreate the GT from ' ...
         'the intended prediction before review.'], ...
-        channel, familyName, numel(mismatched), nFrames, mismatched(1));
+        channel, familyName, numel(mismatched), numel(frames), mismatched(1));
+end
+end
+
+function values = selectChannelFrames(values,frames)
+if isempty(frames), return; end
+if ndims(values) >= 4
+    frames = frames(frames <= size(values,4));
+    values = values(:,:,:,frames);
+elseif ndims(values) == 3
+    frames = frames(frames <= size(values,3));
+    values = values(:,:,frames);
 end
 end
 

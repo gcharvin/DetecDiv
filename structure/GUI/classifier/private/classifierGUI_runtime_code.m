@@ -1388,38 +1388,14 @@ end
 end
 
 function txt = localBoundsText(app,roiObj, pixdata, classiObj, boundsType, globalBounds) %#ok<INUSD>
-    if strcmpi(boundsType,'Auto')
-        if isempty(globalBounds)
-            txt = 'all frames';
-        else
-            txt = sprintf('%d %d (global)', globalBounds(1), globalBounds(2));
-        end
-        return;
-    end
-
-    ud = [];
-    if ~isempty(pixdata) && numel(roiObj.data) >= pixdata(1)
-        if isfield(roiObj.data(pixdata(1)),'userData')
-            ud = roiObj.data(pixdata(1)).userData;
-        end
-    end
-
-    b = [];
-    if strcmpi(boundsType,'Manual')
-        b = readBoundsField(app,ud,'userbounds');
-        if isempty(b), b = readBoundsField(app,ud,'bounds'); end
-    elseif strcmpi(boundsType,'Rules')
-        b = readBoundsField(app,ud,'bounds');
-    else
-        b = readBoundsField(app,ud,'bounds');
-    end
-
-    b = normalizeBounds(app,b);
-
-    if isempty(b)
-        txt = '[]';
-    else
-        txt = sprintf('%d %d', b(1), b(2));
+    % The table is the canonical user-facing view.  The backend also reads
+    % legacy per-dataseries bounds, but an absent value is always shown as
+    % the explicit and editable default "all".
+    try
+        b = trainingBounds.resolve(classiObj, roiObj);
+        txt = trainingBounds.text(b);
+    catch
+        txt = 'all';
     end
 end
 
@@ -1427,12 +1403,12 @@ function txt = localBoundsNotice(app,boundsType, globalBounds) %#ok<INUSD>
     switch lower(string(boundsType))
         case "auto"
             if isempty(globalBounds)
-                txt = 'Bounds: Auto (all frames)';
+                txt = 'Training frames: all (default)';
             else
-                txt = sprintf('Bounds: Auto global [%d %d]', globalBounds(1), globalBounds(2));
+                txt = sprintf('Training frames: %d:%d (global)', globalBounds(1), globalBounds(2));
             end
         case "manual"
-            txt = 'Bounds: Manual (ROI by ROI)';
+            txt = 'Training frames: per ROI; missing values mean all';
         case "rules"
             txt = 'Bounds: Rules';
         otherwise
@@ -1486,6 +1462,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
     classiObj    = app.Data.classiObj;
 
     [boundsType, globalBounds] = localBoundsConfig(app,classiObj);
+    frameBoundsEditable = ~(strcmpi(boundsType,'Auto') && ...
+        ~isempty(globalBounds));
 
     t    = app.UITableData;
     Data = {};
@@ -1534,7 +1512,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
                                 ' ROI index','ROI Id','Frame bounds', ...
                                 'Annotation status','Coverage','Validation'};
             t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 190, 90};
-            t.ColumnEditable = [true true false false false false false false];
+            t.ColumnEditable = [true true false false frameBoundsEditable ...
+                false false false];
 
             if numel(rois(i).data)
                 listdata = {rois(i).data.groupid};
@@ -1566,7 +1545,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
                                 'is validated','Frame bounds','Annotation status',...
                                 'Coverage','Validation'};
                 t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
-                t.ColumnEditable = [true true false false false false false false false false];
+                t.ColumnEditable = [true true false false false false ...
+                    frameBoundsEditable false false false];
 
                 labelsTraining = [];
                 labelsPred     = [];
@@ -1618,7 +1598,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
                                 'is validated','Frame bounds','Annotation status',...
                                 'Coverage','Validation'};
                 t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
-                t.ColumnEditable = [true true false false false false false false false false];
+                t.ColumnEditable = [true true false false false false ...
+                    frameBoundsEditable false false false];
 
                 if ~isempty(pixdata)
                     dd = rois(i).data(pixdata(1));
@@ -1693,10 +1674,40 @@ function attachAnnotationSessionListener(app, session)
                 ~isempty(app.Data.annotationSessionListener)
             delete(app.Data.annotationSessionListener);
         end
+        if isfield(app.Data, 'annotationBoundsListener') && ...
+                ~isempty(app.Data.annotationBoundsListener)
+            delete(app.Data.annotationBoundsListener);
+        end
     catch
     end
     app.Data.annotationSessionListener = addlistener(session, ...
         'StateChanged', @(~,~)refreshAnnotationTableRow(app, session));
+    app.Data.annotationBoundsListener = addlistener(session, ...
+        'BoundsChanged', @(~,~)annotationBoundsChanged(app, session));
+end
+
+function annotationBoundsChanged(app, session)
+    try checkStatus(app, false); catch, end
+    try
+        if isempty(app) || ~isvalid(app) || isempty(app.UITableData.Data)
+            return;
+        end
+        data = app.UITableData.Data;
+        roiIndices = cellfun(@double, data(:,3));
+        tableRow = find(roiIndices == double(session.RoiIndex), 1);
+        if isempty(tableRow), return; end
+        names = string(app.UITableData.ColumnName);
+        data = setAnnotationTableColumn(app,data,names,tableRow, ...
+            'Frame bounds',trainingBounds.text(session.frameBounds()));
+        app.UITableData.Data = data;
+        [boundsType,globalBounds] = localBoundsConfig(app,app.Data.classiObj);
+        app.BoundsnoticeLabel.Text = localBoundsNotice( ...
+            app,boundsType,globalBounds);
+        drawnow limitrate nocallbacks;
+    catch ME
+        warning('classifierGUI:BoundsRowRefresh', ...
+            'Could not refresh ROI frame bounds: %s',ME.message);
+    end
 end
 
 function refreshAnnotationTableRow(app, session)
@@ -1730,6 +1741,8 @@ function refreshAnnotationTableRow(app, session)
             'is annotated', ~strcmpi(statusText, 'Missing'));
         data = setAnnotationTableColumn(app, data, names, tableRow, ...
             'is validated', strcmpi(validationText, 'Valid'));
+        data = setAnnotationTableColumn(app, data, names, tableRow, ...
+            'Frame bounds', trainingBounds.text(session.frameBounds()));
         app.UITableData.Data = data;
         drawnow limitrate nocallbacks;
     catch ME
@@ -2230,6 +2243,10 @@ end
 
     app.ClassifierUIFigure.Name = [classiObj.strid];
     app.Data.classiObj = classiObj;
+    app.SetboundsselectionrulesButton.Text = 'Set frame bounds mode...';
+    app.SetboundsselectionrulesButton.Tooltip = [ ...
+        'Choose global or per-ROI training frames. In per-ROI mode, ' ...
+        'edit the Frame bounds table cells; the default is all.'];
 
     % Load classlist (and auto-append packages)
 % Load classlist (and auto-append packages)
@@ -2659,6 +2676,40 @@ end
             indices = event.Indices;
             row = indices(1);
             col = indices(2);
+
+            columnNames = strtrim(string(app.UITableData.ColumnName));
+            if col <= numel(columnNames) && strcmpi(columnNames(col), 'Frame bounds')
+                roiIndex = double(app.UITableData.Data{row,3});
+                try
+                    roiObj = app.Data.classiObj.roi(roiIndex);
+                    frameCount = annotationManager.frameCount(roiObj);
+                    if frameCount < 1
+                        try frameCount = size(roiObj.image,4); catch, frameCount = []; end
+                    end
+                    trainingBounds.setRoi(app.Data.classiObj, roiIndex, ...
+                        event.NewData, 'FrameCount', frameCount);
+                    checkStatus(app,false);
+                    data = app.UITableData.Data;
+                    data{row,col} = trainingBounds.text( ...
+                        trainingBounds.resolve(app.Data.classiObj, roiIndex));
+                    app.UITableData.Data = data;
+                    [boundsType, globalBounds] = localBoundsConfig( ...
+                        app,app.Data.classiObj);
+                    app.BoundsnoticeLabel.Text = localBoundsNotice( ...
+                        app,boundsType,globalBounds);
+                catch ME
+                    try
+                        data = app.UITableData.Data;
+                        data{row,col} = event.PreviousData;
+                        app.UITableData.Data = data;
+                    catch
+                    end
+                    uialert(app.ClassifierUIFigure, ME.message, ...
+                        'Invalid training frame bounds');
+                end
+                return;
+            end
+
             if col ~= 1 && col ~= 2, return; end
 
             roiIndex = double(app.UITableData.Data{row,3});
@@ -3625,13 +3676,45 @@ disp('unable to display folder with this OS');
 
         % Button pushed function: SetboundsselectionrulesButton
         function SetboundsselectionrulesButtonPushed(app, event)
-              hBounds = annotationBoundsGUI(app.Data.classiObj);
-    try
-        uiwait(hBounds.UIFigure);
-    catch
-    end
-    displayData(app);
-    checkStatus(app,false);
+            choice = uiconfirm(app.ClassifierUIFigure, ...
+                ['Choose how training frames are selected. In per-ROI mode, ' ...
+                 'edit the Frame bounds cells directly; "all" is the default.'], ...
+                'Training frame bounds', ...
+                'Options', {'Per ROI','Global','Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 3);
+            if strcmp(choice, 'Cancel'), return; end
+
+            classiObj = app.Data.classiObj;
+            cfg = classiObj.bounds;
+            if ~isstruct(cfg), cfg = struct(); end
+            cfg.SchemaVersion = 2;
+            if ~isfield(cfg, 'RoiValues') || ~isstruct(cfg.RoiValues)
+                cfg.RoiValues = struct('roi_id',{},'roi_index',{}, ...
+                    'values',{},'updated_at',{});
+            end
+
+            if strcmp(choice, 'Per ROI')
+                cfg.Type = 'Manual';
+                cfg.Values = [];
+            else
+                currentText = 'all';
+                try currentText = trainingBounds.text(cfg.Values); catch, end
+                answer = inputdlg( ...
+                    {'Inclusive global range (for example 100:500), or all:'}, ...
+                    'Global training frame bounds', [1 55], {currentText});
+                if isempty(answer), return; end
+                try
+                    cfg.Values = trainingBounds.parse(answer{1});
+                catch ME
+                    uialert(app.ClassifierUIFigure, ME.message, ...
+                        'Invalid training frame bounds');
+                    return;
+                end
+                cfg.Type = 'Auto';
+            end
+            classiObj.bounds = cfg;
+            displayData(app);
+            checkStatus(app,false);
         end
 
         % Button pushed function: DisplayaugmentedimagesButton
@@ -4475,6 +4558,10 @@ disp('unable to display folder with this OS');
                 if isfield(app.Data, 'annotationSessionListener') && ...
                         ~isempty(app.Data.annotationSessionListener)
                     delete(app.Data.annotationSessionListener);
+                end
+                if isfield(app.Data, 'annotationBoundsListener') && ...
+                        ~isempty(app.Data.annotationBoundsListener)
+                    delete(app.Data.annotationBoundsListener);
                 end
             catch
             end

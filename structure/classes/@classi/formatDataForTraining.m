@@ -181,6 +181,20 @@ try
 catch
 end
 
+% Apply the classifier's per-ROI training bounds after merging the run
+% profile.  A missing bound deliberately means "all" and therefore leaves
+% the caller's frame selector unchanged.
+requestedFrames = Frames;
+try
+    if isfield(ctx, 'sel') && isfield(ctx.sel, 'frames')
+        requestedFrames = ctx.sel.frames;
+    end
+catch
+end
+boundedFrames = trainingBounds.selectionSpec(classif, requestedFrames);
+ctx.sel.frames = boundedFrames;
+Frames = boundedFrames;
+
 % ---- Prefer standardized package formatter when available ----
 pkg = '';
 if isprop(classif, 'classifierPkg') && ~isempty(classif.classifierPkg)
@@ -242,13 +256,16 @@ switch category
         output = formatObjectTrainingSet(foldername, classif, rois, 'Frames', Frames);
 
     case 'Pedigree'
-        output = formatDeltaPedigreeTrainingSet(foldername, classif, rois);
+        output = formatDeltaPedigreeTrainingSet(foldername, classif, rois, ...
+            'Frames', Frames);
 
     case 'Tracking'
-        output = formatTrackingTrainingSet(foldername, classif, rois);
+        output = formatTrackingTrainingSet(foldername, classif, rois, ...
+            'Frames', Frames);
 
     case 'Timeseries'
-        output = formatTimeseriesTrainingSet(foldername, classif, rois);
+        output = formatTimeseriesTrainingSet(foldername, classif, rois, ...
+            'Frames', Frames);
 
     case 'Delta'
         if ~isempty(Frames)

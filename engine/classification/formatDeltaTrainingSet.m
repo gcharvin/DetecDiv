@@ -131,11 +131,10 @@ for i=1:numel(rois)
 
     reverseStr = '';
 
-    if numel(Frames)==0
-        fra=1:size(im,4)-1;
-    else
-        fra=Frames(1:end-1);
-    end
+    selectedFrames = normalizeTrainingFrameSelection(Frames,size(im,4), ...
+        'RoiId',rois(i),'RoiPosition',i);
+    fra = selectedFrames(selectedFrames < size(im,4));
+    fra = fra(ismember(fra+1,selectedFrames));
 
     ccc=1;
     for j=fra % stop 1 image bedfore the end

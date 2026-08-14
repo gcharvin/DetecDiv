@@ -86,6 +86,36 @@ session.markReviewed('Frames', 1:3);
 verifyTrue(testCase, session.validate().valid);
 end
 
+function testSessionOwnsPerRoiTrainingBounds(testCase)
+[~, c, ~] = maskFixture(testCase);
+session = c.annotationSession(1);
+
+verifyEmpty(testCase, session.frameBounds());
+verifyEqual(testCase, session.uiContext().frameBoundsText, 'all');
+session.setFrameBounds('2:3');
+verifyEqual(testCase, session.frameBounds(), [2 3]);
+verifyEqual(testCase, session.uiContext().frameBoundsText, '2:3');
+verifyEqual(testCase, c.bounds.Type, 'Manual');
+session.bootstrap();
+session.markReviewed();
+boundedSummary = session.summary();
+verifyEqual(testCase,boundedSummary.reviewFrames,2:3);
+verifyEqual(testCase,boundedSummary.coverage.reviewed,2);
+verifyEqual(testCase,boundedSummary.coverage.total,2);
+verifyFalse(testCase,boundedSummary.entry.review(1).frames(1));
+verifyTrue(testCase,session.validate().valid, ...
+    'Frames outside the training bounds must not block validation.');
+rows = annotationManager.summarizeClassifier(c,1,'Fast',true);
+verifyEqual(testCase,rows.total,2);
+verifyEqual(testCase,rows.reviewed,2);
+session.clearFrameBounds();
+verifyEmpty(testCase, session.frameBounds());
+verifyEqual(testCase, session.uiContext().frameBoundsText, 'all');
+verifyEqual(testCase,session.summary().coverage.total,3);
+verifyFalse(testCase,session.validate().valid, ...
+    'Returning to all must expose the still-unreviewed frame.');
+end
+
 function testChangedFramesReviewOnlyFrameUnits(testCase)
 r = roi('review', [1 1 2 2]);
 r.image = zeros(2,2,1,3,'uint16');

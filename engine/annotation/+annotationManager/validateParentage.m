@@ -3,6 +3,7 @@ function report = validateParentage(model, family, varargin)
 
 p = inputParser;
 p.addParameter('Throw', false, @(x) islogical(x) && isscalar(x));
+p.addParameter('Frames', [], @isnumeric);
 p.parse(varargin{:});
 
 errors = strings(0,1);
@@ -12,6 +13,10 @@ if isempty(familyIndex)
 else
     relationRows = model.relations.family_id == familyId & ...
         model.relations.type_id == uint8(1);
+    if ~isempty(p.Results.Frames)
+        relationRows = relationRows & ismember( ...
+            double(model.relations.event_frame),double(p.Results.Frames));
+    end
     parents = model.relations.parent_track_id(relationRows);
     children = model.relations.child_track_id(relationRows);
 

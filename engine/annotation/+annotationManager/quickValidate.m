@@ -98,7 +98,8 @@ if strcmp(component.kind, 'tracking')
     end
     quickCheckProviderFrames(roiObj, model, familyIndex, familyId, frames);
 elseif strcmp(component.kind, 'lineage')
-    annotationManager.validateParentage(model, familyId, 'Throw', true);
+    annotationManager.validateParentage(model, familyId, ...
+        'Frames',frames,'Throw',true);
 end
 end
 

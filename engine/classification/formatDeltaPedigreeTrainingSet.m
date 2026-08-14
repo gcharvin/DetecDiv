@@ -1,4 +1,9 @@
-function output= formatDeltaPedigreeTrainingSet(foldername,classif,rois)
+function output= formatDeltaPedigreeTrainingSet(foldername,classif,rois,varargin)
+
+p = inputParser;
+p.addParameter('Frames', []);
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 
 output=0;
 
@@ -54,7 +59,8 @@ channel=classif.channelName; % list of channels used to generate input image
 
 %labelchannel=classif.strid; % image that contains the labels
 
-for i=rois
+for roiPosition=1:numel(rois)
+    i=rois(roiPosition);
     disp(['Launching ROI ' num2str(i) : ' processing...']);
     
     if numel(cltmp(i).image)==0
@@ -62,7 +68,7 @@ for i=rois
     end
     
     % normalize intensity levels
-    pix=cltmp(rois(i)).findChannelID(channel{1});
+    pix=cltmp(i).findChannelID(channel{1});
     
     im=cltmp(i).image(:,:,pix,:); % raw image
     
@@ -74,7 +80,7 @@ for i=rois
     end
     
     %pixelchannel2=cltmp(i).findChannelID(classif.strid);
-    pix2=cltmp(rois(i)).findChannelID(channel{2}); % label channel
+    pix2=cltmp(i).findChannelID(channel{2}); % label channel
     
     % find channel associated with user classified objects
     im2=cltmp(i).image(:,:,pix2,:);
@@ -84,9 +90,15 @@ for i=rois
     
      label1=im2(:,:,1,1);
     memory=zeros(1,max(label1(:))); % array stores the memory of budding times for all cells 
-    mothers=cltmp(rois(i)).train.(classif.strid).mother;
+    mothers=cltmp(i).train.(classif.strid).mother;
     
-    for j=2:size(im,4)-1 % stop 1 image bedfore the end
+    selectedFrames = trainingBounds.frames(classif,i,size(im,4),framesSpec, ...
+        'RoiPosition',roiPosition);
+    eligibleFrames = selectedFrames(selectedFrames >= 2 & ...
+        selectedFrames <= size(im,4)-1);
+    eligibleFrames = eligibleFrames(ismember(eligibleFrames-1,selectedFrames) & ...
+        ismember(eligibleFrames+1,selectedFrames));
+    for j=eligibleFrames % each sample consumes j-1, j and j+1
        % fprintf('.')
         tmp1=im(:,:,1,j-1);
         tmp2=im(:,:,1,j);
@@ -221,11 +233,11 @@ for i=rois
             %    return;
             output=output+1;
             
-            pth=fullfile(classif.path,foldername,[ 'images/' cltmp(rois(i)).id '_frame_' tr '_object' num2str(k) '.mat']);
+            pth=fullfile(classif.path,foldername,[ 'images/' cltmp(i).id '_frame_' tr '_object' num2str(k) '.mat']);
             
             save(pth,'tmpcrop');
             
-            pth=fullfile(classif.path,foldername,[ 'labels/' cltmp(rois(i)).id '_frame_' tr '_object' num2str(k) '.tif']);
+            pth=fullfile(classif.path,foldername,[ 'labels/' cltmp(i).id '_frame_' tr '_object' num2str(k) '.tif']);
             
             imwrite(labels,pth);
             

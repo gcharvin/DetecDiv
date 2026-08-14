@@ -12,6 +12,7 @@ classdef Session < handle
 
     events
         StateChanged
+        BoundsChanged
     end
 
     methods
@@ -41,7 +42,8 @@ classdef Session < handle
         end
 
         function value = summary(obj, varargin)
-            value = annotationManager.inspect(obj.Roi, obj.Spec, varargin{:});
+            value = annotationManager.inspect(obj.Roi, obj.Spec, ...
+                'ReviewFrames', obj.trainingFrames(), varargin{:});
         end
 
         function report = bootstrap(obj, varargin)
@@ -72,6 +74,9 @@ classdef Session < handle
         end
 
         function entry = markReviewed(obj, varargin)
+            if ~hasOption(varargin, 'Frames')
+                varargin = [varargin {'Frames', obj.trainingFrames()}];
+            end
             entry = annotationManager.markReviewed(obj.Roi, obj.Spec, varargin{:});
             obj.changed();
         end
@@ -82,7 +87,8 @@ classdef Session < handle
         end
 
         function report = validate(obj, varargin)
-            report = annotationManager.validate(obj.Roi, obj.Spec, varargin{:});
+            report = annotationManager.validate(obj.Roi, obj.Spec, ...
+                'ReviewFrames', obj.trainingFrames(), varargin{:});
             if report.valid
                 obj.LastValidationStatus = 'valid';
                 obj.LastValidationMessage = '';
@@ -99,14 +105,39 @@ classdef Session < handle
         end
 
         function [entry, report] = approve(obj, varargin)
-            [entry, report] = annotationManager.approve(obj.Roi, obj.Spec, varargin{:});
+            [entry, report] = annotationManager.approve(obj.Roi, obj.Spec, ...
+                'ReviewFrames', obj.trainingFrames(), varargin{:});
             obj.LastValidationStatus = 'valid';
             obj.LastValidationMessage = '';
             notify(obj, 'StateChanged');
         end
 
+        function bounds = frameBounds(obj)
+            bounds = trainingBounds.resolve(obj.Classifier, obj.RoiIndex, ...
+                'FrameCount', annotationManager.frameCount(obj.Roi));
+        end
+
+        function frames = trainingFrames(obj)
+            frames = trainingBounds.frames(obj.Classifier,obj.RoiIndex, ...
+                annotationManager.frameCount(obj.Roi),[]);
+        end
+
+        function setFrameBounds(obj, value)
+            trainingBounds.setRoi(obj.Classifier, obj.RoiIndex, value, ...
+                'FrameCount', annotationManager.frameCount(obj.Roi));
+            obj.resetValidationState();
+            notify(obj, 'BoundsChanged');
+        end
+
+        function clearFrameBounds(obj)
+            trainingBounds.clearRoi(obj.Classifier, obj.RoiIndex);
+            obj.resetValidationState();
+            notify(obj, 'BoundsChanged');
+        end
+
         function context = uiContext(obj)
             summary = obj.summary();
+            frameBounds = obj.frameBounds();
             context = struct( ...
                 'session', obj, ...
                 'classifierId', obj.Spec.classifierId, ...
@@ -119,6 +150,9 @@ classdef Session < handle
                 'editor', obj.Spec.defaultEditor, ...
                 'supportsBootstrap', obj.Spec.supportsBootstrap, ...
                 'components', obj.Spec.components, ...
+                'frameBounds', frameBounds, ...
+                'frameBoundsText', trainingBounds.text(frameBounds), ...
+                'trainingFrames', obj.trainingFrames(), ...
                 'displayPreset', annotationManager.displayPreset(obj.Roi, obj.Spec), ...
                 'legacyScoreOption', legacyScoreOption(obj.Spec));
         end
@@ -135,6 +169,16 @@ classdef Session < handle
             obj.LastValidationMessage = '';
         end
     end
+end
+
+function tf = hasOption(args,name)
+tf = false;
+for i = 1:2:numel(args)
+    if (ischar(args{i}) || isstring(args{i})) && strcmpi(args{i},name)
+        tf = true;
+        return;
+    end
+end
 end
 
 function option = legacyScoreOption(spec)

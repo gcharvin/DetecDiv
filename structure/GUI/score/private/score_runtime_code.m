@@ -1891,8 +1891,8 @@ end
             elseif strcmp(app.AnnotationQuickValidationState, 'invalid')
                 quickSuffix = '  |  check issue';
             end
-            app.AnnotationStatusLabel.Text = sprintf('Status: %s%s', ...
-                upper(statusText), quickSuffix);
+            app.AnnotationStatusLabel.Text = sprintf('Status: %s%s | Train: %s', ...
+                upper(statusText), quickSuffix, context.frameBoundsText);
             app.AnnotationStatusLabel.Tooltip = app.AnnotationQuickValidationMessage;
             coverageText = app.annotationCoverageText(summary.coverage.components);
             sourceText = '';
@@ -2201,6 +2201,9 @@ end
             if app.reviewWhileNavigatingEnabled() == false
                 return;
             end
+            if ~ismember(frame,app.AnnotationSession.trainingFrames())
+                return;
+            end
             ids = app.annotationFrameComponentIds();
             if isempty(ids), return; end
             app.AnnotationSession.markReviewed('Frames', frame, ...
@@ -2300,6 +2303,9 @@ end
             if isempty(roi), return; end
             totalFrames = size(roi.image, 4);
             incomplete = false(1, totalFrames);
+            reviewFrames = summary.reviewFrames;
+            reviewFrames = reviewFrames(reviewFrames >= 1 & ...
+                reviewFrames <= totalFrames);
             roiIncomplete = false;
             for i = 1:numel(spec.components)
                 if ~spec.components(i).required, continue; end
@@ -2308,7 +2314,7 @@ end
                     string(spec.components(i).id)), 1, 'first');
                 if isempty(reviewIndex)
                     if strcmp(spec.components(i).coverageUnit, 'frame')
-                        incomplete(:) = true;
+                        incomplete(reviewFrames) = true;
                     else
                         roiIncomplete = true;
                     end
@@ -2316,9 +2322,11 @@ end
                 end
                 review = summary.entry.review(reviewIndex);
                 if strcmp(review.unit, 'frame')
-                    n = min(totalFrames, numel(review.frames));
-                    incomplete(1:n) = incomplete(1:n) | ~logical(review.frames(1:n));
-                    if n < totalFrames, incomplete(n+1:end) = true; end
+                    reviewed = false(1,totalFrames);
+                    n = min(totalFrames,numel(review.frames));
+                    reviewed(1:n) = logical(review.frames(1:n));
+                    incomplete(reviewFrames) = incomplete(reviewFrames) | ...
+                        ~reviewed(reviewFrames);
                 elseif ~review.complete
                     roiIncomplete = true;
                 end
@@ -3516,6 +3524,98 @@ end
                 'MenuSelectedFcn', @(~,~) app.openBrushSizeDialog());
         end
 
+        function setupTrainingBoundsMenu(app)
+            if ~isprop(app, 'AnnotationMenu') || isempty(app.AnnotationMenu) || ~isvalid(app.AnnotationMenu)
+                return;
+            end
+            existing = findall(app.AnnotationMenu, 'Tag', 'ScoreTrainingBoundsMenu');
+            if ~isempty(existing), delete(existing); end
+
+            menu = uimenu(app.AnnotationMenu, ...
+                'Text', 'Training frame bounds', ...
+                'Tag', 'ScoreTrainingBoundsMenu', ...
+                'Separator', 'on');
+            startKey = 'W';
+            endKey = 'X';
+            try
+                startKey = upper(char(string(app.specialkeys{2}{1})));
+                endKey = upper(char(string(app.specialkeys{2}{2})));
+            catch
+            end
+            uimenu(menu, 'Text', 'Set range...', ...
+                'MenuSelectedFcn', @(~,~) app.updateTrainingFrameBounds('range'));
+            uimenu(menu, 'Text', sprintf('Set start at current frame (%s)',startKey), ...
+                'MenuSelectedFcn', @(~,~) app.updateTrainingFrameBounds('start'));
+            uimenu(menu, 'Text', sprintf('Set end at current frame (%s)',endKey), ...
+                'MenuSelectedFcn', @(~,~) app.updateTrainingFrameBounds('end'));
+            uimenu(menu, 'Text', 'Use all frames', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~) app.updateTrainingFrameBounds('all'));
+        end
+
+        function updateTrainingFrameBounds(app, action)
+            if isempty(app.AnnotationSession) || ~isvalid(app.AnnotationSession)
+                uialert(app.ScoreAppUIFigure, ...
+                    'Training frame bounds are available from a managed annotation session.', ...
+                    'Training frame bounds');
+                return;
+            end
+
+            selectedROI = app.getSelectedROI();
+            context = app.AnnotationSession.uiContext();
+            if isempty(selectedROI) || ~strcmp(char(string(selectedROI.id)), context.roiId)
+                uialert(app.ScoreAppUIFigure, ...
+                    'Select the ROI attached to the current annotation session first.', ...
+                    'Training frame bounds');
+                return;
+            end
+            frameCount = annotationManager.frameCount(app.AnnotationSession.Roi);
+            currentFrame = round(double(selectedROI.display.frame));
+            oldBounds = app.AnnotationSession.frameBounds();
+
+            switch lower(char(string(action)))
+                case 'all'
+                    app.AnnotationSession.clearFrameBounds();
+                case 'range'
+                    answer = inputdlg( ...
+                        {'Inclusive range (for example 100:500), or all:'}, ...
+                        'Training frame bounds', [1 55], ...
+                        {trainingBounds.text(oldBounds)});
+                    if isempty(answer), return; end
+                    try
+                        app.AnnotationSession.setFrameBounds( ...
+                            trainingBounds.parse(answer{1}, 'FrameCount', frameCount));
+                    catch ME
+                        uialert(app.ScoreAppUIFigure, ME.message, ...
+                            'Invalid training frame bounds');
+                        return;
+                    end
+                case 'start'
+                    if isempty(oldBounds)
+                        newBounds = [currentFrame frameCount];
+                    else
+                        newBounds = [currentFrame max(currentFrame, oldBounds(2))];
+                    end
+                    app.AnnotationSession.setFrameBounds(newBounds);
+                case 'end'
+                    if isempty(oldBounds)
+                        newBounds = [1 currentFrame];
+                    else
+                        newBounds = [min(oldBounds(1), currentFrame) currentFrame];
+                    end
+                    app.AnnotationSession.setFrameBounds(newBounds);
+                otherwise
+                    return;
+            end
+            app.AnnotationLastValidationValid = false;
+            app.AnnotationQuickValidationState = 'idle';
+            app.AnnotationQuickValidationMessage = '';
+            app.refreshAnnotationSessionUI();
+            trainingFrames = app.AnnotationSession.trainingFrames();
+            if ~isempty(trainingFrames) && ~ismember(currentFrame,trainingFrames)
+                app.showAnnotationFrame(trainingFrames(1));
+            end
+        end
+
         function loadBrushSettings(app)
             brush = struct('leftRadius', 7, 'middleRadius', 13, 'rightRadius', 4, 'eraserRadius', 7);
 
@@ -4328,6 +4428,12 @@ end
             if isempty(roi), return; end
             try
                 components = app.AnnotationSession.Spec.components;
+                trainingFrames = app.AnnotationSession.trainingFrames();
+                if ~ismember(round(double(roi.display.frame)),trainingFrames)
+                    frame = app.nextIncompleteAnnotationFrame();
+                    if ~isempty(frame), app.showAnnotationFrame(frame); end
+                    return;
+                end
                 required = [components.required];
                 frameComponents = {components(required & strcmp( ...
                     {components.coverageUnit}, 'frame')).id};
@@ -4394,15 +4500,23 @@ end
             frame = round(double(roi.display.frame));
             ids = app.annotationFrameComponentIds();
             if isempty(ids), return; end
+            frames = app.AnnotationSession.trainingFrames();
+            frames = frames(frames <= frame);
+            if isempty(frames)
+                uialert(app.ScoreAppUIFigure, ...
+                    'The current frame is before the training interval.', ...
+                    'Review through current frame');
+                return;
+            end
             choice = uiconfirm(app.ScoreAppUIFigure, sprintf( ...
-                ['Confirm that frames 1 through %d were reviewed for all ' ...
-                 'frame-level GT components?'], frame), ...
+                ['Confirm that training frames %d through %d were reviewed ' ...
+                 'for all frame-level GT components?'],frames(1),frames(end)), ...
                 'Review through current frame', ...
-                'Options', {'Confirm 1 -> current','Cancel'}, ...
+                'Options', {'Confirm training range','Cancel'}, ...
                 'DefaultOption', 1, 'CancelOption', 2);
             if strcmp(choice, 'Cancel'), return; end
             try
-                app.AnnotationSession.markReviewed('Frames', 1:frame, ...
+                app.AnnotationSession.markReviewed('Frames', frames, ...
                     'Components', ids, 'Save', false);
                 app.AnnotationReviewDirty = true;
                 app.AnnotationLastValidationValid = false;
@@ -4601,6 +4715,7 @@ end
                 setupMovieCallbacks(app);
                 app.loadBrushSettings();
                 app.setupBrushSizeMenu();
+                app.setupTrainingBoundsMenu();
 
             applyMovieDisplaySettings(app);
 
@@ -5008,6 +5123,22 @@ end
             end
             selectedROI = app.content.ROIList{selectedROIIndex};
             currentFrame = selectedROI.display.frame;
+
+            % Bounds shortcuts are active only inside a managed annotation
+            % session, so the same keys remain available to legacy class
+            % annotation workflows.
+            hasManagedSession = ~isempty(app.AnnotationSession) && ...
+                isvalid(app.AnnotationSession);
+            if hasManagedSession && numel(specialkeys) >= 2 && ...
+                    numel(specialkeys{2}) >= 2
+                if strcmpi(event.Key, specialkeys{2}{1})
+                    app.updateTrainingFrameBounds('start');
+                    return;
+                elseif strcmpi(event.Key, specialkeys{2}{2})
+                    app.updateTrainingFrameBounds('end');
+                    return;
+                end
+            end
 
             if specialevent % frame events
                 numFrames = size(selectedROI.image, 4);

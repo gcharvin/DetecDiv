@@ -4,6 +4,7 @@ function summary = inspect(roiObj, spec, varargin)
 p = inputParser;
 p.addParameter('VerifyHash', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('CheckAssets', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('ReviewFrames', [], @isnumeric);
 p.parse(varargin{:});
 
 [entry, found] = annotationManager.entryForSpec(roiObj, spec);
@@ -16,9 +17,14 @@ legacy = ~found;
 if legacy && p.Results.CheckAssets
     entry = inferredLegacyEntry(entry, states);
 end
-coverage = coverageFromEntry(entry, spec);
+reviewFrames = normalizeReviewFrames(p.Results.ReviewFrames, ...
+    reviewFrameCount(entry,roiObj));
+coverage = coverageFromEntry(entry, spec, reviewFrames);
 status = char(string(entry.status));
 if isempty(status), status = 'missing'; end
+if strcmp(status,'approved') && coverage.fraction < 1
+    status = 'draft';
+end
 
 staleApproval = false;
 if strcmp(status, 'approved') && p.Results.VerifyHash && ~isempty(entry.approved_hash)
@@ -35,6 +41,7 @@ summary = struct( ...
     'legacy', legacy, ...
     'revision', double(entry.revision), ...
     'coverage', coverage, ...
+    'reviewFrames', reviewFrames, ...
     'approvedAt', char(string(entry.approved_at)), ...
     'staleApproval', staleApproval, ...
     'components', states, ...
@@ -127,7 +134,7 @@ else
 end
 end
 
-function coverage = coverageFromEntry(entry, spec)
+function coverage = coverageFromEntry(entry, spec, reviewFrames)
 reviewed = 0;
 total = 0;
 components = repmat(struct('id', '', 'unit', '', 'reviewed', 0, ...
@@ -143,10 +150,12 @@ for i = 1:numel(spec.components)
         componentReviewed = 0;
         if ~isempty(reviewIdx), componentReviewed = double(entry.review(reviewIdx).complete); end
     else
-        componentTotal = annotationManager.frameCountFromReview(entry, reviewIdx);
+        componentTotal = numel(reviewFrames);
         componentReviewed = 0;
         if ~isempty(reviewIdx)
-            componentReviewed = nnz(entry.review(reviewIdx).frames);
+            stored = logical(entry.review(reviewIdx).frames);
+            validFrames = reviewFrames(reviewFrames <= numel(stored));
+            componentReviewed = nnz(stored(validFrames));
         end
     end
     components(i).reviewed = componentReviewed;
@@ -163,4 +172,25 @@ fraction = 0;
 if total > 0, fraction = reviewed / total; end
 coverage = struct('reviewed', reviewed, 'total', total, ...
     'fraction', fraction, 'components', components);
+end
+
+function frames = normalizeReviewFrames(value,total)
+if isempty(value)
+    frames = 1:total;
+    return;
+end
+frames = unique(round(double(value(:).')),'stable');
+frames = frames(isfinite(frames) & frames >= 1 & frames <= total);
+end
+
+function total = reviewFrameCount(entry,roiObj)
+total = 0;
+try
+    frameReview = entry.review(strcmp({entry.review.unit},'frame'));
+    if ~isempty(frameReview)
+        total = max(arrayfun(@(x)numel(x.frames),frameReview));
+    end
+catch
+end
+if total < 1, total = annotationManager.frameCount(roiObj); end
 end

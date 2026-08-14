@@ -9,6 +9,7 @@ pix = [];
 name = '';
 info = struct('source', '', 'message', '');
 annotationPix = numericField(opts, 'annotationPix', []);
+ignoredRequest = '';
 
 requestedPix = numericField(opts, 'candidateProviderPix', []);
 if ~isempty(requestedPix)
@@ -22,13 +23,16 @@ end
 requestedName = textField(opts, 'candidateProviderName', '');
 if ~isempty(requestedName)
     [pix, name] = findNamedProvider(roiobj, requestedName, annotationPix);
-    if isempty(pix)
-        error('sam31:CorrectionProviderMissing', ...
-            'The mask candidate provider "%s" is not available in ROI %s.', ...
-            requestedName, roiId(roiobj));
+    if ~isempty(pix)
+        info.source = 'explicit-channel-name';
+        return;
     end
-    info.source = 'explicit-channel-name';
-    return;
+    % Old UI state could contain the editable GT channel itself.  Treat an
+    % unavailable or forbidden explicit name as a stale hint and continue
+    % with automatic discovery instead of aborting the propagation.
+    ignoredRequest = sprintf( ...
+        'Ignored unavailable or annotation provider "%s" in ROI %s. ', ...
+        requestedName, roiId(roiobj));
 end
 
 % The annotation contract is authoritative. For cellLatentModel this maps
@@ -49,6 +53,7 @@ try
             [pix, name] = findNamedProvider(roiobj, candidate, annotationPix);
             if ~isempty(pix)
                 info.source = 'annotation-prediction-family';
+                info.message = ignoredRequest;
                 return;
             end
         end
@@ -74,13 +79,15 @@ for i = reshape(order, 1, [])
         pix = candidatePix;
         name = candidateName;
         info.source = 'mask-channel-fallback';
-        info.message = 'Resolved heuristically because no annotation prediction provider was available.';
+        info.message = [ignoredRequest ...
+            'Resolved heuristically because no annotation prediction provider was available.'];
         return;
     end
 end
 
 info.source = 'none';
-info.message = 'No separate mask candidate provider is available; SAM31 mask prompting remains the final fallback.';
+info.message = [ignoredRequest ...
+    'No separate mask candidate provider is available; SAM31 mask prompting remains the final fallback.'];
 end
 
 function [pix, name] = findNamedProvider(roiobj, requested, annotationPix)
@@ -104,13 +111,20 @@ pix = [];
 name = '';
 candidate = round(double(candidate(1)));
 if ~isfinite(candidate) || candidate < 1 || candidate > size(roiobj.image, 3) || ...
-        (~isempty(annotationPix) && candidate == round(double(annotationPix(1))))
+        (~isempty(annotationPix) && any(candidate == round(double(annotationPix(:)))))
     return;
 end
 pix = candidate;
 names = roiChannelNames(roiobj);
-if candidate <= numel(names)
-    name = names{candidate};
+logicalIndex = candidate;
+try
+    if numel(roiobj.channelid) >= candidate
+        logicalIndex = round(double(roiobj.channelid(candidate)));
+    end
+catch
+end
+if logicalIndex >= 1 && logicalIndex <= numel(names)
+    name = names{logicalIndex};
 end
 end
 

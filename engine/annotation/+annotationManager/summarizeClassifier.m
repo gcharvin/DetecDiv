@@ -16,8 +16,11 @@ template = struct('roiIndex', 0, 'roiId', '', 'status', 'missing', ...
 rows = repmat(template, numel(roiIndices), 1);
 for i = 1:numel(roiIndices)
     index = roiIndices(i);
+    bounds = trainingBounds.resolve(classif,index);
+    reviewFrames = [];
+    if ~isempty(bounds), reviewFrames = bounds(1):bounds(2); end
     summary = annotationManager.inspect(classif.roi(index), spec, ...
-        'CheckAssets', ~p.Results.Fast);
+        'CheckAssets', ~p.Results.Fast,'ReviewFrames',reviewFrames);
     rows(i).roiIndex = index;
     rows(i).roiId = char(string(classif.roi(index).id));
     rows(i).status = summary.status;

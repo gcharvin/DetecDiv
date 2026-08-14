@@ -60,7 +60,8 @@ if ~isempty(testrois)
 end
 if isempty(valrois)
     valFraction = sam31ValidationFraction(classif.trainingParam);
-    [trainrois, valrois, frames] = splitTrainValidationRois(trainrois, valFraction, frames);
+    [trainrois, valrois, frames] = splitTrainValidationRois( ...
+        classif,trainrois,valFraction,frames);
 end
 
 foldername = 'trainingdataset';
@@ -147,13 +148,18 @@ end
 value = min(max(value, 0), 0.5);
 end
 
-function [trainrois, valrois, frames] = splitTrainValidationRois(trainrois, valFraction, frames)
+function [trainrois, valrois, frames] = splitTrainValidationRois(classif,trainrois,valFraction,frames)
 valrois = [];
 if isempty(trainrois) || valFraction <= 0
     return;
 end
 if isscalar(trainrois)
-    [trainFrames, valFrames] = splitSelectedFramesForValidation(frames, valFraction);
+    roiIndex = trainrois(1);
+    frameCount = annotationManager.frameCount(classif.roi(roiIndex));
+    selectedFrames = normalizeTrainingFrameSelection(frames,frameCount, ...
+        'RoiId',roiIndex,'RoiPosition',1,'SplitName','train');
+    [trainFrames, valFrames] = splitSelectedFramesForValidation( ...
+        selectedFrames,valFraction);
     if isempty(trainFrames) || isempty(valFrames)
         valrois = trainrois;
         warning('sam31:ValidationSplitSingleRoi', ...

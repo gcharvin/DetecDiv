@@ -60,3 +60,17 @@ verifyTrue(testCase, action.clipped);
 verifyEqual(testCase, nnz(merged == 9), 9);
 verifyEqual(testCase, nnz(merged == 2), nnz(candidate & labels == 0));
 end
+
+function testFreeLocalLabelPreservesExistingObject(testCase)
+labels = zeros(20, 20, 'uint16');
+labels(3:9, 6:13) = 15; % another track's frame-local label
+candidate = false(20, 20);
+candidate(13:17, 8:12) = true;
+
+[merged, action] = sam31.mergeTrackCorrectionFrame(labels, candidate, 14, struct());
+
+verifyTrue(testCase, action.applied);
+verifyFalse(testCase, action.skipped);
+verifyEqual(testCase, merged(3:9, 6:13), labels(3:9, 6:13));
+verifyEqual(testCase, nnz(merged == 14), nnz(candidate));
+end

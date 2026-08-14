@@ -892,6 +892,14 @@ if ~any(M(:) == oldLab)
     warndlg('Selected object is not present on this frame.','SAM31 propagation'); return;
 end
 
+selectedTrackId = selectedSam31TrackId(app);
+if ~isfinite(selectedTrackId)
+    warndlg(['The selected mask is not assigned to a valid track. ' ...
+        'Assign its track identity before propagation.'], 'SAM31 propagation');
+    return;
+end
+annotationChannelName = roi.display.channel{chIdx};
+
 nf = size(roi.image,4);
 remaining = nf - frm;
 if remaining <= 0
@@ -901,17 +909,21 @@ end
 defaults = defaultSam31PropagationOptions(roi, pix, frm);
 defaults = mergeStoredSam31PropagationOptions(app, defaults, remaining);
 defaultFrames = min(defaults.maxFrames, remaining);
+providerDescription = defaults.candidateProviderName;
+if isempty(providerDescription)
+    providerDescription = '<SAM31 only; no separate mask source>';
+end
 answer = inputdlg( ...
-    {'Following frames to update:', 'Mask candidate provider:'}, ...
+    {sprintf('Following frames to update:\nMask source (automatic): %s', ...
+        providerDescription)}, ...
     'SAM31 propagate selected track', ...
     [1 56], ...
-    {num2str(defaultFrames), defaults.candidateProviderName});
+    {num2str(defaultFrames)});
 if isempty(answer)
     return;
 end
 
 nFrames = round(str2double(answer{1}));
-candidateProviderName = strtrim(char(string(answer{2})));
 if ~isfinite(nFrames) || nFrames < 1
     warndlg('Frame count must be a positive integer.','SAM31 propagation'); return;
 end
@@ -919,12 +931,18 @@ nFrames = min(nFrames, remaining);
 
 opts = defaults;
 opts.label = double(oldLab);
+opts.trackId = double(selectedTrackId);
 opts.annotationPix = pix;
-opts.annotationChannelName = roi.display.channel{chIdx};
+opts.annotationChannelName = annotationChannelName;
 opts.startFrame = frm;
 opts.maxFrames = nFrames;
-opts.candidateProviderName = candidateProviderName;
+% Always resolve the read-only candidate source from the current ROI.  A
+% stale GUI/default value must never make the editable GT channel its own
+% prediction provider.
+opts.candidateProviderName = '';
 opts.candidateProviderPix = [];
+[opts.candidateProviderPix, opts.candidateProviderName] = ...
+    sam31.resolveCorrectionProvider(roi, opts);
 storeSam31PropagationOptions(app, opts);
 
 try
@@ -949,13 +967,25 @@ try
 catch
 end
 
-summary = applySam31TrackPropagationResult(roi, pix, oldLab, result, opts);
-[~, selectedDisplayChannel] = score_selectedObjectChannel(app);
-score_syncCellModelFrames(roi, selectedDisplayChannel, double(result.frames(:).'));
+try
+    summary = applySam31TrackPropagationResult(app, roi, chIdx, pix, ...
+        annotationChannelName, selectedTrackId, result, opts);
+catch ME
+    errordlg(sprintf(['SAM31 produced candidates, but the transactional GT update failed.\n' ...
+        'No partial mask or track change was kept.\n\n%s'], ME.message), ...
+        'SAM31 propagation');
+    return;
+end
+for changedFrame = summary.modifiedFrames
+    try
+        app.notifyAnnotationChanged(annotationChannelName, changedFrame, 'Save', false);
+    catch
+    end
+end
 score_display(app,'fast');
 safeClearSelection(app, roi, frm);
-msg = sprintf('SAM31 propagation applied to %d/%d frames.', ...
-    summary.appliedFrames, summary.totalTargetFrames);
+msg = sprintf('SAM31 propagation of Track %d applied to %d/%d frames.', ...
+    selectedTrackId, summary.appliedFrames, summary.totalTargetFrames);
 try
     if ~isempty(result.method)
         msg = sprintf('%s\nStrategy used: %s.', msg, result.method);
@@ -982,6 +1012,17 @@ if summary.reassignedFrames > 0
         msg, summary.reassignedFrames);
 end
 helpdlg(msg, 'SAM31 propagation');
+end
+
+function trackId = selectedSam31TrackId(app)
+trackId = NaN;
+try
+    trackId = double(app.SelectedTrackIDCell);
+catch
+end
+if ~isscalar(trackId) || ~isfinite(trackId) || trackId < 1 || trackId ~= round(trackId)
+    trackId = NaN;
+end
 end
 
 function frame = sam31PossibleBorderExitFrame(result)
@@ -1338,7 +1379,8 @@ catch
 end
 end
 
-function summary = applySam31TrackPropagationResult(roi, pix, oldLab, result, opts)
+function summary = applySam31TrackPropagationResult(app, roi, chIdx, pix, ...
+        channelName, selectedTrackId, result, opts)
 frames = double(result.frames(:)');
 masks = result.candidateMasks;
 if ndims(masks) == 4
@@ -1350,7 +1392,23 @@ end
 
 summary = struct('totalTargetFrames', 0, 'appliedFrames', 0, ...
     'clippedFrames', 0, 'skippedFrames', 0, 'emptyCandidateFrames', 0, ...
-    'reassignedFrames', 0, 'reassignedLabels', []);
+    'reassignedFrames', 0, 'reassignedLabels', [], ...
+    'modifiedFrames', [], 'localMaskLabels', []);
+
+% The mask label is only frame-local storage. Keep a transaction snapshot:
+% propagated pixels and explicit Track-ID bindings must either both succeed
+% or both be rolled back.
+[~, modelStatus] = score_getCellModel(roi);
+if ~strcmp(modelStatus, 'ok')
+    error('score:SAM31CellModelUnavailable', ...
+        'A valid cell model is required to propagate Track %u.', uint64(selectedTrackId));
+end
+originalModel = roi.cellModel;
+targetFrames = frames(frames > opts.startFrame & frames >= 1 & ...
+    frames <= size(roi.image,4));
+originalMasks = roi.image(:,:,pix,targetFrames);
+
+try
 for k = 1:numel(frames)
     f = frames(k);
     if f <= opts.startFrame || f < 1 || f > size(roi.image,4)
@@ -1362,8 +1420,15 @@ for k = 1:numel(frames)
         summary.emptyCandidateFrames = summary.emptyCandidateFrames + 1;
         continue;
     end
+    [targetLabel, preparedTrackId] = score_prepareSelectedTrackPaint( ...
+        app, roi, channelName, chIdx, pix, f);
+    if ~isfinite(targetLabel) || preparedTrackId ~= selectedTrackId
+        error('score:SAM31TrackLabelUnavailable', ...
+            'Unable to allocate a local mask label for Track %u at frame %u.', ...
+            uint64(selectedTrackId), uint32(f));
+    end
     M = roi.image(:,:,pix,f);
-    [M, action] = sam31.mergeTrackCorrectionFrame(M, candidate, oldLab, opts);
+    [M, action] = sam31.mergeTrackCorrectionFrame(M, candidate, targetLabel, opts);
     if action.skipped
         summary.skippedFrames = summary.skippedFrames + 1;
         continue;
@@ -1377,6 +1442,27 @@ for k = 1:numel(frames)
     end
     roi.image(:,:,pix,f) = M;
     summary.appliedFrames = summary.appliedFrames + 1;
+    summary.modifiedFrames(end+1) = f;
+    summary.localMaskLabels(end+1) = targetLabel;
+end
+
+if ~isempty(summary.modifiedFrames)
+    score_syncCellModelFrames(roi, channelName, summary.modifiedFrames, 'Save', false);
+    for i = 1:numel(summary.modifiedFrames)
+        binding = score_applySelectedTrackPaint(app, roi, channelName, ...
+            summary.modifiedFrames(i), summary.localMaskLabels(i), selectedTrackId);
+        if ~strcmp(binding.status, 'propagated')
+            error('score:SAM31TrackBindingFailed', ...
+                'Could not bind frame %u mask %u to Track %u.', ...
+                uint32(summary.modifiedFrames(i)), ...
+                uint32(summary.localMaskLabels(i)), uint64(selectedTrackId));
+        end
+    end
+end
+catch ME
+    roi.image(:,:,pix,targetFrames) = originalMasks;
+    roi.cellModel = originalModel;
+    rethrow(ME);
 end
 end
 

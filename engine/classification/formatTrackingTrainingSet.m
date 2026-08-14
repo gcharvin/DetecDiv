@@ -1,4 +1,8 @@
-function output= formatTrackingTrainingSet(foldername,classif,rois)
+function output= formatTrackingTrainingSet(foldername,classif,rois,varargin)
+p = inputParser;
+p.addParameter('Frames', []);
+p.parse(varargin{:});
+framesSpec = p.Results.Frames;
 output=0;
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -30,8 +34,15 @@ cltmp=classif.roi;
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
+frameSelections = cell(1,numel(classif.roi));
+for roiPosition=1:numel(rois)
+    roiIndex = rois(roiPosition);
+    frameCount = annotationManager.frameCount(classif.roi(roiIndex));
+    frameSelections{roiIndex} = trainingBounds.frames( ...
+        classif,roiIndex,frameCount,framesSpec,'RoiPosition',roiPosition);
+end
 parfor i=rois
-    disp(['Launching ROI ' num2str(i) : ' processing...'])
+    disp(['Launching ROI ' num2str(i) ' processing...'])
     
     
     if numel(cltmp(i).image)==0
@@ -72,7 +83,10 @@ parfor i=rois
     
     reverseStr = '';
     
-    for j=1:20%size(im,4)-1 % stop 1 image bedfore the end
+    selectedFrames = frameSelections{i};
+    transitionFrames = selectedFrames(selectedFrames < size(im,4));
+    transitionFrames = transitionFrames(ismember(transitionFrames+1,selectedFrames));
+    for j=transitionFrames % both j and j+1 must be inside training bounds
         tmp1=im(:,:,1,j);
         tmp2=im(:,:,1,j+1);
         

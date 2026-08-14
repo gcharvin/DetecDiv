@@ -10,6 +10,8 @@ if isempty(trainRois) && isempty(valRois)
 end
 if exist(outputDir,'dir') ~= 7, mkdir(outputDir); end
 objective = trainingChoice(tp.trainingObjective,'relation_ensemble');
+requestedFrames = [];
+try requestedFrames = ctx.sel.frames; catch, end
 stageRoot = fullfile(outputDir,['staging_' ...
     char(datetime('now','Format','yyyyMMddHHmmssSSS'))]);
 mkdir(stageRoot);
@@ -26,6 +28,19 @@ for i = 1:numel(entries)
     [trackName,gfpName,brightfieldName,nucleusName,budneckName] = ...
         resolveChannels(classif,tp,roiobj,objective);
     tracks = readStack(roiobj,trackName,true);
+    selectedFrames = trainingBounds.frames(classif, roiIndex, ...
+        size(tracks,3), requestedFrames, 'RoiPosition', i, ...
+        'SplitName', entries(i).split);
+    if isempty(selectedFrames)
+        error('cellLatentModel:EmptyTrainingFrameSelection', ...
+            'ROI %s has no selected training frame.', char(string(roiobj.id)));
+    end
+    if strcmp(objective,'continuous_lineage') && ...
+            any(diff(selectedFrames) ~= 1)
+        error('cellLatentModel:NonContiguousTrainingFrames', ...
+            ['Continuous-lineage formatting requires a contiguous frame range. ' ...
+             'Set one inclusive range for ROI %s.'], char(string(roiobj.id)));
+    end
     gfp = [];
     brightfield = [];
     nucleus = [];
@@ -43,6 +58,17 @@ for i = 1:numel(entries)
             budneck = readStack(roiobj,budneckName,false);
         end
     end
+    tracks = sliceStack(tracks,selectedFrames,trackName);
+    if ~isempty(gfp), gfp = sliceStack(gfp,selectedFrames,gfpName); end
+    if ~isempty(brightfield)
+        brightfield = sliceStack(brightfield,selectedFrames,brightfieldName);
+    end
+    if ~isempty(nucleus)
+        nucleus = sliceStack(nucleus,selectedFrames,nucleusName);
+    end
+    if ~isempty(budneck)
+        budneck = sliceStack(budneck,selectedFrames,budneckName);
+    end
     inputFile = fullfile(stageRoot,sprintf('roi_%03d.h5',roiIndex));
     writeStack(inputFile,'/tracks',tracks,'uint32');
     if ~isempty(gfp), writeStack(inputFile,'/gfp',gfp,'single'); end
@@ -58,6 +84,7 @@ for i = 1:numel(entries)
     [model,~] = roiobj.loadCellModel('MigrateLegacy',true);
     [relations,familyName] = reviewedRelations( ...
         model,tp.groundTruthFamily,trackName);
+    relations = selectRelations(relations,selectedFrames);
     if isempty(relations)
         error('cellLatentModel:EmptyGroundTruth', ...
             'ROI %s has no reviewed lineage relations in family "%s".', ...
@@ -66,6 +93,7 @@ for i = 1:numel(entries)
     spec = emptySpec();
     spec.roi_id = char(string(roiobj.id));
     spec.source_roi_path = normalizedPath(roiobj.path);
+    spec.source_frames = selectedFrames;
     spec.input_path = normalizedPath(inputFile);
     spec.tracks_dataset = '/tracks';
     if ~isempty(gfp), spec.gfp_dataset = '/gfp'; end
@@ -160,6 +188,7 @@ function spec = emptySpec()
 spec = struct( ...
     'roi_id','', ...
     'source_roi_path','', ...
+    'source_frames',[], ...
     'input_path','', ...
     'tracks_dataset','/tracks', ...
     'gfp_dataset','', ...
@@ -172,6 +201,26 @@ spec = struct( ...
     'ground_truth_family','', ...
     'ground_truth_relations',struct( ...
         'child_track_id',{},'parent_track_id',{},'event_frame',{}));
+end
+
+function stack = sliceStack(stack,frames,name)
+if size(stack,3) < max(frames)
+    error('cellLatentModel:TrainingChannelFrameMismatch', ...
+        'Channel "%s" contains %d frames but frame %d was requested.', ...
+        name,size(stack,3),max(frames));
+end
+stack = stack(:,:,frames);
+end
+
+function relations = selectRelations(relations,frames)
+if isempty(relations), return; end
+eventFrames = double([relations.event_frame]);
+[keep,localFrames] = ismember(eventFrames,frames);
+relations = relations(keep);
+localFrames = localFrames(keep);
+for i = 1:numel(relations)
+    relations(i).event_frame = double(localFrames(i));
+end
 end
 
 function [trackName,gfpName,brightfieldName,nucleusName,budneckName] = ...

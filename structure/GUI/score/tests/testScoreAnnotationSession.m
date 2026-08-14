@@ -54,6 +54,20 @@ verifyEqual(testCase, char(app.AnnotationSessionPanel.Visible), 'on');
 verifyEqual(testCase, app.TabGroup.SelectedTab, app.AnnotationsTab, ...
     'Managed annotation sessions must open on the Annotations tab.');
 verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'MISSING'));
+verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'Train: all'));
+verifyEqual(testCase, numel(findall(app.AnnotationMenu, ...
+    'Tag', 'ScoreTrainingBoundsMenu')), 1);
+r.display.frame = 2;
+app.updateTrainingFrameBounds('start');
+verifyEqual(testCase, session.frameBounds(), [2 3]);
+verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'Train: 2:3'));
+verifyEqual(testCase,session.summary().coverage.total,2);
+verifyEqual(testCase,app.nextIncompleteAnnotationFrame(),3, ...
+    'Next incomplete must ignore frames outside the training bounds.');
+app.updateTrainingFrameBounds('all');
+verifyEmpty(testCase, session.frameBounds());
+verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'Train: all'));
+r.display.frame = 1;
 verifyEqual(testCase, char(app.CreateFromPredictionButton.Enable), 'on');
 verifyEmpty(testCase, r.findChannelID(gtName), ...
     'Opening managed Score must not materialize GT implicitly.');

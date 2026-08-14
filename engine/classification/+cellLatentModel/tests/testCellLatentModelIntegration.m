@@ -422,6 +422,36 @@ verifyGreaterThanOrEqual(testCase, ...
 verifyTrue(testCase,isfinite(double(validated.metrics.top1)));
 end
 
+function testFormattingAppliesPerRoiTrainingBounds(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'latent_bounds',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'bounded_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'unbounded_validation',1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.channelName = {'results_trackastra','ch2-GFP'};
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.gfpChannelName = 'ch2-GFP';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+trainingBounds.setRoi(classifier,1,'2:6','FrameCount',12);
+
+formatted = cellLatentModel.format(classifier,1,struct());
+config = jsondecode(fileread(formatted.artifacts.config));
+trainSpec = config.rois(strcmp(string({config.rois.split}),'train'));
+validationSpec = config.rois(strcmp(string({config.rois.split}),'validation'));
+verifyEqual(testCase,double(trainSpec.source_frames(:).'),2:6);
+verifyEqual(testCase,double(validationSpec.source_frames(:).'),1:12);
+verifyEqual(testCase,double(trainSpec.ground_truth_relations.event_frame),2, ...
+    'The original event at frame 3 must be remapped into the sliced stack.');
+end
+
 function testContinuousClassifierLifecycleUsesTypedMarkers(testCase)
 folder = tempname;
 mkdir(folder);
