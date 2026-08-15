@@ -4544,6 +4544,131 @@ end
             score_display(app, 'refresh');
         end
 
+        function issue = firstAnnotationParentageIssue(app)
+            issue = struct([]);
+            if isempty(app.AnnotationSession), return; end
+            roi = app.getSelectedROI();
+            if isempty(roi), return; end
+            try
+                components = app.AnnotationSession.Spec.components;
+                lineageIndex = find(strcmp({components.kind}, 'lineage') & ...
+                    strcmp({components.storage}, 'cell_model_family'), ...
+                    1, 'first');
+                if isempty(lineageIndex), return; end
+                [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+                report = annotationManager.validateParentage(model, ...
+                    components(lineageIndex).groundTruth.family, ...
+                    'Frames', app.AnnotationSession.trainingFrames());
+                if isfield(report, 'issues') && ~isempty(report.issues)
+                    issue = report.issues(1);
+                end
+            catch
+                issue = struct([]);
+            end
+        end
+
+        function focusAnnotationParentageIssue(app, issue)
+            roi = app.getSelectedROI();
+            if isempty(roi) || isempty(issue), return; end
+            frame = double(issue.focus_frame);
+            if ~isfinite(frame) || frame < 1
+                frame = double(issue.event_frame);
+            end
+            if ~isfinite(frame) || frame < 1, return; end
+
+            [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+            [familyIndex, familyId] = cellModel.familyIndex( ...
+                model, issue.family_id);
+            if isempty(familyIndex), return; end
+            provider = char(string(model.families.mask_provider{familyIndex}));
+            instance = cellModel.findTrackInstance(model, familyId, frame, ...
+                issue.focus_track_id);
+            if isempty(instance)
+                app.showAnnotationFrame(frame);
+                return;
+            end
+
+            targetRow = [];
+            for row = 1:size(app.UIAnnotationTable.Data, 1)
+                if strcmp(app.annotationTableChannelName(row), provider)
+                    targetRow = row;
+                    break;
+                end
+            end
+            if ~isempty(targetRow)
+                app.UIAnnotationTable.Selection = [targetRow 1];
+                app.UIAnnotationTableSelectionChanged([]);
+            end
+            app.showAnnotationFrame(frame);
+
+            pix = roi.findChannelID(provider);
+            channelIndex = find(strcmp(roi.display.channel, provider), ...
+                1, 'first');
+            if isempty(pix) || isempty(channelIndex), return; end
+            maskLabel = double(instance.mask_label);
+            mask = roi.image(:,:,pix,frame);
+            [rows, columns] = find(mask == maskLabel);
+            if isempty(rows), return; end
+
+            app.SelectedObjectLabel = maskLabel;
+            app.SelectedObjectLabelCell = maskLabel;
+            app.SelectedTrackIDCell = double(issue.focus_track_id);
+            app.SelectedObjectChannelIdx = channelIndex;
+            app.SelectedObjectRoiId = string(roi.id);
+            app.KeepSelection = true;
+            score_updateSelectedObjectFields(app);
+
+            try
+                if ~isempty(app.SelectedObjectRectangle) && ...
+                        isgraphics(app.SelectedObjectRectangle)
+                    delete(app.SelectedObjectRectangle);
+                end
+                overlay = findobj(app.ImageFigure, 'Tag', 'IndexedOverlay');
+                if isempty(overlay)
+                    overlay = findobj(app.ImageFigure, 'Type', 'image');
+                end
+                if ~isempty(overlay)
+                    axesHandle = ancestor(overlay(1), 'axes');
+                    bounds = [min(columns)-0.5 min(rows)-0.5 ...
+                        max(columns)-min(columns)+1 max(rows)-min(rows)+1];
+                    app.SelectedObjectRectangle = rectangle(axesHandle, ...
+                        'Position', bounds, 'EdgeColor', [1 1 0], ...
+                        'LineWidth', 3, 'LineStyle', '--', ...
+                        'HitTest', 'off', 'PickableParts', 'none');
+                end
+            catch
+            end
+            app.ImageFigure.Name = sprintf( ...
+                'ROI:%s - Frame: %d/%d - Parentage conflict: Track %u', ...
+                char(string(roi.id)), frame, size(roi.image,4), ...
+                uint64(issue.focus_track_id));
+            drawnow limitrate;
+        end
+
+        function removeAnnotationParentageIssue(app, issue)
+            roi = app.getSelectedROI();
+            if isempty(roi) || isempty(issue), return; end
+            [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+            [model, removal] = cellModel.removeTrack(model, ...
+                issue.family_id, issue.missing_track_id, 'Fast', true);
+            if removal.relations_removed < 1
+                uialert(app.ScoreAppUIFigure, ...
+                    'The broken parentage relation is no longer present.', ...
+                    'Parentage repair');
+                return;
+            end
+            roi.cellModel = model;
+            app.notifyAnnotationChanged('parentage', ...
+                double(issue.event_frame), 'Save', false);
+            app.AnnotationLastValidationValid = false;
+            app.refreshAnnotationSessionUI();
+            uialert(app.ScoreAppUIFigure, sprintf([ ...
+                '%d broken parentage relation(s) involving missing Track %u ' ...
+                'were removed. Save the ROI to persist this repair.'], ...
+                removal.relations_removed, issue.missing_track_id), ...
+                'Parentage repaired', 'Icon', 'success');
+        end
+
         function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>
             if isempty(app.AnnotationSession), return; end
             try
@@ -4569,7 +4694,30 @@ end
                     icon = 'warning';
                 end
                 app.refreshAnnotationSessionUI();
-                uialert(app.ScoreAppUIFigure, message, titleText, 'Icon', icon);
+                issue = struct([]);
+                if ~report.valid
+                    issue = app.firstAnnotationParentageIssue();
+                end
+                if ~isempty(issue) && double(issue.focus_frame) > 0
+                    message = sprintf([ ...
+                        '%s\n\nMissing Track %u has no mask anywhere in this GT, ' ...
+                        'so it cannot be displayed. Score can open frame %u and ' ...
+                        'highlight related Track %u, or remove the stale link now.'], ...
+                        message, issue.missing_track_id, issue.focus_frame, ...
+                        issue.focus_track_id);
+                    choice = uiconfirm(app.ScoreAppUIFigure, message, ...
+                        titleText, 'Icon', icon, ...
+                        'Options', {'Go to related track', ...
+                            'Remove broken link','Close'}, ...
+                        'DefaultOption', 1, 'CancelOption', 3);
+                    if strcmp(choice, 'Go to related track')
+                        app.focusAnnotationParentageIssue(issue);
+                    elseif strcmp(choice, 'Remove broken link')
+                        app.removeAnnotationParentageIssue(issue);
+                    end
+                else
+                    uialert(app.ScoreAppUIFigure, message, titleText, 'Icon', icon);
+                end
             catch ME
                 app.AnnotationLastValidationValid = false;
                 app.refreshAnnotationSessionUI();

@@ -296,11 +296,32 @@ r.saveCellModel(model);
 quickParentage = session.quickValidate('Components', {'parentage'});
 verifyFalse(testCase, quickParentage.valid);
 verifyTrue(testCase, any(contains(quickParentage.errors, ...
-    'do not exist: 999')));
+    'Missing child Track 999')));
 invalidParentage = session.validate('RequireReviewed', false);
 verifyFalse(testCase, invalidParentage.valid);
 verifyTrue(testCase, any(contains(invalidParentage.errors, ...
-    'do not exist: 999')));
+    'Missing child Track 999')));
+parentageReport = annotationManager.validateParentage(model, gtId);
+verifyEqual(testCase, numel(parentageReport.issues), 1);
+verifyEqual(testCase, parentageReport.issues.role, 'child');
+verifyEqual(testCase, parentageReport.issues.missing_track_id, uint64(999));
+verifyEqual(testCase, parentageReport.issues.parent_track_id, uint64(1));
+verifyEqual(testCase, parentageReport.issues.event_frame, uint32(2));
+verifyEqual(testCase, parentageReport.issues.focus_track_id, uint64(1));
+verifyEqual(testCase, parentageReport.issues.focus_frame, uint32(2));
+
+model.relations.child_track_id(gtRelation) = uint64(2);
+model.relations.parent_track_id(gtRelation) = uint64(999);
+parentageReport = annotationManager.validateParentage(model, gtId);
+verifyFalse(testCase, parentageReport.valid);
+verifyEqual(testCase, numel(parentageReport.issues), 1);
+verifyEqual(testCase, parentageReport.issues.role, 'parent');
+verifyEqual(testCase, parentageReport.issues.missing_track_id, uint64(999));
+verifyEqual(testCase, parentageReport.issues.child_track_id, uint64(2));
+verifyEqual(testCase, parentageReport.issues.focus_track_id, uint64(2));
+verifyEqual(testCase, parentageReport.issues.focus_frame, uint32(2));
+verifyTrue(testCase, contains(parentageReport.errors, ...
+    'remove or reassign its parent'));
 r.saveCellModel(validModel);
 
 session.markReviewed('Frames', 1:3, ...
