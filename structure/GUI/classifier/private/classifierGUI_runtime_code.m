@@ -3031,7 +3031,19 @@ end
         return;
     end
 
+    [nrois, selectionReady] = excludeMissingFormattingRois( ...
+        app, classiObj, nrois);
+    if ~selectionReady
+        return;
+    end
+
     if ~confirmUnapprovedTrainingRois(app, nrois)
+        return;
+    end
+
+    [formatReady, packageArgs] = ensurePackageFormattingParameters( ...
+        app, classiObj, nrois);
+    if ~formatReady
         return;
     end
 
@@ -3059,10 +3071,20 @@ end
         'Message','Exporting trainingset to files; Please wait...');
     d.Value = 0.33;
 
-    args = {'Frames', framesToProcess, 'Rois', nrois};
+    args = [{'Frames', framesToProcess, 'Rois', nrois}, packageArgs];
 
     % Call
-    output = app.Data.classiObj.formatDataForTraining(args{:});
+    try
+        output = app.Data.classiObj.formatDataForTraining(args{:});
+    catch ME
+        try
+            if ~isempty(d) && isvalid(d), close(d); end
+        catch
+        end
+        uialert(app.ClassifierUIFigure, localGuiErrorMessage(app, ME), ...
+            'Training-set formatting failed', 'Icon', 'error');
+        return;
+    end
 
     d.Value = 0.66;
 
@@ -3074,6 +3096,8 @@ end
         nExport = output.metrics.outputCount;
     elseif isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'framebankFrames')
         nExport = output.metrics.framebankFrames;
+    elseif isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'rows')
+        nExport = output.metrics.rows;
     end
     formatNotes = {};
     if isstruct(output) && isfield(output, 'metrics')
@@ -3117,6 +3141,128 @@ end
 
 
 
+        end
+
+        function [roiIndices, proceed] = excludeMissingFormattingRois( ...
+                app, classiObj, roiIndices)
+            proceed = true;
+            pkg = '';
+            try pkg = char(string(classiObj.classifierPkg)); catch, end
+            if ~strcmpi(pkg, 'cellLatentModel')
+                return;
+            end
+            try
+                rows = annotationSummaryRows(app, classiObj, roiIndices, ...
+                    'Fast', true);
+            catch
+                return;
+            end
+            if isempty(rows), return; end
+            missing = rows(strcmpi(string({rows.status}), 'missing'));
+            if isempty(missing), return; end
+            ready = setdiff(roiIndices, [missing.roiIndex], 'stable');
+            details = string({missing.roiId});
+            limit = min(numel(details), 12);
+            shown = details(1:limit);
+            if numel(details) > limit
+                shown(end+1) = sprintf('... and %d more ROI(s)', ...
+                    numel(details) - limit); %#ok<AGROW>
+            end
+            if isempty(ready)
+                uialert(app.ClassifierUIFigure, sprintf([ ...
+                    'None of the selected ROIs has initialized GT.\n\n%s\n\n' ...
+                    'Initialize and validate GT before formatting.'], ...
+                    strjoin(shown, newline)), ...
+                    'No formatting-ready ROI', 'Icon', 'error');
+                proceed = false;
+                return;
+            end
+            choice = uiconfirm(app.ClassifierUIFigure, sprintf([ ...
+                '%d selected ROI(s) have no initialized GT and cannot be ' ...
+                'formatted:\n\n%s\n\nUse only the %d ROI(s) that contain GT?'], ...
+                numel(missing), strjoin(shown, newline), numel(ready)), ...
+                'ROIs without ground truth', ...
+                'Options', {'Use GT ROIs only','Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 2, 'Icon', 'warning');
+            if ~strcmp(choice, 'Use GT ROIs only')
+                proceed = false;
+                return;
+            end
+            roiIndices = ready;
+            setClassifierTrainingSelection(app, roiIndices);
+            checkStatus(app, false);
+            displayData(app);
+        end
+
+        function [ready, extraArgs] = ensurePackageFormattingParameters( ...
+                app, classiObj, roiIndices)
+            ready = true;
+            extraArgs = {};
+            pkg = '';
+            try pkg = char(string(classiObj.classifierPkg)); catch, end
+            if ~strcmpi(pkg, 'cellLatentModel')
+                return;
+            end
+
+            ctx = struct('params', struct());
+            try ctx = classiObj.buildCtx('format', ctx); catch, end
+            try
+                cellLatentModel.preflightFormat(classiObj, roiIndices, ctx);
+                return;
+            catch ME
+                if ~strcmp(ME.identifier, ...
+                        'cellLatentModel:MissingFrameInterval')
+                    uialert(app.ClassifierUIFigure, ...
+                        localGuiErrorMessage(app, ME), ...
+                        'Invalid formatting parameters', 'Icon', 'error');
+                    ready = false;
+                    return;
+                end
+            end
+
+            suggested = '';
+            try
+                value = double(classiObj.executionParam.frameIntervalMinutes);
+                if isscalar(value) && isfinite(value) && value > 0
+                    suggested = sprintf('%.12g', value);
+                end
+            catch
+            end
+            answer = inputdlg({sprintf([ ...
+                'Physical interval between consecutive frames (minutes).\n' ...
+                'This value is mandatory for continuous-lineage training:'])}, ...
+                'Continuous-lineage timing', [2 72], {suggested});
+            if isempty(answer)
+                ready = false;
+                return;
+            end
+            raw = strrep(strtrim(char(string(answer{1}))), ',', '.');
+            interval = str2double(raw);
+            if ~isscalar(interval) || ~isfinite(interval) || interval <= 0
+                uialert(app.ClassifierUIFigure, ...
+                    'Enter a strictly positive frame interval in minutes.', ...
+                    'Invalid frame interval', 'Icon', 'error');
+                ready = false;
+                return;
+            end
+
+            if ~isstruct(classiObj.trainingParam)
+                classiObj.trainingParam = struct();
+            end
+            classiObj.trainingParam.frameIntervalMinutes = interval;
+            ctx.params.frameIntervalMinutes = interval;
+            try
+                cellLatentModel.preflightFormat(classiObj, roiIndices, ctx);
+            catch ME
+                uialert(app.ClassifierUIFigure, ...
+                    localGuiErrorMessage(app, ME), ...
+                    'Invalid formatting parameters', 'Icon', 'error');
+                ready = false;
+                return;
+            end
+            extraArgs = {'frameIntervalMinutes', interval};
+            try refreshTypedTrainingBindingChoices(app); catch, end
+            checkStatus(app, false);
         end
 
         function frames = parseTrainingFrameSelection(app, txt) %#ok<INUSD>

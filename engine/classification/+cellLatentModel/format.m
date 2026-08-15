@@ -4,13 +4,7 @@ if nargin < 2, rois = []; end
 if nargin < 3 || isempty(ctx), ctx = struct(); end
 cellLatentModel.ensureClassMetadata(classif);
 out = cellLatentModel.utils.outInitSafe('cellLatentModel.format');
-tp = cellLatentModel.utils.defaultTrainingParam();
-if isstruct(classif.trainingParam)
-    tp = cellLatentModel.utils.applyOverrides(tp,classif.trainingParam);
-end
-if isfield(ctx,'params') && isstruct(ctx.params)
-    tp = cellLatentModel.utils.applyOverrides(tp,ctx.params);
-end
+tp = cellLatentModel.preflightFormat(classif,rois,ctx);
 classif.trainingParam = tp;
 [trainRois,valRois] = resolveSplits( ...
     classif,rois,tp.validationFraction);

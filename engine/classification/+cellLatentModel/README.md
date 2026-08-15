@@ -81,6 +81,12 @@ stays portable.
   objective that trained the checkpoint;
 - `classify`: an audit JSON and canonical lineage family are saved.
 
+For `continuous_lineage`, `frameIntervalMinutes` is mandatory because the
+temporal windows are expressed in physical time. If it is absent,
+classifierGUI asks for it before formatting and stores the entered value in
+the classifier training parameters. Programmatic formatting fails during a
+read-only preflight, before an existing `trainingdataset` is replaced.
+
 The continuous DetecDiv objective currently trains the lineage head only. It
 does not manufacture cycle/death/budding state targets from lineage labels;
 those heads remain separately trainable when audited biological-state GT is

@@ -86,18 +86,6 @@ end
 category   = classif.category;  category = category{1};
 foldername = 'trainingdataset';
 
-if Keep == 0
-    disp('Removing previous labeled datasets from folders... This can take a very long time...');
-    if isfolder(fullfile(classif.path, foldername))
-        try
-            rmdir(fullfile(classif.path, foldername), 's');
-        catch
-            disp('Error: did not manage to remove directory!');
-        end
-    end
-    mkdir(classif.path, foldername);
-end
-
 
 % ---- ROIs d'entraînement / validation ----
 if numel(rois) == 0
@@ -214,6 +202,13 @@ end
     if ~isempty(pkg)
         fmtFun = [pkg '.format'];
         if ~isempty(which(fmtFun))
+            preflightFun = [pkg '.preflightFormat'];
+            if ~isempty(which(preflightFun))
+                feval(preflightFun, classif, rois, ctx);
+            end
+            if Keep == 0
+                resetTrainingDatasetLocal(classif.path, foldername);
+            end
             disp(['[PKG FORMAT] ' fmtFun]);
             output = feval(fmtFun, classif, rois, ctx);
             return;
@@ -221,6 +216,9 @@ end
     end
 
 % ---- Legacy fallback by category (kept for other classifiers) ----
+if Keep == 0
+    resetTrainingDatasetLocal(classif.path, foldername);
+end
 switch category
     case {'Image', 'Image Regression'}
         % (pour l'instant je ne forwarde pas extraArgs aux formats Image,
@@ -298,5 +296,21 @@ end
         end
         roisOut = unique(round(double(roisIn(:)')), 'stable');
         roisOut = roisOut(isfinite(roisOut) & roisOut >= 1 & roisOut <= nRois);
+    end
+
+    function resetTrainingDatasetLocal(classifierPath, name)
+        target = fullfile(classifierPath, name);
+        disp(['Removing previous labeled datasets from folders... ' ...
+            'This can take a very long time...']);
+        if isfolder(target)
+            try
+                rmdir(target, 's');
+            catch ME
+                error('classi:TrainingDatasetResetFailed', ...
+                    'Could not replace formatted dataset "%s": %s', ...
+                    target, ME.message);
+            end
+        end
+        mkdir(classifierPath, name);
     end
 end

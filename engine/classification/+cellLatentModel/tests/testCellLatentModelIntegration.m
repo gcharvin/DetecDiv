@@ -452,6 +452,58 @@ verifyEqual(testCase,double(trainSpec.ground_truth_relations.event_frame),2, ...
     'The original event at frame 3 must be remapped into the sliced stack.');
 end
 
+function testMissingContinuousIntervalPreservesFormattedDataset(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'continuous_preflight', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'preflight_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'preflight_validation', 1);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.trainingObjective = 'continuous_lineage';
+classifier.trainingParam.frameIntervalMinutes = [];
+
+datasetDir = fullfile(classifier.path, 'trainingdataset');
+mkdir(datasetDir);
+sentinel = fullfile(datasetDir, 'previous_dataset.marker');
+touchFile(sentinel);
+
+verifyError(testCase, @() classifier.formatDataForTraining( ...
+    'Rois', 1, 'Frames', []), 'cellLatentModel:MissingFrameInterval');
+verifyTrue(testCase, isfile(sentinel), ...
+    'A failed preflight must not delete the previously formatted dataset.');
+end
+
+function testMissingGtChannelPreservesFormattedDataset(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'missing_gt_preflight', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'ready_roi', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'missing_gt_roi', 1);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = [1 2];
+classifier.dataset.split.val = [];
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.trackChannelName = 'latent_model_1_cell';
+
+datasetDir = fullfile(classifier.path, 'trainingdataset');
+mkdir(datasetDir);
+sentinel = fullfile(datasetDir, 'previous_dataset.marker');
+touchFile(sentinel);
+
+verifyError(testCase, @() classifier.formatDataForTraining( ...
+    'Rois', [1 2], 'Frames', []), ...
+    'cellLatentModel:TrainingInputsNotReady');
+verifyTrue(testCase, isfile(sentinel), ...
+    'Missing ROI inputs must be detected before replacing the dataset.');
+end
+
 function testContinuousClassifierLifecycleUsesTypedMarkers(testCase)
 folder = tempname;
 mkdir(folder);
