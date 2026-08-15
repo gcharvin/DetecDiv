@@ -326,8 +326,27 @@ r.saveCellModel(validModel);
 
 session.markReviewed('Frames', 1:3, ...
     'Components', {'tracked_mask','tracking'});
-session.markReviewed('Components', {'parentage'});
+reviewSummary = session.summary();
+parentageCoverage = reviewSummary.coverage.components(strcmp( ...
+    {reviewSummary.coverage.components.id}, 'parentage'));
+verifyEqual(testCase, parentageCoverage.reviewed, 1, ...
+    'Completing every bounded frame must also complete ROI-level review.');
 verifyTrue(testCase, session.validate().valid);
+
+% Reproduce an older session (and the stale-link repair workflow): all
+% frame units remain reviewed while a parentage edit resets its ROI flag.
+annotationManager.markChanged(r, session.Spec, 'Frames', 2, ...
+    'Components', {'parentage'}, 'Save', false);
+reviewSummary = session.summary();
+parentageCoverage = reviewSummary.coverage.components(strcmp( ...
+    {reviewSummary.coverage.components.id}, 'parentage'));
+verifyEqual(testCase, parentageCoverage.reviewed, 0);
+verifyTrue(testCase, session.validate().valid, ...
+    'Validate must reconcile ROI review after all bounded frames were reviewed.');
+reviewSummary = session.summary();
+parentageCoverage = reviewSummary.coverage.components(strcmp( ...
+    {reviewSummary.coverage.components.id}, 'parentage'));
+verifyEqual(testCase, parentageCoverage.reviewed, 1);
 
 gtIdx = r.findChannelID('latent_1_cell');
 r.image(:,:,gtIdx,:) = uint16(17);

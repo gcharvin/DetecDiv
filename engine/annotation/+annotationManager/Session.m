@@ -78,15 +78,23 @@ classdef Session < handle
                 varargin = [varargin {'Frames', obj.trainingFrames()}];
             end
             entry = annotationManager.markReviewed(obj.Roi, obj.Spec, varargin{:});
+            entry = obj.completeRoiReviewWhenFramesComplete(entry, ...
+                optionValue(varargin, 'Save', true));
             obj.changed();
         end
 
         function entry = markChanged(obj, varargin)
             entry = annotationManager.markChanged(obj.Roi, obj.Spec, varargin{:});
+            entry = obj.completeRoiReviewWhenFramesComplete(entry, ...
+                optionValue(varargin, 'Save', true));
             obj.changed();
         end
 
         function report = validate(obj, varargin)
+            % Upgrade legacy/in-progress sessions that reviewed every frame
+            % in the training interval but still carry an unconfirmed
+            % ROI-level unit such as parentage.
+            obj.completeRoiReviewWhenFramesComplete([], true);
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             if report.valid
@@ -159,6 +167,48 @@ classdef Session < handle
     end
 
     methods (Access = private)
+        function entry = completeRoiReviewWhenFramesComplete(obj, entry, saveValue)
+            if nargin < 2 || isempty(entry)
+                [entry, found] = annotationManager.entryForSpec( ...
+                    obj.Roi, obj.Spec);
+                if ~found, return; end
+            end
+            if nargin < 3, saveValue = true; end
+
+            components = obj.Spec.components;
+            required = [components.required];
+            frameComponents = components(required & strcmp( ...
+                {components.coverageUnit}, 'frame'));
+            roiComponents = components(required & strcmp( ...
+                {components.coverageUnit}, 'roi'));
+            if isempty(frameComponents) || isempty(roiComponents), return; end
+
+            frames = obj.trainingFrames();
+            if isempty(frames), return; end
+            for i = 1:numel(frameComponents)
+                reviewIndex = find(strcmp({entry.review.component_id}, ...
+                    frameComponents(i).id), 1, 'first');
+                if isempty(reviewIndex) || ...
+                        max(frames) > numel(entry.review(reviewIndex).frames) || ...
+                        ~all(entry.review(reviewIndex).frames(frames))
+                    return;
+                end
+            end
+
+            incompleteIds = {};
+            for i = 1:numel(roiComponents)
+                reviewIndex = find(strcmp({entry.review.component_id}, ...
+                    roiComponents(i).id), 1, 'first');
+                if isempty(reviewIndex) || ~entry.review(reviewIndex).complete
+                    incompleteIds{end+1} = roiComponents(i).id; %#ok<AGROW>
+                end
+            end
+            if isempty(incompleteIds), return; end
+            entry = annotationManager.markReviewed(obj.Roi, obj.Spec, ...
+                'Frames', frames, 'Components', incompleteIds, ...
+                'Save', logical(saveValue));
+        end
+
         function changed(obj)
             obj.resetValidationState();
             notify(obj, 'StateChanged');
@@ -176,6 +226,17 @@ tf = false;
 for i = 1:2:numel(args)
     if (ischar(args{i}) || isstring(args{i})) && strcmpi(args{i},name)
         tf = true;
+        return;
+    end
+end
+end
+
+function value = optionValue(args, name, fallback)
+value = fallback;
+for i = 1:2:numel(args)
+    if i + 1 <= numel(args) && ...
+            (ischar(args{i}) || isstring(args{i})) && strcmpi(args{i}, name)
+        value = args{i+1};
         return;
     end
 end

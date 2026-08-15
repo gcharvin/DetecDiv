@@ -201,8 +201,9 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
    `markReviewed('Frames', currentFrame)` without changing image pixels.
 7. `MarkThroughCurrentButton`, text **Review 1 -> current...**. After
    confirmation, mark every required frame-level component reviewed from frame
-   1 through the current frame. ROI-level components such as parentage remain
-   explicit.
+   1 through the current frame. As soon as every frame inside the ROI training
+   bounds is covered, the session also completes required ROI-level units such
+   as parentage; validation still checks their actual content.
 8. `ReviewWhileNavigatingCheckBox`, text **Review while navigating**. When
    enabled, leaving a frame with keyboard or incomplete-frame navigation marks
    all required frame-level components reviewed. It is off by default.
@@ -243,8 +244,10 @@ channel and family.
    Add this call after the existing pixel write/save logic, not on mouse hover
    or display-only changes. Frame-level edited units become reviewed
    automatically and receive a lightweight, non-modal validation. An edited
-   ROI-level unit (notably parentage) is instead made incomplete until the user
-   explicitly confirms the full ROI.
+   ROI-level unit (notably parentage) is first made incomplete. If all required
+   frame-level units inside the training bounds are already reviewed, the
+   session completes that ROI-level review again automatically; content errors
+   are still reported by full validation.
 2. In CNN/LSTM keyboard class assignment, call the same method for the frame
    label component. A frame is therefore changed and reviewed in one action.
 3. In object-state, track, mother-bud, or lineage editing callbacks, pass the
@@ -303,8 +306,9 @@ Score sessions. When `AnnotationSession` is non-empty:
    channels.
 5. Enable **Review while navigating**, inspect two unchanged frames, and leave
    each one: segmentation/tracking coverage increases once per frame.
-6. Use **Review 1 -> current...** after jumping ahead: only the frame-level
-   counters advance; parentage still requires explicit ROI confirmation.
+6. Use **Review 1 -> current...** after jumping to the final bounded frame:
+   frame-level counters advance and parentage becomes `1/1` automatically once
+   the complete bounded interval is covered.
 7. Mark an unchanged empty frame reviewed: coverage increases even though no
    foreground pixels were added.
 8. Validate, resolve reported errors, then click **Approve GT**: both Score and
