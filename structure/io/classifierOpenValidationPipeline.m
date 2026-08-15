@@ -256,6 +256,15 @@ try
         if ~isempty(privateKeys), defaults = rmfield(defaults,privateKeys); end
         params = mergeStructDefaults(params, defaults);
     end
+    if strcmp(opts.intent, 'train') && isstruct(spec) && ...
+            isfield(spec, 'inputKeys')
+        % Training inputs belong to trainingParam.  In particular, reviewed
+        % lineage GT already records which stable-label channel produced the
+        % objects.  Do not fall back to empty inference defaults when the
+        % classifier-scoped training pipeline is materialized.
+        params = classifierApplyTrainingInputBindings( ...
+            params, classiObj.trainingParam, spec.inputKeys);
+    end
 catch
 end
 end
