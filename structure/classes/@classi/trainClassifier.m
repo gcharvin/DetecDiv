@@ -40,6 +40,15 @@ if nargin == 1
         classif.runMsg('Training finished successfully');
 
         try
+            snapshot = classifierPersistTrainingExecutionDefaults(classif);
+            if ~isempty(snapshot)
+                classif.runMsg('Saved training execution defaults: %s', snapshot);
+            end
+        catch ME
+            classif.runMsg('WARN training execution defaults were not saved: %s', ME.message);
+        end
+
+        try
             classif.runCopyArtifacts();
         catch ME
             classif.runMsg('WARN runCopyArtifacts failed: %s', ME.message);

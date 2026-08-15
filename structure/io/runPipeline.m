@@ -2929,6 +2929,17 @@ for i = 1:numel(props)
     catch
     end
 end
+try
+    trainedDefaults = classifierTrainingExecutionDefaults(refClassi);
+    if ~isempty(fieldnames(trainedDefaults))
+        if ~isstruct(clsObj.executionParam), clsObj.executionParam = struct(); end
+        keys = fieldnames(trainedDefaults);
+        for i = 1:numel(keys)
+            clsObj.executionParam.(keys{i}) = trainedDefaults.(keys{i});
+        end
+    end
+catch
+end
 end
 
 function [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node)

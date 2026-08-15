@@ -30,8 +30,8 @@ trainingParam = classifierStructProperty(classiObj, 'trainingParam');
 executionParam = classifierStructProperty(classiObj, 'executionParam');
 intent = strtrim(char(string(intent)));
 
-% Execution parameters are the persisted validation choices.  Some legacy
-% packages do not merge them in executionSpec, so apply them here as well.
+% Execution parameters provide the inference baseline. Some legacy packages
+% do not merge them in executionSpec, so apply them here as well.
 params = overlayNonemptySelectors(params, executionParam, selectorKeys);
 if strcmpi(intent, 'train')
     % Training selectors describe how the reviewed dataset was formatted.
@@ -39,9 +39,10 @@ if strcmpi(intent, 'train')
     % optional selector which must clear an inference default.
     params = overlayPresentSelectors(params, trainingParam, selectorKeys);
 else
-    % Validation normally follows execution choices.  Missing choices fall
-    % back to the channels used to build the training dataset.
-    params = fillNonemptySelectors(params, trainingParam, selectorKeys);
+    % A newly materialized validation run follows the channels used to build
+    % the trained dataset.  Users can still override these node values in
+    % Pipeline2 after creation.
+    params = overlayNonemptySelectors(params, trainingParam, selectorKeys);
 end
 
 storedChannels = classifierInputChannels(classiObj);
@@ -77,19 +78,6 @@ for i = 1:numel(keys)
     key = keys{i};
     if isfield(source, key)
         params.(key) = selectedValue(source.(key));
-    end
-end
-end
-
-function params = fillNonemptySelectors(params, source, keys)
-for i = 1:numel(keys)
-    key = keys{i};
-    if (~isfield(params, key) || isEmptySelection(params.(key))) && ...
-            isfield(source, key)
-        value = selectedValue(source.(key));
-        if ~isEmptySelection(value)
-            params.(key) = value;
-        end
     end
 end
 end

@@ -246,6 +246,7 @@ if ~isempty(opts.frames)
     params.frames = opts.frames;
 end
 
+spec = struct();
 try
     specFun = str2func([params.pkg '.executionSpec']);
     spec = specFun(classiObj);
@@ -261,6 +262,8 @@ try
     end
 catch
 end
+params = classifierApplyTrainingExecutionDefaults( ...
+    params, classiObj, spec, opts.intent);
 
 % Resolve the effective input keys from the shared Pipeline2 contract.  The
 % contract is package-aware (including backend variants), so this applies to
