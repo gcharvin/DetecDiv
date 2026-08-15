@@ -22,6 +22,10 @@ if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
     out.refs.executionParam = classif.executionParam;
     return;
 end
+if exist('detecdiv_progress','file') == 2
+    detecdiv_progress(ctx,0,'Checking formatted latent training dataset...', ...
+        'Scope','training');
+end
 if strcmp(objective,'continuous_lineage')
     datasetDir = fullfile(classif.path,'trainingdataset', ...
         'continuous_dataset');
@@ -94,9 +98,17 @@ else
 end
 writeJson(configFile,cfg);
 detecdiv_check_cancel(ctx,'cellLatentModel before training');
+if exist('detecdiv_progress','file') == 2
+    detecdiv_progress(ctx,0.01,'Starting latent-model optimization...', ...
+        'Scope','training');
+end
 runtime = cellLatentModel.utils.runPythonModule( ...
     command,configFile,ctx,stdoutFile);
 detecdiv_check_cancel(ctx,'cellLatentModel after training');
+if exist('detecdiv_progress','file') == 2
+    detecdiv_progress(ctx,0.97,'Verifying trained checkpoint...', ...
+        'Scope','training');
+end
 checkpoint = fullfile(modelDir,checkpointName);
 reportFile = fullfile(modelDir,'training_report.json');
 if ~isfile(checkpoint) || ~isfile(reportFile)
@@ -138,6 +150,10 @@ try classiSave(classif); catch ME
     warning('cellLatentModel:ClassifierSaveFailed', ...
         'Checkpoint trained, but classifier metadata was not saved: %s', ...
         ME.message);
+end
+if exist('detecdiv_progress','file') == 2
+    detecdiv_progress(ctx,1,'Latent-model training complete.', ...
+        'Scope','training','Status','completed');
 end
 
 out.artifacts.dataset = datasetDir;
