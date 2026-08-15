@@ -8,6 +8,9 @@ function app = classifierOpenValidationPipeline(classiObj, varargin)
 opts = parseOptions(varargin{:});
 opts.intent = normalizeIntent(opts.intent);
 validateClassifierObject(classiObj);
+if isempty(opts.executionTarget)
+    opts.executionTarget = classifierDefaultExecutionTarget(classiObj.path);
+end
 
 roiIdx = resolveClassifierRoiIndices(classiObj, opts);
 if isempty(roiIdx)
@@ -256,17 +259,21 @@ try
         if ~isempty(privateKeys), defaults = rmfield(defaults,privateKeys); end
         params = mergeStructDefaults(params, defaults);
     end
-    if strcmp(opts.intent, 'train') && isstruct(spec) && ...
-            isfield(spec, 'inputKeys')
-        % Training inputs belong to trainingParam.  In particular, reviewed
-        % lineage GT already records which stable-label channel produced the
-        % objects.  Do not fall back to empty inference defaults when the
-        % classifier-scoped training pipeline is materialized.
-        params = classifierApplyTrainingInputBindings( ...
-            params, classiObj.trainingParam, spec.inputKeys);
-    end
 catch
 end
+
+% Resolve the effective input keys from the shared Pipeline2 contract.  The
+% contract is package-aware (including backend variants), so this applies to
+% every classifier without embedding package-specific channel rules here.
+try
+    contractNode = struct('type', 'classifier', 'pkg', params.pkg, ...
+        'func', char(string(classiObj.classifyFun)), 'params', params);
+    contract = pipelineNodeContract(contractNode);
+catch
+    contract = struct();
+end
+params = classifierApplyPipelineInputBindings( ...
+    params, classiObj, contract, opts.intent, opts.channels);
 end
 
 function ensureClassifierSnapshot(classiObj)
