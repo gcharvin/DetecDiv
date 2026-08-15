@@ -1403,12 +1403,13 @@ function txt = localBoundsNotice(app,boundsType, globalBounds) %#ok<INUSD>
     switch lower(string(boundsType))
         case "auto"
             if isempty(globalBounds)
-                txt = 'Training frames: all (default)';
+                txt = 'Formatting: all frames (default)';
             else
-                txt = sprintf('Training frames: %d:%d (global)', globalBounds(1), globalBounds(2));
+                txt = sprintf('Formatting: frames %d:%d (legacy global bound)', ...
+                    globalBounds(1), globalBounds(2));
             end
         case "manual"
-            txt = 'Training frames: per ROI; missing values mean all';
+            txt = 'Formatting: persistent per-ROI bounds shown above; all = all frames';
         case "rules"
             txt = 'Bounds: Rules';
         otherwise
@@ -2281,10 +2282,10 @@ end
 
     app.ClassifierUIFigure.Name = [classiObj.strid];
     app.Data.classiObj = classiObj;
-    app.SetboundsselectionrulesButton.Text = 'Set frame bounds mode...';
+    app.SetboundsselectionrulesButton.Text = 'Set training frames...';
     app.SetboundsselectionrulesButton.Tooltip = [ ...
-        'Choose global or per-ROI training frames. In per-ROI mode, ' ...
-        'edit the Frame bounds table cells; the default is all.'];
+        'Apply all frames or one shared range to several ROIs, or switch ' ...
+        'to per-ROI editing. These bounds are used directly by formatting.'];
 
     % Load classlist (and auto-append packages)
 % Load classlist (and auto-append packages)
@@ -3071,31 +3072,12 @@ end
         return;
     end
 
-    % Prompt
-    prompt = {'Frames to export: all / 0 / 1:10:200 / 1,5,8,20'};
-    dlgtitle = 'Input formatting parameters';
-    dims = [1 100];
-    definput = {'all'};
-    answer = inputdlg(prompt, dlgtitle, dims, definput);
-
-    if isempty(answer)
-        return;
-    end
-
-    % Parse
-    try
-        framesToProcess = parseTrainingFrameSelection(app, answer{1});
-    catch ME
-        uialert(app.ClassifierUIFigure, ME.message, 'Invalid frame selection');
-        return;
-    end
-
     d = uiprogressdlg(app.ClassifierUIFigure, ...
         'Title','Please Wait...', ...
-        'Message','Exporting trainingset to files; Please wait...');
+        'Message','Exporting the persistent per-ROI training frames...');
     d.Value = 0.33;
 
-    args = [{'Frames', framesToProcess, 'Rois', nrois}, packageArgs];
+    args = [{'Frames', [], 'Rois', nrois}, packageArgs];
 
     % Call
     try
@@ -3287,26 +3269,6 @@ end
             extraArgs = {'frameIntervalMinutes', interval};
             try refreshTypedTrainingBindingChoices(app); catch, end
             checkStatus(app, false);
-        end
-
-        function frames = parseTrainingFrameSelection(app, txt) %#ok<INUSD>
-            txt = strtrim(char(string(txt)));
-            if isempty(txt) || any(strcmpi(txt, {'all','0','-1'}))
-                frames = [];
-                return;
-            end
-
-            txt = strrep(txt, ',', ' ');
-            frames = str2num(txt); %#ok<ST2NM>
-            if isempty(frames) || ~isnumeric(frames)
-                error('Enter frames as all, 0, 1:200, 1:10:200, or 1,5,8,20.');
-            end
-
-            frames = unique(round(double(frames(:).')), 'stable');
-            frames = frames(isfinite(frames));
-            if isempty(frames) || any(frames < 1)
-                error('Frame numbers must be positive integers, or use all/0.');
-            end
         end
 
         % Menu selected function: TrainClassifierMenu
@@ -3860,45 +3822,34 @@ disp('unable to display folder with this OS');
 
         % Button pushed function: SetboundsselectionrulesButton
         function SetboundsselectionrulesButtonPushed(app, event)
-            choice = uiconfirm(app.ClassifierUIFigure, ...
-                ['Choose how training frames are selected. In per-ROI mode, ' ...
-                 'edit the Frame bounds cells directly; "all" is the default.'], ...
-                'Training frame bounds', ...
-                'Options', {'Per ROI','Global','Cancel'}, ...
-                'DefaultOption', 1, 'CancelOption', 3);
-            if strcmp(choice, 'Cancel'), return; end
-
             classiObj = app.Data.classiObj;
-            cfg = classiObj.bounds;
-            if ~isstruct(cfg), cfg = struct(); end
-            cfg.SchemaVersion = 2;
-            if ~isfield(cfg, 'RoiValues') || ~isstruct(cfg.RoiValues)
-                cfg.RoiValues = struct('roi_id',{},'roi_index',{}, ...
-                    'values',{},'updated_at',{});
+            selectedIndices = selectedAnnotationRoiIndices(app);
+            selection = trainingFrameBoundsDialog( ...
+                app.ClassifierUIFigure, classiObj, selectedIndices);
+            if ~selection.accepted, return; end
+            try
+                report = trainingBounds.apply(classiObj, ...
+                    selection.roiIndices, selection.mode, ...
+                    'Bounds', selection.bounds);
+            catch ME
+                uialert(app.ClassifierUIFigure, ME.message, ...
+                    'Could not set training frames', 'Icon', 'error');
+                return;
             end
-
-            if strcmp(choice, 'Per ROI')
-                cfg.Type = 'Manual';
-                cfg.Values = [];
-            else
-                currentText = 'all';
-                try currentText = trainingBounds.text(cfg.Values); catch, end
-                answer = inputdlg( ...
-                    {'Inclusive global range (for example 100:500), or all:'}, ...
-                    'Global training frame bounds', [1 55], {currentText});
-                if isempty(answer), return; end
-                try
-                    cfg.Values = trainingBounds.parse(answer{1});
-                catch ME
-                    uialert(app.ClassifierUIFigure, ME.message, ...
-                        'Invalid training frame bounds');
-                    return;
-                end
-                cfg.Type = 'Auto';
-            end
-            classiObj.bounds = cfg;
             displayData(app);
             checkStatus(app,false);
+            if strcmp(report.mode, 'per_roi')
+                message = ['Per-ROI editing is active. Edit the Frame bounds ' ...
+                    'cells directly; enter "all" to clear one ROI.'];
+            elseif strcmp(report.mode, 'all')
+                message = sprintf('All frames selected for %d ROI(s).', ...
+                    report.count);
+            else
+                message = sprintf('Shared frame range applied to %d ROI(s).', ...
+                    report.count);
+            end
+            uialert(app.ClassifierUIFigure, message, ...
+                'Training frames updated', 'Icon', 'success');
         end
 
         % Button pushed function: DisplayaugmentedimagesButton
@@ -4643,7 +4594,7 @@ disp('unable to display folder with this OS');
             app.SetboundsselectionrulesButton = uibutton(app.SettrainingandvalidationsetROIsTab, 'push');
             app.SetboundsselectionrulesButton.ButtonPushedFcn = createCallbackFcn(app, @SetboundsselectionrulesButtonPushed, true);
             app.SetboundsselectionrulesButton.Position = [13 68 169 33];
-            app.SetboundsselectionrulesButton.Text = 'Set bounds selection rules....';
+            app.SetboundsselectionrulesButton.Text = 'Set training frames...';
 
             % Create BoundsnoticeLabel
             app.BoundsnoticeLabel = uilabel(app.SettrainingandvalidationsetROIsTab);

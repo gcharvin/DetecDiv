@@ -63,6 +63,50 @@ verifyError(testCase, @()trainingBounds.parse('2'), ...
     'trainingBounds:InvalidText');
 end
 
+function testBulkRangeClipsEachRoiAndPreservesPersistentSelection(testCase)
+[c, cleanup] = classifierFixture(); %#ok<ASGLU>
+report = trainingBounds.apply(c, [1 2], 'range', 'Bounds', [2 6]);
+
+verifyEqual(testCase, report.count, 2);
+verifyEqual(testCase, trainingBounds.resolve(c,1), [2 5]);
+verifyEqual(testCase, trainingBounds.resolve(c,2), [2 6]);
+spec = trainingBounds.selectionSpec(c, []);
+verifyEqual(testCase, spec.roi1, 2:5);
+verifyEqual(testCase, spec.roi2, 2:6);
+end
+
+function testBulkAllClearsOnlyTargetedRois(testCase)
+[c, cleanup] = classifierFixture(); %#ok<ASGLU>
+trainingBounds.apply(c, [1 2], 'range', 'Bounds', [2 4]);
+trainingBounds.apply(c, 1, 'all');
+
+verifyEmpty(testCase, trainingBounds.resolve(c,1));
+verifyEqual(testCase, trainingBounds.resolve(c,2), [2 4]);
+end
+
+function testBulkEditMaterializesLegacyGlobalBounds(testCase)
+[c, cleanup] = classifierFixture(); %#ok<ASGLU>
+c.bounds.Type = 'Auto';
+c.bounds.Values = [2 4];
+
+trainingBounds.apply(c, 1, 'all');
+
+verifyEmpty(testCase, trainingBounds.resolve(c,1));
+verifyEqual(testCase, trainingBounds.resolve(c,2), [2 4], ...
+    'Changing one ROI must preserve the old global bound on other ROIs.');
+verifyEqual(testCase, c.bounds.Type, 'Manual');
+verifyEmpty(testCase, c.bounds.Values);
+end
+
+function testBulkRangeRejectsRoiBeforeStart(testCase)
+[c, cleanup] = classifierFixture(); %#ok<ASGLU>
+verifyError(testCase, @()trainingBounds.apply( ...
+    c, [1 2], 'range', 'Bounds', [6 8]), ...
+    'trainingBounds:RangeStartsAfterRoi');
+verifyEmpty(testCase, trainingBounds.resolve(c,1));
+verifyEmpty(testCase, trainingBounds.resolve(c,2));
+end
+
 function [c, cleanup] = classifierFixture()
 folder = tempname;
 mkdir(folder);

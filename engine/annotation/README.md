@@ -111,6 +111,8 @@ Keep the following controls and their existing selection/import behavior:
    summary for every selected training ROI. If any ROI is not `Ready`, show
    a confirmation dialog listing the affected ROIs. The default action must be
    cancel; do not silently validate drafts or silently exclude them.
+   Do not ask for a transient frame expression during formatting. Formatting
+   always consumes the persistent `Frame bounds` shown in the ROI table.
 5. Rename the legacy output field labelled **Annotated ROIs with validation
    data** to **Ready annotation ROIs**, and compute it from the lifecycle
    status instead of inferring annotation state from the presence of old
@@ -132,6 +134,10 @@ annotation button:
 4. `AnnotationFilterDropDown`, label **Show**, with values `All`, `Missing`,
    `Draft`, `Invalid`, and `Ready`. Filtering changes only the visible rows and must
    preserve the underlying ROI indices.
+5. Reuse `SetboundsselectionrulesButton` as **Set training frames...**. Its
+   single dialog applies `all`, one shared inclusive range, or per-ROI editing
+   to all training ROIs, selected table rows, or every imported ROI. The table
+   remains the source of truth and defaults to `all`.
 
 The initialization dialog offers only coherent starting points:
 
