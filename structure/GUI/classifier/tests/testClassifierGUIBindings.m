@@ -112,6 +112,10 @@ c.dataset.channels = {'BF'};
 spec = annotationManager.specForClassifier(c);
 entry = annotationManager.newEntry(spec, 2);
 entry.status = 'draft';
+entry.revision = uint32(7);
+entry.validation_status = 'valid';
+entry.validated_revision = entry.revision;
+entry.validated_at = '2026-08-15T09:00:00+02:00';
 manifest = struct('schema_version', uint16(1), 'entries', entry);
 annotationManager.writeManifest(r, manifest);
 
@@ -125,9 +129,12 @@ drawnow;
 annotatedColumn = find(strcmp(app.UITableData.ColumnName, 'is annotated'), 1);
 validatedColumn = find(strcmp(app.UITableData.ColumnName, 'is validated'), 1);
 statusColumn = find(strcmp(app.UITableData.ColumnName, 'Annotation status'), 1);
+validationColumn = find(strcmp(app.UITableData.ColumnName, 'Validation'), 1);
 verifyTrue(testCase, app.UITableData.Data{1, annotatedColumn});
-verifyFalse(testCase, app.UITableData.Data{1, validatedColumn});
+verifyTrue(testCase, app.UITableData.Data{1, validatedColumn}, ...
+    'A persisted valid result must not depend on the active Score session.');
 verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Draft');
+verifyEqual(testCase, app.UITableData.Data{1, validationColumn}, 'Valid');
 end
 
 function deleteClassifierGUI(app)

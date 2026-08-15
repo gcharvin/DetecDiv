@@ -38,11 +38,23 @@ verifyEqual(testCase, session.summary().coverage.fraction, 0);
 failed = session.validate();
 verifyFalse(testCase, failed.valid);
 verifyEqual(testCase, session.LastValidationStatus, 'invalid');
+reopened = c.annotationSession(1);
+verifyEqual(testCase, reopened.LastValidationStatus, 'invalid', ...
+    'A failed validation must survive replacement of the active Score session.');
 session.markReviewed('Frames', 1:3);
 verifyEqual(testCase, session.LastValidationStatus, 'not_run');
+reopened = c.annotationSession(1);
+verifyEqual(testCase, reopened.LastValidationStatus, 'not_run', ...
+    'Review or GT edits must invalidate the persisted validation result.');
 validation = session.validate();
 verifyTrue(testCase, validation.valid, strjoin(cellstr(validation.errors), ' '));
 verifyEqual(testCase, session.LastValidationStatus, 'valid');
+reopened = c.annotationSession(1);
+verifyEqual(testCase, reopened.LastValidationStatus, 'valid', ...
+    'A successful validation must survive replacement of the active session.');
+rows = annotationManager.summarizeClassifier(c, 1, 'Fast', true);
+verifyEqual(testCase, rows.validationStatus, 'valid', ...
+    'classifierGUI summaries must expose the persisted per-ROI validation.');
 [entry, ~] = session.approve();
 verifyEqual(testCase, entry.status, 'approved');
 verifyEqual(testCase, session.LastValidationStatus, 'valid');
@@ -301,6 +313,17 @@ invalidParentage = session.validate('RequireReviewed', false);
 verifyFalse(testCase, invalidParentage.valid);
 verifyTrue(testCase, any(contains(invalidParentage.errors, ...
     'Missing child Track 999')));
+verifyEqual(testCase, numel(invalidParentage.issues), 1);
+issueRows = annotationManager.validationIssueRows(invalidParentage);
+verifyEqual(testCase, numel(issueRows), 1, ...
+    'The structured parentage error must not be duplicated as free text.');
+verifyEqual(testCase, issueRows.component, 'Parentage');
+verifyEqual(testCase, issueRows.summary, 'Missing child track');
+verifyEqual(testCase, issueRows.frame, 2);
+verifyEqual(testCase, issueRows.related_track, 1);
+verifyEqual(testCase, issueRows.missing_track, 999);
+verifyTrue(testCase, issueRows.repairable);
+verifyEqual(testCase, issueRows.issue_index, 1);
 parentageReport = annotationManager.validateParentage(model, gtId);
 verifyEqual(testCase, numel(parentageReport.issues), 1);
 verifyEqual(testCase, parentageReport.issues.role, 'child');
@@ -355,6 +378,20 @@ invalid = session.validate();
 verifyFalse(testCase, invalid.valid);
 verifyTrue(testCase, any(contains(invalid.errors, ...
     'does not match object family')));
+end
+
+function testValidationIssueRowsKeepGenericErrors(testCase)
+report = struct( ...
+    'errors', [ ...
+        "Component ""tracking"" is not fully reviewed (3/5)."; ...
+        "tracking: Mask mismatch on frame 12."], ...
+    'issues', struct([]));
+rows = annotationManager.validationIssueRows(report);
+verifyEqual(testCase, numel(rows), 2);
+verifyEqual(testCase, rows(1).component, 'Coverage');
+verifyEqual(testCase, rows(2).component, 'Tracking');
+verifyEqual(testCase, rows(2).frame, 12);
+verifyFalse(testCase, any([rows.repairable]));
 end
 
 function testClassifierSummaryUsesSharedStatus(testCase)

@@ -4544,29 +4544,6 @@ end
             score_display(app, 'refresh');
         end
 
-        function issue = firstAnnotationParentageIssue(app)
-            issue = struct([]);
-            if isempty(app.AnnotationSession), return; end
-            roi = app.getSelectedROI();
-            if isempty(roi), return; end
-            try
-                components = app.AnnotationSession.Spec.components;
-                lineageIndex = find(strcmp({components.kind}, 'lineage') & ...
-                    strcmp({components.storage}, 'cell_model_family'), ...
-                    1, 'first');
-                if isempty(lineageIndex), return; end
-                [model, ~] = roi.loadCellModel('MigrateLegacy', true);
-                report = annotationManager.validateParentage(model, ...
-                    components(lineageIndex).groundTruth.family, ...
-                    'Frames', app.AnnotationSession.trainingFrames());
-                if isfield(report, 'issues') && ~isempty(report.issues)
-                    issue = report.issues(1);
-                end
-            catch
-                issue = struct([]);
-            end
-        end
-
         function focusAnnotationParentageIssue(app, issue)
             roi = app.getSelectedROI();
             if isempty(roi) || isempty(issue), return; end
@@ -4645,78 +4622,102 @@ end
             drawnow limitrate;
         end
 
-        function removeAnnotationParentageIssue(app, issue)
+        function summary = removeAnnotationParentageIssues(app, issues)
+            summary = struct('relationsRemoved', 0, ...
+                'missingTracks', zeros(0,1), 'eventFrames', zeros(0,1));
             roi = app.getSelectedROI();
-            if isempty(roi) || isempty(issue), return; end
+            if isempty(roi) || isempty(issues), return; end
             [model, ~] = roi.loadCellModel('MigrateLegacy', true);
-            [model, removal] = cellModel.removeTrack(model, ...
-                issue.family_id, issue.missing_track_id, 'Fast', true);
-            if removal.relations_removed < 1
-                uialert(app.ScoreAppUIFigure, ...
-                    'The broken parentage relation is no longer present.', ...
-                    'Parentage repair');
-                return;
+            seen = strings(0,1);
+            for i = 1:numel(issues)
+                key = sprintf('%u:%u', issues(i).family_id, ...
+                    issues(i).missing_track_id);
+                if any(seen == string(key)), continue; end
+                seen(end+1,1) = string(key); %#ok<AGROW>
+                [model, removal] = cellModel.removeTrack(model, ...
+                    issues(i).family_id, issues(i).missing_track_id, ...
+                    'Fast', true);
+                if removal.relations_removed < 1, continue; end
+                summary.relationsRemoved = summary.relationsRemoved + ...
+                    removal.relations_removed;
+                summary.missingTracks(end+1,1) = ... %#ok<AGROW>
+                    double(issues(i).missing_track_id);
+                summary.eventFrames(end+1,1) = ... %#ok<AGROW>
+                    double(issues(i).event_frame);
             end
+            if summary.relationsRemoved < 1, return; end
             roi.cellModel = model;
             app.notifyAnnotationChanged('parentage', ...
-                double(issue.event_frame), 'Save', false);
+                unique(summary.eventFrames), 'Save', false);
             app.AnnotationLastValidationValid = false;
             app.refreshAnnotationSessionUI();
-            uialert(app.ScoreAppUIFigure, sprintf([ ...
-                '%d broken parentage relation(s) involving missing Track %u ' ...
-                'were removed. Save the ROI to persist this repair.'], ...
-                removal.relations_removed, issue.missing_track_id), ...
-                'Parentage repaired', 'Icon', 'success');
         end
 
         function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>
             if isempty(app.AnnotationSession), return; end
             try
-                report = app.AnnotationSession.validate();
-                app.AnnotationLastValidationValid = logical(report.valid);
-                if report.valid
-                    app.AnnotationQuickValidationState = 'valid';
-                    app.AnnotationQuickValidationMessage = 'Full validation passed.';
-                    message = 'GT is valid and can be approved.';
-                    titleText = 'Annotation valid';
-                    icon = 'success';
-                    if ~isempty(report.warnings)
-                        message = sprintf('%s\n\nWarnings:\n%s', message, ...
-                            strjoin(cellstr(report.warnings), '\n'));
+                repairedRelations = 0;
+                while true
+                    report = app.AnnotationSession.validate();
+                    app.AnnotationLastValidationValid = logical(report.valid);
+                    if report.valid
+                        app.AnnotationQuickValidationState = 'valid';
+                        app.AnnotationQuickValidationMessage = ...
+                            'Full validation passed.';
+                        message = 'GT is valid and can be approved.';
+                        if repairedRelations > 0
+                            message = sprintf([ ...
+                                '%s\n\n%d stale parentage link(s) were repaired ' ...
+                                'in memory. Save the ROI to persist the repair.'], ...
+                                message, repairedRelations);
+                        end
+                        if ~isempty(report.warnings)
+                            message = sprintf('%s\n\nWarnings:\n%s', message, ...
+                                strjoin(cellstr(report.warnings), '\n'));
+                        end
+                        app.refreshAnnotationSessionUI();
+                        uialert(app.ScoreAppUIFigure, message, ...
+                            'Annotation valid', 'Icon', 'success');
+                        return;
                     end
-                else
+
                     app.AnnotationQuickValidationState = 'invalid';
                     app.AnnotationQuickValidationMessage = char(strjoin( ...
                         cellstr(report.errors), newline));
-                    message = sprintf('Validation failed:\n%s', ...
-                        strjoin(cellstr(report.errors), '\n'));
-                    titleText = 'Annotation validation';
-                    icon = 'warning';
-                end
-                app.refreshAnnotationSessionUI();
-                issue = struct([]);
-                if ~report.valid
-                    issue = app.firstAnnotationParentageIssue();
-                end
-                if ~isempty(issue) && double(issue.focus_frame) > 0
-                    message = sprintf([ ...
-                        '%s\n\nMissing Track %u has no mask anywhere in this GT, ' ...
-                        'so it cannot be displayed. Score can open frame %u and ' ...
-                        'highlight related Track %u, or remove the stale link now.'], ...
-                        message, issue.missing_track_id, issue.focus_frame, ...
-                        issue.focus_track_id);
-                    choice = uiconfirm(app.ScoreAppUIFigure, message, ...
-                        titleText, 'Icon', icon, ...
-                        'Options', {'Go to related track', ...
-                            'Remove broken link','Close'}, ...
-                        'DefaultOption', 1, 'CancelOption', 3);
-                    if strcmp(choice, 'Go to related track')
-                        app.focusAnnotationParentageIssue(issue);
-                    elseif strcmp(choice, 'Remove broken link')
-                        app.removeAnnotationParentageIssue(issue);
+                    app.refreshAnnotationSessionUI();
+                    choice = annotationValidationDialog( ...
+                        app.ScoreAppUIFigure, report);
+                    switch choice.action
+                        case 'go'
+                            if choice.issueIndex >= 1 && ...
+                                    choice.issueIndex <= numel(report.issues)
+                                app.focusAnnotationParentageIssue( ...
+                                    report.issues(choice.issueIndex));
+                            elseif isfinite(choice.frame) && choice.frame > 0
+                                app.showAnnotationFrame(choice.frame);
+                            end
+                            return;
+                        case 'repair'
+                            if choice.issueIndex < 1 || ...
+                                    choice.issueIndex > numel(report.issues)
+                                return;
+                            end
+                            repair = app.removeAnnotationParentageIssues( ...
+                                report.issues(choice.issueIndex));
+                        case 'repair_all'
+                            repair = app.removeAnnotationParentageIssues( ...
+                                report.issues);
+                        otherwise
+                            return;
                     end
-                else
-                    uialert(app.ScoreAppUIFigure, message, titleText, 'Icon', icon);
+                    if repair.relationsRemoved < 1
+                        uialert(app.ScoreAppUIFigure, ...
+                            'The selected broken relation is no longer present.', ...
+                            'Parentage repair');
+                        return;
+                    end
+                    repairedRelations = repairedRelations + ...
+                        repair.relationsRemoved;
                 end
             catch ME
                 app.AnnotationLastValidationValid = false;

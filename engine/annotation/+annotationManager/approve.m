@@ -25,5 +25,10 @@ entry.approved_at = char(datetime('now', ...
     'Format', 'yyyy-MM-dd''T''HH:mm:ssXXX'));
 entry.approved_hash = annotationManager.contentHash(roiObj, spec);
 entry.revision = uint32(double(entry.revision) + 1);
+entry.validation_status = 'valid';
+entry.validated_at = entry.approved_at;
+entry.validated_hash = entry.approved_hash;
+entry.validation_message = '';
+entry.validated_revision = uint32(entry.revision);
 entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', p.Results.Save);
 end

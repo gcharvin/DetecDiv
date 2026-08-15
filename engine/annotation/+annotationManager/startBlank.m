@@ -41,6 +41,7 @@ entry.status = 'draft';
 entry.revision = uint32(double(entry.revision) + 1);
 entry.approved_at = '';
 entry.approved_hash = '';
+entry = annotationManager.resetValidationState(entry);
 entry.source_type = 'blank';
 entry.source_id = '';
 entry.source_run_id = '';

@@ -41,6 +41,12 @@ report = session.validate();
 [entry, report] = session.approve();
 ```
 
+Validation is stored per ROI and per GT revision in the annotation manifest.
+Opening another ROI therefore does not clear a previous `Valid` or `Invalid`
+result. Any GT edit, review-state change, reinitialization, or training-bound
+change resets that ROI to `Not run`; validation of the new revision must then
+be run again.
+
 `context.editor` selects the initial Score tool palette. During the UI
 transition, `context.legacyScoreOption` maps back to the existing
 `dataAnnotation` and `pixelAnnotation` modes.
@@ -210,8 +216,10 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
 9. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
    incomplete** and **Next incomplete**. Navigate through frames not covered by
    every required frame-level component.
-10. `ValidateAnnotationButton`, text **Validate**. Call `validate()` and show the
-    returned errors/warnings in a dialog or status area.
+10. `ValidateAnnotationButton`, text **Validate**. Call `validate()` and show
+    every returned issue in one selectable table. Navigable rows expose their
+    frame and related track; stale parentage links can be repaired individually
+    or as one batch without reopening validation after every issue.
 11. `ApproveAnnotationButton`, text **Approve GT**. Enable it only for a valid
     draft. Call `approve()`, refresh the status label, and keep the ROI open.
 12. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only

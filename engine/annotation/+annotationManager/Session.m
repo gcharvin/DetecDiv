@@ -33,12 +33,13 @@ classdef Session < handle
             obj.RoiIndex = index;
             obj.Roi = obj.Classifier.roi(index);
             obj.Roi.parent = obj.Classifier;
-            obj.resetValidationState();
+            obj.restoreValidationState();
         end
 
         function refresh(obj)
             obj.Spec = annotationManager.specForClassifier(obj.Classifier);
             obj.Roi = obj.Classifier.roi(obj.RoiIndex);
+            obj.restoreValidationState();
         end
 
         function value = summary(obj, varargin)
@@ -97,6 +98,7 @@ classdef Session < handle
             obj.completeRoiReviewWhenFramesComplete([], true);
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
+            annotationManager.recordValidation(obj.Roi, obj.Spec, report);
             if report.valid
                 obj.LastValidationStatus = 'valid';
                 obj.LastValidationMessage = '';
@@ -133,12 +135,14 @@ classdef Session < handle
         function setFrameBounds(obj, value)
             trainingBounds.setRoi(obj.Classifier, obj.RoiIndex, value, ...
                 'FrameCount', annotationManager.frameCount(obj.Roi));
+            obj.clearPersistedValidation();
             obj.resetValidationState();
             notify(obj, 'BoundsChanged');
         end
 
         function clearFrameBounds(obj)
             trainingBounds.clearRoi(obj.Classifier, obj.RoiIndex);
+            obj.clearPersistedValidation();
             obj.resetValidationState();
             notify(obj, 'BoundsChanged');
         end
@@ -212,6 +216,41 @@ classdef Session < handle
         function changed(obj)
             obj.resetValidationState();
             notify(obj, 'StateChanged');
+        end
+
+        function restoreValidationState(obj)
+            obj.resetValidationState();
+            try
+                [entry, found] = annotationManager.entryForSpec( ...
+                    obj.Roi, obj.Spec);
+                if ~found, return; end
+                if strcmp(char(string(entry.status)), 'approved')
+                    obj.LastValidationStatus = 'valid';
+                    return;
+                end
+                if uint32(entry.validated_revision) ~= uint32(entry.revision)
+                    return;
+                end
+                status = char(string(entry.validation_status));
+                if any(strcmp(status, {'valid','invalid'}))
+                    obj.LastValidationStatus = status;
+                    obj.LastValidationMessage = char(string( ...
+                        entry.validation_message));
+                end
+            catch
+                obj.resetValidationState();
+            end
+        end
+
+        function clearPersistedValidation(obj)
+            try
+                [entry, found] = annotationManager.entryForSpec( ...
+                    obj.Roi, obj.Spec);
+                if ~found, return; end
+                entry = annotationManager.resetValidationState(entry);
+                annotationManager.setEntry(obj.Roi, obj.Spec, entry);
+            catch
+            end
         end
 
         function resetValidationState(obj)

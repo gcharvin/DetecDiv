@@ -1803,6 +1803,7 @@ function [statusText, coverageText, validationText] = ...
     reviewed = 0;
     total = 0;
     components = struct([]);
+    persistedValidation = 'not_run';
     if ~isempty(rows)
         match = find([rows.roiIndex] == roiIndex, 1);
         if ~isempty(match)
@@ -1812,20 +1813,33 @@ function [statusText, coverageText, validationText] = ...
             if isfield(rows, 'coverageComponents')
                 components = rows(match).coverageComponents;
             end
+            if isfield(rows, 'validationStatus')
+                persistedValidation = char(string( ...
+                    rows(match).validationStatus));
+            end
         end
     end
     if isempty(status), status = 'missing'; end
     statusText = [upper(status(1)) lower(status(2:end))];
     coverageText = compactCoverageText(app, components, reviewed, total);
-    validationText = activeAnnotationValidationText(app, roiIndex, status);
+    validationText = activeAnnotationValidationText( ...
+        app, roiIndex, status, persistedValidation);
 end
 
-function text = activeAnnotationValidationText(app, roiIndex, status)
+function text = activeAnnotationValidationText( ...
+        app, roiIndex, status, persistedValidation)
     if strcmpi(status, 'approved')
         text = 'Valid';
         return;
     end
-    text = 'Not run';
+    switch lower(char(string(persistedValidation)))
+        case 'valid'
+            text = 'Valid';
+        case 'invalid'
+            text = 'Invalid';
+        otherwise
+            text = 'Not run';
+    end
     try
         if ~isfield(app.Data, 'annotationSession') || ...
                 isempty(app.Data.annotationSession) || ...

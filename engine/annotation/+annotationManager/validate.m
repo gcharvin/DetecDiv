@@ -50,8 +50,38 @@ for i = 1:numel(spec.components)
     end
 end
 
+issues = collectStructuredIssues(roiObj, spec, summary);
 report = struct('valid', isempty(errors), 'errors', errors, ...
-    'warnings', warnings, 'summary', summary);
+    'warnings', warnings, 'summary', summary, 'issues', issues);
+end
+
+function issues = collectStructuredIssues(roiObj, spec, summary)
+issues = struct([]);
+model = [];
+for i = 1:numel(spec.components)
+    component = spec.components(i);
+    if ~strcmp(component.kind, 'lineage') || ...
+            ~strcmp(component.storage, 'cell_model_family') || ...
+            ~summary.components(i).groundTruthExists
+        continue;
+    end
+    try
+        if isempty(model)
+            [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
+        end
+        parentage = annotationManager.validateParentage(model, ...
+            component.groundTruth.family, 'Frames', summary.reviewFrames);
+        if isempty(parentage.issues), continue; end
+        if isempty(issues)
+            issues = parentage.issues;
+        else
+            issues = [issues; parentage.issues]; %#ok<AGROW>
+        end
+    catch
+        % The textual component validation remains the fallback for model
+        % failures that cannot be represented as a navigable issue.
+    end
+end
 end
 
 function validateComponent(roiObj, component, entry,reviewFrames)

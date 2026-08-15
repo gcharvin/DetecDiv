@@ -95,15 +95,28 @@ function manifest = normalizeManifest(value)
 manifest = emptyManifest();
 if ~isstruct(value), return; end
 if isfield(value, 'schema_version') && ~isempty(value.schema_version)
-    manifest.schema_version = uint16(value.schema_version);
+    manifest.schema_version = max(uint16(2), uint16(value.schema_version));
 end
 if isfield(value, 'entries') && isstruct(value.entries)
-    manifest.entries = value.entries;
+    manifest.entries = normalizeEntries(value.entries);
 end
 end
 
 function manifest = emptyManifest()
-manifest = struct('schema_version', uint16(1), 'entries', emptyEntries());
+manifest = struct('schema_version', uint16(2), 'entries', emptyEntries());
+end
+
+function entries = normalizeEntries(source)
+template = annotationManager.newEntry([], 0);
+entries = repmat(template, numel(source), 1);
+names = fieldnames(template);
+for i = 1:numel(source)
+    for j = 1:numel(names)
+        if isfield(source, names{j})
+            entries(i).(names{j}) = source(i).(names{j});
+        end
+    end
+end
 end
 
 function entries = emptyEntries()

@@ -24,6 +24,7 @@ if strcmp(entry.status, 'approved')
     entry.approved_at = '';
     entry.approved_hash = '';
 end
+entry = annotationManager.resetValidationState(entry);
 entry.status = 'draft';
 entry.revision = uint32(double(entry.revision) + 1);
 entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', p.Results.Save);
