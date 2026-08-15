@@ -18,11 +18,20 @@ if report.valid
     catch
         entry.validated_hash = '';
     end
+    % A successful validation is the single user-facing transition to a
+    % training-ready GT. Keep the historical approval fields as internal
+    % audit metadata, but do not require a second UI action.
+    entry.status = 'approved';
+    entry.approved_at = entry.validated_at;
+    entry.approved_hash = entry.validated_hash;
 else
     entry.validation_status = 'invalid';
     entry.validated_hash = '';
     entry.validation_message = char(strjoin( ...
         cellstr(string(report.errors)), newline));
+    entry.status = 'draft';
+    entry.approved_at = '';
+    entry.approved_hash = '';
 end
 entry = annotationManager.setEntry(roiObj, spec, entry, ...
     'Save', p.Results.Save);

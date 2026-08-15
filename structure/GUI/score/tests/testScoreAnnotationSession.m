@@ -51,6 +51,9 @@ app.setAnnotationSession(session);
 verifyTrue(testCase, isvalid(app.LineageLinkWidthEditField));
 verifyEqual(testCase, app.LineageLinkWidthEditField.Value, 1);
 verifyEqual(testCase, char(app.AnnotationSessionPanel.Visible), 'on');
+verifyEqual(testCase, app.ValidateAnnotationButton.Text, 'Validate GT');
+verifyEqual(testCase, char(app.ApproveAnnotationButton.Visible), 'off', ...
+    'Validation is the only user-facing finalization action.');
 verifyEqual(testCase, app.TabGroup.SelectedTab, app.AnnotationsTab, ...
     'Managed annotation sessions must open on the Annotations tab.');
 verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'MISSING'));

@@ -1883,8 +1883,10 @@ end
             app.AnnotationDisplayPreset = context.displayPreset;
             app.AnnotationTargetLabel.Text = sprintf('Target: %s / %s', ...
                 context.displayName, context.roiId);
-            statusText = char(string(context.status));
-            if isempty(statusText), statusText = 'missing'; end
+            storedStatus = char(string(context.status));
+            if isempty(storedStatus), storedStatus = 'missing'; end
+            statusText = app.annotationReadyStatus( ...
+                storedStatus, summary.validationStatus);
             quickSuffix = '';
             if strcmp(app.AnnotationQuickValidationState, 'valid')
                 quickSuffix = '  |  checks OK';
@@ -1910,8 +1912,7 @@ end
             predictions = [summary.components.predictionExists];
             if isempty(required), required = true(size(predictions)); end
             hasPrediction = any(predictions);
-            hasDraft = any(strcmp(statusText, {'draft','approved'}));
-            isDraft = strcmp(statusText, 'draft');
+            hasDraft = ~strcmp(storedStatus, 'missing');
 
             app.CreateFromPredictionButton.Enable = 'on';
             app.StartBlankGTButton.Enable = 'on';
@@ -1943,10 +1944,26 @@ end
             app.NextIncompleteButton.Enable = app.onOff( ...
                 hasDraft && summary.coverage.reviewed < summary.coverage.total);
             app.ValidateAnnotationButton.Enable = app.onOff(hasDraft);
-            app.ApproveAnnotationButton.Enable = app.onOff( ...
-                isDraft && app.AnnotationLastValidationValid);
+            app.ApproveAnnotationButton.Enable = 'off';
+            app.ApproveAnnotationButton.Visible = 'off';
             app.ShowPredictionCheckBox.Enable = app.onOff(hasPrediction);
             app.setManagedAnnotationLayout(true);
+        end
+
+        function status = annotationReadyStatus(app, storedStatus, ...
+                validationStatus) %#ok<INUSD>
+            storedStatus = lower(char(string(storedStatus)));
+            validationStatus = lower(char(string(validationStatus)));
+            if strcmp(storedStatus, 'missing')
+                status = 'missing';
+            elseif strcmp(validationStatus, 'invalid')
+                status = 'invalid';
+            elseif strcmp(validationStatus, 'valid') || ...
+                    strcmp(storedStatus, 'approved')
+                status = 'ready';
+            else
+                status = 'draft';
+            end
         end
 
         function applyAnnotationDisplayPreset(app)
@@ -2073,6 +2090,7 @@ end
                 return;
             end
             app.AnnotationSessionPanel.Visible = app.onOff(active);
+            app.ApproveAnnotationButton.Visible = 'off';
             genericButtons = {'NewAnnotationButton','DeleteAnnnotationButton', ...
                 'NewclassButton','DeleteclassButton'};
             if active
@@ -4664,7 +4682,7 @@ end
                         app.AnnotationQuickValidationState = 'valid';
                         app.AnnotationQuickValidationMessage = ...
                             'Full validation passed.';
-                        message = 'GT is valid and can be approved.';
+                        message = 'GT validated and ready for training.';
                         if repairedRelations > 0
                             message = sprintf([ ...
                                 '%s\n\n%d stale parentage link(s) were repaired ' ...
@@ -4677,7 +4695,7 @@ end
                         end
                         app.refreshAnnotationSessionUI();
                         uialert(app.ScoreAppUIFigure, message, ...
-                            'Annotation valid', 'Icon', 'success');
+                            'GT ready', 'Icon', 'success');
                         return;
                     end
 
@@ -8001,10 +8019,11 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.ValidateAnnotationButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.ValidateAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @ValidateAnnotationButtonPushed, true);
             app.ValidateAnnotationButton.Position = [423 95 100 23];
-            app.ValidateAnnotationButton.Text = 'Validate';
+            app.ValidateAnnotationButton.Text = 'Validate GT';
 
             % Create ApproveAnnotationButton
             app.ApproveAnnotationButton = uibutton(app.AnnotationSessionPanel, 'push');
+            app.ApproveAnnotationButton.Visible = 'off';
             app.ApproveAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @ApproveAnnotationButtonPushed, true);
             app.ApproveAnnotationButton.Position = [424 66 100 23];
             app.ApproveAnnotationButton.Text = 'Approve GT';

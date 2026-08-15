@@ -1499,7 +1499,6 @@ function displayData(app, annotationScanMode) % displays rois in the table
         [annotationStatus, annotationCoverage, annotationValidation] = ...
             annotationTableValues(app, annotationRows, i);
         managedAnnotated = ~strcmpi(annotationStatus, 'missing');
-        managedValidated = strcmpi(annotationValidation, 'Valid');
 
         if any(trainingrois == i)
             istrainee = true;
@@ -1510,10 +1509,10 @@ function displayData(app, annotationScanMode) % displays rois in the table
 
             t.ColumnName     = {'Select for training','Select for test',...
                                 ' ROI index','ROI Id','Frame bounds', ...
-                                'Annotation status','Coverage','Validation'};
-            t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 190, 90};
+                                'Annotation status','Coverage'};
+            t.ColumnWidth    = {135, 135, 80, 'auto', 120, 120, 190};
             t.ColumnEditable = [true true false false frameBoundsEditable ...
-                false false false];
+                false false];
 
             if numel(rois(i).data)
                 listdata = {rois(i).data.groupid};
@@ -1522,7 +1521,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
 
             boundsTxt = localBoundsText(app,rois(i), pixdata, classiObj, boundsType, globalBounds);
             Data(i,:) = {istrainee, istest, i, rois(i).id, boundsTxt, ...
-                annotationStatus, annotationCoverage, annotationValidation};
+                annotationStatus, annotationCoverage};
 
         else
 
@@ -1542,11 +1541,10 @@ function displayData(app, annotationScanMode) % displays rois in the table
 
                 t.ColumnName = {'Select for training','Select for testing',...
                                 ' ROI index','ROI Id','is annotated',...
-                                'is validated','Frame bounds','Annotation status',...
-                                'Coverage','Validation'};
-                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
-                t.ColumnEditable = [true true false false false false ...
-                    frameBoundsEditable false false false];
+                                'Frame bounds','Annotation status','Coverage'};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 105, 120, 190};
+                t.ColumnEditable = [true true false false false ...
+                    frameBoundsEditable false false];
 
                 labelsTraining = [];
                 labelsPred     = [];
@@ -1585,21 +1583,27 @@ function displayData(app, annotationScanMode) % displays rois in the table
                     end
                 end
 
+                displayAnnotationStatus = annotationStatus;
+                if strcmpi(displayAnnotationStatus, 'Missing')
+                    if isvalidated
+                        displayAnnotationStatus = 'Ready';
+                    elseif isannotated
+                        displayAnnotationStatus = 'Draft';
+                    end
+                end
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
                              isannotated || managedAnnotated, ...
-                             isvalidated || managedValidated, boundsTxt, ...
-                             annotationStatus, annotationCoverage, annotationValidation};
+                             boundsTxt, displayAnnotationStatus, annotationCoverage};
 
             else
 
                 t.ColumnName = {'Select for training','Select for testing',...
                                 ' ROI index','ROI Id','is annotated',...
-                                'is validated','Frame bounds','Annotation status',...
-                                'Coverage','Validation'};
-                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 85, 105, 120, 190, 90};
-                t.ColumnEditable = [true true false false false false ...
-                    frameBoundsEditable false false false];
+                                'Frame bounds','Annotation status','Coverage'};
+                t.ColumnWidth    = {130, 130, 80, 'auto', 85, 105, 120, 190};
+                t.ColumnEditable = [true true false false false ...
+                    frameBoundsEditable false false];
 
                 if ~isempty(pixdata)
                     dd = rois(i).data(pixdata(1));
@@ -1628,11 +1632,18 @@ function displayData(app, annotationScanMode) % displays rois in the table
                     end
                 end
 
+                displayAnnotationStatus = annotationStatus;
+                if strcmpi(displayAnnotationStatus, 'Missing')
+                    if isvalidated
+                        displayAnnotationStatus = 'Ready';
+                    elseif isannotated
+                        displayAnnotationStatus = 'Draft';
+                    end
+                end
                 boundsTxt = localBoundsText(app, rois(i), pixdata, classiObj, boundsType, globalBounds);
                 Data(i,:) = {istrainee, istest, i, rois(i).id, ...
                              isannotated || managedAnnotated, ...
-                             isvalidated || managedValidated, boundsTxt, ...
-                             annotationStatus, annotationCoverage, annotationValidation};
+                             boundsTxt, displayAnnotationStatus, annotationCoverage};
             end
         end
     end
@@ -1640,7 +1651,8 @@ function displayData(app, annotationScanMode) % displays rois in the table
     filterValue = 'All';
     try, filterValue = char(string(app.AnnotationFilterDropDown.Value)); catch, end
     if ~isempty(Data) && ~strcmpi(filterValue, 'All')
-        statusColumn = size(Data, 2) - 2;
+        statusColumn = find(strcmpi(string(t.ColumnName), ...
+            'Annotation status'), 1);
         keep = strcmpi(string(Data(:, statusColumn)), string(filterValue));
         Data = Data(keep, :);
     end
@@ -1736,11 +1748,7 @@ function refreshAnnotationTableRow(app, session)
         data = setAnnotationTableColumn(app, data, names, tableRow, ...
             'Coverage', coverageText);
         data = setAnnotationTableColumn(app, data, names, tableRow, ...
-            'Validation', validationText);
-        data = setAnnotationTableColumn(app, data, names, tableRow, ...
             'is annotated', ~strcmpi(statusText, 'Missing'));
-        data = setAnnotationTableColumn(app, data, names, tableRow, ...
-            'is validated', strcmpi(validationText, 'Valid'));
         data = setAnnotationTableColumn(app, data, names, tableRow, ...
             'Frame bounds', trainingBounds.text(session.frameBounds()));
         app.UITableData.Data = data;
@@ -1820,10 +1828,25 @@ function [statusText, coverageText, validationText] = ...
         end
     end
     if isempty(status), status = 'missing'; end
-    statusText = [upper(status(1)) lower(status(2:end))];
     coverageText = compactCoverageText(app, components, reviewed, total);
     validationText = activeAnnotationValidationText( ...
         app, roiIndex, status, persistedValidation);
+    statusText = annotationReadyStatus(app, status, validationText);
+end
+
+function text = annotationReadyStatus(app, storedStatus, validationText) %#ok<INUSD>
+    storedStatus = lower(char(string(storedStatus)));
+    validationText = lower(char(string(validationText)));
+    if strcmp(storedStatus, 'missing')
+        text = 'Missing';
+    elseif strcmp(validationText, 'invalid')
+        text = 'Invalid';
+    elseif strcmp(validationText, 'valid') || ...
+            strcmp(storedStatus, 'approved')
+        text = 'Ready';
+    else
+        text = 'Draft';
+    end
 end
 
 function text = activeAnnotationValidationText( ...
@@ -1953,7 +1976,7 @@ function setClassifierTrainingSelection(app, trainIndices)
     app.Data.classiObj = classiObj;
 end
 
-function proceed = confirmUnapprovedTrainingRois(app, roiIndices)
+function proceed = confirmTrainingRoisReady(app, roiIndices)
     proceed = true;
     try
         rows = annotationSummaryRows(app, app.Data.classiObj, roiIndices);
@@ -1961,31 +1984,30 @@ function proceed = confirmUnapprovedTrainingRois(app, roiIndices)
         return;
     end
     if isempty(rows), return; end
-    notApproved = rows(~strcmpi(string({rows.status}), 'approved'));
-    if isempty(notApproved), return; end
+    storedStatuses = string({rows.status});
+    validationStatuses = string({rows.validationStatus});
+    ready = strcmpi(storedStatuses, 'approved') | ...
+        strcmpi(validationStatuses, 'valid');
+    notReady = rows(~ready);
+    if isempty(notReady), return; end
 
-    maxRows = min(numel(notApproved), 15);
+    maxRows = min(numel(notReady), 15);
     details = strings(maxRows,1);
     for i = 1:maxRows
-        details(i) = sprintf('%s: %s', notApproved(i).roiId, ...
-            upperFirst(app, notApproved(i).status));
+        details(i) = sprintf('%s: %s', notReady(i).roiId, ...
+            annotationReadyStatus(app, notReady(i).status, ...
+                notReady(i).validationStatus));
     end
-    if numel(notApproved) > maxRows
+    if numel(notReady) > maxRows
         details(end+1) = sprintf('... and %d more ROI(s)', ...
-            numel(notApproved) - maxRows); %#ok<AGROW>
+            numel(notReady) - maxRows); %#ok<AGROW>
     end
-    message = sprintf(['The following training ROI(s) do not have approved GT:\n\n%s\n\n' ...
+    message = sprintf(['The following training ROI(s) are not ready:\n\n%s\n\n' ...
         'Continue formatting anyway?'], strjoin(details, newline));
     choice = uiconfirm(app.ClassifierUIFigure, message, ...
-        'Unapproved ground truth', 'Options', {'Cancel','Continue'}, ...
+        'Ground truth not ready', 'Options', {'Cancel','Continue'}, ...
         'DefaultOption', 1, 'CancelOption', 1, 'Icon', 'warning');
     proceed = strcmp(choice, 'Continue');
-end
-
-function value = upperFirst(app, value) %#ok<INUSD>
-    value = char(string(value));
-    if isempty(value), return; end
-    value = [upper(value(1)) lower(value(2:end))];
 end
 
 
@@ -2110,12 +2132,14 @@ end
      try
          rows = annotationSummaryRows(app, classiObj);
          statuses = string({rows.status});
+         validationStatuses = string({rows.validationStatus});
          app.NumberofannotatedROIsEditField.Value = ...
              num2str(nnz(~strcmpi(statuses, 'missing')));
          app.AnnotatedROIswithvalidationdataEditField.Value = ...
-             num2str(nnz(strcmpi(statuses, 'approved')));
+             num2str(nnz(strcmpi(statuses, 'approved') | ...
+                 strcmpi(validationStatuses, 'valid')));
          app.AnnotatedROIswithvalidationdataEditFieldLabel.Text = ...
-             'Approved annotation ROIs:';
+             'Ready annotation ROIs:';
      catch
          app.NumberofannotatedROIsEditField.Value = 'Not available';
          app.AnnotatedROIswithvalidationdataEditField.Value = 'Not available';
@@ -3037,7 +3061,7 @@ end
         return;
     end
 
-    if ~confirmUnapprovedTrainingRois(app, nrois)
+    if ~confirmTrainingRoisReady(app, nrois)
         return;
     end
 
@@ -4015,7 +4039,7 @@ disp('unable to display folder with this OS');
             end
             if overwrite
                 choice = uiconfirm(app.ClassifierUIFigure, ...
-                    ['At least one selected ROI already contains draft or approved GT. ' ...
+                    ['At least one selected ROI already contains draft or ready GT. ' ...
                     'Replace it with blank GT?'], 'Replace ground truth', ...
                     'Options', {'Cancel','Replace GT'}, 'DefaultOption', 1, ...
                     'CancelOption', 1, 'Icon', 'warning');
@@ -4653,7 +4677,7 @@ disp('unable to display folder with this OS');
 
             % Create AnnotationFilterDropDown
             app.AnnotationFilterDropDown = uidropdown(app.SettrainingandvalidationsetROIsTab);
-            app.AnnotationFilterDropDown.Items = {'All', 'Missing', 'Draft', 'Approved'};
+            app.AnnotationFilterDropDown.Items = {'All', 'Missing', 'Draft', 'Invalid', 'Ready'};
             app.AnnotationFilterDropDown.ValueChangedFcn = createCallbackFcn(app, @AnnotationFilterDropDownValueChanged, true);
             app.AnnotationFilterDropDown.Position = [532 122 100 22];
             app.AnnotationFilterDropDown.Value = 'All';

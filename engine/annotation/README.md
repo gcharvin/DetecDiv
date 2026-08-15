@@ -9,7 +9,7 @@ It deliberately keeps existing ROI storage conventions:
 - lifecycle metadata is a small `detecdiv_annotation_manifest` dataseries in
   `data_<roi>.mat`, not another visible image channel.
 
-The visible lifecycle is `missing -> draft -> approved`. Prediction is an
+The visible lifecycle is `missing -> draft/invalid -> ready`. Prediction is an
 input asset, not a GT status. Review coverage is explicit, so an annotated
 empty frame is distinguishable from a frame that was never reviewed.
 
@@ -87,11 +87,12 @@ Keep the following controls and their existing selection/import behavior:
 #### Modify existing controls
 
 1. Append these read-only columns to `UITableData`:
-   `Annotation status`, `Coverage`, and `Validation`.
+   `Annotation status` and `Coverage`.
    Populate them from `classiObj.annotationSummary()` (or directly from
    `annotationManager.summarizeClassifier(classiObj)`). Display status as
-   `Missing`, `Draft`, or `Approved`; coverage as `reviewed/total`; and the
-   validation result as `Valid`, `Invalid`, or `Not run`.
+   `Missing`, `Draft`, `Invalid`, or `Ready`, and coverage as
+   `reviewed/total`. Validation and finalization are one user action; their
+   separate persisted fields are internal audit metadata only.
 2. Keep `AnnotateselectedROIButton`, but change its callback. Remove the direct
    call to `classiObj.userTraining('Roi', sel)` as the primary path. Create an
    annotation session for the selected row and open Score with that session:
@@ -107,11 +108,11 @@ Keep the following controls and their existing selection/import behavior:
 3. Modify the callback that refreshes/imports/removes ROIs so it calls a new
    private `refreshAnnotationTable` helper after the current operation.
 4. Modify the format-training-set callback. Before formatting, obtain the
-   summary for every selected training ROI. If any ROI is not `Approved`, show
+   summary for every selected training ROI. If any ROI is not `Ready`, show
    a confirmation dialog listing the affected ROIs. The default action must be
-   cancel; do not silently promote drafts or silently exclude them.
+   cancel; do not silently validate drafts or silently exclude them.
 5. Rename the legacy output field labelled **Annotated ROIs with validation
-   data** to **Approved annotation ROIs**, and compute it from the lifecycle
+   data** to **Ready annotation ROIs**, and compute it from the lifecycle
    status instead of inferring annotation state from the presence of old
    validation data.
 
@@ -129,7 +130,7 @@ annotation button:
 3. `RefreshAnnotationStatusButton`, text **Refresh status**. Its callback calls
    `refreshAnnotationTable` without reloading images.
 4. `AnnotationFilterDropDown`, label **Show**, with values `All`, `Missing`,
-   `Draft`, and `Approved`. Filtering changes only the visible rows and must
+   `Draft`, `Invalid`, and `Ready`. Filtering changes only the visible rows and must
    preserve the underlying ROI indices.
 
 The initialization dialog offers only coherent starting points:
@@ -146,7 +147,7 @@ The initialization dialog offers only coherent starting points:
 Never expose independent mask and object-family selectors in the simple path:
 selecting an object family must lock segmentation to its own `mask_provider`.
 The dialog preview shows mask name, family name, track count, and parent-link
-count before any write. Replacing draft or approved GT changes the action text
+count before any write. Replacing draft or ready GT changes the action text
 to **Replace GT** and displays a destructive-action warning.
 
 #### Remove or retire
@@ -193,7 +194,7 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
 
 1. `AnnotationTargetLabel`: classifier, ROI, and target component currently
    being edited.
-2. `AnnotationStatusLabel`: `Missing`, `Draft`, or `Approved`.
+2. `AnnotationStatusLabel`: `Missing`, `Draft`, `Invalid`, or `Ready`.
 3. `AnnotationCoverageLabel`: show one counter per required component, for
    example `Segmentation: 241/762`, `Tracking: 241/762`, and
    `Parentage: 0/1`. Do not merge these into one opaque percentage.
@@ -216,23 +217,25 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
 9. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
    incomplete** and **Next incomplete**. Navigate through frames not covered by
    every required frame-level component.
-10. `ValidateAnnotationButton`, text **Validate**. Call `validate()` and show
+10. `ValidateAnnotationButton`, text **Validate GT**. Call `validate()` and show
     every returned issue in one selectable table. Navigable rows expose their
     frame and related track; stale parentage links can be repaired individually
-    or as one batch without reopening validation after every issue.
-11. `ApproveAnnotationButton`, text **Approve GT**. Enable it only for a valid
-    draft. Call `approve()`, refresh the status label, and keep the ROI open.
+    or as one batch without reopening validation after every issue. A successful
+    validation immediately marks that GT revision `Ready` and records its hash.
+11. Keep `ApproveAnnotationButton` hidden only for compatibility with older
+    layouts and scripts. No separate approval action is exposed.
 12. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only
     the read-only prediction overlays from `context.displayPreset`; it must
     never select a prediction channel for painting.
 
 Button state rules:
 
-| Status | Initialize GT | Mark reviewed | Validate | Approve |
-| --- | --- | --- | --- | --- |
-| Missing | enabled | disabled | disabled | disabled |
-| Draft | enabled; replacement warning | enabled | enabled | enabled only if valid |
-| Approved | enabled; replacement warning | enabled after reopening as draft | enabled | disabled |
+| Status | Initialize GT | Mark reviewed | Validate |
+| --- | --- | --- | --- |
+| Missing | enabled | disabled | disabled |
+| Draft | enabled; replacement warning | enabled | enabled |
+| Invalid | enabled; replacement warning | enabled | enabled |
+| Ready | enabled; replacement warning | enabled | enabled |
 
 After initialization, append the persisted provenance to the session display,
 for example `mask: results_cellposeSAM_cell | tracks: Imported tracking (17) |
@@ -268,9 +271,9 @@ channel and family.
 5. Keep the existing ROI save action. Session methods save lifecycle metadata;
    the current raster/dataseries/object save paths remain responsible for GT
    content.
-6. If an approved ROI is edited, `markChanged` makes it a draft again. Refresh
-   `AnnotationStatusLabel` immediately so the user sees that re-approval is
-   required.
+6. If a ready ROI is edited, `markChanged` makes it a draft again. Refresh
+   `AnnotationStatusLabel` immediately so the user sees that validation is
+   required again.
 
 #### Constrain existing controls only in managed mode
 
@@ -299,7 +302,7 @@ Score sessions. When `AnnotationSession` is non-empty:
    component specs; keep the two legacy option names only at the constructor
    boundary.
 3. Never copy prediction colors, track IDs, or object overlays into lifecycle
-   metadata. Only the editable GT content and manifest determine approval.
+   metadata. Only the editable GT content and manifest determine readiness.
 
 ### 3. Manual acceptance sequence after editing the `.mlapp` files
 
@@ -319,10 +322,10 @@ Score sessions. When `AnnotationSession` is non-empty:
    the complete bounded interval is covered.
 7. Mark an unchanged empty frame reviewed: coverage increases even though no
    foreground pixels were added.
-8. Validate, resolve reported errors, then click **Approve GT**: both Score and
-   `classifierGUI` show `Approved` after refresh.
-9. Edit the approved ROI once: status returns to `Draft` and training formatting
-   warns until it is approved again.
+8. Validate and resolve reported errors: both Score and `classifierGUI` show
+   `Ready` immediately after a successful validation.
+9. Edit the ready ROI once: status returns to `Draft` and training formatting
+   warns until it is validated again.
 10. Repeat once for a frame-label classifier and once for an object/lineage
    classifier to verify that the same UI drives their different GT components.
 

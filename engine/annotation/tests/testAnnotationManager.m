@@ -49,6 +49,10 @@ verifyEqual(testCase, reopened.LastValidationStatus, 'not_run', ...
 validation = session.validate();
 verifyTrue(testCase, validation.valid, strjoin(cellstr(validation.errors), ' '));
 verifyEqual(testCase, session.LastValidationStatus, 'valid');
+validatedSummary = session.summary('VerifyHash', true);
+verifyEqual(testCase, validatedSummary.status, 'approved', ...
+    'Successful validation must finalize the current GT revision.');
+verifyNotEmpty(testCase, validatedSummary.entry.approved_hash);
 reopened = c.annotationSession(1);
 verifyEqual(testCase, reopened.LastValidationStatus, 'valid', ...
     'A successful validation must survive replacement of the active session.');

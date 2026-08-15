@@ -79,7 +79,7 @@ verifyEqual(testCase, c.dataset.channels, {'BF','GFP'});
 verifyEqual(testCase, c.getInputChannels(), {'BF','GFP'});
 end
 
-function testManagedDraftSetsLegacyAnnotatedIndicator(testCase)
+function testPersistedValidDraftIsDisplayedAsReady(testCase)
 folder = tempname;
 mkdir(folder);
 folderCleanup = onCleanup(@()removeFolder(folder)); %#ok<NASGU>
@@ -131,10 +131,12 @@ validatedColumn = find(strcmp(app.UITableData.ColumnName, 'is validated'), 1);
 statusColumn = find(strcmp(app.UITableData.ColumnName, 'Annotation status'), 1);
 validationColumn = find(strcmp(app.UITableData.ColumnName, 'Validation'), 1);
 verifyTrue(testCase, app.UITableData.Data{1, annotatedColumn});
-verifyTrue(testCase, app.UITableData.Data{1, validatedColumn}, ...
-    'A persisted valid result must not depend on the active Score session.');
-verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Draft');
-verifyEqual(testCase, app.UITableData.Data{1, validationColumn}, 'Valid');
+verifyEmpty(testCase, validatedColumn, ...
+    'The duplicate validated checkbox must not remain user-visible.');
+verifyEmpty(testCase, validationColumn, ...
+    'The duplicate validation column must not remain user-visible.');
+verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Ready', ...
+    'A persisted valid result must be training-ready without a second action.');
 end
 
 function deleteClassifierGUI(app)
