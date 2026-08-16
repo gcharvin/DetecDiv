@@ -347,7 +347,10 @@ while ~success && attempts < max_attempts
         end
     end
 
-    if onlyData || hasDataToSave
+    % A data-only flush may be called after an earlier save has deliberately
+    % purged obj.data from memory. Never replace the authoritative MAT file
+    % with that empty cache; there is no in-memory change to persist.
+    if hasDataToSave
         data = dsArray; %#ok<NASGU>
 
         %%% ATOMIC WRITE for data .mat

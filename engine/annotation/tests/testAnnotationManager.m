@@ -431,6 +431,27 @@ verifyEqual(testCase, rows.reviewed, 0, ...
     'Asset discovery must not invent lifecycle review coverage.');
 end
 
+function testEmptyDataFlushPreservesPersistedAnnotationManifest(testCase)
+[folder, c, r] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+dataFile = fullfile(folder, ['data_' r.id '.mat']);
+before = load(dataFile, 'data');
+verifyTrue(testCase, any(strcmp({before.data.groupid}, ...
+    'detecdiv_annotation_manifest')));
+r.data = dataseries.empty;
+verifyEmpty(testCase, r.data, ...
+    'The test must reproduce the post-save purged ROI cache.');
+
+didSave = r.save('data', false);
+
+verifyFalse(testCase, didSave);
+after = load(dataFile, 'data');
+verifyTrue(testCase, any(strcmp({after.data.groupid}, ...
+    'detecdiv_annotation_manifest')), ...
+    'A second empty flush must not erase persisted annotation metadata.');
+end
+
 function testClassifierSummaryRefreshesManifestMissingFromMemory(testCase)
 [~, c, r] = maskFixture(testCase);
 session = c.annotationSession(1);
