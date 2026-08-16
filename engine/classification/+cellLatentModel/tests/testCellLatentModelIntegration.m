@@ -422,6 +422,42 @@ verifyGreaterThanOrEqual(testCase, ...
 verifyTrue(testCase,isfinite(double(validated.metrics.top1)));
 end
 
+function testAutomaticValidationHoldoutExcludesGuiTestRois(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'latent_automatic_validation',1);
+rois = [ ...
+    syntheticROI(fullfile(folder,'roi1'),'automatic_train_1',0), ...
+    syntheticROI(fullfile(folder,'roi2'),'automatic_train_2',1), ...
+    syntheticROI(fullfile(folder,'roi3'),'automatic_train_3',2), ...
+    syntheticROI(fullfile(folder,'roi4'),'automatic_validation',3), ...
+    syntheticROI(fullfile(folder,'roi5'),'gui_test_unannotated',4)];
+for i = 1:4
+    writeReviewedLineage(rois(i));
+end
+classifier.roi = rois;
+classifier.channelName = {'results_trackastra','ch2-GFP'};
+classifier.dataset.split.train = 1:4;
+classifier.dataset.split.val = [];
+classifier.dataset.split.test = 5;
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.gfpChannelName = 'ch2-GFP';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+classifier.trainingParam.validationFraction = 0.2;
+
+formatted = cellLatentModel.format(classifier,1:4,struct());
+
+verifyEqual(testCase,double(formatted.refs.trainRois),1:3);
+verifyEqual(testCase,double(formatted.refs.validationRois),4);
+config = jsondecode(fileread(formatted.artifacts.config));
+splits = string({config.rois.split});
+verifyEqual(testCase,find(splits == "train"),1:3);
+verifyEqual(testCase,find(splits == "validation"),4);
+verifyFalse(testCase,any(strcmp({config.rois.roi_id},'gui_test_unannotated')));
+end
+
 function testFormattingAppliesPerRoiTrainingBounds(testCase)
 folder = tempname;
 mkdir(folder);
@@ -553,7 +589,9 @@ verifyEqual(testCase,classifier.executionParam.nucleusChannelName, ...
 verifyFalse(testCase,classifier.executionParam.materializeCellStates);
 validated = cellLatentModel.validate(classifier,2,struct());
 verifyEqual(testCase,validated.status,"OK");
-verifyEqual(testCase,double(validated.metrics.events),1);
+verifyEqual(testCase,double(validated.metrics.events),3);
+verifyEqual(testCase,double(validated.metrics.parent_events),1);
+verifyEqual(testCase,double(validated.metrics.null_events),2);
 end
 
 function roiobj = syntheticROI(folder,id,offset)
