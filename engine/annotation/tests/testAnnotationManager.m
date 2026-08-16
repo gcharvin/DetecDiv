@@ -413,6 +413,24 @@ rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
 verifyEqual(testCase, rows.status, 'draft');
 end
 
+function testFastClassifierSummaryFindsLegacyGtWithoutManifest(testCase)
+[~, c, r] = maskFixture(testCase);
+groundTruth = zeros(4,4,1,3, 'uint16');
+groundTruth(2:3,2:3,1,:) = 1;
+spec = annotationManager.specForClassifier(c);
+groundTruthName = spec.components(1).groundTruth.channel;
+r.addChannel(groundTruth, groundTruthName, [1 1 1], [0 0 0]);
+r.save([], false);
+
+rows = annotationManager.summarizeClassifier(c, [], 'Fast', true);
+
+verifyTrue(testCase, rows.legacy);
+verifyEqual(testCase, rows.status, 'draft', ...
+    'Existing legacy GT must not be reported missing without a manifest.');
+verifyEqual(testCase, rows.reviewed, 0, ...
+    'Asset discovery must not invent lifecycle review coverage.');
+end
+
 function testClassifierSummaryRefreshesManifestMissingFromMemory(testCase)
 [~, c, r] = maskFixture(testCase);
 session = c.annotationSession(1);

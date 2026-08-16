@@ -23,6 +23,13 @@ for i = 1:numel(roiIndices)
     if ~isempty(bounds), reviewFrames = bounds(1):bounds(2); end
     summary = annotationManager.inspect(classif.roi(index), spec, ...
         'CheckAssets', ~p.Results.Fast,'ReviewFrames',reviewFrames);
+    if p.Results.Fast && summary.legacy && strcmpi(summary.status, 'missing')
+        % A missing lifecycle manifest is not proof that legacy GT assets
+        % are absent. Fall back to the asset scan before reporting Missing;
+        % otherwise older reviewed families disappear from classifierGUI.
+        summary = annotationManager.inspect(classif.roi(index), spec, ...
+            'CheckAssets', true,'ReviewFrames',reviewFrames);
+    end
     rows(i).roiIndex = index;
     rows(i).roiId = char(string(classif.roi(index).id));
     rows(i).status = summary.status;
