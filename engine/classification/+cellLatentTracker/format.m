@@ -131,8 +131,26 @@ out.metrics = manifest.counts;
 out.refs.trainRois = trainRois;
 out.refs.validationRois = valRois;
 out.refs.runtime = runtime;
+out.metrics.outputCount = exportedFrameCount(manifest);
+out.metrics.outputUnit = 'ROI frames';
 clear stageCleanup;
 removeFolder(stageRoot);
+end
+
+function count = exportedFrameCount(manifest)
+count = 0;
+if ~isstruct(manifest) || ~isfield(manifest,'sequences') || ...
+        isempty(manifest.sequences)
+    return;
+end
+sequences = manifest.sequences;
+if iscell(sequences), sequences = [sequences{:}]; end
+for i = 1:numel(sequences)
+    try
+        count = count + numel(sequences(i).source.frames);
+    catch
+    end
+end
 end
 
 function rows = splitEntries(indices,split)

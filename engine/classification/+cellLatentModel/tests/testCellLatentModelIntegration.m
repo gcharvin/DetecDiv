@@ -463,6 +463,8 @@ classifier.trainingParam = tp;
 
 formatted = cellLatentModel.format(classifier,1,struct());
 verifyEqual(testCase,formatted.status,"OK");
+verifyGreaterThan(testCase,double(formatted.metrics.outputCount),0);
+verifyEqual(testCase,formatted.metrics.outputUnit,'ROI frames');
 verifyTrue(testCase,isfile(formatted.artifacts.compositeManifest));
 dataset = jsondecode(fileread(formatted.artifacts.compositeManifest));
 verifyTrue(testCase,isfield(dataset.components,'tracking'));

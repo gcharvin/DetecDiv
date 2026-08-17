@@ -69,6 +69,8 @@ if logical(tp.trainTrackingActions)
         'EDGE_APPEAR_END',tracker.artifacts.manifest, ...
         'trained',tracker.refs.trainRois,tracker.refs.validationRois);
     metrics.tracking = tracker.metrics;
+    metrics.outputCount = tracker.metrics.outputCount;
+    metrics.outputUnit = tracker.metrics.outputUnit;
     artifacts.trackingDataset = tracker.artifacts.dataset;
     artifacts.trackingManifest = tracker.artifacts.manifest;
     artifacts.trackingStdout = tracker.artifacts.stdout;
@@ -80,6 +82,10 @@ if logical(tp.trainMotherNull)
         'mother_NULL',lineage.manifestFile,'trained',trainRois,valRois);
     if isfield(lineage.manifest,'counts')
         metrics.lineage = lineage.manifest.counts;
+        if ~isfield(metrics,'outputCount') && ...
+                isfield(lineage.manifest.counts,'observations')
+            metrics.rows = double(lineage.manifest.counts.observations);
+        end
     else
         metrics.lineage = struct();
     end
