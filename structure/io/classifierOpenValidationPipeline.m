@@ -20,6 +20,22 @@ end
 roiList = classiObj.roi;
 
 pipeObj = buildClassifierPipeline(classiObj, opts);
+if strcmp(opts.intent, 'validate')
+    [compatibleIdx, missingIdx, requiredChannels] = ...
+        classifierFilterValidationRois(roiList, roiIdx, pipeObj.nodes(1));
+    if isempty(compatibleIdx)
+        error('classifierOpenValidationPipeline:NoCompatibleRoi', ...
+            ['None of the selected validation ROIs contains the configured ' ...
+             'classifier input channels: %s.'], strjoin(requiredChannels, ', '));
+    end
+    if ~isempty(missingIdx)
+        warning('classifierOpenValidationPipeline:SkippedIncompatibleRois', ...
+            ['Validation will use %d compatible ROI(s) and skip ROI indices ' ...
+             '%s because configured inputs are missing.'], ...
+            numel(compatibleIdx), mat2str(missingIdx));
+    end
+    roiIdx = compatibleIdx;
+end
 ensureClassifierSnapshot(classiObj);
 
 runId = opts.runId;
@@ -281,14 +297,20 @@ end
 
 function ensureClassifierSnapshot(classiObj)
 target = fullfile(classiObj.path, [classiObj.strid '_classification.mat']);
-if exist(target, 'file') == 2
-    return;
-end
 try
+    % Pipeline runs execute in a separate MATLAB worker.  ROI handles cannot
+    % be transported in the JSON job payload, so that worker reloads this
+    % snapshot.  Always persist the live object: an existing snapshot may
+    % predate ROI imports or annotation/split changes made in classifierGUI.
     classiSave(classiObj);
 catch ME
-    warning('classifierOpenValidationPipeline:ClassifierSaveFailed', ...
-        'Could not save classifier snapshot for pipeline run: %s', ME.message);
+    error('classifierOpenValidationPipeline:ClassifierSaveFailed', ...
+        ['Could not synchronize the classifier snapshot required by the ' ...
+         'pipeline worker: %s'], ME.message);
+end
+if exist(target, 'file') ~= 2
+    error('classifierOpenValidationPipeline:ClassifierSnapshotMissing', ...
+        'Classifier snapshot was not created: %s', target);
 end
 end
 

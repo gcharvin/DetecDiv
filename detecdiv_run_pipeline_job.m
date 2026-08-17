@@ -563,8 +563,20 @@ function ctx = localAttachClassifierScopedRuntime(ctx, pipeObj, payload)
         idx = localDefaultClassifierRoiSelection(classiObj, ctx);
     end
     if ~isempty(idx)
+        requestedIdx = idx;
         idx = idx(idx >= 1 & idx <= numel(rois));
+        if numel(idx) ~= numel(requestedIdx)
+            error('detecdiv_run_pipeline_job:ClassifierScopedRoiSelectionInvalid', ...
+                ['Classifier-scoped run requested ROI indices %s, but the ' ...
+                 'worker snapshot contains only %d ROI(s). The classifier ' ...
+                 'snapshot is stale or inconsistent with the submitted run.'], ...
+                mat2str(requestedIdx), numel(rois));
+        end
         rois = rois(idx);
+    end
+    if isempty(rois)
+        error('detecdiv_run_pipeline_job:ClassifierScopedNoSelectedRoi', ...
+            'Classifier-scoped run resolved to an empty ROI selection in %s.', snapPath);
     end
     ctx.roiList = rois;
     ctx.rois = rois;
