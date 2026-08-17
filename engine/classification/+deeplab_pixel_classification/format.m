@@ -7,6 +7,7 @@ if nargin < 3 || isempty(ctx)
 end
 
 out = deeplab_pixel_classification.utils.outInitSafe('deeplab_pixel_classification.format');
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 if nargin < 2 || isempty(rois)
     try

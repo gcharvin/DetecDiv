@@ -364,8 +364,9 @@ else
                     matrix = imadd(matrix, imtmp2);
                 end
 
-                % indexed output
-                outIntensity = [0 0 0];
+                % The result is an RGB visualization, not an indexed-label
+                % mask, even when its source used an indexed colormap.
+                outIntensity = [1 1 1];
             end
         end
     end

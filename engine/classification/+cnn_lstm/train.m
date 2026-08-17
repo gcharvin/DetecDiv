@@ -25,10 +25,13 @@ end
 
 if strcmpi(mode, "init") || strcmpi(mode, "param") || strcmpi(mode, "params")
     classif.trainingParam = cnn_lstm.utils.defaultTrainingParam();
+    cnn_lstm.ensureClassMetadata(classif);
     out.refs.trainingParam = classif.trainingParam;
     out.status = "OK";
     return;
 end
+
+cnn_lstm.ensureClassMetadata(classif);
 
 % Optional overrides from ctx.params
 if isfield(ctx, 'params') && isstruct(ctx.params) && ~isempty(ctx.params)
@@ -36,6 +39,7 @@ if isfield(ctx, 'params') && isstruct(ctx.params) && ~isempty(ctx.params)
 end
 
 trainingParam = updateLSTMTrainingParam(classif);
+scope=classifierBinding.logTrainingScope(classif);
 %-----------------------------------%
 
     function safeRunStop()
@@ -993,6 +997,7 @@ out.ok = true;
 out.status = "OK";
 out.provides = {'LSTMClassifier'};
 out.refs.trainingParam = trainingParam;
+out.refs.trainingScope = scope;
 out.artifacts.netCNN = fullfile(path, ['netCNN_' name '.mat']);
 out.artifacts.netLSTM = fullfile(path, ['netLSTM_' name '.mat']);
 out.artifacts.assembled = fullfile(path, [name '.mat']);

@@ -5,6 +5,12 @@ function tp = preflightFormat(classif, rois, ctx)
 
 if nargin < 2, rois = []; end
 if nargin < 3 || isempty(ctx), ctx = struct(); end
+legacyArchitecture = true;
+try
+    legacyArchitecture = ~isfield(classif.trainingParam, ...
+        'architectureVersion');
+catch
+end
 tp = cellLatentModel.utils.defaultTrainingParam();
 if ~isempty(classif) && isprop(classif, 'trainingParam') && ...
         isstruct(classif.trainingParam)
@@ -14,7 +20,25 @@ if isfield(ctx, 'params') && isstruct(ctx.params)
     tp = cellLatentModel.utils.applyOverrides(tp, ctx.params);
 end
 
-objective = configuredChoice(tp.trainingObjective, 'relation_ensemble');
+architecture = configuredChoice(tp.architectureVersion, ...
+    'detecdiv_composite_v1');
+objective = configuredChoice(tp.trainingObjective, 'continuous_lineage');
+if strcmp(architecture,'detecdiv_composite_v1') && logical(tp.trainMotherNull)
+    objective = 'continuous_lineage';
+end
+if strcmp(architecture,'detecdiv_composite_v1') && ...
+        logical(tp.trainTrackingActions) && ...
+        isempty(strtrim(char(string(tp.instanceChannelName))))
+    % Reviewed GT masks are also valid frame-local instance geometry. Their
+    % pixel values are not treated as persistent identity; persistent GT
+    % identity is reconstructed from cellModel.instances.track_id.
+    tp.instanceChannelName = strtrim(char(string(tp.trackChannelName)));
+end
+if strcmp(architecture,'detecdiv_composite_v1') && ...
+        legacyArchitecture && strcmpi(strtrim(char(string(tp.modelName))), ...
+            'cell_latent_relation_v001')
+    tp.modelName = 'model_cell_latent_composite_v001';
+end
 if ~any(strcmp(objective, {'relation_ensemble','continuous_lineage'}))
     error('cellLatentModel:InvalidTrainingObjective', ...
         ['trainingObjective must be relation_ensemble or ' ...
@@ -30,7 +54,7 @@ if strcmp(objective, 'continuous_lineage') && ...
 end
 
 roiIndices = formattingRois(classif, rois);
-validateChannels(classif, roiIndices, tp, objective);
+validateChannels(classif, roiIndices, tp, objective, architecture);
 end
 
 function indices = formattingRois(classif, requested)
@@ -52,9 +76,19 @@ indices = unique([indices validation], 'stable');
 indices = setdiff(indices, test, 'stable');
 end
 
-function validateChannels(classif, roiIndices, tp, objective)
+function validateChannels(classif, roiIndices, tp, objective, architecture)
 trackName = strtrim(char(string(tp.trackChannelName)));
 requirements = {};
+if strcmp(architecture,'detecdiv_composite_v1') && ...
+        logical(tp.trainTrackingActions)
+    instanceName = strtrim(char(string(tp.instanceChannelName)));
+    if isempty(instanceName)
+        error('cellLatentModel:MissingInstanceChannel', ...
+            ['Composite tracking training requires [INPUT] frame-local ' ...
+             'instance masks.']);
+    end
+    requirements(end+1,:) = {'frame-local instances', instanceName}; %#ok<AGROW>
+end
 if ~isempty(trackName), requirements(end+1,:) = {'tracked masks', trackName}; end %#ok<AGROW>
 if strcmp(objective, 'relation_ensemble')
     gfpName = strtrim(char(string(tp.gfpChannelName)));

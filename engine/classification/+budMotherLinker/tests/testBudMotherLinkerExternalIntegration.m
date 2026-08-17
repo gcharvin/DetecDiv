@@ -38,7 +38,7 @@ verifyNotEmpty(testCase, familyIndex);
 verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex}, 'results_trackastra');
 verifyEqual(testCase, ...
-    model.families.lineage_source{familyIndex}, 'budMotherLinker');
+    model.families.lineage_source{familyIndex}, 'pred:budMotherLinker');
 relations = model.relations.family_id == familyId;
 verifyGreaterThanOrEqual(testCase, nnz(relations), 1);
 verifyTrue(testCase, all(model.relations.parent_track_id(relations) > 0));

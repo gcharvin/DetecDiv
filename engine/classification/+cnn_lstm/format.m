@@ -863,6 +863,7 @@ if UseHDF5
     out.refs.framebank = h5Framebank;
 end
 out.provides = {'LSTMTrainingSet'};
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 % ---- Local helpers ----
 function parsaveim(fname, im)

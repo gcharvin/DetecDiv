@@ -6,6 +6,7 @@ if nargin < 3 || isempty(ctx)
 end
 
 out = cellposesam.utils.outInitSafe('cellposesam.format');
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 if nargin < 2 || isempty(rois)
     try

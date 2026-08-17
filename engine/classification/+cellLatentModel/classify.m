@@ -10,7 +10,8 @@ catch
 end
 if isfield(ctx,'params') && isstruct(ctx.params)
     runtime = ctx.params;
-    present = {'modelPath','modelSource', ...
+    present = {'modelPath','modelSource','compositeManifestPath', ...
+        'trackingCheckpointDir','stateRuntimeConfigPath', ...
         'adaptiveMarkerModelPath','adaptiveMarkerModelSource'};
     present = present(isfield(runtime,present));
     if ~isempty(present), runtime = rmfield(runtime,present); end
@@ -21,6 +22,9 @@ out.data = data;
 out.image = image;
 out.refs.outputFamilyId = resolved.outputFamilyId;
 out.refs.outputFamilyName = resolved.outputFamilyName;
+if isfield(resolved,'trackChannelName')
+    out.refs.outputTrackChannelName = resolved.trackChannelName;
+end
 out.artifacts.audit = resolved.auditFile;
 out.artifacts.cellModel = resolved.cellModelFile;
 if isfield(resolved,'biologicalStateFile') && ...
@@ -28,5 +32,8 @@ if isfield(resolved,'biologicalStateFile') && ...
     out.artifacts.biologicalState = resolved.biologicalStateFile;
 end
 out.metrics = resolved.summary;
+if isfield(resolved,'prediction')
+    out.prediction = resolved.prediction;
+end
 out.status = "OK";
 end

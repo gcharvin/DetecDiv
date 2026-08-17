@@ -19,7 +19,7 @@ spec = {
     'device',                  'cuda',          'Training device.'
     'distributed',             false,           'Enable Lightning distributed training.'
     'logger',                  'tensorboard',   'Training logger: tensorboard, wandb, or none.'
-    'modelName',               'trackastra_detecdiv', 'Output model/run folder name.'
+    'modelName',               'model_trackastra_association_detecdiv_v001', 'Versioned Trackastra association-model folder.'
     'initialModelPath',        '',              'Optional Trackastra model folder used to initialize training.'
     'resume',                  true,            'Resume the last checkpoint in the same model folder.'
     'trackastraVersion',       '0.5.3',         'Pinned upstream training-source version.'

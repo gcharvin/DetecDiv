@@ -10,6 +10,7 @@ if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = trackastra.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
 trackastra.ensureClassMetadata(classif);
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 if nargin < 2 || isempty(rois)
     try

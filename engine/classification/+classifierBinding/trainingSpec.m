@@ -48,10 +48,17 @@ for i = 1:numel(raw)
     spec(i).componentId = char(string(spec(i).componentId));
     spec(i).legacyFallback = char(string(spec(i).legacyFallback));
     spec(i).autoValue = char(string(spec(i).autoValue));
+    spec(i).quality = lower(char(string(spec(i).quality)));
+    spec(i).semantic = char(string(spec(i).semantic));
     spec(i).required = logical(spec(i).required);
     spec(i).allowAuto = logical(spec(i).allowAuto);
     spec(i).allowNone = logical(spec(i).allowNone);
     spec(i).editable = logical(spec(i).editable);
+    if ~any(strcmp(spec(i).quality,{'input','gt','pred','derived'}))
+        error('classifierBinding:InvalidTrainingQuality', ...
+            '%s declares unsupported quality "%s" for %s.', ...
+            fun,spec(i).quality,spec(i).param);
+    end
 end
 spec = spec(~cellfun(@isempty, {spec.param}));
 end

@@ -19,7 +19,7 @@ spec = { ...
     'l2Regularization',0.01, 'L2 regularization applied to leaf weights.'
     'randomState',23, 'Deterministic sklearn random seed.'
     'targetAutoPrecision',0.95, 'Target precision used to calibrate the automatic-link margin.'
-    'modelName','bud_mother_boosted16', 'Name of the trained model artifact folder.'
+    'modelName','model_bud_mother_linker_v001', 'Versioned boosted-tree mother-linker artifact folder.'
     'transfer_learning',{{'builtin'}}, 'Initialize a new boosted-tree ranker from formatted data.'
     };
 p = struct();

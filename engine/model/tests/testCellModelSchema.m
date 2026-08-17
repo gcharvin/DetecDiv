@@ -74,6 +74,48 @@ verifyEqual(testCase, pix, 2);
 verifyEqual(testCase, familyId, uint32(2));
 end
 
+function testRgbCompositeIsNotAMaskProvider(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@()rmdir(folder, 's')); %#ok<NASGU>
+r = roi('rgb_composite', [1 1 3 3]);
+r.path = folder;
+r.image = zeros(3,3,1,2,'uint16');
+r.channelid = 1;
+r.display.channel = {'raw'};
+r.display.indexed = false;
+r.display.intensity = [1 1 1];
+r.display.rgb = [1 1 1];
+r.display.selectedchannel = true;
+
+rgb = zeros(3,3,3,2,'uint16');
+r.addChannel(rgb, 'CombinedChannel', [1 1 1], [0 0 0]);
+mask = zeros(3,3,1,2,'uint16');
+mask(2,2,1,:) = 1;
+r.addChannel(mask, 'tracked_cell', [1 1 1], [0 0 0]);
+
+compositeIndex = find(strcmp(r.display.channel, 'CombinedChannel'), 1);
+verifyFalse(testCase, logical(r.display.indexed(compositeIndex)));
+verifyEqual(testCase, r.display.intensity(compositeIndex,:), [1 1 1]);
+[providers, excluded] = cellModel.maskProviderNames(r);
+verifyEqual(testCase, providers, {'tracked_cell'});
+verifyEmpty(testCase, excluded);
+
+% Also defend against old snapshots in which the composite flag was stale.
+r.display.indexed(compositeIndex) = true;
+r.display.intensity(compositeIndex,:) = [0 0 0];
+[providers, excluded] = cellModel.maskProviderNames(r);
+verifyEqual(testCase, providers, {'tracked_cell'});
+verifyEqual(testCase, excluded, {'CombinedChannel'});
+model = cellModel.fromLegacy(r);
+verifyFalse(testCase, any(strcmp(model.families.name, 'CombinedChannel')));
+verifyEqual(testCase, model.families.mask_provider, {'tracked_cell'});
+
+r.normalizeDisplayCache();
+verifyFalse(testCase, logical(r.display.indexed(compositeIndex)));
+verifyEqual(testCase, r.display.intensity(compositeIndex,:), [1 1 1]);
+end
+
 function testTrackReassignmentAndDirectParentEditing(testCase)
 model = modelFixture();
 for frame = 1:3

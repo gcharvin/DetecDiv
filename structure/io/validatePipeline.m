@@ -1970,7 +1970,7 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
                 artifactReport.status = 'missing_model';
                 return;
             end
-        case {'cellposesam','sam31','trackastra'}
+        case {'cellposesam','sam31','trackastra','celllatenttracker'}
             % Python-backed classifiers may intentionally use package-managed
             % default weights or explicit checkpoint paths from their runtime
             % config. The linked classi snapshot is sufficient for pipeline
@@ -2454,7 +2454,8 @@ end
 
 function tf = classifierRequiresLocalArtifacts(pkgName)
     pkgName = lower(char(string(pkgName)));
-    tf = ~any(strcmp(pkgName, {'cellposesam','sam31','trackastra'}));
+    tf = ~any(strcmp(pkgName, ...
+        {'cellposesam','sam31','trackastra','celllatenttracker'}));
 end
 
 function msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, reason)

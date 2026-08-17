@@ -9,9 +9,6 @@ function addChannel(obj, matrix, str, rgb, intensity)
     if nargin < 4 || isempty(rgb),       rgb = [1 1 1];       end
     if nargin < 5 || isempty(intensity), intensity = [1 1 1]; end
     forceIndexed = isIndexedResultChannel(str);
-    if forceIndexed
-        intensity = [0 0 0];
-    end
 
     % MATLAB drops trailing singleton dimensions, so [H W 1 1] often
     % arrives as a 2-D array. Normalize it back to the ROI channel shape.
@@ -28,6 +25,11 @@ function addChannel(obj, matrix, str, rgb, intensity)
     k = size(matrix,3);
     if ~(k==1 || k==3)
         error('addChannel:BadK', '3rd dim (k) must be 1 or 3.');
+    end
+    if k == 1 && forceIndexed
+        intensity = [0 0 0];
+    elseif k > 1 && all(double(intensity(:)) == 0)
+        intensity = [1 1 1];
     end
 
     % Typage homogène
@@ -93,7 +95,7 @@ if isempty(obj.image)
     end
 
     % ---- indexed : bool par channel logique ----
-    idxVal = forceIndexed || (sum(intensity) == 0);
+    idxVal = k == 1 && (forceIndexed || (sum(intensity) == 0));
     if ~isfield(obj.display, 'indexed') || isempty(obj.display.indexed)
         obj.display.indexed = idxVal;
     else
@@ -204,7 +206,7 @@ end
     obj.display.channel{nNew} = str;
     obj.display.intensity(nNew,:) = double(intensity(:)).';
     obj.display.rgb(nNew,:) = double(rgb(:)).';
-    idxVal = forceIndexed || sum(intensity)==0;
+    idxVal = k == 1 && (forceIndexed || sum(intensity)==0);
     obj.display.indexed(nNew) = idxVal;
     obj.display.alpha(nNew) = 1;
     obj.display.contour(nNew) = 0;

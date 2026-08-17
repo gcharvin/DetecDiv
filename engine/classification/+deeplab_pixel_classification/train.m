@@ -33,10 +33,13 @@ end
 
 deeplab_pixel_classification.ensureClassMetadata(classif);
 
+scope=classifierBinding.logTrainingScope(classif);
+
 trainPixelDeeplabNetFun(classif);
 
 out.status = "OK";
 out.provides = {'DeepLabPixelClassifier'};
 out.refs.trainingParam = classif.trainingParam;
+out.refs.trainingScope = scope;
 out.artifacts.classifier = fullfile(classif.path, [classif.strid '.mat']);
 end

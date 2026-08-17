@@ -69,7 +69,7 @@ if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName'
     outputName = scalarText(ctx.names.outputName);
 end
 if isempty(outputName)
-    outputName = 'trackastra';
+    outputName = 'pred_trackastra_tracks';
 end
 channelName = outputChannelName(outputName);
 

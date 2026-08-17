@@ -12,7 +12,7 @@ model=cellModel.create(roiobj.id);
 records=legacyFamilyRecords(roiobj);
 requested=cellstr(string(p.Results.Channels));
 if p.Results.IncludeIndexedChannels
-    indexed=indexedChannelNames(roiobj);
+    indexed=cellModel.maskProviderNames(roiobj);
     if ~isempty(requested), indexed=intersect(indexed,requested,'stable'); end
     usedProviders=string({records.mask_provider});
     for i=1:numel(indexed)
@@ -97,15 +97,6 @@ try
             records=struct('name',provider,'mask_provider',provider,'lineage_source','legacy','source',src);
         end
     end
-catch
-end
-end
-
-function names=indexedChannelNames(roiobj)
-names={};
-try
-    mask=logical(roiobj.display.indexed(:).'); allNames=cellstr(string(roiobj.display.channel));
-    n=min(numel(mask),numel(allNames)); names=allNames(find(mask(1:n))); %#ok<FNDSB>
 catch
 end
 end

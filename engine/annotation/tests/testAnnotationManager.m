@@ -32,7 +32,7 @@ verifyEqual(testCase, session.summary().status, 'missing');
 
 report = session.bootstrap();
 verifyEqual(testCase, report.status, 'draft');
-verifyNotEmpty(testCase, r.findChannelID('demo_1_cell'));
+verifyNotEmpty(testCase, r.findChannelID('gt_demo_1_instances'));
 verifyEqual(testCase, session.summary().coverage.fraction, 0);
 
 failed = session.validate();
@@ -71,9 +71,9 @@ fresh.load('Data', 'Silent');
 persisted = annotationManager.inspect(fresh, session.Spec);
 verifyEqual(testCase, persisted.status, 'approved');
 
-idx = r.findChannelID('demo_1_cell');
+idx = r.findChannelID('gt_demo_1_instances');
 r.image(1,1,idx,1) = uint16(9);
-r.save({'demo_1_cell'}, false);
+r.save({'gt_demo_1_instances'}, false);
 verifyEqual(testCase, session.summary('VerifyHash', true).status, 'draft');
 end
 
@@ -81,7 +81,7 @@ function testBootstrapDoesNotOverwriteReviewedMask(testCase)
 [~, c, r] = maskFixture(testCase);
 session = c.annotationSession(1);
 session.bootstrap();
-idx = r.findChannelID('demo_1_cell');
+idx = r.findChannelID('gt_demo_1_instances');
 r.image(1,1,idx,1) = uint16(7);
 verifyError(testCase, @() session.bootstrap(), ...
     'annotationManager:GroundTruthExists');
@@ -94,7 +94,7 @@ function testStartBlankCreatesExplicitEditableEmptyMask(testCase)
 session = c.annotationSession(1);
 report = session.startBlank();
 verifyEqual(testCase, report.status, 'draft');
-idx = r.findChannelID('demo_1_cell');
+idx = r.findChannelID('gt_demo_1_instances');
 verifyNotEmpty(testCase, idx);
 verifyEqual(testCase, nnz(r.image(:,:,idx,:)), 0);
 verifyFalse(testCase, session.validate().valid);
@@ -277,9 +277,9 @@ verifyEqual(testCase, maskState.predictionName, 'results_cellposeSAM_cell', ...
 report = session.bootstrap();
 verifyTrue(testCase, report.modelChanged);
 [gtChannel, gtExists] = annotationManager.resolveChannel(r, ...
-    annotationManager.newAsset('channel', 'latent_1_cell'));
+    annotationManager.newAsset('channel', 'gt_latent_1_stable_tracks'));
 verifyTrue(testCase, gtExists);
-verifyEqual(testCase, gtChannel, 'latent_1_cell');
+verifyEqual(testCase, gtChannel, 'gt_latent_1_stable_tracks');
 verifyEqual(testCase, r.image(:,:,r.findChannelID(gtChannel),:), masks);
 [model, ~] = r.loadCellModel();
 [sourceIdx, sourceId] = cellModel.familyIndex(model, 'Predicted lineage');
@@ -288,14 +288,16 @@ verifyNotEmpty(testCase, sourceIdx);
 verifyNotEmpty(testCase, gtIdx);
 verifyEqual(testCase, model.families.mask_provider{sourceIdx}, ...
     'results_cellposeSAM_cell');
-verifyEqual(testCase, model.families.mask_provider{gtIdx}, 'latent_1_cell');
+verifyEqual(testCase, model.families.mask_provider{gtIdx}, ...
+    'gt_latent_1_stable_tracks');
 verifyEqual(testCase, nnz(model.instances.family_id == sourceId), ...
     nnz(model.instances.family_id == gtId));
 verifyEqual(testCase, nnz(model.relations.family_id == sourceId), 1);
 verifyEqual(testCase, nnz(model.relations.family_id == gtId), 1);
 verifyEqual(testCase, c.trainingParam.groundTruthFamily, ...
     'latent_1 reviewed GT');
-verifyEqual(testCase, c.trainingParam.trackChannelName, 'latent_1_cell');
+verifyEqual(testCase, c.trainingParam.trackChannelName, ...
+    'gt_latent_1_stable_tracks');
 
 quickTracking = session.quickValidate('Frames', 1:3, ...
     'Components', {'tracking'});
@@ -375,9 +377,9 @@ parentageCoverage = reviewSummary.coverage.components(strcmp( ...
     {reviewSummary.coverage.components.id}, 'parentage'));
 verifyEqual(testCase, parentageCoverage.reviewed, 1);
 
-gtIdx = r.findChannelID('latent_1_cell');
+gtIdx = r.findChannelID('gt_latent_1_stable_tracks');
 r.image(:,:,gtIdx,:) = uint16(17);
-r.save({'latent_1_cell'}, false);
+r.save({'gt_latent_1_stable_tracks'}, false);
 invalid = session.validate();
 verifyFalse(testCase, invalid.valid);
 verifyTrue(testCase, any(contains(invalid.errors, ...
@@ -550,7 +552,7 @@ recipe = struct('mode', 'mask', 'family', '', ...
 report = session.initialize(recipe);
 verifyEqual(testCase, report.entry.source_type, 'existing_mask');
 verifyTrue(testCase, contains(report.entry.source_id, 'tracks: blank'));
-targetChannel = 'latent_mask_1_cell';
+targetChannel = 'gt_latent_mask_1_stable_tracks';
 verifyEqual(testCase, r.image(:,:,r.findChannelID(targetChannel),:), masks);
 [model, ~] = r.loadCellModel();
 [targetIndex, targetId] = cellModel.familyIndex(model, ...

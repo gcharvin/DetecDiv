@@ -161,7 +161,7 @@ if isempty(outputIndex)
     model.families.family_id(outputIndex,1) = familyId;
     model.families.name{outputIndex,1} = outputFamily;
     model.families.mask_provider{outputIndex,1} = channelName;
-    model.families.lineage_source{outputIndex,1} = 'budMotherLinker';
+    model.families.lineage_source{outputIndex,1} = 'pred:budMotherLinker';
     if isempty(sourceIndex)
         model.families.color_rgb(outputIndex,:) = uint8([255 214 64]);
     else
@@ -173,7 +173,7 @@ else
     keepRelations = model.relations.family_id ~= familyId;
     model.relations = subsetRows(model.relations, keepRelations);
     model.families.mask_provider{outputIndex} = channelName;
-    model.families.lineage_source{outputIndex} = 'budMotherLinker';
+    model.families.lineage_source{outputIndex} = 'pred:budMotherLinker';
 end
 
 nextObject = max([model.instances.object_id; uint64(0)]) + uint64(1);

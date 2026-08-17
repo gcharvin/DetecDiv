@@ -14,6 +14,7 @@ if isfield(ctx,'params') && isstruct(ctx.params)
     tp = budMotherLinker.utils.applyOverrides(tp, ctx.params);
 end
 classif.trainingParam = tp;
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 [trainRois, valRois] = resolveSplits(classif, rois, tp.validationFraction);
 if isempty(trainRois)

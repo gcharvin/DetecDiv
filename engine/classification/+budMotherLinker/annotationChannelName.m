@@ -1,0 +1,6 @@
+function name = annotationChannelName(classif)
+%BUDMOTHERLINKER.ANNOTATIONCHANNELNAME Reviewed stable-track GT channel.
+name=classifierBinding.groundTruthChannelName( ...
+    classif,'stable_tracks','cell', ...
+    {'trackChannelName','groundTruthChannelName'});
+end

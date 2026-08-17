@@ -31,6 +31,16 @@ obj.display.colormapName = localEnsureStringCell(obj.display, 'colormapName', nL
 obj.display.valueTransform = localEnsureValueTransform(obj.display, nLog);
 
 for i = 1:nLog
+    if localHasMultiplePlanes(obj, names{i})
+        % A logical RGB/composite channel is never an instance-label mask.
+        % Repair stale legacy metadata instead of repeatedly re-inferring it
+        % as indexed from an old all-zero intensity triplet.
+        obj.display.indexed(i) = 0;
+        if all(double(obj.display.intensity(i,:)) == 0)
+            obj.display.intensity(i,:) = [1 1 1];
+        end
+        continue;
+    end
     isIndexed = localShouldForceIndexed(names{i}) || all(double(obj.display.intensity(i,:)) == 0);
     if ~isIndexed
         continue;
@@ -46,6 +56,15 @@ for i = 1:nLog
     if ~hadWidth || (obj.display.contour(i) ~= 0 && obj.display.width(i) <= 0)
         obj.display.width(i) = 1.5;
     end
+end
+end
+
+function tf = localHasMultiplePlanes(obj, channelName)
+tf = false;
+try
+    pix = obj.findChannelID(channelName, 'exact');
+    tf = numel(pix) > 1;
+catch
 end
 end
 

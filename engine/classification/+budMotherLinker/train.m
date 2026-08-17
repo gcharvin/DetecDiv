@@ -27,6 +27,7 @@ if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
     out.refs.executionParam = classif.executionParam;
     return;
 end
+out.refs.trainingScope = classifierBinding.logTrainingScope(classif);
 
 detecdiv_check_cancel(ctx,'budMotherLinker train start');
 [dataset,datasetFile,manifestFile] = loadFormattedDataset(classif);

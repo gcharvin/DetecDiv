@@ -13,6 +13,7 @@ if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = sam31.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
 sam31.ensureClassMetadata(classif);
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 
 if nargin < 2 || isempty(rois)
     try

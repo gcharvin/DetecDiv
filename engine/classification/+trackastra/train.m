@@ -20,6 +20,7 @@ if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
     out.status = "OK";
     return;
 end
+out.refs.trainingScope = classifierBinding.logTrainingScope(classif);
 
 detecdiv_check_cancel(ctx, 'trackastra train start');
 dataset = loadFormattedDataset(classif);

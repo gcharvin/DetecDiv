@@ -33,7 +33,7 @@ verifyNotEmpty(testCase,familyIndex);
 verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex},'results_trackastra');
 verifyEqual(testCase, ...
-    model.families.lineage_source{familyIndex},'cellLatentModel');
+    model.families.lineage_source{familyIndex},'pred:cellLatentModel');
 ds = dataout(find(strcmp({dataout.groupid},'cell_information'),1));
 sourceKey = matlab.lang.makeValidName(param.outputFamilyName);
 verifyTrue(testCase,isfield(ds.userData.lineageSources,sourceKey));
@@ -81,7 +81,7 @@ verifyNotEmpty(testCase,familyIndex);
 verifyEqual(testCase, ...
     model.families.mask_provider{familyIndex},'results_trackastra');
 verifyEqual(testCase, ...
-    model.families.lineage_source{familyIndex},'cellLatentModel');
+    model.families.lineage_source{familyIndex},'pred:cellLatentModel');
 end
 
 function testJsonDecodedHeterogeneousEdgesMaterializeRelations(testCase)
@@ -346,10 +346,10 @@ function testTemporalExecutionSpecDeclaresTypedRoles(testCase)
 spec = cellLatentModel.executionSpec();
 
 verifyEqual(testCase,spec.inputKeys, ...
-    {'trackChannelName','gfpChannelName', ...
+    {'instanceChannelName','trackChannelName','gfpChannelName', ...
      'brightfieldChannelName','nucleusChannelName','budneckChannelName'});
 verifyEqual(testCase,spec.choices.backend, ...
-    {'legacy','temporal_lineage','continuous_cell_state'});
+    {'causal_composite','legacy','temporal_lineage','continuous_cell_state'});
 verifyEqual(testCase,spec.choices.temporalVariant, ...
     {'temporal_geometry','all_observed'});
 verifyTrue(testCase,contains(lower(spec.labels.nucleusChannelName), ...
@@ -401,6 +401,8 @@ classifier.dataset.split.train = 1;
 classifier.dataset.split.val = 2;
 classifier.dataset.split.test = [];
 cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
 classifier.trainingParam.trackChannelName = 'results_trackastra';
 classifier.trainingParam.gfpChannelName = 'ch2-GFP';
 classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
@@ -420,6 +422,79 @@ verifyEqual(testCase,validated.status,"OK");
 verifyGreaterThanOrEqual(testCase, ...
     double(validated.metrics.labeled_events),1);
 verifyTrue(testCase,isfinite(double(validated.metrics.top1)));
+end
+
+function testCompositeLifecycleTrainsTracksThenLineage(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'composite_lifecycle',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'composite_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'composite_validation',1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.channelName = {'results_trackastra','ch2-GFP'};
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.architectureVersion = 'detecdiv_composite_v1';
+tp.trainTrackingActions = true;
+tp.trainMotherNull = true;
+tp.stateUpdateMode = 'none';
+tp.instanceChannelName = 'results_trackastra';
+tp.trackChannelName = 'results_trackastra';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+tp.trainingDomain = 'synthetic_reviewed';
+tp.continuousVariant = 'geometry';
+tp.continuousStateDim = 8;
+tp.continuousBlockEmbeddingDim = 4;
+tp.continuousAttentionDim = 8;
+tp.maxEventHistoryTokens = 2;
+tp.trackingInitialModelSource = 'random';
+tp.trackingEpochs = 1;
+tp.epochs = 1;
+tp.device = 'cpu';
+tp.modelName = 'composite_smoke_v001';
+classifier.trainingParam = tp;
+
+formatted = cellLatentModel.format(classifier,1,struct());
+verifyEqual(testCase,formatted.status,"OK");
+verifyTrue(testCase,isfile(formatted.artifacts.compositeManifest));
+dataset = jsondecode(fileread(formatted.artifacts.compositeManifest));
+verifyTrue(testCase,isfield(dataset.components,'tracking'));
+verifyTrue(testCase,isfield(dataset.components,'lineage'));
+verifyEqual(testCase,double(dataset.split.train),1);
+verifyEqual(testCase,double(dataset.split.validation),2);
+
+trained = cellLatentModel.train(classifier,struct());
+verifyEqual(testCase,trained.status,"OK");
+verifyTrue(testCase,isfile(trained.artifacts.manifest));
+verifyEqual(testCase,classifier.executionParam.backend,'causal_composite');
+verifyTrue(testCase,isfolder(fullfile( ...
+    classifier.path,classifier.executionParam.trackingCheckpointDir)));
+verifyTrue(testCase,isfile(fullfile( ...
+    classifier.path,classifier.executionParam.modelPath)));
+
+classified = cellLatentModel.classify(roi2,classifier,struct( ...
+    'store',struct('workDir',fullfile(folder,'runtime'))));
+verifyEqual(testCase,classified.status,"OK");
+verifyTrue(testCase,isfield(classified.refs,'outputTrackChannelName'));
+verifyFalse(testCase,isempty(roi2.findChannelID( ...
+    classified.refs.outputTrackChannelName,'exact')));
+audit = jsondecode(fileread(classified.artifacts.audit));
+verifyEqual(testCase,audit.backend,'causal_composite');
+verifyFalse(testCase,audit.composite.targets_consumed_at_inference);
+validated = cellLatentModel.validate(classifier,2,struct( ...
+    'store',struct('workDir',fullfile(folder,'validation_runtime'))));
+verifyEqual(testCase,validated.status,"OK");
+verifyTrue(testCase,isfield(validated.metrics,'tracking'));
+verifyTrue(testCase,isfield(validated.metrics,'lineage'));
+verifyGreaterThanOrEqual(testCase,validated.metrics.tracking.idf1,0);
+verifyTrue(testCase,isfile(validated.artifacts.validation));
 end
 
 function testAutomaticValidationHoldoutExcludesGuiTestRois(testCase)
@@ -442,6 +517,8 @@ classifier.dataset.split.train = 1:4;
 classifier.dataset.split.val = [];
 classifier.dataset.split.test = 5;
 cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
 classifier.trainingParam.trackChannelName = 'results_trackastra';
 classifier.trainingParam.gfpChannelName = 'ch2-GFP';
 classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
@@ -473,6 +550,8 @@ classifier.dataset.split.train = 1;
 classifier.dataset.split.val = 2;
 classifier.dataset.split.test = [];
 cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
 classifier.trainingParam.trackChannelName = 'results_trackastra';
 classifier.trainingParam.gfpChannelName = 'ch2-GFP';
 classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
@@ -526,6 +605,8 @@ classifier.dataset.split.train = [1 2];
 classifier.dataset.split.val = [];
 classifier.dataset.split.test = [];
 cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
 classifier.trainingParam.trackChannelName = 'latent_model_1_cell';
 
 datasetDir = fullfile(classifier.path, 'trainingdataset');
@@ -555,6 +636,7 @@ classifier.dataset.split.train = 1;
 classifier.dataset.split.val = 2;
 classifier.dataset.split.test = [];
 cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
 classifier.trainingParam.trainingObjective = 'continuous_lineage';
 classifier.trainingParam.trackChannelName = 'results_trackastra';
 classifier.trainingParam.nucleusChannelName = 'ch2-GFP';

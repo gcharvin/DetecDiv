@@ -19,13 +19,19 @@ present = obsolete(isfield(p,obsolete));
 if ~isempty(present), p = rmfield(p,present); end
 
 p.backend = normalizeBackend(readChoice(p.backend));
+p.instanceChannelName = readChoice(p.instanceChannelName);
 p.trackChannelName = readChoice(p.trackChannelName);
+p.outputTrackChannelName = readChoice(p.outputTrackChannelName);
 p.gfpChannelName = readChoice(p.gfpChannelName);
 p.brightfieldChannelName = readChoice(p.brightfieldChannelName);
 p.nucleusChannelName = readChoice(p.nucleusChannelName);
 p.budneckChannelName = readChoice(p.budneckChannelName);
 runtimeChannels = collectRuntimeChannels(param,ctx,classif);
-if isMissingChoice(p.trackChannelName)
+if strcmp(p.backend,'causal_composite') && ...
+        isMissingChoice(p.instanceChannelName)
+    p.instanceChannelName = preferred(runtimeChannels, ...
+        {'instance','segmentation','mask'},1);
+elseif isMissingChoice(p.trackChannelName)
     p.trackChannelName = preferred(runtimeChannels, ...
         {'trackastra','track','label','mask'},1);
 end
@@ -48,6 +54,10 @@ p.inputFamily = readChoice(p.inputFamily);
 p.outputFamilyName = strtrim(char(string(p.outputFamilyName)));
 p.modelSource = lower(readChoice(p.modelSource));
 p.modelPath = strtrim(readChoice(p.modelPath));
+p.compositeManifestPath = strtrim(readChoice(p.compositeManifestPath));
+p.trackingCheckpointDir = strtrim(readChoice(p.trackingCheckpointDir));
+p.stateUpdateMode = lower(readChoice(p.stateUpdateMode));
+p.stateRuntimeConfigPath = strtrim(readChoice(p.stateRuntimeConfigPath));
 p.adaptiveMarkerModelSource = lower(readChoice( ...
     p.adaptiveMarkerModelSource));
 p.adaptiveMarkerModelPath = strtrim(readChoice( ...
@@ -62,11 +72,17 @@ end
 if isempty(p.device), p.device = 'auto'; end
 if isempty(p.temporalVariant), p.temporalVariant = 'temporal_geometry'; end
 if isempty(p.primaryStateAxis), p.primaryStateAxis = 'budding'; end
+if isempty(p.stateUpdateMode), p.stateUpdateMode = 'none'; end
+if isempty(p.outputTrackChannelName)
+    p.outputTrackChannelName = 'pred_latent_model_tracks';
+end
 
 numericNames = {'frameEnd','minLifetime','maxBirthArea','minParentAge', ...
     'maxParentCentroidDistance','maxParentContourDistance','maxCandidates', ...
     'maxNewTracksPerFrame','motherRefractoryFrames','youngMotherFrames', ...
     'solverBeamSize','statePositiveThreshold','stateNegativeThreshold'};
+numericNames = [numericNames {'trackingTopK', ...
+    'trackingSolverTimeLimitSeconds'}];
 for i = 1:numel(numericNames)
     name = numericNames{i};
     p.(name) = readScalar(p.(name),defaults.(name));
@@ -84,6 +100,9 @@ p.maxNewTracksPerFrame = max(0,floor(p.maxNewTracksPerFrame));
 p.motherRefractoryFrames = max(0,floor(p.motherRefractoryFrames));
 p.youngMotherFrames = max(0,floor(p.youngMotherFrames));
 p.solverBeamSize = max(1,floor(p.solverBeamSize));
+p.trackingTopK = max(1,floor(p.trackingTopK));
+p.trackingSolverTimeLimitSeconds = max(0.1, ...
+    p.trackingSolverTimeLimitSeconds);
 p.trackingLoadGuard = logical(p.trackingLoadGuard);
 p.globalSolver = logical(p.globalSolver);
 p.causalSolverFeedback = logical(p.causalSolverFeedback);
@@ -115,6 +134,11 @@ elseif strcmp(p.backend,'continuous_cell_state')
         {p.trackChannelName,p.brightfieldChannelName, ...
          p.nucleusChannelName,p.budneckChannelName}, ...
         {'tracked-label','brightfield','nucleus','budneck'});
+elseif strcmp(p.backend,'causal_composite')
+    validateChannelRoles( ...
+        {p.instanceChannelName,p.brightfieldChannelName, ...
+         p.nucleusChannelName,p.budneckChannelName}, ...
+        {'frame-local instances','brightfield','nucleus','budneck'});
 end
 
 usesTrainedArtifact = ...
@@ -138,7 +162,43 @@ if usesTrainedArtifact
         end
     end
 end
-if isMissingChoice(p.trackChannelName)
+if strcmp(p.backend,'causal_composite')
+    p.compositeManifestPath = resolveArtifactPath( ...
+        p.compositeManifestPath,classif);
+    p.trackingCheckpointDir = resolveArtifactPath( ...
+        p.trackingCheckpointDir,classif);
+    p.modelPath = resolveArtifactPath(p.modelPath,classif);
+    p.stateRuntimeConfigPath = resolveArtifactPath( ...
+        p.stateRuntimeConfigPath,classif);
+    if isempty(p.compositeManifestPath) || ...
+            ~isfile(p.compositeManifestPath)
+        error('cellLatentModel:MissingCompositeManifest', ...
+            'The composite latent-model manifest was not found.');
+    end
+    if isempty(p.trackingCheckpointDir) || ...
+            ~isfile(fullfile(p.trackingCheckpointDir,'manifest.json'))
+        error('cellLatentModel:MissingTrackingCheckpoint', ...
+            'The composite EDGE/APPEAR/END checkpoint was not found.');
+    end
+    if isempty(p.modelPath) || ~isfile(p.modelPath)
+        error('cellLatentModel:MissingCompositeLineageCheckpoint', ...
+            'The composite mother/NULL checkpoint was not found.');
+    end
+    if isMissingChoice(p.instanceChannelName)
+        error('cellLatentModel:MissingInstanceChannel', ...
+            'Select the frame-local instance-mask channel.');
+    end
+    if ~any(strcmp(p.stateUpdateMode,{'none','promoted_frozen_bf'}))
+        error('cellLatentModel:InvalidStateUpdateMode', ...
+            'stateUpdateMode must be none or promoted_frozen_bf.');
+    end
+    if strcmp(p.stateUpdateMode,'promoted_frozen_bf') && ...
+            (isempty(p.stateRuntimeConfigPath) || ...
+             ~isfile(p.stateRuntimeConfigPath))
+        error('cellLatentModel:MissingStateRuntime', ...
+            'The promoted biological-state runtime configuration was not found.');
+    end
+elseif isMissingChoice(p.trackChannelName)
     error('cellLatentModel:MissingTrackChannel', ...
         'Select a tracked-label channel.');
 end
@@ -199,10 +259,10 @@ end
 end
 
 function value = resolveArtifactPath(value,classif)
-if isempty(value) || isfile(value), return; end
+if isempty(value) || isfile(value) || isfolder(value), return; end
 try
     candidate = fullfile(classif.path,value);
-    if isfile(candidate), value = candidate; end
+    if isfile(candidate) || isfolder(candidate), value = candidate; end
 catch
 end
 end
@@ -216,11 +276,14 @@ if isempty(backend) || any(strcmp(backend, ...
     backend = 'legacy';
 elseif strcmp(backend,'continuouscellstate')
     backend = 'continuous_cell_state';
+elseif any(strcmp(backend,{'causalcomposite','composite', ...
+        'cell_latent_composite'}))
+    backend = 'causal_composite';
 elseif ~any(strcmp(backend, ...
-        {'temporal_lineage','continuous_cell_state'}))
+        {'causal_composite','temporal_lineage','continuous_cell_state'}))
     error('cellLatentModel:InvalidBackend', ...
-        ['backend must be legacy, temporal_lineage, or ' ...
-         'continuous_cell_state.']);
+        ['backend must be causal_composite, legacy, temporal_lineage, ' ...
+         'or continuous_cell_state.']);
 end
 end
 
@@ -250,10 +313,10 @@ if ischar(value) || isstring(value)
     end
 end
 if isempty(value)
-    if strcmp(backend,'continuous_cell_state')
+    if any(strcmp(backend,{'continuous_cell_state','causal_composite'}))
         error('cellLatentModel:MissingFrameInterval', ...
             ['frameIntervalMinutes must be set explicitly for ' ...
-             'continuous_cell_state.']);
+             'continuous or composite latent inference.']);
     end
     value = 1;
 end

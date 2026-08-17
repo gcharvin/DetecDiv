@@ -6,10 +6,21 @@ if isempty(classif)
 end
 
 try
+    userComment='';
+    try
+        previous=classif.description;
+        if iscell(previous)&&numel(previous)>=2,userComment=char(string(previous{2}));end
+    catch
+    end
     classif.classifierPkg = 'cellposesam';
     classif.trainingFun = 'cellposesam.train';
     classif.classifyFun = 'cellposesam.classify';
     classif.category = {'Pixel'};
+    classif.description={ ...
+        'CellposeSAM segmentation only',userComment, ...
+        ['[TRAIN] CellposeSAM instance-segmentation weights. [INPUT] microscopy ' ...
+         'images; [GT] reviewed instance masks; [PRED] frame-local instances. ' ...
+         'No tracking or lineage model is changed.']};
 
     if isempty(classif.classes)
         classif.classes = {'cell'};

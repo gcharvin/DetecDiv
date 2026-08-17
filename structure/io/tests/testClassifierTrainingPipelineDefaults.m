@@ -128,7 +128,8 @@ verifyEqual(testCase, actual.instanceChannelName, 'run_mask');
 end
 
 function testAllPackagedClassifierContractsReceiveRequiredChannels(testCase)
-packages = {'budMotherLinker','cellLatentModel','cellposesam','cnn_lstm', ...
+packages = {'budMotherLinker','cellLatentModel','cellLatentTracker', ...
+    'cellposesam','cnn','cnn_lstm', ...
     'deeplab_pixel_classification','sam31','trackastra'};
 for p = 1:numel(packages)
     pkg = packages{p};

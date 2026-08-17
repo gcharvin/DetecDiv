@@ -12,7 +12,12 @@ if isstruct(classif.trainingParam)
     tp = cellLatentModel.utils.applyOverrides(tp,classif.trainingParam);
 end
 classif.trainingParam = tp;
+architecture = trainingChoice(tp.architectureVersion, ...
+    'detecdiv_composite_v1');
 objective = trainingChoice(tp.trainingObjective,'relation_ensemble');
+if strcmp(architecture,'detecdiv_composite_v1') && logical(tp.trainMotherNull)
+    objective = 'continuous_lineage';
+end
 if isempty(classif.executionParam)
     classif.executionParam = ...
         cellLatentModel.utils.defaultExecutionParam();
@@ -22,6 +27,12 @@ if isfield(ctx,'mode') && strcmpi(char(string(ctx.mode)),'init')
     out.refs.executionParam = classif.executionParam;
     return;
 end
+componentCall=false;try componentCall=logical(ctx.componentCall);catch,end
+if strcmp(architecture,'detecdiv_composite_v1') && ~componentCall
+    out = trainComposite(classif,ctx,tp,out);
+    return;
+end
+out.refs.trainingScope = classifierBinding.logTrainingScope(classif);
 if exist('detecdiv_progress','file') == 2
     detecdiv_progress(ctx,0,'Checking formatted latent training dataset...', ...
         'Scope','training');
@@ -40,7 +51,9 @@ if ~isfile(manifestFile) || ...
         'Format the imported ROI training set before training.');
 end
 modelName = safeName(tp.modelName);
-modelDir = fullfile(classif.path,'models',modelName);
+modelDir = '';
+try modelDir = char(string(ctx.componentOutputDir)); catch, end
+if isempty(modelDir),modelDir = fullfile(classif.path,'models',modelName);end
 if exist(modelDir,'dir') ~= 7, mkdir(modelDir); end
 configFile = fullfile(modelDir,'training_config.json');
 stdoutFile = fullfile(modelDir,'training_stdout.txt');
@@ -120,7 +133,7 @@ classif.executionParam = cellLatentModel.utils.applyOverrides( ...
     cellLatentModel.utils.defaultExecutionParam(),classif.executionParam);
 classif.executionParam.modelSource = 'trained';
 classif.executionParam.modelPath = ...
-    fullfile('models',modelName,checkpointName);
+    classifierRelativePath(classif,checkpoint);
 classif.executionParam.trackChannelName = ...
     char(string(tp.trackChannelName));
 classif.executionParam.device = char(string(tp.device));
@@ -146,10 +159,13 @@ else
     classif.executionParam.gfpChannelName = ...
         char(string(tp.gfpChannelName));
 end
-try classiSave(classif); catch ME
-    warning('cellLatentModel:ClassifierSaveFailed', ...
-        'Checkpoint trained, but classifier metadata was not saved: %s', ...
-        ME.message);
+embedded=false;try embedded=logical(ctx.embedded);catch,end
+if ~embedded
+    try classiSave(classif); catch ME
+        warning('cellLatentModel:ClassifierSaveFailed', ...
+            'Checkpoint trained, but classifier metadata was not saved: %s', ...
+            ME.message);
+    end
 end
 if exist('detecdiv_progress','file') == 2
     detecdiv_progress(ctx,1,'Latent-model training complete.', ...
@@ -170,6 +186,216 @@ out.refs.modalities = modalities;
 out.refs.executionParam = classif.executionParam;
 out.refs.runtime = runtime;
 out.status = "OK";
+end
+
+function out = trainComposite(classif,ctx,tp,out)
+out.refs.trainingScope=classifierBinding.logTrainingScope(classif);
+pointerFile=fullfile(classif.path,'trainingdataset', ...
+    'latest_cell_latent_composite_dataset.json');
+if ~isfile(pointerFile)
+    error('cellLatentModel:MissingCompositeDataset', ...
+        'Format the composite latent training set before training.');
+end
+pointer=jsondecode(fileread(pointerFile));
+datasetManifest=char(string(pointer.manifest));
+if ~isfile(datasetManifest)
+    error('cellLatentModel:MissingCompositeDataset', ...
+        'The composite dataset manifest no longer exists: %s',datasetManifest);
+end
+bundleName=safeName(tp.modelName);
+bundleDir=fullfile(classif.path,'models',bundleName);
+if isfolder(bundleDir)||isfile(bundleDir)
+    error('cellLatentModel:ImmutableModelExists', ...
+        ['Composite model version "%s" already exists and will not be ' ...
+         'overwritten. Choose a new vNNN modelName.'],bundleName);
+end
+stagingDir=[bundleDir '.partial_' char(java.util.UUID.randomUUID)];
+mkdir(stagingDir);
+stageCleanup=onCleanup(@()removeFolder(stagingDir));
+originalTraining=classif.trainingParam;
+originalExecution=classif.executionParam;
+restore=onCleanup(@()restoreClassifier(classif,originalTraining,originalExecution));
+components=struct(); artifacts=struct(); metrics=struct();
+componentCount=double(logical(tp.trainTrackingActions))+ ...
+    double(logical(tp.trainMotherNull));
+componentIndex=0;
+
+if logical(tp.trainTrackingActions)
+    componentIndex=componentIndex+1;
+    trackerParams=cellLatentModel.trackerTrainingParams(tp);
+    trackerParams.modelName=[bundleName '_tracking'];
+    proxy=struct('path',classif.path,'strid',classif.strid, ...
+        'roi',classif.roi,'dataset',classif.dataset, ...
+        'trainingset',classif.trainingset,'bounds',classif.bounds, ...
+        'classifierPkg','cellLatentTracker', ...
+        'trainingFun','cellLatentTracker.train', ...
+        'classifyFun','cellLatentTracker.classify', ...
+        'trainingParam',trackerParams, ...
+        'executionParam',cellLatentTracker.utils.defaultExecutionParam());
+    trackerCtx=ctx;
+    trackerCtx.trainingParam=trackerParams;
+    trackerCtx.outputDir=fullfile(stagingDir,'tracking');
+    trackerCtx.runDir=fullfile(stagingDir,'runs','tracking');
+    trackerCtx.embedded=true;
+    trackerCtx.progress=componentProgress( ...
+        ctx,(componentIndex-1)*0.9/componentCount,0.9/componentCount);
+    tracking=cellLatentTracker.train(proxy,trackerCtx);
+    components.tracking=trainedComponent( ...
+        'EDGE_APPEAR_END',tracking.artifacts.checkpoint, ...
+        tracking.artifacts.report,tracking.refs.promotion);
+    artifacts.trackingCheckpoint=tracking.artifacts.checkpoint;
+    artifacts.trackingReport=tracking.artifacts.report;
+    metrics.tracking=tracking.metrics;
+end
+
+if logical(tp.trainMotherNull)
+    componentIndex=componentIndex+1;
+    lineageTp=tp;
+    lineageTp.architectureVersion='lineage_only_v1';
+    lineageTp.trainingObjective='continuous_lineage';
+    lineageTp.trainTrackingActions=false;
+    classif.trainingParam=lineageTp;
+    lineageCtx=ctx;
+    lineageCtx.componentCall=true;
+    lineageCtx.embedded=true;
+    lineageCtx.componentOutputDir=fullfile(stagingDir,'lineage');
+    lineageCtx.progress=componentProgress( ...
+        ctx,(componentIndex-1)*0.9/componentCount,0.9/componentCount);
+    lineage=cellLatentModel.train(classif,lineageCtx);
+    components.lineage=trainedComponent( ...
+        'mother_NULL',lineage.artifacts.model, ...
+        lineage.artifacts.report,struct());
+    artifacts.lineageCheckpoint=lineage.artifacts.model;
+    artifacts.lineageReport=lineage.artifacts.report;
+    metrics.lineage=lineage.metrics;
+end
+
+stateMode=trainingChoice(tp.stateUpdateMode,'promoted_frozen_bf');
+stateRuntime='';
+if strcmp(stateMode,'promoted_frozen_bf')
+    runtime=cellLatentModel.utils.resolvePythonRuntime(ctx);
+    candidate=fullfile(runtime.repositoryRoot,'artifacts', ...
+        'cell_latent_scene_runtime_v001','runtime_config.json');
+    if ~isfile(candidate)
+        error('cellLatentModel:MissingPromotedStateRuntime', ...
+            ['The promoted biological-state scene runtime is unavailable: ' ...
+             '%s'],candidate);
+    end
+    stateRuntime=candidate;
+end
+components.biological_state=frozenStateComponent(stateMode,stateRuntime);
+[ok,message]=movefile(stagingDir,bundleDir);
+if ~ok
+    error('cellLatentModel:BundleFinalizeFailed', ...
+        'Cannot finalize composite model bundle: %s',message);
+end
+clear stageCleanup;
+components=relocatePaths(components,stagingDir,bundleDir);
+artifacts=relocatePaths(artifacts,stagingDir,bundleDir);
+bundleManifest=fullfile(bundleDir,'manifest.json');
+classif.trainingParam=tp;
+scope=classifierBinding.trainingScopeSpec(classif);
+payload=struct( ...
+    'schema_version',1, ...
+    'format','detecdiv_cell_latent_composite_model_v1', ...
+    'created_at',char(datetime('now','Format', ...
+        'yyyy-MM-dd''T''HH:mm:ssXXX')), ...
+    'architecture','detecdiv_composite_v1', ...
+    'classifier_id',char(string(classif.strid)), ...
+    'dataset_manifest',normalizedPath(datasetManifest), ...
+    'dataset_manifest_sha256',fileSha256(datasetManifest), ...
+    'components',components, ...
+    'training_scope',scope, ...
+    'inference_order',{{'tracking','mother_NULL','biological_state'}}, ...
+    'targets_consumed_at_inference',false);
+writeJson(bundleManifest,payload);
+
+p=cellLatentModel.utils.defaultExecutionParam();
+p.backend='causal_composite';
+p.instanceChannelName=textValue(tp.instanceChannelName);
+if isempty(p.instanceChannelName)
+    p.instanceChannelName=textValue(tp.trackChannelName);
+end
+p.brightfieldChannelName=textValue(tp.brightfieldChannelName);
+p.nucleusChannelName=textValue(tp.nucleusChannelName);
+p.budneckChannelName=textValue(tp.budneckChannelName);
+p.frameIntervalMinutes=double(tp.frameIntervalMinutes);
+p.causalSolverFeedback=logical(tp.continuousCausalFeedback);
+p.outputTrackChannelName=['pred_' safeName(classif.strid) '_tracks'];
+p.outputFamilyName=['pred_' safeName(classif.strid) '_lineage'];
+p.compositeManifestPath=classifierRelativePath(classif,bundleManifest);
+p.stateUpdateMode=stateMode;
+p.stateRuntimeConfigPath=classifierRelativePath(classif,stateRuntime);
+p.trackingTopK=double(tp.trackingTopK);
+p.materializeCellStates=strcmp(stateMode,'promoted_frozen_bf');
+if p.materializeCellStates
+    p.primaryStateAxis='budding';
+else
+    p.primaryStateAxis='none';
+end
+p.device=textValue(tp.device);
+if isfield(artifacts,'trackingCheckpoint')
+    p.trackingCheckpointDir=classifierRelativePath( ...
+        classif,artifacts.trackingCheckpoint);
+end
+if isfield(artifacts,'lineageCheckpoint')
+    p.modelSource='trained';
+    p.modelPath=classifierRelativePath(classif,artifacts.lineageCheckpoint);
+end
+clear restore;
+classif.trainingParam=tp;
+classif.executionParam=p;
+cellLatentModel.ensureClassMetadata(classif);
+classiSave(classif);
+if exist('detecdiv_progress','file')==2
+    detecdiv_progress(ctx,1,'Composite latent-model bundle complete.', ...
+        'Scope','training','Status','completed');
+end
+out.status="OK";
+out.artifacts=artifacts;
+out.artifacts.bundle=bundleDir;
+out.artifacts.manifest=bundleManifest;
+out.artifacts.dataset=datasetManifest;
+out.metrics=metrics;
+out.refs.trainingScope=scope;
+out.refs.executionParam=p;
+end
+
+function row=trainedComponent(name,checkpoint,report,selection)
+row=struct('component',name,'status','trained', ...
+    'checkpoint',normalizedPath(checkpoint), ...
+    'checkpoint_sha256',artifactSha256(checkpoint), ...
+    'report',normalizedPath(report), ...
+    'report_sha256',fileSha256(report), ...
+    'selection',selection);
+end
+
+function row=frozenStateComponent(mode,runtimeConfig)
+row=struct('component','biological_state','status','disabled', ...
+    'source',mode,'runtime_config','','runtime_config_sha256','');
+if strcmp(mode,'promoted_frozen_bf')
+    row.status='frozen_promoted';
+    row.runtime_config=normalizedPath(runtimeConfig);
+    if ~isempty(runtimeConfig)&&isfile(runtimeConfig)
+        row.runtime_config_sha256=fileSha256(runtimeConfig);
+    end
+end
+end
+
+function value=artifactSha256(path)
+if isfolder(path)
+    manifest=fullfile(path,'manifest.json');
+    if isfile(manifest),value=fileSha256(manifest);else,value='';end
+elseif isfile(path)
+    value=fileSha256(path);
+else
+    value='';
+end
+end
+
+function restoreClassifier(classif,tp,execution)
+try classif.trainingParam=tp;catch,end
+try classif.executionParam=execution;catch,end
 end
 
 function modalities = continuousModalities(manifest)
@@ -251,4 +477,69 @@ fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 function value = normalizedPath(value)
 value = strrep(char(string(value)),'\','/');
+end
+function value = classifierRelativePath(classif,value)
+value=char(string(value));
+try
+    root=char(string(classif.path));
+    if ~isempty(value)&&startsWith(lower(value),lower(root))
+        value=value(numel(root)+1:end);
+        value=regexprep(value,'^[\\/]+','');
+    end
+catch
+end
+end
+function value = textValue(value)
+while iscell(value)
+    if isempty(value),value='';return;else,value=value{end};end
+end
+value=strtrim(char(string(value)));
+end
+function value = fileSha256(filename)
+filename=char(string(filename));
+if isempty(filename)||~isfile(filename),value='';return;end
+fid=fopen(filename,'r');if fid<0,value='';return;end
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+bytes=fread(fid,Inf,'*uint8');
+digest=java.security.MessageDigest.getInstance('SHA-256');
+hash=typecast(digest.digest(bytes),'uint8');
+value=lower(reshape(dec2hex(hash,2).',1,[]));
+end
+
+function value=relocatePaths(value,source,target)
+if isstruct(value)
+    names=fieldnames(value);
+    for row=1:numel(value)
+        for i=1:numel(names)
+            value(row).(names{i})=relocatePaths( ...
+                value(row).(names{i}),source,target);
+        end
+    end
+elseif iscell(value)
+    for i=1:numel(value)
+        value{i}=relocatePaths(value{i},source,target);
+    end
+elseif ischar(value)||isstring(value)
+    txt=char(string(value));
+    if startsWith(lower(txt),lower(source))
+        txt=[target txt(numel(source)+1:end)];
+    end
+    value=txt;
+end
+end
+
+function removeFolder(folder)
+folder=char(string(folder));
+if isempty(folder)||~isfolder(folder),return;end
+try rmdir(folder,'s');catch,end
+end
+
+function progress=componentProgress(ctx,localBase,localSpan)
+progress=struct();
+try if isstruct(ctx.progress),progress=ctx.progress;end;catch,end
+parentBase=0;parentSpan=1;
+if isfield(progress,'localBase'),parentBase=double(progress.localBase);end
+if isfield(progress,'localSpan'),parentSpan=double(progress.localSpan);end
+progress.localBase=parentBase+parentSpan*double(localBase);
+progress.localSpan=parentSpan*double(localSpan);
 end

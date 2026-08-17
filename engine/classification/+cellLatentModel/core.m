@@ -4,7 +4,34 @@ if nargin < 3, ctx = struct(); end
 if nargin < 4, classif = []; end
 paramout = cellLatentModel.normalizeParam(param,ctx,classif);
 if isempty(roiobj.image), roiobj.load; end
-[tracks,~] = channelStack(roiobj,paramout.trackChannelName,true);
+trackChannelName = paramout.trackChannelName;
+trackingRefs = struct();
+compositeImage = [];
+if strcmp(paramout.backend,'causal_composite')
+    trackerParam = cellLatentTracker.utils.defaultExecutionParam();
+    trackerParam.instanceChannelName = paramout.instanceChannelName;
+    trackerParam.imageChannelName = paramout.brightfieldChannelName;
+    trackerParam.checkpointDir = paramout.trackingCheckpointDir;
+    trackerParam.topK = paramout.trackingTopK;
+    trackerParam.frameIntervalMinutes = paramout.frameIntervalMinutes;
+    trackerParam.device = paramout.device;
+    trackerParam.solverTimeLimitSeconds = ...
+        paramout.trackingSolverTimeLimitSeconds;
+    trackerCtx = fullRoiContext(ctx);
+    [tracks,frames,trackingRefs] = cellLatentTracker.inferStack( ...
+        roiobj,classif,trackerParam,trackerCtx);
+    if ~isequal(frames,1:size(roiobj.image,4))
+        error('cellLatentModel:CompositeRequiresFullROI', ...
+            'Composite tracking must run on the complete ROI time interval.');
+    end
+    trackChannelName = physicalTrackChannel( ...
+        paramout.outputTrackChannelName);
+    [compositeImage,trackChannelName] = materializeTracks( ...
+        roiobj,tracks,trackChannelName,frames);
+    paramout.trackChannelName = trackChannelName;
+else
+    [tracks,~] = channelStack(roiobj,trackChannelName,true);
+end
 observations = struct( ...
     'gfp',[],'brightfield',[],'nucleus',[],'budneck',[]);
 switch paramout.backend
@@ -22,7 +49,7 @@ switch paramout.backend
             [observations.budneck,~] = channelStack( ...
                 roiobj,paramout.budneckChannelName,false);
         end
-    case 'continuous_cell_state'
+    case {'continuous_cell_state','causal_composite'}
         if ~isempty(paramout.brightfieldChannelName)
             [observations.brightfield,~] = channelStack( ...
                 roiobj,paramout.brightfieldChannelName,false);
@@ -42,20 +69,50 @@ if exist('detecdiv_progress','file') == 2
     detecdiv_progress(ctx,0,'Running multimodal lineage inference...', ...
         'Scope','event','Indeterminate',true);
 end
-result = cellLatentModel.infer( ...
-    tracks,observations,paramout,char(string(roiobj.id)),ctx);
+if strcmp(paramout.backend,'causal_composite')
+    lineageParam = paramout;
+    lineageParam.backend = 'continuous_cell_state';
+    lineageParam.trackChannelName = trackChannelName;
+    lineageParam.modelSource = 'trained';
+    lineageParam.materializeCellStates = false;
+    lineageParam.primaryStateAxis = 'none';
+    result = cellLatentModel.infer( ...
+        tracks,observations,lineageParam,char(string(roiobj.id)),ctx);
+    stateRefs = struct();
+    if strcmp(paramout.stateUpdateMode,'promoted_frozen_bf')
+        [result.biological_state,stateRefs] = ...
+            cellLatentModel.inferFrozenBiologicalState( ...
+                tracks,observations,paramout, ...
+                char(string(roiobj.id)),ctx);
+    end
+    result.backend = 'causal_composite';
+    result.composite = struct( ...
+        'manifest',paramout.compositeManifestPath, ...
+        'tracking',trackingRefs, ...
+        'biological_state',stateRefs, ...
+        'targets_consumed_at_inference',false);
+else
+    result = cellLatentModel.infer( ...
+        tracks,observations,paramout,char(string(roiobj.id)),ctx);
+end
 writeJsonAtomic(auditFile,result);
 [model,loadReport] = roiobj.loadCellModel('MigrateLegacy',true);
 [model,familyId,applyReport] = cellModel.applyLineageResult( ...
-    model,tracks,paramout.trackChannelName,paramout.inputFamily, ...
+    model,tracks,trackChannelName,paramout.inputFamily, ...
     paramout.outputFamilyName,result,paramout.overwriteOutputFamily, ...
-    'cellLatentModel');
+    'pred:cellLatentModel');
 stateReport = struct('filename',"",'records',0,'schema_version',0);
 materializationReport = struct('enabled',false,'axis','none');
-if strcmp(paramout.backend,'continuous_cell_state')
+if any(strcmp(paramout.backend, ...
+        {'continuous_cell_state','causal_composite'})) && ...
+        (~strcmp(paramout.backend,'causal_composite') || ...
+         ~strcmp(paramout.stateUpdateMode,'none')) && ...
+        isfield(result,'biological_state') && ...
+        isstruct(result.biological_state) && ...
+        isfield(result.biological_state,'records')
     stateReport = cellLatentModel.persistBiologicalState( ...
         roiobj,familyId,paramout.outputFamilyName, ...
-        paramout.trackChannelName,result,auditFile);
+        trackChannelName,result,auditFile);
     model.provenance.last_biological_state_artifact = ...
         char(stateReport.filename);
     model.provenance.last_biological_state_family_id = double(familyId);
@@ -67,13 +124,13 @@ if strcmp(paramout.backend,'continuous_cell_state')
     model.provenance.last_primary_state_axis = ...
         char(materializationReport.axis);
 end
-model.provenance.last_classifier = 'cellLatentModel';
+model.provenance.last_classifier = 'pred:cellLatentModel';
 model.provenance.last_audit_artifact = auditFile;
 model.provenance.last_processor_version = '0.1.0';
 saveReport = roiobj.saveCellModel(model);
 legacyReport = cellLatentModel.publishLegacyLineage( ...
     roiobj,model,familyId,paramout.outputFamilyName, ...
-    paramout.trackChannelName,auditFile);
+    trackChannelName,auditFile);
 if exist('detecdiv_progress','file') == 2
     detecdiv_progress(ctx,1,'Latent lineage saved.', ...
         'Scope','integration');
@@ -87,6 +144,9 @@ if strlength(stateReport.filename) > 0
     paramout.artifacts{end+1} = char(stateReport.filename);
 end
 paramout.summary = result.summary;
+% Keep the structured backend result available to callers such as the
+% end-to-end validator.  The regular audit remains the persisted record.
+paramout.prediction = result;
 paramout.runtime = struct( ...
     'backend',paramout.backend, ...
     'package','cell_latent_model', ...
@@ -97,13 +157,18 @@ paramout.runtime = struct( ...
     'brightfield_used',~isempty(observations.brightfield), ...
     'nucleus_used',~isempty(observations.nucleus), ...
     'budneck_used',~isempty(observations.budneck));
+if strcmp(paramout.backend,'causal_composite')
+    paramout.runtime.composite_manifest = paramout.compositeManifestPath;
+    paramout.runtime.tracking = trackingRefs;
+    paramout.runtime.state_update_mode = paramout.stateUpdateMode;
+end
 paramout.cellModelReport = struct( ...
     'load',loadReport,'apply',applyReport,'state',stateReport, ...
     'materialization',materializationReport, ...
     'legacy',legacyReport,'save',saveReport);
 paramout.saveChannels = {};
 dataout = roiobj.data;
-imageout = [];
+imageout = compositeImage;
 if paramout.debug
     [linked,review] = summaryCounts(result.summary);
     fprintf(['[cellLatentModel] %d linked, %d review; family %u; ' ...
@@ -188,6 +253,7 @@ if fid < 0
     error('cellLatentModel:AuditWriteFailed', ...
         'Cannot create %s.',temporary);
 end
+
 cleanup = onCleanup(@() fclose(fid));
 fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 clear cleanup;
@@ -196,4 +262,42 @@ if ~ok
     error('cellLatentModel:AuditWriteFailed', ...
         'Cannot finalize %s: %s',filename,message);
 end
+end
+
+function ctx = fullRoiContext(ctx)
+if nargin<1||isempty(ctx)||~isstruct(ctx),ctx=struct();end
+if ~isfield(ctx,'sel')||~isstruct(ctx.sel),ctx.sel=struct();end
+ctx.sel.frames=-1;
+end
+
+function name = physicalTrackChannel(name)
+name=strtrim(char(string(name)));
+if isempty(name),name='pred_latent_model_tracks';end
+if ~startsWith(name,'results_','IgnoreCase',true)
+    name=['results_' name];
+end
+end
+
+function [outImage,name] = materializeTracks(roiobj,tracks,name,frames)
+if max(tracks(:))>intmax('uint16')
+    error('cellLatentModel:TooManyTracks', ...
+        'Predicted stable track ID exceeds uint16 ROI storage.');
+end
+outImage=roiobj.image;
+try idx=roiobj.findChannelID(name,'exact');
+catch,idx=roiobj.findChannelID(name);
+end
+if isempty(idx)
+    empty=zeros(size(outImage,1),size(outImage,2),1, ...
+        size(outImage,4),'uint16');
+    roiobj.addChannel(empty,name,[1 1 1],[0 0 0]);
+    outImage=roiobj.image;
+    try idx=roiobj.findChannelID(name,'exact');
+    catch,idx=roiobj.findChannelID(name);
+    end
+end
+idx=idx(1);
+outImage(:,:,idx,frames)=reshape(uint16(tracks), ...
+    size(tracks,1),size(tracks,2),1,size(tracks,3));
+roiobj.image=outImage;
 end

@@ -134,6 +134,12 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     if nargin < 3, classiObj = []; end
 
     tp = trainingParam;
+    rawKeys = fieldnames(tp);
+    rawTips = {};
+    if isfield(tp,'tip') && iscell(tp.tip)
+        rawTips = tp.tip;
+        while numel(rawTips)==1 && iscell(rawTips{1}), rawTips=rawTips{1}; end
+    end
     if isfield(tp,'tip')
         tp = rmfield(tp,'tip');
     end
@@ -141,6 +147,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     spec = struct();
     bindingSpec = struct([]);
     bindingCatalog = struct();
+    parameterDisplaySpec = struct([]);
     try
         bindingSpec = classifierBinding.trainingSpec(classiObj);
         if ~isempty(bindingSpec)
@@ -151,6 +158,12 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
             'Could not build typed training bindings: %s', ME.message);
         bindingSpec = struct([]);
     end
+    try
+        parameterDisplaySpec = classifierBinding.trainingParameterSpec(classiObj);
+    catch ME
+        warning('classifierGUI:TrainingParameterSpec', ...
+            'Could not build training-parameter labels: %s',ME.message);
+    end
 
     keys = fieldnames(tp);
     if ~isempty(bindingSpec)
@@ -160,6 +173,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     n = numel(keys);
 
     Param = cell(n,1);
+    Label = cell(n,1);
     Value = cell(n,1);
     Type  = cell(n,1);
     Group = cell(n,1);
@@ -179,6 +193,16 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
         end
 
         Param{i} = k;
+        Label{i} = humanizeParameterName(app,k);
+        displayIndex = [];
+        if ~isempty(parameterDisplaySpec)
+            displayIndex = find(strcmp({parameterDisplaySpec.param},k),1);
+        end
+        fallbackTip = '';
+        rawIndex = find(strcmp(rawKeys,k),1);
+        if ~isempty(rawIndex) && rawIndex <= numel(rawTips)
+            try fallbackTip = char(string(rawTips{rawIndex})); catch, end
+        end
 
         % group by prefix
         if startsWith(k,'CNN_')
@@ -211,6 +235,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
                 end
             end
             Group{i} = binding.group;
+            Label{i} = char(string(binding.label));
             if isempty(vStr)
                 if any(strcmp(choices, '<none>'))
                     vStr = '<none>';
@@ -221,18 +246,32 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
                 end
             end
         end
+        if ~isempty(displayIndex)
+            meta = parameterDisplaySpec(displayIndex);
+            if ~isempty(meta.label), Label{i} = meta.label; end
+            if ~isempty(meta.group), Group{i} = meta.group; end
+            if ~isempty(meta.choiceLabels) && ...
+                    numel(meta.choiceLabels)==numel(choices)
+                choiceLabels = meta.choiceLabels;
+            end
+        end
         Value{i} = vStr;
         Type{i}  = vType;
 
         spec.(k) = struct('type', vType, 'choices', {choices});
         spec.(k).choiceLabels = choiceLabels;
         spec.(k).raw = v; % keep raw
+        spec.(k).label = Label{i};
+        spec.(k).tip = fallbackTip;
+        if ~isempty(displayIndex) && ~isempty(parameterDisplaySpec(displayIndex).tip)
+            spec.(k).tip = parameterDisplaySpec(displayIndex).tip;
+        end
         if ~isempty(bindingIndex)
             spec.(k).binding = bindingSpec(bindingIndex);
         end
     end
 
-    t = table(Param, Value, Type, Group);
+    t = table(Label, Value, Type, Group, Param);
     groupRank = 10 * ones(height(t), 1);
     groupRank(strcmp(t.Group, 'Data bindings')) = 1;
     groupRank(strcmp(t.Group, 'Format')) = 2;
@@ -241,6 +280,14 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     groupRank(strcmp(t.Group, 'LSTM')) = 5;
     [~, order] = sort(groupRank, 'ascend');
     t = t(order, :);
+end
+
+function label = humanizeParameterName(app,key) %#ok<INUSD>
+% Human-readable fallback; the exact internal key stays in the hidden column.
+    label = strrep(char(string(key)),'_',' ');
+    label = regexprep(label,'([a-z0-9])([A-Z])','$1 $2');
+    label = strtrim(label);
+    if ~isempty(label), label(1)=upper(label(1)); end
 end
 
 
@@ -509,17 +556,32 @@ function showParamEditor(app, key)
     if isfield(spec,'choices'), choices = spec.choices; end
 
     % Layout area (adjust as needed)
-    baseX = 710; baseY = 260; w = 320; h = 250;
+    baseX = 710; baseY = 260; w = 370; h = 250;
 
+    labelText = key;
+    if isfield(spec,'label') && ~isempty(spec.label), labelText=spec.label; end
     lbl = uilabel(app.SettrainingparametersTab, ...
-        'Text', key, 'Position',[baseX baseY+h-20 w 20], ...
+        'Text', labelText, 'Position',[baseX baseY+h-20 w 20], ...
         'FontWeight','bold');
+    if isfield(spec,'tip') && ~isempty(spec.tip)
+        lbl.Tooltip = char(string(spec.tip));
+    end
     if isfield(spec, 'binding')
         bindingLabel = char(string(spec.binding.label));
         if ~isempty(bindingLabel), lbl.Text = bindingLabel; end
         lbl.Tooltip = char(string(spec.binding.tip));
     end
     app.paramEditorControls(end+1) = lbl;
+
+    scopeBox = uitextarea(app.SettrainingparametersTab, ...
+        'Position',[baseX 55 w 170], ...
+        'Editable','off', ...
+        'WordWrap','on', ...
+        'Value',trainingScopeLines(app,app.Data.classiObj));
+    scopeBox.Tooltip = ['Explicit ownership contract: data quality, trainable ' ...
+        'sub-module, frozen neighbours, split, and prediction output.'];
+    app.paramEditorControls(end+1) = scopeBox;
+    updateTrainingScopeLabels(app,app.Data.classiObj);
 
     % current value (string from table)
     row = find(strcmp(app.UITableParam.Data.Param, key), 1);
@@ -604,8 +666,21 @@ function showParamEditor(app, key)
             if isempty(choices)
                 choices = {curValStr};
             end
+            choiceValues = choices;
+            choiceLabels = choiceValues;
+            if isfield(spec, 'choiceLabels') && ...
+                    numel(spec.choiceLabels) == numel(choiceValues)
+                choiceLabels = spec.choiceLabels;
+            end
+            [choiceValues, keep] = unique(choiceValues, 'stable');
+            choiceLabels = choiceLabels(keep);
+            if ~any(strcmp(choiceValues, curValStr))
+                choiceValues{end+1} = curValStr;
+                choiceLabels{end+1} = curValStr;
+            end
             dd = uidropdown(app.SettrainingparametersTab, ...
-                'Items', choices, ...
+                'Items', choiceLabels, ...
+                'ItemsData', choiceValues, ...
                 'Position',[baseX baseY+160 w 22], ...
                 'Value', curValStr, ...
                 'ValueChangedFcn', @(src,evt)applyParamEdit(app, key, src.Value));
@@ -917,6 +992,79 @@ function classlist = appendPackageClassifiers(app, classlist, rootPath)
     end
 end
 
+function lines = trainingScopeLines(app,classiObj) %#ok<INUSD>
+% Render package-owned training/data provenance.
+scope=classifierBinding.trainingScopeSpec(classiObj);
+lines={['TRAINING SCOPE - ' scope.displayName]};
+if ~isempty(scope.objective),lines{end+1}=['Objective: ' scope.objective];end %#ok<AGROW>
+if ~isempty(scope.trainedComponents)
+    lines{end+1}=['CHANGES: ' strjoin(scope.trainedComponents,', ')]; %#ok<AGROW>
+end
+if ~isempty(scope.frozenComponents)
+    lines{end+1}=['FROZEN: ' strjoin(scope.frozenComponents,', ')]; %#ok<AGROW>
+end
+bindings=classifierBinding.trainingSpec(classiObj);
+if ~isempty(bindings),lines{end+1}='DATA USED:';end %#ok<AGROW>
+for i=1:numel(bindings)
+    value='';
+    try value=scopeValueText(app,classifierBinding.value(classiObj,bindings(i)));catch,end
+    if isempty(value),value='<not configured>';end
+    label=regexprep(char(string(bindings(i).label)),'^\[[^\]]+\]\s*','');
+    quality=upper(char(string(bindings(i).quality)));
+    lines{end+1}=sprintf('[%s] %s = %s',quality,label,value); %#ok<AGROW>
+end
+if ~isempty(scope.datasetUnit),lines{end+1}=['Dataset: ' scope.datasetUnit];end %#ok<AGROW>
+output=resolvedScopeOutput(app,classiObj,scope);
+if ~isempty(output)
+    lines{end+1}=sprintf('[%s] %s = %s', ...
+        upper(scope.outputQuality),scope.outputSemantic,output); %#ok<AGROW>
+end
+if ~isempty(scope.canonicalOutput)&&~strcmp(output,scope.canonicalOutput)
+    lines{end+1}=['Canonical new output: ' scope.canonicalOutput]; %#ok<AGROW>
+end
+if ~isempty(scope.splitPolicy),lines{end+1}=['Split: ' scope.splitPolicy];end %#ok<AGROW>
+for i=1:numel(scope.notes),lines{end+1}=['Note: ' scope.notes{i}];end %#ok<AGROW>
+end
+
+function output = resolvedScopeOutput(app,classiObj,scope) %#ok<INUSD>
+output=''; value='';
+if isempty(scope.outputParameter),return;end
+try
+    fun=[scope.module '.executionSpec']; spec=feval(fun,classiObj);
+    value=scopeValueText(app,spec.defaults.(scope.outputParameter));
+catch
+end
+if isempty(value),value=scope.canonicalOutput;end
+output=scope.outputTemplate;
+if isempty(output),output=value;return;end
+output=strrep(output,['<' scope.outputParameter '>'],value);
+output=strrep(output,'<outputName>',value);
+output=strrep(output,'<outputFamilyName>',value);
+end
+
+function value = scopeValueText(app,value) %#ok<INUSD>
+while iscell(value)
+    if isempty(value),value='';return;end
+    if numel(value)>1
+        value=strjoin(cellfun(@(item)scopeValueText(app,item),value, ...
+            'UniformOutput',false),', ');
+        return;
+    end
+    value=value{1};
+end
+if islogical(value)&&isscalar(value),value=mat2str(value);
+elseif isnumeric(value),value=mat2str(value);
+else,value=char(string(value));end
+end
+
+function updateTrainingScopeLabels(app,classiObj)
+scope=classifierBinding.trainingScopeSpec(classiObj);
+if isempty(scope.displayName),return;end
+app.SettrainingparametersTab.Title=['Training - ' scope.displayName];
+app.FormattrainingsetMenu.Text=['Format data for ' scope.module '...'];
+app.TrainClassifierMenu.Text=['Train only ' scope.module '...'];
+end
+
 
 function label = classifierDropdownLabel(app, classiObj)
 % Reuse the package entry already present in classlist instead of adding
@@ -1012,8 +1160,9 @@ end
         % Build table-based editor
         [app.paramSpec, app.paramTableData] = buildParamTable(app, c.trainingParam, c);
         app.UITableParam.Data = app.paramTableData;
-        app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
-        app.UITableParam.ColumnEditable = [false true false false];
+        app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+        app.UITableParam.ColumnEditable = [false true false false false];
+        try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
         app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
         app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 
@@ -2357,8 +2506,9 @@ end
     % Build table-based editor
     [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
-    app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
-    app.UITableParam.ColumnEditable = [false true false false];
+    app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+    app.UITableParam.ColumnEditable = [false true false false false];
+    try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
     app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
     app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 
@@ -2570,8 +2720,9 @@ end
     % Rebuild table-based editor
     [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
-    app.UITableParam.ColumnName = {'Param','Value','Type','Group'};
-    app.UITableParam.ColumnEditable = [false true false false];
+    app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+    app.UITableParam.ColumnEditable = [false true false false false];
+    try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
     app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
     app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 

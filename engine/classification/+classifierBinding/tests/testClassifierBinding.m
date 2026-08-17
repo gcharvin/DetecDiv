@@ -12,11 +12,13 @@ function testCellLatentDeclaresTypedTrainingResources(testCase)
 c = struct('classifierPkg', 'cellLatentModel');
 spec = classifierBinding.trainingSpec(c);
 verifyEqual(testCase, {spec.param}, { ...
-    'trackChannelName','groundTruthFamily','brightfieldChannelName', ...
+    'instanceChannelName','trackChannelName','groundTruthFamily', ...
+    'brightfieldChannelName', ...
     'gfpChannelName','nucleusChannelName','budneckChannelName'});
 verifyEqual(testCase, spec(1).role, 'mask_roi_image');
 verifyTrue(testCase, spec(1).required);
-verifyEqual(testCase, spec(2).type, 'cellModelFamily');
+verifyEqual(testCase, spec(2).role, 'mask_roi_image');
+verifyEqual(testCase, spec(3).type, 'cellModelFamily');
 end
 
 function testEveryClassifierPackageDeclaresTrainingBindings(testCase)
@@ -114,9 +116,119 @@ c.trainingParam = cellposesam.utils.defaultTrainingParam();
 spec = classifierBinding.trainingSpec(c);
 gt = spec(strcmp({spec.param}, 'groundTruthChannelName'));
 verifyFalse(testCase, gt.editable);
-verifyEqual(testCase, classifierBinding.value(c, gt), [c.strid '_cell']);
+verifyEqual(testCase, classifierBinding.value(c, gt), ...
+    ['gt_' c.strid '_instances']);
 verifyError(testCase, @()classifierBinding.applyValue(c, gt, 'other'), ...
     'classifierBinding:ReadOnlyBinding');
+end
+
+function testLegacyGtChannelNameIsNeverRenamed(testCase)
+folder = tempname;
+mkdir(folder);
+addTeardown(testCase, @()removeFolder(folder));
+c = classi(folder, 'legacy_gt', 1);
+c.classifierPkg = 'cellposesam';
+c.category = {'Pixel'};
+c.classes = {'cell'};
+c.trainingParam = cellposesam.utils.defaultTrainingParam();
+r = roiWithRaw(folder, 'R1');
+legacy = [c.strid '_cell'];
+r.addChannel(zeros(4,4,1,3,'uint16'),legacy,[1 1 1],[0 0 0]);
+c.roi = r;
+verifyEqual(testCase,cellposesam.annotationChannelName(c),legacy);
+end
+
+function testExplicitTrainingScopeAndQualityContract(testCase)
+packages = {'cellposesam','trackastra','cellLatentTracker', ...
+    'cellLatentModel','budMotherLinker','cnn','cnn_lstm', ...
+    'deeplab_pixel_classification','sam31'};
+for i=1:numel(packages)
+    c=struct('classifierPkg',packages{i});
+    scope=classifierBinding.trainingScopeSpec(c);
+    verifyEqual(testCase,scope.module,packages{i});
+    verifyNotEmpty(testCase,scope.trainedComponents);
+    verifyNotEmpty(testCase,scope.frozenComponents);
+    verifyEqual(testCase,scope.outputQuality,'pred');
+    verifyTrue(testCase,startsWith(scope.canonicalOutput,'results_pred_')|| ...
+        startsWith(scope.canonicalOutput,'pred_'));
+    bindings=classifierBinding.trainingSpec(c);
+    verifyTrue(testCase,all(ismember({bindings.quality}, ...
+        {'input','gt','pred','derived'})));
+    verifyTrue(testCase,any(strcmp({bindings.quality},'gt')));
+    parameterLabels=classifierBinding.trainingParameterSpec(c);
+    verifyNotEmpty(testCase,parameterLabels, ...
+        sprintf('%s must explain its training parameters.',packages{i}));
+end
+end
+
+function testEveryTrainablePackageDeclaresProvenanceContract(testCase)
+classificationRoot=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+folders=dir(fullfile(classificationRoot,'+*'));
+folders=folders(arrayfun(@(d) ...
+    isfile(fullfile(d.folder,d.name,'train.m'))&& ...
+    isfile(fullfile(d.folder,d.name,'classify.m')),folders));
+packages=erase({folders.name},'+');
+verifyNotEmpty(testCase,packages);
+for i=1:numel(packages)
+    pkg=packages{i};
+    verifyNotEmpty(testCase,which([pkg '.train']));
+    verifyNotEmpty(testCase,which([pkg '.trainingScopeSpec']));
+    verifyNotEmpty(testCase,which([pkg '.trainingParameterSpec']));
+    verifyNotEmpty(testCase,which([pkg '.executionSpec']));
+    execution=feval([pkg '.executionSpec']);
+    verifyTrue(testCase,isfield(execution,'outputProvenance'), ...
+        sprintf('%s must declare output provenance.',pkg));
+    verifyEqual(testCase,execution.outputProvenance.quality,'pred');
+    verifyEqual(testCase,execution.outputProvenance.producer,pkg);
+end
+end
+
+function testNewPredictionDefaultsCarryProducerAndQuality(testCase)
+spec=cellposesam.executionSpec();
+verifyEqual(testCase,spec.defaults.outputName,'pred_cellposesam');
+verifyEqual(testCase,spec.outputProvenance.quality,'pred');
+trackastraParam=trackastra.utils.defaultExecutionParam();
+latentTrackerParam=cellLatentTracker.utils.defaultExecutionParam();
+latentLineageParam=cellLatentModel.utils.defaultExecutionParam();
+verifyEqual(testCase,trackastraParam.outputName,'pred_trackastra_tracks');
+verifyEqual(testCase,latentTrackerParam.outputName, ...
+    'pred_latent_tracker_tracks');
+verifyEqual(testCase,latentLineageParam.outputFamilyName, ...
+    'pred_latent_lineage_mother_null');
+cnnSpec=cnn.executionSpec();
+cnnLstmSpec=cnn_lstm.executionSpec();
+deeplabSpec=deeplab_pixel_classification.executionSpec();
+samSpec=sam31.executionSpec();
+verifyEqual(testCase,cnnSpec.defaults.outputName,'pred_cnn_image_class');
+verifyEqual(testCase,cnnLstmSpec.defaults.outputName, ...
+    'pred_cnn_lstm_frame_class');
+verifyEqual(testCase,deeplabSpec.defaults.outputName, ...
+    'pred_deeplab_semantic_mask');
+verifyEqual(testCase,samSpec.defaults.outputName,'pred_sam31_tracks');
+end
+
+function testLegacyClassifierIdsRemainPredictionOutputs(testCase)
+packages={'cnn','cnn_lstm','deeplab_pixel_classification','sam31'};
+for i=1:numel(packages)
+    c=struct('strid',['legacy_' packages{i}], ...
+        'classifierPkg',packages{i},'executionParam',struct(), ...
+        'trainingParam',struct(),'runProfiles',struct(), ...
+        'defaultExecutionParam',struct(),'outputType','');
+    execution=feval([packages{i} '.executionSpec'],c);
+    verifyEqual(testCase,execution.defaults.outputName,c.strid);
+end
+end
+
+function testNewSamAndDeepLabGtNamesExposeQuality(testCase)
+sam=struct('strid','sam_demo','classifierPkg','sam31', ...
+    'trainingParam',struct(),'roi',[]);
+deep=struct('strid','deep_demo', ...
+    'classifierPkg','deeplab_pixel_classification', ...
+    'trainingParam',struct(),'roi',[]);
+verifyEqual(testCase,sam31.annotationChannelName(sam), ...
+    'gt_sam_demo_stable_tracks');
+verifyEqual(testCase,deeplab_pixel_classification.annotationChannelName(deep), ...
+    'gt_deep_demo_semantic_mask');
 end
 
 function testCatalogReportsRoiCoverageAndSemanticChoices(testCase)
@@ -154,12 +266,12 @@ label = maskChoices.labels{strcmp(maskChoices.values, 'reviewed_mask')};
 verifyTrue(testCase, contains(label, '1/2 ROI'));
 verifyFalse(testCase, any(strcmp(maskChoices.values, 'raw')));
 
-familyChoices = classifierBinding.choices(spec(2), catalog, '<auto>');
+familyChoices = classifierBinding.choices(spec(3), catalog, '<auto>');
 verifyTrue(testCase, any(strcmp(familyChoices.values, 'Reviewed lineage')));
 label = familyChoices.labels{strcmp(familyChoices.values, 'Reviewed lineage')};
 verifyTrue(testCase, contains(label, '1/2 ROI'));
 
-imageChoices = classifierBinding.choices(spec(3), catalog, '');
+imageChoices = classifierBinding.choices(spec(4), catalog, '');
 verifyTrue(testCase, any(strcmp(imageChoices.values, 'raw')));
 verifyFalse(testCase, any(strcmp(imageChoices.values, 'reviewed_mask')));
 end

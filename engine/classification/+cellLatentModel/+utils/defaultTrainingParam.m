@@ -1,7 +1,12 @@
 function p = defaultTrainingParam()
 %CELLLATENTMODEL.UTILS.DEFAULTTRAININGPARAM ROI formatting/training defaults.
 spec = { ...
-    'trainingObjective',{{'relation_ensemble','continuous_lineage','relation_ensemble'}}, 'Train the legacy relation ensemble or a continuous physical-time lineage head.'
+    'architectureVersion',{{'detecdiv_composite_v1','lineage_only_v1','detecdiv_composite_v1'}}, 'Composite architecture exposed by this classifier.'
+    'trainTrackingActions',true, 'Train the existing EDGE/APPEAR/END tracking-action head.'
+    'trainMotherNull',true, 'Train the existing physical-time mother-versus-NULL head.'
+    'stateUpdateMode',{{'promoted_frozen_bf','none','promoted_frozen_bf'}}, 'Use the promoted frozen BF/geometry biological-state student or disable state updates.'
+    'instanceChannelName','', 'Frame-local instance masks consumed by the tracking head.'
+    'trainingObjective',{{'relation_ensemble','continuous_lineage','continuous_lineage'}}, 'Train the legacy relation ensemble or a continuous physical-time lineage head.'
     'trackChannelName','', 'Tracked indexed-mask channel; empty uses the classifier inputs.'
     'gfpChannelName','', 'Optional nuclear GFP channel used for axis and brightness observations.'
     'brightfieldChannelName','', 'Optional brightfield channel for continuous lineage training.'
@@ -24,6 +29,19 @@ spec = { ...
     'continuousCausalFeedback',false, 'Feed prior predicted lineage events into the continuous memory.'
     'groundTruthFamily','<auto>', 'Reviewed lineage family used as training truth.'
     'validationFraction',0.2, 'Fraction held out by ROI when no validation split exists.'
+    'trackingTopK',8, 'Nearest predecessor candidates retained by the tracking head.'
+    'trackingMinimumTruthOverlap',0.5, 'Minimum instance fraction assigned to one reviewed track ID.'
+    'trackingMinimumDetectionCoverage',0.8, 'Required fraction of instances mapped to reviewed tracking GT.'
+    'trackingInitialModelSource',{{'promoted_cross_domain','checkpoint','random','promoted_cross_domain'}}, 'Initialization for the EDGE/APPEAR/END head.'
+    'trackingInitialCheckpoint','', 'Optional custom initial tracking checkpoint.'
+    'trackingEpochs',30, 'Training epochs for the EDGE/APPEAR/END head.'
+    'trackingLearningRate',0.002, 'AdamW learning rate for the tracking head.'
+    'trackingWeightDecay',0.0001, 'AdamW weight decay for the tracking head.'
+    'trackingHiddenDim',32, 'Tracking latent hidden dimension.'
+    'trackingDropout',0, 'Tracking-head dropout.'
+    'trackingAssociationLossWeight',1, 'EDGE/predecessor loss weight.'
+    'trackingAppearanceLossWeight',0.5, 'APPEAR/new-track loss weight.'
+    'trackingEndLossWeight',0.5, 'END/termination loss weight.'
     'minLifetime',5, 'Minimum lifetime of a new bud track.'
     'maxBirthArea',400, 'Maximum bud area at first appearance.'
     'minParentAge',2, 'Minimum candidate-mother age in frames.'
@@ -39,7 +57,7 @@ spec = { ...
     'seedCount',5, 'Number of independently initialized ensemble members.'
     'device','cuda', 'cuda uses the GPU when available and otherwise falls back to CPU.'
     'targetAutoPrecision',0.98, 'OOF precision target for automatic lineage links.'
-    'modelName','cell_latent_relation_v001', 'Trained checkpoint folder name.'
+    'modelName','model_cell_latent_composite_v001', 'Immutable composite model-bundle folder name.'
     'transfer_learning',{{'builtin'}}, 'Start a new relation ensemble from formatted observations.'
     };
 p = struct();

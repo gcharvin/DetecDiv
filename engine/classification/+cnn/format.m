@@ -29,6 +29,7 @@ elseif isfield(params, 'frames')
 end
 
 out = cnn.utils.outInitSafe('cnn.format');
+out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
 outputCount = formatImageTrainingSet(foldername, classif, rois, 'Frames', frames);
 out.metrics.outputCount = outputCount;
 out.status = "OK";

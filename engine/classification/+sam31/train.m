@@ -30,9 +30,13 @@ if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
 end
 
+scope=classifierBinding.logTrainingScope(classif);
+
 detecdiv_check_cancel(ctx, 'sam31 train start');
 runSam31Train(classif, ctx);
 out.status = "OK";
+out.refs.trainingScope = scope;
+out.refs.trainingParam = classif.trainingParam;
 end
 
 function runSam31Train(classif, ctx)

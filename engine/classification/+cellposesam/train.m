@@ -33,6 +33,7 @@ cellposesam.ensureClassMetadata(classif);
 if isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     classif.trainingParam = cellposesam.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
+out.refs.trainingScope = classifierBinding.logTrainingScope(classif);
 
 detecdiv_check_cancel(ctx, 'cellposesam train start');
 runCellposeTrain(classif, ctx);

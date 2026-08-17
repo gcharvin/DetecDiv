@@ -6,7 +6,9 @@ if isempty(classif)
 end
 try
     titleText = 'Trackastra cell tracking';
-    detailText = 'Trackastra linker and trainable temporal association model.';
+    detailText = ['[TRAIN] Trackastra temporal association model. [INPUT] ' ...
+        'intensity movie; [GT] stable tracks; [PRED] stable track IDs. ' ...
+        'Segmentation and mother/NULL lineage remain frozen.'];
     userComment = '';
     previousDescription = classif.description;
     if iscell(previousDescription)

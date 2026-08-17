@@ -18,6 +18,7 @@ end
 
 if strcmpi(mode,"init") || strcmpi(mode,"setparam") || strcmpi(mode,"param")
     classif.trainingParam = cnn.utils.defaultTrainingParam();
+    cnn.ensureClassMetadata(classif);
     out.refs.trainingParam = classif.trainingParam;
     out.status = "OK";
     return;
@@ -31,6 +32,10 @@ end
 if isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     classif.trainingParam = cnn.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
+cnn.ensureClassMetadata(classif);
+
+scope=classifierBinding.logTrainingScope(classif);
+out.refs.trainingScope=scope;
 
 % Training: attach to current run started by classi.trainClassifier
 try
@@ -41,4 +46,5 @@ catch
 end
 
 out.status = "OK";
+out.refs.trainingParam = classif.trainingParam;
 end

@@ -131,14 +131,7 @@ value = model.families.mask_provider{idx};
 end
 
 function providers = indexedChannels(roiobj)
-providers = {};
-try
-    mask = logical(roiobj.display.indexed(:).');
-    names = cellstr(string(roiobj.display.channel));
-    n = min(numel(mask), numel(names));
-    providers = names(find(mask(1:n))); %#ok<FNDSB>
-catch
-end
+providers = cellModel.maskProviderNames(roiobj);
 end
 
 function sources = lineageSources(roiobj, model)
