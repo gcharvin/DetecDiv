@@ -9,12 +9,12 @@ function [model, familyId, report] = applyLineageResult( ...
 
 if nargin < 8 || isempty(lineageSource), lineageSource = 'classifier'; end
 model = cellModel.normalize(model);
+[outputIndex, familyId] = cellModel.familyIndex(model, outputFamily);
 [sourceIndex, ~] = cellModel.familyIndex(model, inputFamily);
 if isempty(sourceIndex)
-    [sourceIndex, ~] = cellModel.familyIndex(model, channelName);
+    sourceIndex = automaticSourceIndex( ...
+        model, channelName, outputIndex);
 end
-
-[outputIndex, familyId] = cellModel.familyIndex(model, outputFamily);
 if ~isempty(outputIndex) && outputIndex == sourceIndex
     error('cellModel:SourceOutputCollision', ...
         ['The output family must be distinct from the tracking/source ' ...
@@ -121,6 +121,38 @@ report = struct( ...
     'linked_relations',linked, ...
     'skipped_invalid_relations',skipped, ...
     'validation',validation);
+end
+
+function index = automaticSourceIndex(model,channelName,outputIndex)
+% Prefer an immutable source family over a previous prediction that happens
+% to reference the same mask provider.  This occurs during validation: the
+% reviewed GT and the prior model output deliberately share one label stack.
+index=[];
+families=model.families;
+names=string(families.name(:));
+providers=string(families.mask_provider(:));
+candidates=find(strcmp(names,string(channelName)) | ...
+    strcmp(providers,string(channelName)));
+if isempty(candidates),return;end
+
+distinct=candidates(candidates~=outputIndex);
+if isempty(distinct)
+    index=candidates(1);
+    return;
+end
+if numel(distinct)==1
+    index=distinct;
+    return;
+end
+
+% Human/reviewed GT is the safest source when several logical families use
+% the same physical mask provider.  Otherwise preserve stable table order.
+lineageSources=strings(numel(names),1);
+try lineageSources=lower(string(families.lineage_source(:))); catch,end
+preferred=distinct(contains(lineageSources(distinct),'ground_truth') | ...
+    contains(lower(names(distinct)),'reviewed gt') | ...
+    contains(lower(names(distinct)),'ground truth'));
+if ~isempty(preferred),index=preferred(1);else,index=distinct(1);end
 end
 
 function states = sourceStates(model,sourceIndex,frame,labels)
