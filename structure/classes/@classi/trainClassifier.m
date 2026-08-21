@@ -1,8 +1,15 @@
 function trainClassifier(classif, setparam)
 % trainClassifier  Entry point for classifier training and parameter init.
 %
-% nargin == 1 : launch actual training
-% nargin == 2 : initialize / set training parameters
+% nargin == 1          : launch actual training
+% nargin == 2, struct  : launch training with a runtime pipeline context
+% nargin == 2, other   : initialize / set training parameters
+
+runtimeCtx = struct();
+trainingCall = nargin == 1 || (nargin == 2 && isstruct(setparam));
+if nargin == 2 && isstruct(setparam)
+    runtimeCtx = setparam;
+end
 
 [trainingFun, usesPkg] = resolveTrainingFun(classif);
 setparamFun = resolveSetparamFun(classif);
@@ -10,7 +17,7 @@ if isempty(trainingFun)
     error('trainClassifier:NoTrainingFun','No training function available for this classifier.');
 end
 
-if nargin == 1
+if trainingCall
     disp(['Launching training procedure with ' trainingFun]);
     if usesPkg
         disp(['[PKG TRAIN] ' trainingFun]);
@@ -27,11 +34,13 @@ if nargin == 1
     try
         % --- Actual training ---
         if usesPkg || any(strcmpi(trainingFun, {'trainImageLSTMNetFun','cnn_lstm.train'}))
-            ctx = struct('mode', 'train');
+            ctx = runtimeCtx;
+            ctx.mode = 'train';
             try
                 ctx = classif.buildCtx('train', ctx);
             catch
             end
+            ctx.mode = 'train';
             feval(trainingFun, classif, ctx);
         else
             feval(trainingFun, classif);

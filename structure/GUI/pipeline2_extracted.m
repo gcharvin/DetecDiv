@@ -151,6 +151,7 @@ classdef pipeline2 < matlab.apps.AppBase
         UIWorkspacePipelineTable struct = struct()
         MonitorProgressGauge = []
         MonitorLastProgress double = 0
+        MonitorLastProgressConsoleSignature char = ''
         MonitorLastHubConsoleText char = ''
         MonitorHasModuleProgress logical = false
     end
@@ -1195,6 +1196,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 'MajorTickLabels', {'0%','25%','50%','75%','100%'}, ...
                 'Position', [91 869 1111 36]);
             app.MonitorLastProgress = 0;
+            app.MonitorLastProgressConsoleSignature = '';
             app.MonitorLastHubConsoleText = '';
             app.MonitorHasModuleProgress = false;
         end
@@ -18925,6 +18927,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             stamp = char(datetime('now', 'Format', 'HH:mm:ss'));
             app.ConsoleTextArea.Value = {sprintf('[%s] %s', stamp, char(string(message)))};
+            app.MonitorLastProgressConsoleSignature = '';
             app.MonitorLastHubConsoleText = '';
             app.MonitorHasModuleProgress = false;
             updateRunMonitorProgress(app, 0, char(string(message)));
@@ -19016,12 +19019,39 @@ classdef pipeline2 < matlab.apps.AppBase
                     message = getField(app, data, 'message', ...
                         getField(app, data, 'last_train_line', ...
                         getField(app, data, 'status', 'Local worker running...')));
+                    appendMonitorProgressEvent(app, data, message);
                     eta = getField(app, data, 'eta', '');
                     if ~isempty(eta)
                         message = sprintf('%s | ETA %s', char(string(message)), char(string(eta)));
                     end
                     updateRunMonitorProgress(app, value, message);
             end
+        end
+
+        function appendMonitorProgressEvent(app, data, message)
+            message = strtrim(char(string(message)));
+            if isempty(message)
+                return;
+            end
+            scope = strtrim(char(string(getField(app, data, 'scope', 'progress'))));
+            if isempty(scope)
+                scope = 'progress';
+            end
+            current = getField(app, data, 'current', []);
+            total = getField(app, data, 'total', []);
+            counter = '';
+            if isnumeric(current) && isscalar(current) && isfinite(current) && ...
+                    isnumeric(total) && isscalar(total) && isfinite(total) && total > 0
+                counter = sprintf(' %g/%g', double(current), double(total));
+            end
+            signature = sprintf('%s|%s|%s', scope, counter, message);
+            if strcmp(signature, app.MonitorLastProgressConsoleSignature)
+                return;
+            end
+            stamp = char(datetime('now', 'Format', 'HH:mm:ss'));
+            appendMonitorConsole(app, sprintf('[%s] [%s%s] %s', ...
+                stamp, scope, counter, message));
+            app.MonitorLastProgressConsoleSignature = signature;
         end
 
         function updateRunMonitorFromHubJob(app, job)

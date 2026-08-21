@@ -2698,7 +2698,9 @@ function ctx = executeClassifierNode(node, ctx)
                     'split', struct('train', 1:numel(rois), 'val', [], 'test', []));
             end
             checkPipelineCancelled(ctx, ['before classifier training ' char(string(node.id))]);
-            clsObj.trainClassifier;
+            % Keep transient pipeline callbacks out of persisted profiles,
+            % but pass them to the trainer so epoch progress remains live.
+            clsObj.trainClassifier(ctx);
         catch ME
             throwNodeFailed(node, ME);
         end

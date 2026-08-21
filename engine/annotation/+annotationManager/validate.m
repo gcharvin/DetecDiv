@@ -91,7 +91,8 @@ switch char(string(component.storage))
         if ~exists, return; end
         if any(strcmp(component.kind, {'semantic_mask','instance_mask', ...
                 'tracked_instances'}))
-            values = selectChannelFrames(readChannel(roiObj, channel),reviewFrames);
+            values = selectChannelFrames( ...
+                annotationManager.readChannel(roiObj, channel),reviewFrames);
             if ~isnumeric(values) && ~islogical(values)
                 error('Mask data must be numeric.');
             end
@@ -172,11 +173,15 @@ end
 end
 
 function validateFamilyMaskLabels(roiObj, model, familyId, channel, familyName,frames)
-values = squeeze(readChannel(roiObj, channel));
-if ismatrix(values)
-    values = reshape(values, size(values,1), size(values,2), 1);
+values = annotationManager.readChannel(roiObj, channel);
+dims = size(values);
+dims(end+1:4) = 1;
+if dims(3) ~= 1
+    error('Mask provider "%s" must contain exactly one label plane.', channel);
 end
-nFrames = size(values, 3);
+values = reshape(values, dims(1), dims(2), dims(3), dims(4));
+values = reshape(values(:,:,1,:), dims(1), dims(2), dims(4));
+nFrames = dims(4);
 rows = model.instances.family_id == familyId;
 instanceFrames = double(model.instances.frame(rows));
 instanceLabels = double(model.instances.mask_label(rows));
@@ -187,7 +192,12 @@ if any(instanceFrames(relevantRows) < 1 | instanceFrames(relevantRows) > nFrames
 end
 
 mismatched = zeros(0,1);
-frames = frames(frames >= 1 & frames <= nFrames);
+frames = frames(frames >= 1);
+if any(frames > nFrames)
+    error(['Mask provider "%s" contains %d frame(s), but validation ' ...
+        'requires frame %d. Reload the complete ROI before validating.'], ...
+        channel, nFrames, max(frames));
+end
 for frame = frames
     actual = unique(double(values(:,:,frame)));
     actual = actual(actual > 0);
@@ -208,10 +218,14 @@ end
 function values = selectChannelFrames(values,frames)
 if isempty(frames), return; end
 if ndims(values) >= 4
-    frames = frames(frames <= size(values,4));
+    if any(frames > size(values,4))
+        error('The loaded GT channel does not cover every reviewed frame.');
+    end
     values = values(:,:,:,frames);
 elseif ndims(values) == 3
-    frames = frames(frames <= size(values,3));
+    if any(frames > size(values,3))
+        error('The loaded GT channel does not cover every reviewed frame.');
+    end
     values = values(:,:,frames);
 end
 end
@@ -229,26 +243,6 @@ else
     tf = false(size(values));
 end
 tf = tf(:);
-end
-
-function values = readChannel(roiObj, channel)
-h5File = fullfile(char(string(roiObj.path)), ...
-    ['im_' char(string(roiObj.id)) '.h5']);
-if isfile(h5File)
-    info = h5info(h5File);
-    for i = 1:numel(info.Datasets)
-        path = ['/' info.Datasets(i).Name];
-        logicalName = info.Datasets(i).Name;
-        try, logicalName = h5readatt(h5File, path, 'channel_name'); catch, end
-        if strcmpi(char(string(logicalName)), channel)
-            values = h5read(h5File, path);
-            return;
-        end
-    end
-end
-if isempty(roiObj.image), roiObj.load('Silent'); end
-idx = roiObj.findChannelID(channel);
-values = roiObj.image(:,:,idx,:);
 end
 
 function ensureData(roiObj)

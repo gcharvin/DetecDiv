@@ -54,6 +54,8 @@ spec = { ...
     'epochs',300, 'Training epochs (per ensemble member for the legacy objective).'
     'learningRate',0.001, 'AdamW learning rate.'
     'weightDecay',0.0001, 'AdamW weight decay.'
+    'motherNullEarlyStoppingPatience',30, 'Stop the mother/NULL head after this many epochs without a meaningful validation improvement.'
+    'motherNullEarlyStoppingMinDelta',0.0001, 'Minimum validation-NLL decrease that resets mother/NULL early-stopping patience.'
     'seedCount',5, 'Number of independently initialized ensemble members.'
     'device','cuda', 'cuda uses the GPU when available and otherwise falls back to CPU.'
     'targetAutoPrecision',0.98, 'OOF precision target for automatic lineage links.'

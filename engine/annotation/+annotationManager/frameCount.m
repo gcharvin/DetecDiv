@@ -5,7 +5,6 @@ count = 0;
 try
     if ~isempty(roiObj.image)
         count = size(roiObj.image, 4);
-        if count > 0, return; end
     end
 catch
 end
@@ -15,15 +14,33 @@ try
     if ~isfile(h5File), return; end
     info = h5info(h5File);
     if isempty(info.Datasets), return; end
-    dims = double(info.Datasets(1).Dataspace.Size);
-    if numel(dims) >= 4
-        count = dims(4);
-    elseif numel(dims) == 3
-        count = dims(3);
-    else
-        count = 1;
+    for i = 1:numel(info.Datasets)
+        datasetPath = ['/' info.Datasets(i).Name];
+        diskCount = 0;
+        try
+            storedFrames = double(h5readatt(h5File, datasetPath, 'frames'));
+            storedFrames = storedFrames(isfinite(storedFrames));
+            if ~isempty(storedFrames)
+                if any(storedFrames == 0) && ~any(storedFrames < 0)
+                    storedFrames = storedFrames + 1;
+                end
+                diskCount = max(storedFrames);
+            end
+        catch
+        end
+        if diskCount < 1
+            dims = double(info.Datasets(i).Dataspace.Size);
+            if numel(dims) >= 4
+                diskCount = dims(4);
+            elseif numel(dims) == 3
+                diskCount = dims(3);
+            else
+                diskCount = 1;
+            end
+        end
+        count = max(count, diskCount);
     end
 catch
-    count = 0;
+    % Keep a trustworthy in-memory count when disk metadata is unavailable.
 end
 end

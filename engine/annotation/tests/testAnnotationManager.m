@@ -400,6 +400,191 @@ verifyEqual(testCase, rows(2).frame, 12);
 verifyFalse(testCase, any([rows.repairable]));
 end
 
+function testValidationAndHashUseUnsavedLoadedSnapshot(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'live_snapshot', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 4, 4, 3);
+masks = zeros(4,4,1,3, 'uint16');
+masks(1:2,1:2,1,:) = 1;
+masks(3:4,3:4,1,2:3) = 2;
+r.addChannel(masks, 'results_cellposeSAM_cell', [1 1 1], [0 0 0]);
+r.save([], false);
+
+model = cellModel.create(r.id);
+[model, ~, ~] = cellModel.applyLineageResult(model, ...
+    squeeze(masks(:,:,1,:)), 'results_cellposeSAM_cell', '', ...
+    'Predicted lineage', struct('edges', struct([])), true, 'classifier');
+r.saveCellModel(model);
+c.roi = r;
+
+session = c.annotationSession(1);
+session.bootstrap();
+gtChannel = session.Spec.components(1).groundTruth.channel;
+gtIndex = r.findChannelID(gtChannel);
+[model, ~] = r.loadCellModel();
+[~, gtFamilyId] = cellModel.familyIndex(model, ...
+    'live_snapshot_1 reviewed GT');
+
+% Reproduce Score after an edit and before Save: both live assets agree,
+% while the materialized HDF5 mask and object model are still the old pair.
+r.image(1,4,gtIndex,2) = uint16(3);
+[model, ~] = cellModel.syncFrame(model, gtFamilyId, 2, ...
+    r.image(:,:,gtIndex,2), 'TrackPolicy', 'preserve_or_label');
+r.cellModel = model;
+
+report = annotationManager.validate(r, session.Spec, ...
+    'RequireReviewed', false, 'ReviewFrames', 1:3);
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+
+liveHash = annotationManager.contentHash(r, session.Spec);
+diskRoi = roi('R1', [1 1 4 4]);
+diskRoi.path = r.path;
+diskMask = annotationManager.readChannel(diskRoi, gtChannel);
+verifyEqual(testCase, squeeze(diskMask), squeeze(masks), ...
+    'The fixture must retain a stale materialized mask on disk.');
+verifyEqual(testCase, r.image(1,4,gtIndex,2), uint16(3));
+diskHash = annotationManager.contentHash(diskRoi, session.Spec);
+verifyNotEqual(testCase, liveHash, diskHash, ...
+    'The live validation hash must include unsaved Score edits.');
+
+entry = annotationManager.recordValidation(r, session.Spec, report, ...
+    'Save', false);
+verifyEqual(testCase, entry.validated_hash, liveHash, ...
+    'Validation and its audit hash must use the same live snapshot.');
+
+persistedReport = session.validate('RequireReviewed', false);
+verifyTrue(testCase, persistedReport.valid);
+persistedRoi = roi('R1', [1 1 4 4]);
+persistedRoi.path = r.path;
+persistedMask = annotationManager.readChannel(persistedRoi, gtChannel);
+verifyEqual(testCase, persistedMask(1,4,1,2), uint16(3), ...
+    'Session validation must materialize live mask edits before approval.');
+[persistedModel, ~] = persistedRoi.loadCellModel();
+rows = persistedModel.instances.family_id == gtFamilyId & ...
+    persistedModel.instances.frame == uint32(2);
+verifyTrue(testCase, any(persistedModel.instances.mask_label(rows) == 3), ...
+    'Session validation must materialize the matching live object family.');
+persistedRoi.load('Data', 'Silent');
+[persistedEntry, found] = annotationManager.entryForSpec( ...
+    persistedRoi, session.Spec);
+verifyTrue(testCase, found);
+verifyEqual(testCase, persistedEntry.status, 'approved');
+verifyEqual(testCase, persistedEntry.validated_hash, liveHash);
+end
+
+function testValidationRejectsInvalidLiveChannelMapping(testCase)
+[~, c, r] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+gtChannel = session.Spec.components(1).groundTruth.channel;
+r.channelid(end+1) = r.channelid(end);
+verifyError(testCase, @() annotationManager.readChannel(r, gtChannel), ...
+    'annotationManager:InvalidChannelCache');
+verifyError(testCase, @() session.validate('RequireReviewed', false), ...
+    'annotationManager:InvalidChannelCache');
+end
+
+function testSessionValidationRequiresDurableGtSave(testCase)
+[~, c, r] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+r.path = fullfile(tempdir, ['missing_annotation_' char(java.util.UUID.randomUUID)]);
+verifyError(testCase, @() session.validate('RequireReviewed', false), ...
+    'annotationManager:GroundTruthPersistenceFailed');
+verifyNotEqual(testCase, session.LastValidationStatus, 'valid');
+end
+
+function testSessionValidationRejectsPartialLiveChannelCache(testCase)
+[~, c, r] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+gtChannel = session.Spec.components(1).groundTruth.channel;
+
+diskRoi = roi(r.id, [1 1 1 1]);
+diskRoi.path = r.path;
+before = annotationManager.readChannel(diskRoi, gtChannel);
+verifyEqual(testCase, size(before, 4), 3);
+
+% A frame-window cache is addressable by name but is unsafe to send to
+% roi.save: the partial save fallback could otherwise truncate the HDF5.
+r.image = r.image(:,:,:,1:2);
+verifyError(testCase, @() session.validate('RequireReviewed', false), ...
+    'annotationManager:IncompleteChannelCache');
+
+diskRoi = roi(r.id, [1 1 1 1]);
+diskRoi.path = r.path;
+after = annotationManager.readChannel(diskRoi, gtChannel);
+verifyEqual(testCase, after, before, ...
+    'Rejected validation must not replace the complete GT channel.');
+verifyNotEqual(testCase, session.LastValidationStatus, 'valid');
+end
+
+function testValidReportCannotBeRecordedWithoutHashableGt(testCase)
+[~, c, ~] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+badSpec = session.Spec;
+badSpec.components(1).groundTruth.channel = 'missing_gt_channel';
+report = struct('valid', true, 'errors', strings(0,1), ...
+    'warnings', strings(0,1));
+verifyError(testCase, @() annotationManager.recordValidation( ...
+    session.Roi, badSpec, report, 'Save', false), ...
+    'annotationManager:MissingGroundTruth');
+[entry, found] = annotationManager.entryForSpec(session.Roi, session.Spec);
+verifyTrue(testCase, found);
+verifyEqual(testCase, entry.status, 'draft');
+end
+
+function testFrameCountUsesLongestMaterializedChannel(testCase)
+folder = freshFolder(testCase);
+r = roi('R1', [1 1 2 2]);
+r.path = folder;
+r.image = zeros(2,2,1,2, 'uint16');
+r.channelid = 1;
+r.display.channel = {'short_live'};
+h5File = fullfile(folder, 'im_R1.h5');
+h5create(h5File, '/long_disk', [2 2 1 5], 'Datatype', 'uint16');
+h5writeatt(h5File, '/long_disk', 'channel_name', 'long_disk');
+h5writeatt(h5File, '/long_disk', 'frames', 1:5);
+verifyEqual(testCase, annotationManager.frameCount(r), 5);
+end
+
+function testSingletonSpatialMaskKeepsTemporalDimension(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'singleton', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 1, 1, 3);
+masks = ones(1,1,1,3, 'uint16');
+r.addChannel(masks, 'results_cellposeSAM_cell', [1 1 1], [0 0 0]);
+r.save([], false);
+model = cellModel.create(r.id);
+[model, ~, ~] = cellModel.applyLineageResult(model, ...
+    reshape(masks, 1, 1, 3), 'results_cellposeSAM_cell', '', ...
+    'Predicted lineage', struct('edges', struct([])), true, 'classifier');
+r.saveCellModel(model);
+c.roi = r;
+session = c.annotationSession(1);
+session.bootstrap();
+report = annotationManager.validate(r, session.Spec, ...
+    'RequireReviewed', false, 'ReviewFrames', 1:3);
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+end
+
 function testClassifierSummaryUsesSharedStatus(testCase)
 [~, c, ~] = maskFixture(testCase);
 rows = c.annotationSummary();

@@ -25,6 +25,7 @@ catch
 end
 executionParam = retainDeployableKeys(executionParam, spec);
 defaults = overlayStruct(defaults, executionParam);
+defaults = normalizePackageDefaults(classiObj, defaults);
 if isempty(fieldnames(defaults))
     return;
 end
@@ -97,7 +98,11 @@ if isempty(fieldnames(out)) || ~isstruct(spec)
     return;
 end
 declared = {};
-fields = {'staticKeys','inputKeys','artifactKeys'};
+% The snapshot is the authoritative deployable model description.  Keep
+% canonical PRED output identities alongside its backend, inputs and
+% artifacts so annotation discovery cannot fall back to stale legacy names
+% from the in-memory classifier object.
+fields = {'staticKeys','inputKeys','artifactKeys','outputKeys'};
 for i = 1:numel(fields)
     if isfield(spec, fields{i})
         declared = [declared cellstr(string(spec.(fields{i})))]; %#ok<AGROW>
@@ -108,7 +113,7 @@ if isempty(declared)
 end
 declared = unique(declared, 'stable');
 excluded = {};
-fields = {'outputKeys','environmentKeys'};
+fields = {'environmentKeys'};
 for i = 1:numel(fields)
     if isfield(spec, fields{i})
         excluded = [excluded cellstr(string(spec.(fields{i})))]; %#ok<AGROW>
@@ -132,5 +137,19 @@ end
 function deleteIfPresent(file)
 if exist(file, 'file') == 2
     delete(file);
+end
+end
+
+function defaults = normalizePackageDefaults(classiObj,defaults)
+pkg=classifierPackage(classiObj);
+if isempty(pkg),return;end
+hook=[pkg '.normalizeTrainingExecutionDefaults'];
+try
+    if ~isempty(which(hook))
+        defaults=feval(hook,classiObj,defaults);
+    end
+catch ME
+    warning('classifierPersistTrainingExecutionDefaults:PackageNormalizationFailed', ...
+        'Could not normalize %s execution defaults: %s',pkg,ME.message);
 end
 end

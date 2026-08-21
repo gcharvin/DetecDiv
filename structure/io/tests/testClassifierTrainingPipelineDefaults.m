@@ -211,6 +211,95 @@ verifyEqual(testCase, actual.frameIntervalMinutes, 5);
 verifyEqual(testCase, actual.modelSource, 'trained');
 end
 
+function testCompositeSnapshotMigratesGtInputToSegmentation(testCase)
+folder=tempname;
+mkdir(folder);
+cleanup=onCleanup(@()rmdir(folder,'s')); %#ok<NASGU>
+c=classi(folder,'latent_snapshot',1,'InitTraining',false);
+c.classifierPkg='cellLatentModel';
+c.trainingParam=cellLatentModel.utils.defaultTrainingParam();
+c.trainingParam.architectureVersion='detecdiv_composite_v1';
+c.trainingParam.trackChannelName='latent_model_1_cell';
+c.trainingParam.instanceChannelName='results_cellposeSAM_cell';
+c.executionParam=struct('backend','causal_composite');
+r=makeRoiFixture('R1', ...
+    {'raw','results_cellposeSAM_cell','latent_model_1_cell'});
+r.display.indexed=[false true true];
+c.roi=r;
+payload=struct('schemaVersion',1,'classifierId',c.strid, ...
+    'classifierPackage','cellLatentModel', ...
+    'executionDefaults',struct('backend','causal_composite', ...
+    'instanceChannelName','latent_model_1_cell', ...
+    'trackChannelName','latent_model_1_cell'));
+file=fullfile(c.path,'training_execution_defaults.json');
+fid=fopen(file,'w');
+closeFile=onCleanup(@()fclose(fid));
+fwrite(fid,jsonencode(payload),'char');
+clear closeFile;
+
+actual=classifierTrainingExecutionDefaults(c,struct());
+
+verifyEqual(testCase,actual.instanceChannelName, ...
+    'results_cellposeSAM_cell');
+verifyEmpty(testCase,actual.trackChannelName);
+verifyEqual(testCase,actual.outputTrackChannelName, ...
+    ['pred_' c.strid '_tracks']);
+verifyEqual(testCase,actual.outputFamilyName, ...
+    ['pred_' c.strid '_lineage']);
+end
+
+function testTrainingResultPreservesAuthoritativeRoiSnapshot(testCase)
+folder=tempname;
+mkdir(folder);
+cleanup=onCleanup(@()rmdir(folder,'s')); %#ok<NASGU>
+full=classi(folder,'full_classifier',1,'InitTraining',false);
+full.classifierPkg='cellLatentModel';
+full.roi=[makeRoiFixture('R1',{'raw'}), ...
+    makeRoiFixture('R2',{'raw'}),makeRoiFixture('R3',{'raw'})];
+full.trainingset=[1 2];
+full.dataset.split=struct('train',[1 2],'val',3,'test',[]);
+full.bounds=struct('SchemaVersion',2,'Type','Manual', ...
+    'Values',[1 20],'RoiValues',struct( ...
+    'roi_id','R2','roi_index',2,'values',[3 17], ...
+    'updated_at','2026-08-17T00:00:00Z'), ...
+    'Rules',struct('Dataseries',[],'Dataset',[], ...
+    'Value',[],'Occurence',[0],'Offset',[0]));
+full.trainingParam=struct('modelName','before');
+full.executionParam=struct('backend','legacy');
+classiObj=full; %#ok<NASGU>
+target=fullfile(full.path,[full.strid '_classification.mat']);
+save(target,'classiObj','-v7.3');
+
+worker=classi(folder,'full_classifier',1,'InitTraining',false);
+worker.classifierPkg='cellLatentModel';
+worker.roi=full.roi(1);
+worker.trainingset=1;
+worker.dataset.split=struct('train',1,'val',[],'test',[]);
+worker.bounds=struct('SchemaVersion',2,'Type','Auto','Values',[], ...
+    'RoiValues',struct('roi_id',{},'roi_index',{},'values',{}, ...
+    'updated_at',{}),'Rules',struct('Dataseries',[],'Dataset',[], ...
+    'Value',[],'Occurence',[0],'Offset',[0]));
+worker.trainingParam=struct('modelName','trained_v002');
+worker.executionParam=struct('backend','causal_composite', ...
+    'instanceChannelName','results_cellposeSAM_cell');
+
+report=classifierPersistTrainingResult(worker);
+saved=load(target,'classiObj');
+
+verifyTrue(testCase,report.usedAuthoritativeSnapshot);
+verifyEqual(testCase,report.workerRoiCount,1);
+verifyEqual(testCase,report.savedRoiCount,3);
+verifyEqual(testCase,{saved.classiObj.roi.id},{'R1','R2','R3'});
+verifyEqual(testCase,saved.classiObj.trainingset,[1 2]);
+verifyEqual(testCase,saved.classiObj.dataset.split.val,3);
+verifyEqual(testCase,saved.classiObj.bounds.Type,'Manual');
+verifyEqual(testCase,saved.classiObj.bounds.Values,[1 20]);
+verifyEqual(testCase,saved.classiObj.bounds.RoiValues.roi_id,'R2');
+verifyEqual(testCase,saved.classiObj.trainingParam.modelName,'trained_v002');
+verifyEqual(testCase,saved.classiObj.executionParam.backend, ...
+    'causal_composite');
+end
+
 function testSuccessfulTrainingSnapshotPersistsDeployableState(testCase)
 folder = tempname;
 mkdir(folder);
@@ -232,8 +321,8 @@ payload = jsondecode(fileread(file));
 verifyEqual(testCase, payload.executionDefaults.backend, ...
     'continuous_cell_state');
 verifyEqual(testCase, payload.executionDefaults.modelSource, 'trained');
-verifyFalse(testCase, ...
-    isfield(payload.executionDefaults, 'outputFamilyName'));
+verifyEqual(testCase, payload.executionDefaults.outputFamilyName, ...
+    'do_not_freeze_output');
 end
 
 function testValidationRoisAreFilteredByConfiguredContractInputs(testCase)

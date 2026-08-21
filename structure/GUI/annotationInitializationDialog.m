@@ -5,20 +5,28 @@ p = inputParser;
 p.addParameter('RoiCount', 1, @(x) isnumeric(x) && isscalar(x) && x >= 1);
 p.addParameter('HasExistingGT', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('Title', 'Initialize ground truth', @(x) ischar(x) || isstring(x));
+p.addParameter('ActiveModel', struct(), @(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 
-recipe = catalog.defaultRecipe;
 accepted = false;
-[modeLabels, modeIds] = availableModes(catalog);
+activeModel = p.Results.ActiveModel;
+[modeLabels, modeIds] = annotationInitializationModes(catalog, activeModel);
+[recipe, hasInitializationSource] = ...
+    annotationInitializationDefaultRecipe(catalog, activeModel);
+if ~hasInitializationSource
+    uialert(parent, annotationInitializationUnavailableMessage(), ...
+        'Existing prediction required', 'Icon', 'info');
+    return;
+end
 families = catalog.families([catalog.families.usable]);
 
 fig = uifigure('Name', char(string(p.Results.Title)), ...
-    'Position', [100 100 650 410], 'Resize', 'off', ...
+    'Position', [100 100 720 455], 'Resize', 'off', ...
     'WindowStyle', 'modal', 'CloseRequestFcn', @cancelDialog);
 positionNearParent(fig, parent);
 grid = uigridlayout(fig, [8 2]);
 grid.ColumnWidth = {145, '1x'};
-grid.RowHeight = {34, 34, 34, 34, 64, 45, '1x', 38};
+grid.RowHeight = {34, 34, 34, 34, 105, 45, '1x', 38};
 grid.Padding = [18 15 18 15];
 grid.RowSpacing = 8;
 
@@ -73,8 +81,7 @@ else
 end
 
 helpLabel = uilabel(grid, 'WordWrap', 'on', 'FontColor', [0.35 0.35 0.35], ...
-    'Text', ['An object family always brings its own mask provider and tracks. ' ...
-        'This prevents mixing masks with incompatible identities.']);
+    'Text', initializationHelpText(catalog, activeModel));
 helpLabel.Layout.Row = 7;
 helpLabel.Layout.Column = [1 2];
 
@@ -142,6 +149,13 @@ if isvalid(fig), delete(fig); end
                     preview.Text = ['Copy all classifier prediction components ' ...
                         'into editable GT.'];
                 end
+            case 'run_prediction'
+                familyDropDown.Enable = 'off';
+                maskDropDown.Enable = 'off';
+                parentageDropDown.Value = 'copy';
+                parentageDropDown.Enable = 'off';
+                valid = activeModelCanUseExistingInputs(activeModel);
+                preview.Text = activeModelPreview(activeModel);
             case 'family'
                 familyDropDown.Enable = 'on';
                 maskDropDown.Enable = 'off';
@@ -165,9 +179,8 @@ if isvalid(fig), delete(fig); end
                 maskDropDown.Enable = 'off';
                 parentageDropDown.Value = 'blank';
                 parentageDropDown.Enable = 'off';
-                valid = true;
-                preview.Text = ['Segmentation: blank' newline ...
-                    'Tracking: blank' newline 'Parentage: blank'];
+                valid = false;
+                preview.Text = 'A compatible existing PRED source is required.';
         end
         actionButton.Enable = onOff(valid);
     end
@@ -199,6 +212,8 @@ if isvalid(fig), delete(fig); end
             case 'prediction'
                 recipe.family = catalog.prediction.family;
                 recipe.channel = catalog.prediction.maskProvider;
+            case 'run_prediction'
+                recipe.copyParentage = true;
             case 'family'
                 source = selectedFamily();
                 if isempty(source), return; end
@@ -208,7 +223,7 @@ if isvalid(fig), delete(fig); end
                 recipe.channel = char(string(maskDropDown.Value));
                 recipe.copyParentage = false;
             otherwise
-                recipe.copyParentage = false;
+                return;
         end
         accepted = true;
         uiresume(fig);
@@ -220,23 +235,79 @@ if isvalid(fig), delete(fig); end
     end
 end
 
-function [labels, ids] = availableModes(catalog)
-labels = {};
-ids = {};
-if catalog.prediction.available
-    labels{end+1} = 'Model prediction'; %#ok<AGROW>
-    ids{end+1} = 'prediction'; %#ok<AGROW>
+function tf = activeModelAvailable(info)
+tf = false;
+try, tf = logical(info.available); catch, end
 end
-if catalog.supports.family && any([catalog.families.usable])
-    labels{end+1} = 'Existing tracked objects'; %#ok<AGROW>
-    ids{end+1} = 'family'; %#ok<AGROW>
+
+function tf = activeModelCanUseExistingInputs(info)
+tf = activeModelAvailable(info);
+try
+    tf = tf && logical(info.canRunOnExistingInputs);
+catch
+    tf = false;
 end
-if catalog.supports.mask && ~isempty(catalog.maskChannels)
-    labels{end+1} = 'Existing segmentation mask'; %#ok<AGROW>
-    ids{end+1} = 'mask'; %#ok<AGROW>
 end
-labels{end+1} = 'Blank GT';
-ids{end+1} = 'blank';
+
+function text = activeModelPreview(info)
+if ~activeModelAvailable(info)
+    text = 'No trained active model is available for this classifier.';
+    return;
+end
+classifierId = '<classifier>';
+try
+    value = char(string(info.classifierId));
+    if ~isempty(value), classifierId = value; end
+catch
+end
+reference = '<active model>';
+try
+    value = char(string(info.modelReference));
+    if ~isempty(value), reference = value; end
+catch
+end
+inputs = {'Inputs: resolve automatically per ROI'};
+try
+    if ~isempty(info.inputs), inputs = cellstr(string(info.inputs)); end
+catch
+end
+text = sprintf(['Active model: %s\nReference: %s\n%s\n' ...
+    'Ground truth consumed by inference: NO\n' ...
+    'Segmentation launched automatically: NO\n' ...
+    'Operation: refine tracking and parentage from existing PRED masks/tracks\n' ...
+    'Result: refined prediction copied into editable Draft GT'], ...
+    classifierId, reference, strjoin(inputs, ' | '));
+try
+    if ~info.inputsResolved && ~isempty(info.issues)
+        text = sprintf('%s\nInput mapping required: %s', text, ...
+            strjoin(cellstr(string(info.issues)), ' | '));
+    end
+catch
+end
+end
+
+function text = initializationHelpText(catalog, activeModel)
+if activeModelAvailable(activeModel) && ...
+        ~activeModelCanUseExistingInputs(activeModel)
+    text = ['No compatible PRED mask/track provider is currently available ' ...
+        'to the active latent model. Run CellposeSAM separately, click ' ...
+        'Refresh, then reopen Initialize GT. CellposeSAM is never launched ' ...
+        'from this dialog.'];
+    return;
+end
+if activeModelCanUseExistingInputs(activeModel)
+    text = ['The active latent model uses only the PRED masks/tracks already ' ...
+        'present in the ROI; it does not run segmentation. An object family ' ...
+        'always brings its own mask provider and tracks.'];
+    return;
+end
+if catalog.prediction.available || any([catalog.families.usable]) || ...
+        ~isempty(catalog.maskChannels)
+    text = ['Copying existing objects never modifies their PRED source. ' ...
+        'An object family always brings its own mask provider and tracks.'];
+else
+    text = annotationInitializationUnavailableMessage();
+end
 end
 
 function text = familyPreview(prefix, source, copyParentage)

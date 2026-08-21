@@ -1,15 +1,26 @@
-function spec = trainingParameterSpec(classif)
+function [spec,policy] = trainingParameterSpec(classif)
 %CLASSIFIERBINDING.TRAININGPARAMETERSPEC Package-owned display metadata.
 % Scientific/business logic stays in the classifier package. classifierGUI
 % consumes only labels, help text, grouping, and optional choice labels.
 spec = struct('param',{},'label',{},'group',{},'tip',{},'choiceLabels',{});
+policy = struct('showUnspecified',true);
 if nargin < 1 || isempty(classif), return; end
 pkg = '';
 try pkg = strtrim(char(string(classif.classifierPkg))); catch, end
 if isempty(pkg), return; end
 fun = [pkg '.trainingParameterSpec'];
 if isempty(which(fun)), return; end
-try raw = feval(fun,classif); catch ME
+try
+    if nargout(fun) == 2
+        [raw,rawPolicy] = feval(fun,classif);
+        if isstruct(rawPolicy) && isscalar(rawPolicy) && ...
+                isfield(rawPolicy,'showUnspecified')
+            policy.showUnspecified = logical(rawPolicy.showUnspecified);
+        end
+    else
+        raw = feval(fun,classif);
+    end
+catch ME
     warning('classifierBinding:TrainingParameterSpec', ...
         'Could not read %s: %s',fun,ME.message);
     return;

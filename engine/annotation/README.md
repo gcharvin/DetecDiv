@@ -125,10 +125,11 @@ annotation button:
 
 1. `GenerateDraftButton`, text **Initialize GT...**. Its callback opens the
    shared initialization dialog once, then applies the selected recipe to every
-   selected ROI with `session.initialize(recipe)`. Keep it enabled whenever one
-   or more ROIs are selected because blank initialization is always available.
+   selected ROI with `session.initialize(recipe)`. If no compatible PRED source
+   exists, it stops before opening the recipe dialog and explains that
+   CellposeSAM must be run separately followed by **Refresh**.
 2. Keep `StartBlankGTButton` as an internal compatibility component, but hide
-   it. Blank initialization is now one of the choices in **Initialize GT...**.
+   it. Blank initialization is not offered by **Initialize GT...**.
 3. `RefreshAnnotationStatusButton`, text **Refresh status**. Its callback calls
    `refreshAnnotationTable` without reloading images.
 4. `AnnotationFilterDropDown`, label **Show**, with values `All`, `Missing`,
@@ -141,20 +142,30 @@ annotation button:
 
 The initialization dialog offers only coherent starting points:
 
-- **Model prediction** copies every prediction component declared by the
-  classifier.
-- **Existing tracked objects** selects one object family. Its `mask_provider`
+- **Copy existing PRED objects as Draft GT** copies every prediction component
+  already materialized by the classifier.
+- **Apply active latent model to existing masks/tracks** is available only for
+  a trained `cellLatentModel` when every selected ROI already contains a
+  compatible PRED mask or tracked-object provider. It predicts only the
+  explicitly selected ROI, independently of Pipeline2 and the classifier
+  train/test split, then copies the immutable refined PRED result into editable
+  Draft GT. The preview names the active artifact and effective inputs and
+  states explicitly that inference consumes no GT and launches no segmentation.
+  Input mapping is requested only when existing non-GT inputs are ambiguous.
+  If no compatible mask/provider exists, the action is not offered: the UI
+  tells the user to run CellposeSAM separately, click **Refresh**, and reopen
+  **Initialize GT...**.
+- **Copy existing tracked objects as Draft GT** selects one object family. Its `mask_provider`
   supplies segmentation, its instances supply tracks, and its relations may be
   copied or deliberately replaced by blank parentage.
-- **Existing segmentation mask** copies one channel and creates empty tracking
-  and parentage GT around it.
-- **Blank GT** creates every required component empty.
-
+- **Copy existing segmentation mask as Draft GT** copies one channel and creates
+  empty tracking and parentage GT around it.
 Never expose independent mask and object-family selectors in the simple path:
 selecting an object family must lock segmentation to its own `mask_provider`.
 The dialog preview shows mask name, family name, track count, and parent-link
 count before any write. Replacing draft or ready GT changes the action text
-to **Replace GT** and displays a destructive-action warning.
+to **Replace GT** and displays a destructive-action warning. Recomputing an
+existing PRED result or replacing GT requires a separate confirmation.
 
 #### Remove or retire
 
@@ -206,8 +217,9 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
    `Parentage: 0/1`. Do not merge these into one opaque percentage.
 4. `CreateFromPredictionButton`, text **Initialize GT...**. The internal name is
    retained for App Designer compatibility. Open `annotationInitializationDialog`,
-   call `AnnotationSession.initialize(recipe)`, reload the ROI data, and apply
-   the returned display preset.
+   either call `AnnotationSession.initialize(recipe)` for an existing source or
+   `classifierPredictForAnnotation(..., 'InitializeGT', true)` for the active
+   model, reload the ROI data, and apply the returned display preset.
 5. Keep `StartBlankGTButton` hidden as a compatibility component. Blank GT is a
    choice in the shared initialization dialog rather than a separate action.
 6. `MarkFrameReviewedButton`, text **Mark frame reviewed**. Call

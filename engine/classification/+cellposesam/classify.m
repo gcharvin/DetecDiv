@@ -75,7 +75,12 @@ try
 catch
 end
 
-doTracking = true;
+% Historical CellposeSAM nodes keep their simple Hungarian ID propagation
+% by default.  Composite latent tracking explicitly sets this false so the
+% segmentation contract remains frame-local and the latent EDGE/APPEAR/END
+% head is the only owner of temporal identity.
+doTracking = logicalParamLocal( ...
+    getCellposeParamLocal(ctx, classif, 'trackInstances', true), true);
 
 if isempty(frames)
     frames = 1:size(roiobj.image, 4);
@@ -790,6 +795,20 @@ if strcmpi(mode, 'session')
     end
 else
     runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
+end
+end
+
+function value = logicalParamLocal(raw, fallback)
+value = logical(fallback);
+try
+    if islogical(raw) || isnumeric(raw)
+        value = logical(raw(1));
+    else
+        value = any(strcmpi(strtrim(char(string(raw))), ...
+            {'1','true','yes','on'}));
+    end
+catch
+    value = logical(fallback);
 end
 end
 

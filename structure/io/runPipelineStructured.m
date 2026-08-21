@@ -2081,7 +2081,11 @@ function ctx = executeClassifierNode(node, ctx)
                     'split', struct('train', 1:numel(rois), 'val', [], 'test', []));
             end
             checkPipelineCancellation(ctx, 'before_classifier_training', char(string(node.id)));
-            clsObj.trainClassifier;
+            % Pass the live pipeline context explicitly. In particular this
+            % preserves progressCallback, which cannot be persisted safely
+            % in classi.runProfiles and is needed for epoch-level Monitor
+            % updates while the classifier owns its scientific run diary.
+            clsObj.trainClassifier(ctx);
         catch ME
             throwNodeFailed(node, ME);
         end

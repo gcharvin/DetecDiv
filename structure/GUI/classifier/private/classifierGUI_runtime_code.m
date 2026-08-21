@@ -118,6 +118,7 @@ classdef classifierGUI < matlab.apps.AppBase
      paramTableData = table();    % table affichée dans UITableParam
 paramSelectedKey = '';
 paramEditorControls = gobjects(0);
+trainingScopeTextArea = gobjects(0);
     end
 
     properties (Access = public)
@@ -148,6 +149,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     bindingSpec = struct([]);
     bindingCatalog = struct();
     parameterDisplaySpec = struct([]);
+    parameterDisplayPolicy = struct('showUnspecified',true);
     try
         bindingSpec = classifierBinding.trainingSpec(classiObj);
         if ~isempty(bindingSpec)
@@ -159,13 +161,23 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
         bindingSpec = struct([]);
     end
     try
-        parameterDisplaySpec = classifierBinding.trainingParameterSpec(classiObj);
+        [parameterDisplaySpec,parameterDisplayPolicy] = ...
+            classifierBinding.trainingParameterSpec(classiObj);
     catch ME
         warning('classifierGUI:TrainingParameterSpec', ...
             'Could not build training-parameter labels: %s',ME.message);
     end
 
     keys = fieldnames(tp);
+    if ~parameterDisplayPolicy.showUnspecified
+        visibleKeys = {parameterDisplaySpec.param};
+        if ~isempty(bindingSpec)
+            visibleKeys = [visibleKeys {bindingSpec.param}]; %#ok<AGROW>
+        end
+        visibleKeys = unique(visibleKeys,'stable');
+        visibleKeys = visibleKeys(ismember(visibleKeys,keys));
+        keys = reshape(visibleKeys,[],1);
+    end
     if ~isempty(bindingSpec)
         virtualKeys = {bindingSpec.param};
         keys = [keys; virtualKeys(~ismember(virtualKeys, keys)).'];
@@ -271,14 +283,31 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
         end
     end
 
-    t = table(Label, Value, Type, Group, Param);
-    groupRank = 10 * ones(height(t), 1);
-    groupRank(strcmp(t.Group, 'Data bindings')) = 1;
-    groupRank(strcmp(t.Group, 'Format')) = 2;
-    groupRank(strcmp(t.Group, 'General')) = 3;
-    groupRank(strcmp(t.Group, 'CNN')) = 4;
-    groupRank(strcmp(t.Group, 'LSTM')) = 5;
-    [~, order] = sort(groupRank, 'ascend');
+    t = table(Label, Value, Group, Type, Param);
+    groupOrder = { ...
+        'Training scope', ...
+        'Shared > Dataset', ...
+        'Shared > Validation', ...
+        'Tracking head > Input', ...
+        'Tracking head > Ground truth', ...
+        'Tracking head > GT quality', ...
+        'Tracking head > Candidates', ...
+        'Tracking head > Initialization', ...
+        'Tracking head > Loss weights', ...
+        'Tracking head > Optimization', ...
+        'Mother/NULL head > Input', ...
+        'Mother/NULL head > Ground truth', ...
+        'Mother/NULL head > Architecture', ...
+        'Mother/NULL head > Temporal context', ...
+        'Mother/NULL head > Optimization', ...
+        'Shared > Runtime', ...
+        'Output bundle', ...
+        'Data bindings', 'Format', 'General', 'CNN', 'LSTM'};
+    groupRank = (numel(groupOrder)+1) * ones(height(t),1);
+    for groupIndex = 1:numel(groupOrder)
+        groupRank(strcmp(t.Group,groupOrder{groupIndex})) = groupIndex;
+    end
+    [~,order] = sortrows([groupRank (1:height(t)).'],[1 2]);
     t = t(order, :);
 end
 
@@ -545,6 +574,7 @@ function showParamEditor(app, key)
         delete(app.paramEditorControls(ishandle(app.paramEditorControls)));
     end
     app.paramEditorControls = gobjects(0);
+    app.trainingScopeTextArea = gobjects(0);
 
     if ~isfield(app.paramSpec, key)
         return;
@@ -581,7 +611,8 @@ function showParamEditor(app, key)
     scopeBox.Tooltip = ['Explicit ownership contract: data quality, trainable ' ...
         'sub-module, frozen neighbours, split, and prediction output.'];
     app.paramEditorControls(end+1) = scopeBox;
-    updateTrainingScopeLabels(app,app.Data.classiObj);
+    app.trainingScopeTextArea = scopeBox;
+    refreshTrainingScopePanel(app);
 
     % current value (string from table)
     row = find(strcmp(app.UITableParam.Data.Param, key), 1);
@@ -782,6 +813,7 @@ function applyParamEdit(app, key, newVal)
     end
 
     app.Data.classiObj = c;
+    refreshTrainingScopePanel(app);
     checkStatus(app,false);
 end
 
@@ -1065,6 +1097,16 @@ app.FormattrainingsetMenu.Text=['Format data for ' scope.module '...'];
 app.TrainClassifierMenu.Text=['Train only ' scope.module '...'];
 end
 
+function refreshTrainingScopePanel(app)
+% Keep the ownership summary synchronized with live parameter edits.
+classiObj=app.Data.classiObj;
+if ~isempty(app.trainingScopeTextArea) && ...
+        isvalid(app.trainingScopeTextArea)
+    app.trainingScopeTextArea.Value=trainingScopeLines(app,classiObj);
+end
+updateTrainingScopeLabels(app,classiObj);
+end
+
 
 function label = classifierDropdownLabel(app, classiObj)
 % Reuse the package entry already present in classlist instead of adding
@@ -1160,9 +1202,10 @@ end
         % Build table-based editor
         [app.paramSpec, app.paramTableData] = buildParamTable(app, c.trainingParam, c);
         app.UITableParam.Data = app.paramTableData;
-        app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+        app.UITableParam.ColumnName = { ...
+            'Parameter','Value','Model component / category','',''};
         app.UITableParam.ColumnEditable = [false true false false false];
-        try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
+        try app.UITableParam.ColumnWidth = {'auto','auto','auto',1,1}; catch, end
         app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
         app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 
@@ -2072,7 +2115,6 @@ function indices = selectedAnnotationRoiIndices(app)
         try, indices = double(app.Data.selected); catch, end
     end
     nRoi = numel(app.Data.classiObj.roi);
-    oldTraining = double(app.Data.classiObj.trainingset(:).');
     indices = unique(round(indices(:).'), 'stable');
     indices = indices(isfinite(indices) & indices >= 1 & indices <= nRoi);
 end
@@ -2124,6 +2166,81 @@ function setClassifierTrainingSelection(app, trainIndices)
     catch
     end
     app.Data.classiObj = classiObj;
+end
+
+function dataset = remapClassifierDatasetAfterRoiRemoval( ...
+        app, dataset, legacyTraining, keep, oldRoiCount) %#ok<INUSD>
+    if ~isstruct(dataset) || ~isscalar(dataset)
+        dataset = struct('classes', {{}}, 'channels', {{}}, ...
+            'split', struct('train', [], 'val', [], 'test', []));
+    end
+    if ~isfield(dataset, 'split') || ~isstruct(dataset.split) || ...
+            ~isscalar(dataset.split)
+        dataset.split = struct('train', legacyTraining, ...
+            'val', [], 'test', []);
+    end
+    splitNames = {'train','val','test'};
+    for i = 1:numel(splitNames)
+        name = splitNames{i};
+        if isfield(dataset.split, name)
+            oldIndices = dataset.split.(name);
+        else
+            oldIndices = [];
+        end
+        if strcmp(name, 'train') && isempty(oldIndices) && ...
+                ~isempty(legacyTraining)
+            oldIndices = legacyTraining;
+        end
+        oldIndices = unique(round(double(oldIndices(:).')), 'stable');
+        oldIndices = oldIndices(isfinite(oldIndices) & ...
+            oldIndices >= 1 & oldIndices <= oldRoiCount);
+        dataset.split.(name) = find(ismember(keep, oldIndices));
+    end
+end
+
+function clearAnnotationSessionAfterRoiRemoval(app, classiObj)
+    session = [];
+    try
+        if isfield(app.Data, 'annotationSession')
+            session = app.Data.annotationSession;
+        end
+    catch
+    end
+    try
+        figures = findall(0, 'Type', 'figure');
+        scoreFigure = findobj(figures, 'Name', 'ScoreApp');
+        for i = 1:numel(scoreFigure)
+            if ~isprop(scoreFigure(i), 'RunningAppInstance'), continue; end
+            scoreApp = scoreFigure(i).RunningAppInstance;
+            scoreSession = scoreApp.AnnotationSession;
+            sameSession = ~isempty(session) && isequal(scoreSession, session);
+            sameClassifier = false;
+            if ~isempty(scoreSession) && isvalid(scoreSession)
+                sameClassifier = isequal(scoreSession.Classifier, classiObj);
+            end
+            if sameSession || sameClassifier
+                scoreApp.setAnnotationSession([]);
+            end
+        end
+    catch
+    end
+    try
+        if isfield(app.Data, 'annotationSessionListener') && ...
+                ~isempty(app.Data.annotationSessionListener)
+            delete(app.Data.annotationSessionListener);
+        end
+    catch
+    end
+    try
+        if isfield(app.Data, 'annotationBoundsListener') && ...
+                ~isempty(app.Data.annotationBoundsListener)
+            delete(app.Data.annotationBoundsListener);
+        end
+    catch
+    end
+    app.Data.annotationSessionListener = [];
+    app.Data.annotationBoundsListener = [];
+    app.Data.annotationSession = [];
 end
 
 function proceed = confirmTrainingRoisReady(app, roiIndices)
@@ -2506,9 +2623,10 @@ end
     % Build table-based editor
     [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
-    app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+    app.UITableParam.ColumnName = { ...
+        'Parameter','Value','Model component / category','',''};
     app.UITableParam.ColumnEditable = [false true false false false];
-    try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
+    try app.UITableParam.ColumnWidth = {'auto','auto','auto',1,1}; catch, end
     app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
     app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 
@@ -2720,9 +2838,10 @@ end
     % Rebuild table-based editor
     [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
     app.UITableParam.Data = app.paramTableData;
-    app.UITableParam.ColumnName = {'Parameter','Value','Type','Group','Internal key'};
+    app.UITableParam.ColumnName = { ...
+        'Parameter','Value','Model component / category','',''};
     app.UITableParam.ColumnEditable = [false true false false false];
-    try app.UITableParam.ColumnWidth = {'auto','auto','auto','auto',1}; catch, end
+    try app.UITableParam.ColumnWidth = {'auto','auto','auto',1,1}; catch, end
     app.UITableParam.CellSelectionCallback = createCallbackFcn(app, @UITableParamCellSelection, true);
     app.UITableParam.CellEditCallback = createCallbackFcn(app, @UITableParamCellEdit, true);
 
@@ -3021,36 +3140,60 @@ end
         sel(i) = double(app.UITableData.Data{selectedRows(i),3});
     end
 
-    nRoi = numel(app.Data.classiObj.roi);
+    classiObj = app.Data.classiObj;
+    nRoi = numel(classiObj.roi);
+    oldRois = classiObj.roi;
+    oldTraining = double(classiObj.trainingset(:).');
+    oldDataset = classiObj.dataset;
+    oldChannelName = classiObj.channelName;
+    oldScore = classiObj.score;
 
     % Nettoyage des indices hors bornes
-    sel = sel(sel >= 1 & sel <= nRoi);
+    sel = unique(round(sel(:).'), 'stable');
+    sel = sel(isfinite(sel) & sel >= 1 & sel <= nRoi);
     if isempty(sel)
         return
     end
 
     % ROIs à conserver = toutes sauf celles sélectionnées
     keep = setdiff(1:nRoi, sel, 'stable');
-
+    newDataset = remapClassifierDatasetAfterRoiRemoval( ...
+        app, oldDataset, oldTraining, keep, nRoi);
+    newTraining = newDataset.split.train;
     if isempty(keep)
-        % On a tout supprimé
-        app.Data.classiObj.roi = roi;
-        app.Data.classiObj.trainingset = [];
-        app.Data.classiObj.channelName = {};
-        app.UITableData.Selection = [];
-        displayClassi(app);
+        newRois = roi;
     else
-        % On garde seulement les ROIs non sélectionnées
-        app.Data.classiObj.roi = app.Data.classiObj.roi(keep);
-        setClassifierTrainingSelection(app, find(ismember(keep, oldTraining)));
-        app.UITableData.Selection = [];
-        
-        % Cas particulier : il ne reste qu’une ROI “placeholder”
-        if numel(app.Data.classiObj.roi) == 1 && ...
-                isempty(app.Data.classiObj.roi(1).id)
-            app.Data.classiObj.channelName = {};
-            displayClassi(app);
+        newRois = oldRois(keep);
+    end
+
+    % Commit the ROI array and its split together. If a future split update
+    % fails, restore the complete pre-click state rather than leaving an
+    % in-memory classifier with fewer ROIs and stale indices.
+    try
+        classiObj.roi = newRois;
+        classiObj.trainingset = newTraining;
+        classiObj.dataset = newDataset;
+        classiObj.score = [];
+        if isempty(keep)
+            classiObj.channelName = {};
         end
+    catch ME
+        classiObj.roi = oldRois;
+        classiObj.trainingset = oldTraining;
+        classiObj.dataset = oldDataset;
+        classiObj.channelName = oldChannelName;
+        classiObj.score = oldScore;
+        app.Data.classiObj = classiObj;
+        rethrow(ME);
+    end
+
+    clearAnnotationSessionAfterRoiRemoval(app, classiObj);
+    app.UITableData.Selection = [];
+    app.Data.selected = [];
+    if isempty(keep) || (numel(classiObj.roi) == 1 && ...
+            isempty(classiObj.roi(1).id))
+        classiObj.channelName = {};
+        displayClassi(app);
     end
 
     % Mise à jour de l’état et de l’affichage
@@ -4071,20 +4214,109 @@ disp('unable to display folder with this OS');
                 firstSession = annotationSessionForClassifier( ...
                     app, app.Data.classiObj, indices(1));
                 catalog = firstSession.initializationCatalog();
+                catalogs = {catalog};
+                hasExistingPrediction = catalog.prediction.available;
+                for predictionRoiIndex = indices(2:end)
+                    predictionSession = annotationSessionForClassifier( ...
+                        app, app.Data.classiObj, predictionRoiIndex);
+                    predictionCatalog = predictionSession.initializationCatalog();
+                    catalogs{end+1} = predictionCatalog; %#ok<AGROW>
+                    hasExistingPrediction = hasExistingPrediction || ...
+                        predictionCatalog.prediction.available;
+                end
+                catalog = annotationCommonInitializationCatalog(catalogs);
+                predictionPlan = [];
+                activeModel = annotationActiveModelInfo( ...
+                    app.Data.classiObj, indices);
+                if activeModel.supported
+                    try
+                        predictionPlan = classifierPredictForAnnotation( ...
+                            app.Data.classiObj, indices, 'PlanOnly', true);
+                        activeModel = annotationActiveModelInfo( ...
+                            app.Data.classiObj, indices, predictionPlan);
+                    catch ME
+                        activeModel.inputsResolved = false;
+                        activeModel.issues = {ME.message};
+                    end
+                end
+                [recipe, hasInitializationSource] = ...
+                    annotationInitializationDefaultRecipe(catalog, activeModel);
+                if ~hasInitializationSource
+                    uialert(app.ClassifierUIFigure, ...
+                        annotationInitializationUnavailableMessage(), ...
+                        'Existing prediction required', 'Icon', 'info');
+                    return;
+                end
                 rows = annotationSummaryRows(app, app.Data.classiObj, indices);
                 overwrite = any(~strcmpi(string({rows.status}), 'missing'));
                 if isempty(event)
-                    recipe = catalog.defaultRecipe;
                     accepted = true;
                 else
                     [recipe, accepted] = annotationInitializationDialog( ...
                         app.ClassifierUIFigure, catalog, ...
-                        'RoiCount', numel(indices), 'HasExistingGT', overwrite);
+                        'RoiCount', numel(indices), 'HasExistingGT', overwrite, ...
+                        'ActiveModel', activeModel);
                 end
                 if ~accepted, return; end
             catch ME
                 uialert(app.ClassifierUIFigure, ME.message, ...
                     'Initialize ground truth');
+                return;
+            end
+            if strcmp(recipe.mode, 'run_prediction')
+                [predictionPlan, inputOverrides, ready] = ...
+                    annotationResolvePredictionInputs( ...
+                    app.ClassifierUIFigure, app.Data.classiObj, indices, ...
+                    predictionPlan);
+                if ~ready, return; end
+                if overwrite || hasExistingPrediction
+                    replacement = ['recompute and replace the current model ' ...
+                        'prediction'];
+                    if overwrite
+                        replacement = [replacement ' and replace existing ' ...
+                            'editable or validated GT'];
+                    end
+                    choice = uiconfirm(app.ClassifierUIFigure, [ ...
+                        'Apply the active latent model to the existing PRED ' ...
+                        'masks/tracks, ' replacement ...
+                        ' for the selected ROI(s)? No segmentation will be run. ' ...
+                        'The refined output remains a prediction; its editable ' ...
+                        'copy will be marked Draft.'], ...
+                        'Refine existing prediction with active latent model', ...
+                        'Options', {'Cancel','Apply and replace'}, ...
+                        'DefaultOption', 1, 'CancelOption', 1, 'Icon', 'warning');
+                    if ~strcmp(choice, 'Apply and replace'), return; end
+                end
+                progress = uiprogressdlg(app.ClassifierUIFigure, ...
+                    'Title', 'Refine PRED and initialize ground truth', ...
+                    'Message', 'Applying latent model to existing masks/tracks...', ...
+                    'Indeterminate', 'on', 'Cancelable', 'off');
+                try
+                    arguments = {'InitializeGT', true, ...
+                        'OverwriteGT', overwrite, 'Save', true, ...
+                        'Progress', progress};
+                    if ~isempty(fieldnames(inputOverrides))
+                        arguments = [arguments {'InputOverrides', inputOverrides}];
+                    end
+                    report = classifierPredictForAnnotation( ...
+                        app.Data.classiObj, indices, arguments{:});
+                    if isvalid(progress), close(progress); end
+                    checkStatus(app,false);
+                    displayData(app, 'full');
+                    uialert(app.ClassifierUIFigure, sprintf([ ...
+                        'Refined and initialized %d ROI(s) as editable Draft GT.\n' ...
+                        'Run ID: %s\nNo segmentation was launched automatically.\n' ...
+                        'No ground truth was consumed by inference.'], ...
+                        numel(report.items), ...
+                        char(string(report.runId))), ...
+                        'Ground truth initialized from active model', ...
+                        'Icon', 'success');
+                catch ME
+                    if isvalid(progress), close(progress); end
+                    uialert(app.ClassifierUIFigure, ME.message, ...
+                        'Prediction-based GT initialization failed', ...
+                        'Icon', 'error');
+                end
                 return;
             end
             errors = strings(0,1);

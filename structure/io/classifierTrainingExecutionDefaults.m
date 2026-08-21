@@ -33,6 +33,20 @@ end
 if readSnapshot
     defaults = overlayStruct(defaults, readSnapshotDefaults(classiObj, pkg));
 end
+defaults = normalizePackageDefaults(classiObj, pkg, defaults);
+end
+
+function defaults = normalizePackageDefaults(classiObj,pkg,defaults)
+if isempty(pkg),return;end
+hook=[pkg '.normalizeTrainingExecutionDefaults'];
+try
+    if ~isempty(which(hook))
+        defaults=feval(hook,classiObj,defaults);
+    end
+catch ME
+    warning('classifierTrainingExecutionDefaults:PackageNormalizationFailed', ...
+        'Could not normalize %s execution defaults: %s',pkg,ME.message);
+end
 end
 
 function defaults = genericCompatibleDefaults(classiObj, spec)

@@ -27,14 +27,17 @@ p.brightfieldChannelName = readChoice(p.brightfieldChannelName);
 p.nucleusChannelName = readChoice(p.nucleusChannelName);
 p.budneckChannelName = readChoice(p.budneckChannelName);
 runtimeChannels = collectRuntimeChannels(param,ctx,classif);
-if strcmp(p.backend,'causal_composite') && ...
-        isMissingChoice(p.instanceChannelName)
-    p.instanceChannelName = preferred(runtimeChannels, ...
-        {'instance','segmentation','mask'},1);
+if strcmp(p.backend,'causal_composite')
+    gtChannel=trainingGroundTruthChannel(classif);
+    p.instanceChannelName= ...
+        cellLatentModel.utils.resolveFrameLocalInstanceChannel( ...
+        classif,p.instanceChannelName,gtChannel,ctx);
+    p.trackChannelName='';
 elseif isMissingChoice(p.trackChannelName)
     p.trackChannelName = preferred(runtimeChannels, ...
         {'trackastra','track','label','mask'},1);
 end
+
 if strcmp(p.backend,'legacy')
     if isMissingChoice(p.gfpChannelName)
         p.gfpChannelName = preferred(runtimeChannels,{'gfp','nuc'},2);
@@ -377,4 +380,15 @@ function tf = isMissingChoice(value)
 value = strtrim(char(string(value)));
 tf = isempty(value) || strcmpi(value,'N/A') || ...
     strcmpi(value,'<none>') || strcmpi(value,'<auto>');
+end
+
+function value=trainingGroundTruthChannel(classif)
+value='';
+try
+    if isstruct(classif.trainingParam)&& ...
+            isfield(classif.trainingParam,'trackChannelName')
+        value=readChoice(classif.trainingParam.trackChannelName);
+    end
+catch
+end
 end

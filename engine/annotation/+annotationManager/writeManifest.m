@@ -33,6 +33,11 @@ else
 end
 
 if p.Results.Save
-    roiObj.save('data', false);
+    didSave = roiObj.save('data', false);
+    if ~didSave
+        error('annotationManager:ManifestPersistenceFailed', ...
+            'The annotation manifest for ROI "%s" could not be saved.', ...
+            char(string(roiObj.id)));
+    end
 end
 end

@@ -25,7 +25,7 @@ switch char(string(component.storage))
         [channel, exists] = annotationManager.resolveChannel(roiObj, asset);
         if ~exists, error('annotationManager:MissingGroundTruth', ...
                 'GT channel "%s" does not exist.', asset.channel); end
-        value = readChannel(roiObj, channel);
+        value = annotationManager.readChannel(roiObj, channel);
     case 'dataseries'
         ensureData(roiObj);
         idx = find(arrayfun(@(x) strcmp(char(string(x.groupid)), ...
@@ -57,28 +57,6 @@ switch char(string(component.storage))
     otherwise
         value = [];
 end
-end
-
-function value = readChannel(roiObj, channel)
-h5File = fullfile(char(string(roiObj.path)), ...
-    ['im_' char(string(roiObj.id)) '.h5']);
-if isfile(h5File)
-    info = h5info(h5File);
-    for i = 1:numel(info.Datasets)
-        path = ['/' info.Datasets(i).Name];
-        logicalName = info.Datasets(i).Name;
-        try, logicalName = h5readatt(h5File, path, 'channel_name'); catch, end
-        if strcmpi(char(string(logicalName)), channel)
-            value = h5read(h5File, path);
-            return;
-        end
-    end
-end
-if isempty(roiObj.image), roiObj.load('Silent'); end
-idx = roiObj.findChannelID(channel);
-if isempty(idx), error('annotationManager:MissingGroundTruth', ...
-        'GT channel "%s" could not be read.', channel); end
-value = roiObj.image(:,:,idx,:);
 end
 
 function ensureData(roiObj)

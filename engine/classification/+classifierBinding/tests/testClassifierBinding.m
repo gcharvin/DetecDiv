@@ -32,7 +32,7 @@ verifyNotEmpty(testCase, packages);
 for i = 1:numel(packages)
     spec = classifierBinding.trainingSpec(struct('classifierPkg', packages{i}));
     verifyNotEmpty(testCase, spec, sprintf('%s has no training bindings.', packages{i}));
-    verifyTrue(testCase, all(strcmp({spec.group}, 'Data bindings')));
+    verifyTrue(testCase, all(~cellfun(@isempty,{spec.group})));
     verifyTrue(testCase, all(~cellfun(@isempty, {spec.param})));
     defaults = feval([packages{i} '.utils.defaultTrainingParam']);
     persisted = spec(strcmpi({spec.storage}, 'trainingParam'));
@@ -103,6 +103,95 @@ verifyEqual(testCase, c.trainingParam.trainingObjective, ...
 verifyTrue(testCase, any(strcmp(report.flattenedParameters, 'trainingObjective')));
 end
 
+function testLegacyClassifierReceivesNewScopeControlsWithoutReset(testCase)
+folder = tempname;
+mkdir(folder);
+addTeardown(testCase, @()removeFolder(folder));
+
+c = classi(folder, 'legacy_scope', 1);
+c.classifierPkg = 'cellLatentModel';
+c.trainingParam = struct( ...
+    'frameIntervalMinutes',7, ...
+    'trainingObjective',{{'relation_ensemble','continuous_lineage', ...
+        'relation_ensemble'}}, ...
+    'tip',{{'Saved interval','Saved objective'}});
+
+report = classifierBinding.normalizeClassifier(c);
+keys = fieldnames(c.trainingParam);
+verifyEqual(testCase,keys{1},'architectureVersion');
+verifyEqual(testCase,keys{2},'trainTrackingActions');
+verifyEqual(testCase,keys{3},'trainMotherNull');
+verifyEqual(testCase,keys{4},'stateUpdateMode');
+verifyEqual(testCase,c.trainingParam.frameIntervalMinutes,7);
+verifyEqual(testCase,c.trainingParam.trainingObjective, ...
+    {'relation_ensemble','continuous_lineage','relation_ensemble'});
+verifyTrue(testCase,all(ismember( ...
+    {'architectureVersion','trainTrackingActions','trainMotherNull', ...
+     'stateUpdateMode'},report.addedParameters)));
+end
+
+function testCompositeMigrationSeparatesRuntimeMasksFromReviewedGt(testCase)
+folder=tempname;
+mkdir(folder);
+addTeardown(testCase,@()removeFolder(folder));
+c=classi(folder,'legacy_composite_binding',1,'InitTraining',false);
+c.classifierPkg='cellLatentModel';
+c.trainingParam=cellLatentModel.utils.defaultTrainingParam();
+c.trainingParam.architectureVersion='detecdiv_composite_v1';
+c.trainingParam.trackChannelName='latent_model_1_cell';
+c.trainingParam.instanceChannelName='latent_model_1_cell';
+c.executionParam=cellLatentModel.utils.defaultExecutionParam();
+c.executionParam.backend='causal_composite';
+c.executionParam.instanceChannelName='latent_model_1_cell';
+r=roiWithRaw(folder,'R1');
+mask=zeros(4,4,1,3,'uint16');
+mask(2:3,2:3,1,:)=1;
+r.addChannel(mask,'results_cellposeSAM_cell',[1 1 1],[0 0 0]);
+r.display.indexed(r.findChannelID('results_cellposeSAM_cell','exact'))=true;
+r.addChannel(mask,'latent_model_1_cell',[1 1 1],[0 0 0]);
+r.display.indexed(r.findChannelID('latent_model_1_cell','exact'))=true;
+c.roi=r;
+
+report=classifierBinding.normalizeClassifier(c);
+
+verifyTrue(testCase,report.packageMigration.changed);
+verifyEqual(testCase,c.trainingParam.instanceChannelName, ...
+    'results_cellposeSAM_cell');
+verifyEqual(testCase,c.trainingParam.trackChannelName, ...
+    'latent_model_1_cell');
+verifyEqual(testCase,c.executionParam.instanceChannelName, ...
+    'results_cellposeSAM_cell');
+verifyEqual(testCase,c.executionParam.trackChannelName,'');
+end
+
+function testCompositeMigrationNeverFallsBackToGt(testCase)
+folder=tempname;
+mkdir(folder);
+addTeardown(testCase,@()removeFolder(folder));
+c=classi(folder,'gt_only_composite',1,'InitTraining',false);
+c.classifierPkg='cellLatentModel';
+c.trainingParam=cellLatentModel.utils.defaultTrainingParam();
+c.trainingParam.architectureVersion='detecdiv_composite_v1';
+c.trainingParam.trackChannelName='latent_model_1_cell';
+c.trainingParam.instanceChannelName='latent_model_1_cell';
+c.executionParam=struct('backend','causal_composite', ...
+    'instanceChannelName','latent_model_1_cell', ...
+    'trackChannelName','latent_model_1_cell');
+r=roiWithRaw(folder,'R1');
+mask=zeros(4,4,1,3,'uint16');
+r.addChannel(mask,'latent_model_1_cell',[1 1 1],[0 0 0]);
+r.display.indexed(r.findChannelID('latent_model_1_cell','exact'))=true;
+c.roi=r;
+
+classifierBinding.normalizeClassifier(c);
+
+verifyEmpty(testCase,c.trainingParam.instanceChannelName);
+verifyEmpty(testCase,c.executionParam.instanceChannelName);
+verifyEqual(testCase,c.trainingParam.trackChannelName, ...
+    'latent_model_1_cell');
+verifyEmpty(testCase,c.executionParam.trackChannelName);
+end
+
 function testManagedAnnotationBindingIsReadOnly(testCase)
 folder = tempname;
 mkdir(folder);
@@ -155,9 +244,15 @@ for i=1:numel(packages)
     verifyTrue(testCase,all(ismember({bindings.quality}, ...
         {'input','gt','pred','derived'})));
     verifyTrue(testCase,any(strcmp({bindings.quality},'gt')));
-    parameterLabels=classifierBinding.trainingParameterSpec(c);
+    [parameterLabels,displayPolicy]= ...
+        classifierBinding.trainingParameterSpec(c);
     verifyNotEmpty(testCase,parameterLabels, ...
         sprintf('%s must explain its training parameters.',packages{i}));
+    if strcmp(packages{i},'cellLatentModel')
+        verifyFalse(testCase,displayPolicy.showUnspecified);
+    else
+        verifyTrue(testCase,displayPolicy.showUnspecified);
+    end
 end
 end
 

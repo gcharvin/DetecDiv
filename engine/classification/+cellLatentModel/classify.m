@@ -3,20 +3,11 @@ function out = classify(roiobj,classif,ctx)
 if nargin < 3 || isempty(ctx), ctx = struct(); end
 cellLatentModel.ensureClassMetadata(classif);
 out = cellLatentModel.utils.outInitSafe('cellLatentModel.classify');
-p = cellLatentModel.utils.defaultExecutionParam();
-try
-    p = cellLatentModel.utils.applyOverrides(p,classif.executionParam);
-catch
-end
-if isfield(ctx,'params') && isstruct(ctx.params)
-    runtime = ctx.params;
-    present = {'modelPath','modelSource','compositeManifestPath', ...
-        'trackingCheckpointDir','stateRuntimeConfigPath', ...
-        'adaptiveMarkerModelPath','adaptiveMarkerModelSource'};
-    present = present(isfield(runtime,present));
-    if ~isempty(present), runtime = rmfield(runtime,present); end
-    p = cellLatentModel.utils.applyOverrides(p,runtime);
-end
+% Normal pipeline execution resolves the classifier-owned deployment
+% snapshot here.  Direct annotation inference instead supplies the exact
+% already-resolved snapshot through an explicit, validated context, so a
+% multi-ROI run cannot switch artifacts if the JSON changes mid-run.
+p = cellLatentModel.resolveInferenceParam(classif,ctx);
 [resolved,data,image] = cellLatentModel.core(p,roiobj,ctx,classif);
 out.data = data;
 out.image = image;

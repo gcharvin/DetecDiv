@@ -431,10 +431,12 @@ cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
 classifier = classi(folder,'composite_lifecycle',1);
 roi1 = syntheticROI(fullfile(folder,'roi1'),'composite_train',0);
 roi2 = syntheticROI(fullfile(folder,'roi2'),'composite_validation',1);
+addFrameLocalInstances(roi1);
+addFrameLocalInstances(roi2);
 writeReviewedLineage(roi1);
 writeReviewedLineage(roi2);
 classifier.roi = [roi1 roi2];
-classifier.channelName = {'results_trackastra','ch2-GFP'};
+classifier.channelName = {'results_cellposeSAM_cell','ch2-GFP'};
 classifier.dataset.split.train = 1;
 classifier.dataset.split.val = 2;
 classifier.dataset.split.test = [];
@@ -444,7 +446,7 @@ tp.architectureVersion = 'detecdiv_composite_v1';
 tp.trainTrackingActions = true;
 tp.trainMotherNull = true;
 tp.stateUpdateMode = 'none';
-tp.instanceChannelName = 'results_trackastra';
+tp.instanceChannelName = 'results_cellposeSAM_cell';
 tp.trackChannelName = 'results_trackastra';
 tp.groundTruthFamily = 'Reviewed lineage';
 tp.frameIntervalMinutes = 3;
@@ -669,6 +671,19 @@ trainingConsole = evalc( ...
     'trained = cellLatentModel.train(classifier,trainingCtx);');
 verifyEqual(testCase,trained.status,"OK");
 verifyTrue(testCase,isfile(trained.artifacts.model));
+trainingConfig = jsondecode(fileread(trained.artifacts.config));
+verifyEqual(testCase,double( ...
+    trainingConfig.training.early_stopping_patience),30);
+verifyEqual(testCase,double( ...
+    trainingConfig.training.early_stopping_min_delta),0.0001, ...
+    'AbsTol',eps);
+trainingReport = jsondecode(fileread(trained.artifacts.report));
+verifyTrue(testCase,logical( ...
+    trainingReport.training.selection_policy.epoch_zero_eligible));
+verifyTrue(testCase,logical( ...
+    trainingReport.training.selection_policy.restore_best_checkpoint));
+verifyGreaterThanOrEqual(testCase,double( ...
+    trainingReport.training.best_epoch),0);
 verifyTrue(testCase,contains(trainingConsole,'[training] Epoch 1/1:'), ...
     'Python epoch output must be relayed through the MATLAB worker console.');
 verifyTrue(testCase,contains(trainingConsole,'@@DETECDIV_PROGRESS@@') && ...
@@ -726,6 +741,7 @@ roiobj.display = displayState;
 end
 
 function writeReviewedLineage(roiobj)
+if isempty(roiobj.image),roiobj.load;end
 tracks = uint32(squeeze(roiobj.image(:,:,1,:)));
 model = cellModel.create(roiobj.id);
 result = struct('edges',struct( ...
@@ -738,6 +754,15 @@ result = struct('edges',struct( ...
     model,tracks,'results_trackastra','<auto>', ...
     'Reviewed lineage',result,true,'manual_review');
 roiobj.saveCellModel(model);
+end
+
+function addFrameLocalInstances(roiobj)
+instances=uint16(roiobj.image(:,:,1,:));
+roiobj.addChannel(instances,'results_cellposeSAM_cell', ...
+    [1 1 1],[0 0 0]);
+index=roiobj.findChannelID('results_cellposeSAM_cell','exact');
+roiobj.display.indexed(index)=true;
+roiobj.save([],false);
 end
 
 function removeFolder(folder)

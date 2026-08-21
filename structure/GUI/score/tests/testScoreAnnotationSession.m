@@ -41,7 +41,7 @@ r.save([], false);
 c.roi = r;
 
 session = c.annotationSession(1);
-gtName = [c.strid '_cell'];
+gtName = cellposesam.annotationChannelName(c);
 verifyEmpty(testCase, r.findChannelID(gtName));
 
 app = score(r, 'pixelAnnotation');

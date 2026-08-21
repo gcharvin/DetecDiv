@@ -1709,16 +1709,76 @@ channels = requiredChannelsFromContextLocal(ctx, fallbackChannels);
 if isempty(channels)
     return;
 end
-channels = filterExistingChannelNamesLocal(roiobjLocal, channels);
-if isempty(channels)
+if ~strictRequiredChannelsLocal(ctx)
+    % Preserve the historical tolerant pipeline behavior. Some pipeline
+    % contexts accumulate advisory requiredChannels across nodes; those
+    % names must not make every downstream classifier strict.
+    channels = filterExistingChannelNamesLocal(roiobjLocal, channels);
+    if isempty(channels)
+        return;
+    end
+    try
+        roiobjLocal.load('Channel', channels, 'Silent');
+    catch ME
+        warning('classifyData:RequiredChannelLoadFailed', ...
+            'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
+            strjoin(channels, ', '), safeRoiIdLocal(roiobjLocal), ME.message);
+    end
     return;
 end
+
+% A pipeline mutation refresh deliberately keeps a compact image cache and
+% may load only the newly produced channel.  findChannelID consequently
+% answers whether a channel is addressable in that cache, not whether the
+% channel exists in the ROI HDF5 file.  Do not filter required names through
+% findChannelID before asking roi.load to resolve them from disk.
+channelsToLoad = channels(~cellfun( ...
+    @(name) isChannelLoadedInMemoryLocal(roiobjLocal, name), channels));
+if ~isempty(channelsToLoad)
+    try
+        roiobjLocal.load('Channel', channelsToLoad, ...
+            'Data', false, 'Silent');
+    catch ME
+        error('classifyData:RequiredChannelLoadFailed', ...
+            ['Could not load required ROI channel(s) %s for ROI "%s": ' ...
+             '%s'], strjoin(channelsToLoad, ', '), ...
+            safeRoiIdLocal(roiobjLocal), ME.message);
+    end
+end
+
+missing = channels(~cellfun( ...
+    @(name) isChannelLoadedInMemoryLocal(roiobjLocal, name), channels));
+if ~isempty(missing)
+    error('classifyData:RequiredChannelUnavailable', ...
+        ['Required ROI channel(s) %s are not addressable after loading ' ...
+         'ROI "%s".'], strjoin(missing, ', '), ...
+        safeRoiIdLocal(roiobjLocal));
+end
+end
+
+function tf = strictRequiredChannelsLocal(ctx)
+tf = false;
 try
-    roiobjLocal.load('Channel', channels, 'Silent');
-catch ME
-    warning('classifyData:RequiredChannelLoadFailed', ...
-        'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
-        strjoin(channels, ', '), safeRoiIdLocal(roiobjLocal), ME.message);
+    tf = isstruct(ctx) && isfield(ctx, 'io') && isstruct(ctx.io) && ...
+        isfield(ctx.io, 'strictRequiredChannels') && ...
+        isscalar(ctx.io.strictRequiredChannels) && ...
+        logical(ctx.io.strictRequiredChannels);
+catch
+    tf = false;
+end
+end
+
+function tf = isChannelLoadedInMemoryLocal(roiobjLocal, channelName)
+tf = false;
+try
+    if isempty(channelName) || isempty(roiobjLocal.image)
+        return;
+    end
+    indices = roiobjLocal.findChannelID(char(string(channelName)), 'exact');
+    tf = ~isempty(indices) && all(indices >= 1) && ...
+        all(indices <= size(roiobjLocal.image, 3));
+catch
+    tf = false;
 end
 end
 

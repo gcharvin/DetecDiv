@@ -96,9 +96,24 @@ classdef Session < handle
             % in the training interval but still carry an unconfirmed
             % ROI-level unit such as parentage.
             obj.completeRoiReviewWhenFramesComplete([], true);
+            % A successful validation is persisted as an approval below.
+            % Materialize the exact live mask/model snapshot first so the
+            % approval can never outlive unsaved Score edits or refer to a
+            % different on-disk revision.
+            liveHash = annotationManager.contentHash(obj.Roi, obj.Spec);
+            obj.persistCurrentGroundTruth();
+            diskHash = annotationManager.materializedContentHash( ...
+                obj.Roi, obj.Spec);
+            if isempty(liveHash) || ~strcmpi(liveHash, diskHash)
+                error('annotationManager:GroundTruthPersistenceMismatch', ...
+                    ['The live GT and its materialized files differ after ' ...
+                     'saving. Validation was not recorded; reload the ROI ' ...
+                     'and retry.']);
+            end
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
-            annotationManager.recordValidation(obj.Roi, obj.Spec, report);
+            annotationManager.recordValidation(obj.Roi, obj.Spec, report, ...
+                'ContentHash', liveHash);
             if report.valid
                 obj.LastValidationStatus = 'valid';
                 obj.LastValidationMessage = '';
@@ -250,6 +265,64 @@ classdef Session < handle
                 entry = annotationManager.resetValidationState(entry);
                 annotationManager.setEntry(obj.Roi, obj.Spec, entry);
             catch
+            end
+        end
+
+        function persistCurrentGroundTruth(obj)
+            channels = {};
+            saveData = false;
+            saveModel = false;
+            completeFrameCount = annotationManager.frameCount(obj.Roi);
+            for i = 1:numel(obj.Spec.components)
+                component = obj.Spec.components(i);
+                switch char(string(component.storage))
+                    case 'channel'
+                        [channel, exists] = annotationManager.resolveChannel( ...
+                            obj.Roi, component.groundTruth);
+                        if ~exists || isempty(obj.Roi.image), continue; end
+                        [indices, cacheStatus] = ...
+                            annotationManager.loadedChannelIndices( ...
+                            obj.Roi, channel);
+                        if cacheStatus == "invalid_cache"
+                            error('annotationManager:InvalidChannelCache', ...
+                                ['ROI "%s" has an inconsistent image/channel ' ...
+                                 'mapping. Reload it before validating GT.'], ...
+                                char(string(obj.Roi.id)));
+                        elseif cacheStatus ~= "loaded" || isempty(indices)
+                            continue;
+                        end
+                        if size(obj.Roi.image, 4) < completeFrameCount
+                            error('annotationManager:IncompleteChannelCache', ...
+                                ['ROI "%s" has only %d/%d frame(s) loaded. ' ...
+                                 'Reload the complete ROI before validating ' ...
+                                 'GT so a partial cache cannot replace the ' ...
+                                 'materialized channel.'], ...
+                                char(string(obj.Roi.id)), ...
+                                size(obj.Roi.image, 4), completeFrameCount);
+                        end
+                        channels{end+1} = channel; %#ok<AGROW>
+                    case 'dataseries'
+                        saveData = true;
+                    case 'cell_model_family'
+                        saveModel = true;
+                end
+            end
+
+            if ~isempty(channels)
+                didSave = obj.Roi.save(unique(channels, 'stable'), false);
+            elseif saveData
+                didSave = obj.Roi.save('data', false);
+            else
+                didSave = true;
+            end
+            if ~didSave
+                error('annotationManager:GroundTruthPersistenceFailed', ...
+                    'The live GT for ROI "%s" could not be saved.', ...
+                    char(string(obj.Roi.id)));
+            end
+            if saveModel && isstruct(obj.Roi.cellModel) && ...
+                    isfield(obj.Roi.cellModel, 'schema_version')
+                obj.Roi.saveCellModel(obj.Roi.cellModel);
             end
         end
 

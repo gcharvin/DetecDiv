@@ -4,6 +4,11 @@ function spec = annotationSpec(classif)
 spec = annotationManager.newSpec(classif);
 execution = cellLatentModel.executionSpec(classif);
 params = execution.defaults;
+% Annotation must discover the family produced by the active trained
+% bundle, not a possibly older executionParam stored in the MAT snapshot.
+% This is read-only: the classifier handle is never rewritten here.
+params = classifierApplyTrainingExecutionDefaults( ...
+    params, classif, execution, 'annotation');
 
 predictionFamily = char(string(params.outputFamilyName));
 gtFamily = trainingText(classif, 'groundTruthFamily', '');

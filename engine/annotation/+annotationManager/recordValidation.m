@@ -3,6 +3,7 @@ function entry = recordValidation(roiObj, spec, report, varargin)
 
 p = inputParser;
 p.addParameter('Save', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('ContentHash', '', @(x) ischar(x) || isstring(x));
 p.parse(varargin{:});
 
 [entry, found] = annotationManager.entryForSpec(roiObj, spec);
@@ -13,10 +14,13 @@ entry.validated_revision = uint32(entry.revision);
 if report.valid
     entry.validation_status = 'valid';
     entry.validation_message = '';
-    try
+    entry.validated_hash = char(string(p.Results.ContentHash));
+    if isempty(entry.validated_hash)
         entry.validated_hash = annotationManager.contentHash(roiObj, spec);
-    catch
-        entry.validated_hash = '';
+    end
+    if isempty(entry.validated_hash)
+        error('annotationManager:MissingValidationHash', ...
+            'A successful validation cannot be recorded without a GT hash.');
     end
     % A successful validation is the single user-facing transition to a
     % training-ready GT. Keep the historical approval fields as internal
