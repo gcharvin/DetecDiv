@@ -245,6 +245,90 @@ verifyEqual(testCase, target.display.displaylim(:,2), [0.01;0.91]);
 verifyEqual(testCase, target.display.displaylim(:,3), [0.2;0.8]);
 end
 
+function testConfiguredBrightfieldWinsWithPartialRoiCache(testCase)
+folder = tempname;
+mkdir(folder);
+folderCleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+
+c = classi(folder, 'score_background', 1);
+c.classifierPkg = 'cellposesam';
+c.category = {'Pixel'};
+c.classes = {'cell'};
+c.executionParam = struct('outputName', 'prediction');
+c.trainingParam = struct('brightfieldChannelName', 'Channel1_z2');
+
+r = roi('R1', [1 1 4 4]);
+r.path = c.path;
+brightfield = reshape(uint16(1:48), [4 4 1 3]);
+r.image = brightfield;
+r.channelid = 1;
+r.display.channel = {'Channel1_z2'};
+r.display.intensity = [1 1 1];
+r.display.rgb = [1 1 1];
+r.display.selectedchannel = true;
+r.display.indexed = false;
+r.display.alpha = 1;
+r.display.contour = false;
+r.display.width = 1;
+r.display.displaylim = [0.1; 0.9];
+r.display.log = false;
+r.display.scale = false;
+r.display.colorMode = {'rgb'};
+r.display.colormapName = {''};
+
+combined = repmat(brightfield, 1, 1, 3, 1);
+r.addChannel(combined, 'CombinedChannel', [1 1 1], [1 1 1]);
+prediction = zeros(4,4,1,3, 'uint16');
+prediction(2:3,2:3,1,:) = 1;
+r.addChannel(prediction, 'results_prediction_cell', [1 1 1], [0 0 0]);
+r.display.displaylim = repmat([0.1; 0.9], 1, size(r.image, 3));
+r.save([], false);
+c.roi = r;
+
+session = c.annotationSession(1);
+session.bootstrap();
+context = session.uiContext();
+verifyEqual(testCase, context.displayPreset.backgroundChannels, ...
+    {'Channel1_z2'}, ...
+    'The annotation preset must expose the configured BF observation.');
+
+r = session.Roi;
+gtName = cellposesam.annotationChannelName(c);
+h5File = fullfile(r.path, ['im_' char(string(r.id)) '.h5']);
+verifyEqual(testCase, h5read(h5File, '/Channel1_z2'), brightfield);
+
+% Reproduce Score's partial cache: only the composite and GT are resident,
+% while the configured BF pixels remain available in HDF5.
+r.image = [];
+r.channelid = [];
+r.load('Channel', {'CombinedChannel', gtName}, 'Data', false, 'Silent');
+verifyEmpty(testCase, r.findChannelID('Channel1_z2', 'exact'));
+bfRow = find(strcmpi(r.display.channel, 'Channel1_z2'), 1, 'first');
+combinedRow = find(strcmpi(r.display.channel, 'CombinedChannel'), 1, 'first');
+gtRow = find(strcmpi(r.display.channel, gtName), 1, 'first');
+r.display.selectedchannel(:) = false;
+r.display.indexed(:) = true;
+r.display.indexed(combinedRow) = false;
+r.display.selectedchannel(combinedRow) = true;
+r.display.selectedchannel(gtRow) = true;
+
+app = score(r, 'pixelAnnotation');
+appCleanup = onCleanup(@() deleteScore(app)); %#ok<NASGU>
+app.setAnnotationSession(session);
+
+bfPixels = r.findChannelID('Channel1_z2', 'exact');
+verifyNotEmpty(testCase, bfPixels, ...
+    'Applying the preset must load an HDF5-only BF channel.');
+verifyLessThanOrEqual(testCase, max(bfPixels), size(r.image, 3));
+verifyTrue(testCase, logical(r.display.selectedchannel(bfRow)));
+verifyFalse(testCase, logical(r.display.indexed(bfRow)));
+verifyTrue(testCase, any(logical(r.display.intensity(bfRow,:))));
+verifyFalse(testCase, logical(r.display.selectedchannel(combinedRow)), ...
+    'CombinedChannel must not supersede the configured BF observation.');
+verifyEqual(testCase, h5read(h5File, '/Channel1_z2'), brightfield, ...
+    'Selecting a background must not rewrite the stored source pixels.');
+end
+
 function deleteScore(app)
 try
     if ~isempty(app) && isvalid(app), delete(app); end

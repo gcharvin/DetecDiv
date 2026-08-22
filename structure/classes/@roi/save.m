@@ -198,6 +198,18 @@ while ~success && attempts < max_attempts
             dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
             h5Path = ['/' dsetNameSanitized];
 
+            % A partial image cache uses plane indices local to that cache
+            % (for example [1 5 6] for three loaded logical channels).  Those
+            % indices are not the canonical indices of the complete HDF5
+            % store and must never leak into dataset identity or display
+            % metadata.  Preserve the existing display contract before an
+            % ordinary partial save deletes/recreates the target dataset.
+            preservedDisplayAttrs = struct('name', {}, 'value', {});
+            if ~fullSave && exist(localH5Tmp,'file')
+                preservedDisplayAttrs = localReadPartialSaveDisplayAttrs( ...
+                    localH5Tmp, h5Path);
+            end
+
             % For ordinary partial save, replace the full logical dataset.
             % For frameUpsertMode, keep it and overwrite only the requested
             % temporal hyperslab; deleting here would create black holes for
@@ -224,8 +236,6 @@ while ~success && attempts < max_attempts
             h5writeatt(localH5Tmp, h5Path, 'bbox',            getBBox(obj));
             h5writeatt(localH5Tmp, h5Path, 'frames',          getFrames(obj,T));
             h5writeatt(localH5Tmp, h5Path, 'channel_name',    chanNameLogical);
-            h5writeatt(localH5Tmp, h5Path, 'channel_indices', idxSet);
-            h5writeatt(localH5Tmp, h5Path, 'channelid',       obj.channelid);
 
             % Attributs d'affichage
             dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
@@ -247,6 +257,10 @@ while ~success && attempts < max_attempts
                         end
                     end
                 end
+            end
+            if ~isempty(preservedDisplayAttrs)
+                localRestoreH5Attrs(localH5Tmp, h5Path, ...
+                    preservedDisplayAttrs, verbose);
             end
 
             % Extraction marker persisted in H5 for fast status checks.
@@ -273,6 +287,15 @@ while ~success && attempts < max_attempts
                 fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n', ...
                     obj.id, chanNameLogical, k, T);
             end
+        end
+
+        % Rebuild the store-wide plane identity from logical channel names
+        % and dataset widths.  In particular, never persist obj.channelid or
+        % idxSet here: both describe the current (possibly compact) cache,
+        % whereas these HDF5 attributes describe the complete materialized
+        % store and therefore must be identical on every dataset.
+        if imageSaved
+            localNormalizeH5ChannelIdentity(localH5Tmp, logicNames);
         end
 
         % Vérification + bascule atomique
@@ -706,6 +729,164 @@ try
         contains(name, "track") || endsWith(name, "_cell");
 catch
     tf = false;
+end
+end
+
+function attrs = localReadPartialSaveDisplayAttrs(h5File, h5Path)
+% Preserve persisted display semantics when rewriting one existing dataset.
+attrs = struct('name', {}, 'value', {});
+try
+    info = h5info(h5File, h5Path);
+catch
+    return;
+end
+for i = 1:numel(info.Attributes)
+    name = char(string(info.Attributes(i).Name));
+    % Value/physical-transform metadata is deliberately not preserved here:
+    % buildDisplayMetaForChannel above writes the current in-memory
+    % calibration, and a partial save is a legitimate way to update it.
+    if ~startsWith(name, 'display_')
+        continue;
+    end
+    try
+        attrs(end+1).name = name; %#ok<AGROW>
+        attrs(end).value = h5readatt(h5File, h5Path, name);
+    catch
+        % A disappearing optional attribute is not part of the data contract.
+    end
+end
+end
+
+function localRestoreH5Attrs(h5File, h5Path, attrs, verbose)
+for i = 1:numel(attrs)
+    try
+        h5writeatt(h5File, h5Path, attrs(i).name, attrs(i).value);
+    catch ME
+        if verbose
+            warning('roi:save:DisplayAttrRestoreFailed', ...
+                'Could not preserve attribute %s on %s: %s', ...
+                attrs(i).name, h5Path, ME.message);
+        end
+        rethrow(ME);
+    end
+end
+end
+
+function localNormalizeH5ChannelIdentity(h5File, preferredLogicalNames)
+% Persist one canonical full-store channel mapping on every HDF5 dataset.
+% preferredLogicalNames is display-name order, never compact image-plane order.
+info = h5info(h5File);
+datasets = info.Datasets;
+if isempty(datasets)
+    return;
+end
+
+n = numel(datasets);
+logicalNames = cell(1, n);
+widths = ones(1, n);
+oldFirstIndices = inf(1, n);
+for i = 1:n
+    h5Path = ['/' datasets(i).Name];
+    logicalNames{i} = datasets(i).Name;
+    try
+        logicalNames{i} = char(string(h5readatt( ...
+            h5File, h5Path, 'channel_name')));
+    catch
+    end
+
+    width = NaN;
+    try
+        value = double(h5readatt(h5File, h5Path, 'num_subchannels'));
+        if isscalar(value) && isfinite(value) && value >= 1
+            width = round(value);
+        end
+    catch
+    end
+    if ~isfinite(width)
+        dims = double(datasets(i).Dataspace.Size);
+        if numel(dims) >= 4
+            width = max(1, round(dims(3)));
+        else
+            % Three-dimensional legacy masks are H x W x T, not RGB.
+            width = 1;
+        end
+    end
+    widths(i) = width;
+
+    attributeNames = {datasets(i).Attributes.Name};
+    if any(strcmpi(attributeNames, 'channel_indices'))
+        oldIndices = double(h5readatt(h5File, h5Path, ...
+            'channel_indices'));
+        oldIndices = reshape(oldIndices, 1, []);
+        validIndices = numel(oldIndices) == width && ...
+            all(isfinite(oldIndices)) && all(oldIndices >= 1) && ...
+            all(oldIndices == round(oldIndices)) && ...
+            numel(unique(oldIndices)) == numel(oldIndices);
+        if ~validIndices
+            error('roi:save:InvalidH5ChannelIndices', ...
+                ['Dataset %s has invalid channel_indices for its %d ' ...
+                 'subchannel(s). Refusing to guess its logical order.'], ...
+                h5Path, width);
+        end
+        oldFirstIndices(i) = min(oldIndices);
+    end
+end
+
+normalizedNames = lower(strtrim(string(logicalNames)));
+if any(strlength(normalizedNames) == 0) || ...
+        numel(unique(normalizedNames)) ~= n
+    error('roi:save:DuplicateH5ChannelNames', ...
+        'HDF5 datasets must have distinct, non-empty logical channel names.');
+end
+
+preferredLogicalNames = cellstr(string(preferredLogicalNames(:).'));
+preferredNormalized = lower(strtrim(string(preferredLogicalNames)));
+preferredNormalized = preferredNormalized(strlength(preferredNormalized) > 0);
+if numel(unique(preferredNormalized)) ~= numel(preferredNormalized)
+    error('roi:save:DuplicatePreferredChannelNames', ...
+        'The in-memory display contains duplicate logical channel names.');
+end
+order = zeros(1, 0);
+remaining = true(1, n);
+for i = 1:numel(preferredLogicalNames)
+    hit = find(remaining & strcmpi(logicalNames, ...
+        preferredLogicalNames{i}), 1, 'first');
+    if isempty(hit)
+        continue;
+    end
+    order(end+1) = hit; %#ok<AGROW>
+    remaining(hit) = false;
+end
+remainingIndices = find(remaining);
+if ~isempty(remainingIndices)
+    % h5info commonly returns datasets alphabetically, which is not a
+    % logical-channel identity contract.  Retain the prior HDF5 order for
+    % channels absent from a compact display cache; use the name only as a
+    % deterministic tie-break for legacy overlapping maps.
+    oldIndex = oldFirstIndices(remainingIndices).';
+    name = normalizedNames(remainingIndices).';
+    datasetIndex = remainingIndices(:);
+    orderTable = table(oldIndex, name, datasetIndex);
+    orderTable = sortrows(orderTable, {'oldIndex','name','datasetIndex'});
+    remainingIndices = orderTable.datasetIndex.';
+end
+order = [order remainingIndices];
+
+indices = cell(1, n);
+channelId = zeros(1, sum(widths(order)));
+cursor = 0;
+for logicalId = 1:numel(order)
+    datasetIndex = order(logicalId);
+    idx = cursor + (1:widths(datasetIndex));
+    indices{datasetIndex} = idx;
+    channelId(idx) = logicalId;
+    cursor = cursor + widths(datasetIndex);
+end
+
+for i = 1:n
+    h5Path = ['/' datasets(i).Name];
+    h5writeatt(h5File, h5Path, 'channel_indices', indices{i});
+    h5writeatt(h5File, h5Path, 'channelid', channelId);
 end
 end
 

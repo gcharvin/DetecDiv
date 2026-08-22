@@ -1979,6 +1979,27 @@ end
 
             gtChannels = cellstr(string(preset.editableChannels));
             predictionChannels = cellstr(string(preset.predictionChannels));
+            backgroundChannels = {};
+            if isfield(preset, 'backgroundChannels')
+                backgroundChannels = cellstr(string( ...
+                    preset.backgroundChannels));
+                backgroundChannels = backgroundChannels( ...
+                    ~cellfun(@isempty, backgroundChannels));
+            end
+            % The configured brightfield observation may exist only in the
+            % ROI HDF5 because Score intentionally keeps a partial channel
+            % cache. Load that exact channel before changing display flags;
+            % otherwise the first cached intensity plane (often
+            % CombinedChannel) silently becomes the annotation background.
+            if ~isempty(backgroundChannels)
+                try
+                    score_loadChannelsForDisplay(roi, backgroundChannels);
+                catch
+                    % A missing optional observation must not prevent GT
+                    % review; the generic intensity fallback below remains
+                    % available for legacy classifiers and incomplete ROIs.
+                end
+            end
             for i = 1:numel(gtChannels)
                 idx = find(strcmp(roi.display.channel, gtChannels{i}), 1, 'first');
                 if isempty(idx), continue; end
@@ -2009,13 +2030,39 @@ end
                 roi.display.selectedchannel(idx) = showPrediction;
                 roi.display.alpha(idx) = min(0.25, roi.display.alpha(idx));
             end
-            % Managed mask editing starts with one intensity image under
-            % the indexed overlay. Without it, legacy renderers computed
-            % Nchannel == 0 and frame navigation appeared frozen.
-            background = find(~logical(roi.display.indexed), 1, 'first');
+            % Managed mask editing starts with the classifier-bound
+            % brightfield image under the indexed overlay.  Select it even
+            % if stale persisted metadata marked it indexed, and deselect
+            % other intensity composites so the configured source wins.
+            background = [];
+            for i = 1:numel(backgroundChannels)
+                idx = find(strcmpi(roi.display.channel, ...
+                    backgroundChannels{i}), 1, 'first');
+                if isempty(idx), continue; end
+                pixelIdx = roi.findChannelID(backgroundChannels{i}, 'exact');
+                if isempty(pixelIdx) || max(pixelIdx) > size(roi.image, 3)
+                    continue;
+                end
+                background = idx;
+                break;
+            end
             if ~isempty(background)
+                roi.display.indexed(background) = false;
+                intensityChannels = find(~logical(roi.display.indexed));
+                roi.display.selectedchannel(intensityChannels) = false;
                 roi.display.selectedchannel(background) = true;
-            elseif ~any(logical(roi.display.selectedchannel)) && ...
+                roi.display.intensity(background,:) = [1 1 1];
+                roi.display.rgb(background,:) = [1 1 1];
+                roi.display.alpha(background) = 1;
+                roi.display.contour(background) = false;
+            else
+                background = find(~logical(roi.display.indexed), 1, 'first');
+                if ~isempty(background)
+                    roi.display.selectedchannel(background) = true;
+                end
+            end
+            if isempty(background) && ...
+                    ~any(logical(roi.display.selectedchannel)) && ...
                     ~isempty(roi.display.selectedchannel)
                 roi.display.selectedchannel(1) = true;
             end
@@ -2079,6 +2126,21 @@ end
                 end
             else
                 score_setEditMode(app, false);
+                score_display(app, 'refresh');
+            end
+            % displayROIChannels/PaintButtonValueChanged may reapply a
+            % legacy ROI display snapshot and select CombinedChannel again.
+            % The managed annotation preset is authoritative after those
+            % callbacks as well.
+            if ~isempty(background)
+                roi.display.indexed(background) = false;
+                intensityChannels = find(~logical(roi.display.indexed));
+                roi.display.selectedchannel(intensityChannels) = false;
+                roi.display.selectedchannel(background) = true;
+                roi.display.intensity(background,:) = [1 1 1];
+                roi.display.rgb(background,:) = [1 1 1];
+                roi.display.alpha(background) = 1;
+                roi.display.contour(background) = false;
                 score_display(app, 'refresh');
             end
             app.setManagedAnnotationLayout(true);
