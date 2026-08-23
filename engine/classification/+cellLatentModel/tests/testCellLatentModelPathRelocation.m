@@ -98,3 +98,84 @@ verifyEqual(testCase,double(manifest.packaging.path_relocation. ...
 verifyTrue(testCase,manifest.packaging.path_relocation. ...
     verified_no_transient_paths);
 end
+
+
+function testTextArtifactsAreRelocatedAndRehashed(testCase)
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@()rmdir(root,'s')); %#ok<NASGU>
+source = 'C:\classifier\models\model_v002.partial_UUID';
+target = 'C:\classifier\models\model_v002';
+report = fullfile(root,'training_report.json');
+config = fullfile(root,'training_config.json');
+plain = fullfile(root,'training_stdout.txt');
+writeText(report,jsonencode(struct( ...
+    'checkpoint',[source '\tracking\checkpoint'], ...
+    'sibling','C:\classifier\models\model_v002.partial_UUID_extra\x.pt', ...
+    'x0_5',true)));
+reportText = fileread(report);
+reportText = strrep(reportText,'"x0_5"','"0.5"');
+reportText = strrep(reportText,'"sibling"', ...
+    '"checkpoint/manifest.json":"stable","metric":NaN,"sibling"');
+writeText(report,reportText);
+writeText(config,jsonencode(struct( ...
+    'output_dir',strrep([source '\lineage'],'\','/'))));
+writeText(plain,sprintf('output=%s\\tracking\n',source));
+
+audit = cellLatentModel.utils.relocateTextArtifacts( ...
+    root,source,target);
+
+decodedReport = jsondecode(fileread(report));
+decodedConfig = jsondecode(fileread(config));
+rawReport = fileread(report);
+verifyTrue(testCase,contains(rawReport,'"0.5"'));
+verifyTrue(testCase,contains(rawReport,'"checkpoint/manifest.json"'));
+verifyTrue(testCase,contains(rawReport,'"metric":NaN'));
+verifyFalse(testCase,contains(rawReport,'"x0_5"'));
+verifyEqual(testCase,normalizePath(decodedReport.checkpoint), ...
+    'C:/classifier/models/model_v002/tracking/checkpoint');
+verifyEqual(testCase,decodedReport.sibling, ...
+    'C:\classifier\models\model_v002.partial_UUID_extra\x.pt');
+verifyEqual(testCase,normalizePath(decodedConfig.output_dir), ...
+    'C:/classifier/models/model_v002/lineage');
+plainText = regexprep(strrep(fileread(plain),'\','/'),'/+','/');
+verifyTrue(testCase,contains(plainText, ...
+    'C:/classifier/models/model_v002/tracking'));
+verifyEqual(testCase,double(audit.checked_file_count),3);
+verifyEqual(testCase,double(audit.rewritten_file_count),3);
+verifyEqual(testCase,double(audit.relocated_path_count),3);
+verifyEqual(testCase,double(audit.source_paths_remaining),0);
+verifyTrue(testCase,audit.verified_no_transient_paths);
+end
+
+function testAppendJsonFieldPreservesExternalDictionaryKeys(testCase)
+root=tempname;
+mkdir(root);
+cleanup=onCleanup(@()rmdir(root,'s')); %#ok<NASGU>
+manifest=fullfile(root,'manifest.json');
+writeText(manifest,[ ...
+    '{"files":{"relations.npz":"abc"},' ...
+    '"thresholds":{"0.5":true},"metric":NaN}']);
+sources=struct('path','C:/dataset/source.h5','sha256','def','bytes',3);
+
+cellLatentModel.utils.appendJsonField( ...
+    manifest,'materialized_sources',sources);
+
+raw=fileread(manifest);
+decoded=jsondecode(raw);
+verifyTrue(testCase,contains(raw,'"relations.npz"'));
+verifyTrue(testCase,contains(raw,'"0.5"'));
+verifyTrue(testCase,contains(raw,'"metric":NaN'));
+verifyTrue(testCase,contains(raw,'"materialized_sources"'));
+verifyEqual(testCase,decoded.materialized_sources.sha256,'def');
+end
+
+function writeText(filename,text)
+fid=fopen(filename,'w');
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+fwrite(fid,text,'char');
+end
+
+function value=normalizePath(value)
+value=regexprep(strrep(char(string(value)),'\','/'),'/+','/');
+end

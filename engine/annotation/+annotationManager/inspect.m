@@ -27,9 +27,28 @@ if strcmp(status,'approved') && coverage.fraction < 1
 end
 
 staleApproval = false;
-if strcmp(status, 'approved') && p.Results.VerifyHash && ~isempty(entry.approved_hash)
-    currentHash = annotationManager.contentHash(roiObj, spec);
-    staleApproval = ~strcmpi(currentHash, entry.approved_hash);
+hashVerificationError = '';
+if strcmp(status, 'approved') && p.Results.VerifyHash
+    if isempty(entry.approved_hash)
+        staleApproval = true;
+        hashVerificationError = ...
+            'The approved annotation has no recorded content hash.';
+    else
+        try
+            currentHash = annotationManager.contentHash(roiObj, spec);
+            staleApproval = ~strcmpi(currentHash, entry.approved_hash);
+            if staleApproval
+                hashVerificationError = ...
+                    'Ground-truth content changed after its last validation.';
+            end
+        catch ME
+            % A GT that cannot be hashed is not safe to present as Ready.
+            % Keep inspection usable in classifierGUI and preserve the
+            % underlying exception for the formatting preflight message.
+            staleApproval = true;
+            hashVerificationError = char(string(ME.message));
+        end
+    end
     if staleApproval, status = 'draft'; end
 end
 
@@ -38,7 +57,14 @@ if ~any(strcmp(validationStatus, {'valid','invalid'})) || ...
         uint32(entry.validated_revision) ~= uint32(entry.revision)
     validationStatus = 'not_run';
 end
-if strcmp(status, 'approved'), validationStatus = 'valid'; end
+if strcmp(status, 'approved')
+    validationStatus = 'valid';
+elseif strcmp(validationStatus, 'valid')
+    % Current validation writes an approved lifecycle entry atomically.
+    % Historical/inconsistent Draft+valid metadata must not bypass the
+    % explicit Validate GT transition, nor can a stale hash remain valid.
+    validationStatus = 'not_run';
+end
 
 summary = struct( ...
     'annotationId', char(string(spec.id)), ...
@@ -54,6 +80,7 @@ summary = struct( ...
     'validatedAt', char(string(entry.validated_at)), ...
     'validationMessage', char(string(entry.validation_message)), ...
     'staleApproval', staleApproval, ...
+    'hashVerificationError', hashVerificationError, ...
     'components', states, ...
     'entry', entry);
 end

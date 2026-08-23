@@ -10,12 +10,24 @@ if isempty(trainRois) && isempty(valRois)
 end
 if exist(outputDir,'dir') ~= 7, mkdir(outputDir); end
 objective = trainingChoice(tp.trainingObjective,'relation_ensemble');
+runId = formattingRunId(tp,ctx);
+runRoot = fullfile(outputDir,'format_runs',runId);
+datasetDir = fullfile(outputDir,'datasets',datasetDirectoryName( ...
+    objective,runId));
+manifestFile = fullfile(datasetDir,'manifest.json');
+pointerFile = fullfile(outputDir,datasetPointerName(objective));
+if isfolder(runRoot) || isfolder(datasetDir)
+    error('cellLatentModel:ImmutableDatasetExists', ...
+        ['Formatted dataset run "%s" already exists. Dataset versions ' ...
+         'are immutable; start a new formatting run.'],runId);
+end
+mkdir(runRoot);
+failureCleanup = onCleanup(@() cleanupFailedRun( ...
+    runRoot,datasetDir,pointerFile,manifestFile)); %#ok<NASGU>
 requestedFrames = [];
 try requestedFrames = ctx.sel.frames; catch, end
-stageRoot = fullfile(outputDir,['staging_' ...
-    char(datetime('now','Format','yyyyMMddHHmmssSSS'))]);
+stageRoot = fullfile(runRoot,'staging');
 mkdir(stageRoot);
-stageCleanup = onCleanup(@() removeFolder(stageRoot));
 
 entries = [ ...
     splitEntries(trainRois,'train'); ...
@@ -116,13 +128,8 @@ for i = 1:numel(entries)
     end
 end
 
-if strcmp(objective,'continuous_lineage')
-    datasetDir = fullfile(outputDir,'continuous_dataset');
-else
-    datasetDir = fullfile(outputDir,'relation_dataset');
-end
-configFile = fullfile(outputDir,'format_config.json');
-stdoutFile = fullfile(outputDir,'format_stdout.txt');
+configFile = fullfile(runRoot,'format_config.json');
+stdoutFile = fullfile(runRoot,'format_stdout.txt');
 if strcmp(objective,'continuous_lineage')
     window = nonnegativeScalar(tp.temporalWindowMinutes, ...
         'temporalWindowMinutes');
@@ -159,20 +166,75 @@ detecdiv_check_cancel(ctx,'cellLatentModel before dataset formatting');
 runtime = cellLatentModel.utils.runPythonModule( ...
     command,configFile,ctx,stdoutFile);
 detecdiv_check_cancel(ctx,'cellLatentModel after dataset formatting');
-manifestFile = fullfile(datasetDir,'manifest.json');
 if ~isfile(manifestFile)
     error('cellLatentModel:MissingFormattedDataset', ...
         'External formatter produced no dataset manifest.');
 end
+% Preserve the exact materialized formatter inputs inside the immutable
+% dataset. Deleting them left format_config.json and lineage provenance
+% pointing to missing staging files, so the published dataset could be
+% trained but not audited or replayed.
+sourceArchive = fullfile(datasetDir,'materialized_sources');
+[ok,message] = movefile(stageRoot,sourceArchive);
+if ~ok
+    error('cellLatentModel:SourceArchiveFailed', ...
+        'Cannot preserve materialized formatter inputs: %s',message);
+end
+cellLatentModel.utils.relocateTextArtifacts( ...
+    datasetDir,stageRoot,sourceArchive);
+cellLatentModel.utils.relocateTextArtifacts( ...
+    runRoot,stageRoot,sourceArchive);
+% Parse the immutable record before publishing it. A formatter that exits
+% successfully but leaves a truncated/invalid manifest must never replace
+% the last completed dataset pointer.
+manifest = jsondecode(fileread(manifestFile));
+materializedSources = materializedSourceRecords( ...
+    specs,stageRoot,sourceArchive);
+cellLatentModel.utils.appendJsonField( ...
+    manifestFile,'materialized_sources',materializedSources);
+manifest = jsondecode(fileread(manifestFile));
+pointerPayload = struct( ...
+    'schema_version',1, ...
+    'objective',objective, ...
+    'run_id',runId, ...
+    'model_name',safeName(tp.modelName), ...
+    'manifest',normalizedPath(manifestFile), ...
+    'manifest_sha256',fileSha256(manifestFile), ...
+    'config',normalizedPath(configFile), ...
+    'config_sha256',fileSha256(configFile), ...
+    'created_at',cellLatentModel.utils.utcIso8601());
+writeJsonAtomic(pointerFile,pointerPayload);
 result = struct( ...
     'datasetDir',datasetDir, ...
     'manifestFile',manifestFile, ...
-    'manifest',jsondecode(fileread(manifestFile)), ...
+    'manifest',manifest, ...
     'configFile',configFile, ...
     'stdoutFile',stdoutFile, ...
+    'pointerFile',pointerFile, ...
+    'runDir',runRoot, ...
+    'runId',runId, ...
     'runtime',runtime);
-clear stageCleanup;
-removeFolder(stageRoot);
+end
+
+function records = materializedSourceRecords(specs,sourceRoot,targetRoot)
+records = repmat(struct('roi_id','','split','','path','', ...
+    'sha256','','bytes',0),numel(specs),1);
+for index = 1:numel(specs)
+    [pathValue,audit] = cellLatentModel.utils.relocatePathTree( ...
+        specs(index).input_path,sourceRoot,targetRoot);
+    if audit.relocated_path_count ~= 1 || ~isfile(pathValue)
+        error('cellLatentModel:SourceArchiveIncomplete', ...
+            'Materialized source for ROI %s was not archived.', ...
+            specs(index).roi_id);
+    end
+    info = dir(pathValue);
+    records(index) = struct( ...
+        'roi_id',specs(index).roi_id, ...
+        'split',specs(index).split, ...
+        'path',normalizedPath(pathValue), ...
+        'sha256',fileSha256(pathValue), ...
+        'bytes',double(info.bytes));
+end
 end
 
 function entries = splitEntries(indices,name)
@@ -342,6 +404,44 @@ cleanup = onCleanup(@() fclose(fid));
 fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 
+function writeJsonAtomic(filename,value)
+tmp = [filename '.tmp_' char(java.util.UUID.randomUUID)];
+tmpCleanup = onCleanup(@() deleteIfPresent(tmp));
+writeJson(tmp,value);
+[ok,message] = movefile(tmp,filename,'f');
+if ~ok
+    error('cellLatentModel:PointerPublishFailed', ...
+        'Cannot publish dataset pointer %s: %s',filename,message);
+end
+clear tmpCleanup;
+end
+
+function deleteIfPresent(filename)
+if isfile(filename)
+    try delete(filename); catch, end
+end
+end
+
+function cleanupFailedRun(runRoot,datasetDir,pointerFile,manifestFile)
+% These are freshly generated, run-scoped targets. Removing them cannot
+% affect a previously completed immutable dataset.
+if pointerTargets(pointerFile,manifestFile), return; end
+removeFolder(datasetDir);
+removeFolder(runRoot);
+end
+
+function tf = pointerTargets(pointerFile,manifestFile)
+tf = false;
+if ~isfile(pointerFile) || ~isfile(manifestFile), return; end
+try
+    pointer = jsondecode(fileread(pointerFile));
+    tf = strcmpi(normalizedPath(pointer.manifest), ...
+        normalizedPath(manifestFile));
+catch
+    tf = false;
+end
+end
+
 function removeFolder(folder)
 if isfolder(folder)
     try rmdir(folder,'s'); catch, end
@@ -350,6 +450,53 @@ end
 
 function value = normalizedPath(value)
 value = strrep(char(string(value)),'\','/');
+end
+
+function value = fileSha256(filename)
+fid = fopen(filename,'r');
+if fid < 0
+    error('cellLatentModel:ManifestReadFailed','Cannot read %s.',filename);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+bytes = fread(fid,Inf,'*uint8');
+digest = java.security.MessageDigest.getInstance('SHA-256');
+hash = typecast(digest.digest(bytes),'uint8');
+value = lower(reshape(dec2hex(hash,2).',1,[]));
+end
+
+function value = formattingRunId(tp,ctx)
+value = '';
+try value = safeName(ctx.formatRunId); catch, end
+if ~isempty(value), return; end
+stamp = char(datetime('now','Format','yyyyMMdd''T''HHmmssSSS'));
+uuid = regexprep(char(java.util.UUID.randomUUID),'-','');
+value = sprintf('%s_%s_%s',safeName(tp.modelName),stamp,uuid(1:8));
+end
+
+function value = datasetDirectoryName(objective,runId)
+if strcmp(objective,'continuous_lineage')
+    prefix = 'continuous_lineage';
+else
+    prefix = 'relation_ensemble';
+end
+value = [prefix '_' runId];
+end
+
+function value = datasetPointerName(objective)
+if strcmp(objective,'continuous_lineage')
+    value = 'latest_cell_latent_continuous_dataset.json';
+else
+    value = 'latest_cell_latent_relation_dataset.json';
+end
+end
+
+function value = safeName(value)
+while iscell(value)
+    if isempty(value), value=''; break; else, value=value{end}; end
+end
+value = regexprep(strtrim(char(string(value))), ...
+    '[^A-Za-z0-9_.-]','_');
+if isempty(value), value = 'cell_latent_dataset'; end
 end
 
 function value = trainingChoice(raw,fallback)

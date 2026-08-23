@@ -13,6 +13,11 @@ if isfield(ctx,'params') && isstruct(ctx.params)
 end
 classif.trainingParam = tp;
 out.refs.trainingScope = classifierBinding.trainingScopeSpec(classif);
+% Python environment bootstrap may reset native-library state on Windows.
+% Complete it before materializing transient HDF5 inputs so a retry cannot
+% invalidate the files queued for the scientific formatter.  Target
+% collisions are checked first so an immutable-output error stays cheap and
+% cannot bootstrap Python unnecessarily.
 [trainRois,valRois] = resolveSplits(classif,rois,tp.validationFraction);
 if isempty(trainRois) || isempty(valRois)
     error('cellLatentTracker:IncompleteSplit', ...
@@ -38,10 +43,32 @@ stamp = char(datetime('now','Format','yyyyMMdd''T''HHmmssSSS'));
 datasetDir = fullfile(classif.path,'trainingdataset', ...
     ['latent_tracking_dataset_' stamp]);
 runDir = fullfile(classif.path,'trainingdataset','runs',stamp);
-if exist(runDir,'dir') ~= 7, mkdir(runDir); end
+try
+    if ~isempty(textValue(ctx.datasetDir)),datasetDir=textValue(ctx.datasetDir);end
+catch
+end
+try
+    if ~isempty(textValue(ctx.runDir)),runDir=textValue(ctx.runDir);end
+catch
+end
+pointerFile = fullfile(classif.path,'trainingdataset', ...
+    'latest_latent_tracking_dataset.json');
+try
+    if ~isempty(textValue(ctx.pointerFile)),pointerFile=textValue(ctx.pointerFile);end
+catch
+end
+if isfolder(runDir) || isfile(runDir) || ...
+        isfolder(datasetDir) || isfile(datasetDir)
+    error('cellLatentTracker:ImmutableDatasetExists', ...
+        ['Tracking dataset/run target already exists. Immutable formatter ' ...
+         'outputs cannot be reused: %s | %s'],datasetDir,runDir);
+end
+resolvedRuntime = cellLatentModel.utils.resolvePythonRuntime(ctx);
+mkdir(runDir);
+failureCleanup=onCleanup(@()removeFailedFormat( ...
+    runDir,datasetDir,pointerFile,fullfile(datasetDir,'manifest.json')));
 stageRoot = fullfile(runDir,'staging');
 mkdir(stageRoot);
-stageCleanup = onCleanup(@() removeFolder(stageRoot));
 entries = [splitEntries(trainRois,'train'); splitEntries(valRois,'validation')];
 specs = repmat(emptySpec(),0,1);
 requestedFrames = [];
@@ -105,22 +132,49 @@ cfg = struct('schema_version',1, ...
     'minimum_detection_coverage',bounded(tp.minimumDetectionCoverage,0,1, ...
         'minimumDetectionCoverage',true));
 writeJson(configFile,cfg);
+missingInputs = string({specs.input_path});
+missingInputs = missingInputs(~arrayfun(@(p)isfile(char(p)),missingInputs));
+if ~isempty(missingInputs)
+    error('cellLatentTracker:StagingInputMissing', ...
+        'Tracking staging input disappeared before formatting: %s', ...
+        char(strjoin(missingInputs,', ')));
+end
 detecdiv_check_cancel(ctx,'cellLatentTracker before formatting');
+formatterCtx = ctx;
+formatterCtx.resolvedPythonRuntime = resolvedRuntime;
 runtime = cellLatentModel.utils.runPythonModule( ...
-    'format-detecdiv-tracking',configFile,ctx,stdoutFile);
+    'format-detecdiv-tracking',configFile,formatterCtx,stdoutFile);
 detecdiv_check_cancel(ctx,'cellLatentTracker after formatting');
 manifestFile = fullfile(datasetDir,'manifest.json');
 if ~isfile(manifestFile)
     error('cellLatentTracker:MissingManifest', ...
         'Latent tracker formatter produced no manifest.');
 end
-pointerFile = fullfile(classif.path,'trainingdataset', ...
-    'latest_latent_tracking_dataset.json');
-writeJson(pointerFile,struct('schema_version',1, ...
-    'manifest',normalizedPath(manifestFile), ...
-    'created_at',char(datetime('now','Format','yyyy-MM-dd''T''HH:mm:ssXXX'))));
-try classiSave(classif); catch, end
+sourceArchive=fullfile(datasetDir,'materialized_sources');
+[ok,message]=movefile(stageRoot,sourceArchive);
+if ~ok
+    error('cellLatentTracker:SourceArchiveFailed', ...
+        'Cannot preserve materialized formatter inputs: %s',message);
+end
+cellLatentModel.utils.relocateTextArtifacts( ...
+    datasetDir,stageRoot,sourceArchive);
+cellLatentModel.utils.relocateTextArtifacts( ...
+    runDir,stageRoot,sourceArchive);
+% Validate the completed record before atomically advertising it.
 manifest = jsondecode(fileread(manifestFile));
+materializedSources=materializedSourceRecords( ...
+    specs,stageRoot,sourceArchive);
+cellLatentModel.utils.appendJsonField( ...
+    manifestFile,'materialized_sources',materializedSources);
+manifest=jsondecode(fileread(manifestFile));
+writeJsonAtomic(pointerFile,struct('schema_version',1, ...
+    'manifest',normalizedPath(manifestFile), ...
+    'manifest_sha256',fileSha256(manifestFile), ...
+    'created_at',cellLatentModel.utils.utcIso8601()));
+clear failureCleanup;
+% Formatting is a read-only export.  Persisting the classifier here would
+% call classiSave, which rewrites every attached ROI and clears its loaded
+% image state even though no annotation was intentionally changed.
 out.status = "OK";
 out.artifacts.dataset = datasetDir;
 out.artifacts.manifest = manifestFile;
@@ -133,8 +187,24 @@ out.refs.validationRois = valRois;
 out.refs.runtime = runtime;
 out.metrics.outputCount = exportedFrameCount(manifest);
 out.metrics.outputUnit = 'ROI frames';
-clear stageCleanup;
-removeFolder(stageRoot);
+end
+
+function records=materializedSourceRecords(specs,sourceRoot,targetRoot)
+records=repmat(struct('roi_id','','split','','path','', ...
+    'sha256','','bytes',0),numel(specs),1);
+for index=1:numel(specs)
+    [pathValue,audit]=cellLatentModel.utils.relocatePathTree( ...
+        specs(index).input_path,sourceRoot,targetRoot);
+    if audit.relocated_path_count~=1||~isfile(pathValue)
+        error('cellLatentTracker:SourceArchiveIncomplete', ...
+            'Materialized source for ROI %s was not archived.', ...
+            specs(index).roi_id);
+    end
+    info=dir(pathValue);
+    records(index)=struct('roi_id',specs(index).roi_id, ...
+        'split',specs(index).split,'path',normalizedPath(pathValue), ...
+        'sha256',fileSha256(pathValue),'bytes',double(info.bytes));
+end
 end
 
 function count = exportedFrameCount(manifest)
@@ -143,6 +213,7 @@ if ~isstruct(manifest) || ~isfield(manifest,'sequences') || ...
         isempty(manifest.sequences)
     return;
 end
+
 sequences = manifest.sequences;
 if iscell(sequences), sequences = [sequences{:}]; end
 for i = 1:numel(sequences)
@@ -150,6 +221,22 @@ for i = 1:numel(sequences)
         count = count + numel(sequences(i).source.frames);
     catch
     end
+end
+end
+
+function removeFailedFormat(runDir,datasetDir,pointerFile,manifestFile)
+if pointerTargets(pointerFile,manifestFile),return;end
+if isfolder(runDir),try rmdir(runDir,'s');catch,end,end
+if isfolder(datasetDir),try rmdir(datasetDir,'s');catch,end,end
+end
+
+function tf=pointerTargets(pointerFile,manifestFile)
+tf=false;
+if ~isfile(pointerFile)||~isfile(manifestFile),return;end
+try
+    record=jsondecode(fileread(pointerFile));
+    tf=strcmpi(normalizedPath(record.manifest),normalizedPath(manifestFile));
+catch
 end
 end
 
@@ -166,25 +253,8 @@ s = struct('roi_id','','source_roi_path','','source_frames',[], ...
     'frame_interval_minutes',1,'domain','','split','');
 end
 function [train,val] = resolveSplits(classif,requested,fraction)
-n=numel(classif.roi); train=normalize(requested,n); val=[]; test=[];
-try
-    if isempty(train), train=normalize(classif.dataset.split.train,n); end
-    val=normalize(classif.dataset.split.val,n);
-    test=normalize(classif.dataset.split.test,n);
-catch
-end
-if isempty(train), try train=normalize(classif.trainingset,n); catch, end, end
-train=setdiff(train,[val test],'stable'); val=setdiff(val,test,'stable');
-if isempty(val) && numel(train)>1
-    fraction=double(fraction); if ~isscalar(fraction)||~isfinite(fraction)||fraction<=0||fraction>=1, fraction=.2; end
-    count=max(1,min(numel(train)-1,round(numel(train)*fraction)));
-    val=train(end-count+1:end); train=train(1:end-count);
-end
-end
-function value=normalize(value,n)
-if isempty(value), value=[]; return; end
-value=unique(round(double(value(:)')),'stable');
-value=value(isfinite(value)&value>=1&value<=n);
+[train,val] = cellLatentModel.resolveRoiSplits( ...
+    classif,requested,fraction);
 end
 function stack=readStack(roiobj,name,isLabels)
 try idx=roiobj.findChannelID(name,'exact'); catch, idx=roiobj.findChannelID(name); end
@@ -211,6 +281,29 @@ function writeJson(filename,value)
 folder=fileparts(filename); if ~isempty(folder)&&exist(folder,'dir')~=7, mkdir(folder); end
 fid=fopen(filename,'w'); if fid<0, error('cellLatentTracker:ConfigWriteFailed','Cannot write %s.',filename); end
 cleanup=onCleanup(@()fclose(fid)); fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
+end
+function writeJsonAtomic(filename,value)
+tmp=[filename '.tmp_' char(java.util.UUID.randomUUID)];
+tmpCleanup=onCleanup(@()deleteIfPresent(tmp));
+writeJson(tmp,value);
+[ok,message]=movefile(tmp,filename,'f');
+if ~ok
+    error('cellLatentTracker:PointerPublishFailed', ...
+        'Cannot publish dataset pointer %s: %s',filename,message);
+end
+clear tmpCleanup;
+end
+function deleteIfPresent(filename)
+if isfile(filename),try delete(filename);catch,end,end
+end
+function value=fileSha256(filename)
+fid=fopen(filename,'r');
+if fid<0,error('cellLatentTracker:ManifestReadFailed','Cannot read %s.',filename);end
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+bytes=fread(fid,Inf,'*uint8');
+digest=java.security.MessageDigest.getInstance('SHA-256');
+hash=typecast(digest.digest(bytes),'uint8');
+value=lower(reshape(dec2hex(hash,2).',1,[]));
 end
 function removeFolder(folder),if isfolder(folder),try rmdir(folder,'s');catch,end,end,end
 function value=normalizedPath(value),value=strrep(char(string(value)),'\','/');end

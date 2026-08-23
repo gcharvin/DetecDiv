@@ -7,7 +7,8 @@ function report = classifierPersistTrainingResult(classiObj)
 % catalog, split, bounds, or annotation state with the worker subset.
 
 report=struct('usedAuthoritativeSnapshot',false, ...
-    'workerRoiCount',roiCount(classiObj),'savedRoiCount',0,'file','');
+    'workerRoiCount',roiCount(classiObj),'savedRoiCount',0,'file','', ...
+    'executionDefaultsFile','');
 if isempty(classiObj),return;end
 pathValue='';id='';
 try
@@ -54,10 +55,31 @@ temporary=[tempname(pathValue) '.mat'];
 cleanup=onCleanup(@()deleteIfPresent(temporary));
 classiObj=toSave;
 save(temporary,'classiObj','-v7.3');
-[ok,message]=movefile(temporary,target,'f');
-if ~ok
-    error('classifierPersistTrainingResult:MoveFailed', ...
-        'Could not publish %s: %s',target,message);
+% Direct package training does not pass through classi.trainClassifier,
+% which historically left this deployable snapshot pointing at the
+% previous model even after the authoritative MAT had advanced. Refresh it
+% from the exact merged object. Publish the sidecar before the MAT and keep
+% a rollback copy: if either step fails, callers must not observe a new MAT
+% paired with stale execution defaults while training reports failure.
+sidecar=fullfile(pathValue,'training_execution_defaults.json');
+[hadSidecar,sidecarBytes]=readOptionalBytes(sidecar);
+try
+    report.executionDefaultsFile= ...
+        classifierPersistTrainingExecutionDefaults(toSave);
+    [ok,message]=movefile(temporary,target,'f');
+    if ~ok
+        error('classifierPersistTrainingResult:MoveFailed', ...
+            'Could not publish %s: %s',target,message);
+    end
+catch ME
+    try
+        restoreSidecar(sidecar,hadSidecar,sidecarBytes);
+    catch restoreError
+        warning('classifierPersistTrainingResult:SidecarRollbackFailed', ...
+            'Could not roll back %s after persistence failure: %s', ...
+            sidecar,restoreError.message);
+    end
+    rethrow(ME);
 end
 report.savedRoiCount=roiCount(toSave);
 end
@@ -83,4 +105,44 @@ end
 
 function deleteIfPresent(file)
 if isfile(file),delete(file);end
+end
+
+function [exists,bytes]=readOptionalBytes(filename)
+exists=isfile(filename);
+bytes=uint8([]);
+if ~exists,return;end
+fid=fopen(filename,'r');
+if fid<0
+    error('classifierPersistTrainingResult:SidecarBackupFailed', ...
+        'Could not read existing sidecar %s.',filename);
+end
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+bytes=fread(fid,Inf,'*uint8');
+end
+
+function restoreSidecar(filename,existed,bytes)
+if ~existed
+    if isfile(filename),delete(filename);end
+    return;
+end
+temporary=[tempname(fileparts(filename)) '.json'];
+cleanup=onCleanup(@()deleteIfPresent(temporary));
+fid=fopen(temporary,'w');
+if fid<0
+    error('classifierPersistTrainingResult:SidecarRollbackFailed', ...
+        'Could not create rollback file for %s.',filename);
+end
+closeFile=onCleanup(@()fclose(fid));
+written=fwrite(fid,bytes,'uint8');
+if written~=numel(bytes)
+    error('classifierPersistTrainingResult:SidecarRollbackFailed', ...
+        'Incomplete rollback write for %s.',filename);
+end
+clear closeFile;
+[ok,message]=movefile(temporary,filename,'f');
+if ~ok
+    error('classifierPersistTrainingResult:SidecarRollbackFailed', ...
+        'Could not restore %s: %s',filename,message);
+end
+clear cleanup;
 end

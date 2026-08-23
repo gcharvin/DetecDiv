@@ -3,6 +3,14 @@ function tests = testCellLatentModelIntegration
 tests = functiontests(localfunctions);
 end
 
+function testPackagingTimestampIsStrictUtcIso8601(testCase)
+value=cellLatentModel.utils.utcIso8601();
+verifyNotEmpty(testCase,regexp(value, ...
+    '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(Z|\+00:00)$', ...
+    'once'));
+verifyFalse(testCase,contains(value,'***'));
+end
+
 function testBuiltinInferencePersistsMultimodalLineage(testCase)
 folder = tempname;
 mkdir(folder);
@@ -413,6 +421,28 @@ classifier.trainingParam.device = 'cpu';
 formatted = cellLatentModel.format(classifier,1,struct());
 verifyEqual(testCase,formatted.status,"OK");
 verifyTrue(testCase,isfile(formatted.artifacts.manifest));
+firstManifest = formatted.artifacts.manifest;
+datasetRoot = fullfile(classifier.path,'trainingdataset');
+pointerFile = fullfile(datasetRoot, ...
+    'latest_cell_latent_relation_dataset.json');
+verifyTrue(testCase,isfile(pointerFile));
+pointerBeforeFailure = fileread(pointerFile);
+badTp = classifier.trainingParam;
+badTp.trackChannelName = 'missing_tracking_channel';
+verifyError(testCase,@() cellLatentModel.formatDataset( ...
+    classifier,1,2,datasetRoot, ...
+    struct('formatRunId','intentional_failure'),badTp), ...
+    'cellLatentModel:TrainingChannelNotFound');
+verifyEqual(testCase,fileread(pointerFile),pointerBeforeFailure, ...
+    'A failed run must not replace the last completed dataset pointer.');
+verifyFalse(testCase,isfolder(fullfile(datasetRoot,'format_runs', ...
+    'intentional_failure')));
+% Exercise the same public path used by classifierGUI.  Versioned package
+% formatters must not inherit the legacy wrapper's destructive reset.
+formatted = classifier.formatDataForTraining('Frames',[],'Rois',1);
+verifyNotEqual(testCase,formatted.artifacts.manifest,firstManifest);
+verifyTrue(testCase,isfile(firstManifest), ...
+    'Reformatting must preserve the earlier immutable dataset version.');
 trained = cellLatentModel.train(classifier,struct());
 verifyEqual(testCase,trained.status,"OK");
 verifyTrue(testCase,isfile(trained.artifacts.model));
@@ -468,11 +498,60 @@ verifyEqual(testCase,formatted.status,"OK");
 verifyGreaterThan(testCase,double(formatted.metrics.outputCount),0);
 verifyEqual(testCase,formatted.metrics.outputUnit,'ROI frames');
 verifyTrue(testCase,isfile(formatted.artifacts.compositeManifest));
+verifyTrue(testCase,contains(normalizeTestPath( ...
+    formatted.artifacts.compositeManifest),'/trainingdataset/c/'));
 dataset = jsondecode(fileread(formatted.artifacts.compositeManifest));
 verifyTrue(testCase,isfield(dataset.components,'tracking'));
 verifyTrue(testCase,isfield(dataset.components,'lineage'));
 verifyEqual(testCase,double(dataset.split.train),1);
 verifyEqual(testCase,double(dataset.split.validation),2);
+verifyEqual(testCase,double(dataset.components.tracking.train_rois),1);
+verifyEqual(testCase,double(dataset.components.tracking.validation_rois),2);
+verifyEqual(testCase,double(dataset.components.lineage.train_rois),1);
+verifyEqual(testCase,double(dataset.components.lineage.validation_rois),2);
+pointer = jsondecode(fileread(formatted.artifacts.pointer));
+verifyEqual(testCase,normalizeTestPath(pointer.manifest), ...
+    normalizeTestPath(formatted.artifacts.compositeManifest));
+verifyFalse(testCase,contains(pointer.created_at,'***'));
+verifyNotEmpty(testCase,regexp(pointer.created_at, ...
+    '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(Z|\+00:00)$', ...
+    'once'));
+verifyEqual(testCase,pointer.legacy_pointer_policy, ...
+    'marked compatibility aliases; this composite pointer is authoritative');
+datasetRoot=fullfile(classifier.path,'trainingdataset');
+trackingAlias=jsondecode(fileread(fullfile(datasetRoot, ...
+    'latest_latent_tracking_dataset.json')));
+lineageAlias=jsondecode(fileread(fullfile(datasetRoot, ...
+    'latest_cell_latent_continuous_dataset.json')));
+verifyEqual(testCase,trackingAlias.status,'compatibility_alias');
+verifyEqual(testCase,lineageAlias.status,'compatibility_alias');
+verifyEqual(testCase,normalizeTestPath(trackingAlias.manifest), ...
+    normalizeTestPath(dataset.components.tracking.manifest));
+verifyEqual(testCase,normalizeTestPath(lineageAlias.manifest), ...
+    normalizeTestPath(dataset.components.lineage.manifest));
+verifyEqual(testCase,normalizeTestPath( ...
+    trackingAlias.authoritative_pointer), ...
+    normalizeTestPath(formatted.artifacts.pointer));
+verifyEqual(testCase,normalizeTestPath(dataset.components.tracking.manifest), ...
+    normalizeTestPath(formatted.artifacts.trackingManifest));
+verifyEqual(testCase,normalizeTestPath(dataset.components.lineage.manifest), ...
+    normalizeTestPath(formatted.artifacts.lineageManifest));
+trackingDataset = jsondecode(fileread(formatted.artifacts.trackingManifest));
+lineageDataset = jsondecode(fileread(formatted.artifacts.lineageManifest));
+verifyTrue(testCase,isfield(trackingDataset,'materialized_sources'));
+verifyTrue(testCase,isfield(lineageDataset,'materialized_sources'));
+verifyEqual(testCase,numel(trackingDataset.materialized_sources),2);
+verifyEqual(testCase,numel(lineageDataset.materialized_sources),2);
+for source = [trackingDataset.materialized_sources(:); ...
+        lineageDataset.materialized_sources(:)].'
+    verifyTrue(testCase,isfile(source.path));
+    verifyNotEmpty(testCase,source.sha256);
+    verifyGreaterThan(testCase,double(source.bytes),0);
+end
+verifyFalse(testCase,contains(lower(normalizeTestPath( ...
+    jsonencode(trackingDataset))),'/staging/'));
+verifyFalse(testCase,contains(lower(normalizeTestPath( ...
+    jsonencode(lineageDataset))),'/staging/'));
 
 trained = cellLatentModel.train(classifier,struct());
 verifyEqual(testCase,trained.status,"OK");
@@ -482,6 +561,26 @@ verifyTrue(testCase,isfolder(fullfile( ...
     classifier.path,classifier.executionParam.trackingCheckpointDir)));
 verifyTrue(testCase,isfile(fullfile( ...
     classifier.path,classifier.executionParam.modelPath)));
+modelManifest = jsondecode(fileread(trained.artifacts.manifest));
+verifyFalse(testCase,contains(modelManifest.created_at,'***'));
+verifyTrue(testCase,isfield(modelManifest,'model_selection'));
+verifyTrue(testCase,isfield(modelManifest.model_selection,'lineage'));
+verifyTrue(testCase,isfield( ...
+    modelManifest.components.lineage.selection,'selected_epoch'));
+verifyTrue(testCase,isfield( ...
+    modelManifest.components.lineage.selection,'selection_policy'));
+verifyEqual(testCase, ...
+    modelManifest.model_selection.lineage.selected_epoch, ...
+    modelManifest.components.lineage.selection.selected_epoch);
+verifyFalse(testCase,contains(lower(jsonencode(modelManifest)), ...
+    '.partial_'));
+modelJsonFiles = dir(fullfile(fileparts(trained.artifacts.manifest), ...
+    '**','*.json'));
+for file = modelJsonFiles(:).'
+    contents = fileread(fullfile(file.folder,file.name));
+    verifyFalse(testCase,contains(lower(contents),'.partial_'), ...
+        sprintf('Transient path survived in %s.',file.name));
+end
 
 classified = cellLatentModel.classify(roi2,classifier,struct( ...
     'store',struct('workDir',fullfile(folder,'runtime'))));
@@ -528,15 +627,72 @@ classifier.trainingParam.gfpChannelName = 'ch2-GFP';
 classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
 classifier.trainingParam.validationFraction = 0.2;
 
+[expectedTrain,expectedValidation] = cellLatentModel.resolveRoiSplits( ...
+    classifier,1:4,classifier.trainingParam.validationFraction);
 formatted = cellLatentModel.format(classifier,1:4,struct());
 
-verifyEqual(testCase,double(formatted.refs.trainRois),1:3);
-verifyEqual(testCase,double(formatted.refs.validationRois),4);
+verifyEqual(testCase,double(formatted.refs.trainRois),expectedTrain);
+verifyEqual(testCase,double(formatted.refs.validationRois), ...
+    expectedValidation);
+verifyEqual(testCase,formatted.refs.splitAudit.mode,'automatic');
+verifyEqual(testCase,formatted.refs.splitAudit.algorithm, ...
+    'sha256_ranked_stable_roi_identity_v1');
 config = jsondecode(fileread(formatted.artifacts.config));
 splits = string({config.rois.split});
-verifyEqual(testCase,find(splits == "train"),1:3);
-verifyEqual(testCase,find(splits == "validation"),4);
+verifyEqual(testCase,find(splits == "train"),1:numel(expectedTrain));
+verifyEqual(testCase,find(splits == "validation"), ...
+    numel(expectedTrain)+(1:numel(expectedValidation)));
+verifyEqual(testCase,string({config.rois.roi_id}),string({ ...
+    classifier.roi([expectedTrain expectedValidation]).id}));
 verifyFalse(testCase,any(strcmp({config.rois.roi_id},'gui_test_unannotated')));
+end
+
+function testTrackingFormatterRefusesImmutableTargetCollision(testCase)
+folder=tempname;
+mkdir(folder);
+cleanup=onCleanup(@()removeFolder(folder)); %#ok<NASGU>
+classifier=classi(folder,'tracking_collision',1);
+classifier.roi=[ ...
+    syntheticROI(fullfile(folder,'roi1'),'collision_train',0), ...
+    syntheticROI(fullfile(folder,'roi2'),'collision_validation',1)];
+classifier.dataset.split.train=1;
+classifier.dataset.split.val=2;
+classifier.dataset.split.test=[];
+cellLatentTracker.setparam(classifier);
+classifier.trainingParam.instanceChannelName='results_cellposeSAM_cell';
+classifier.trainingParam.groundTruthChannelName='reviewed_tracks';
+datasetDir=fullfile(folder,'immutable_dataset');
+mkdir(datasetDir);
+sentinel=fullfile(datasetDir,'completed.marker');
+touchFile(sentinel);
+ctx=struct('datasetDir',datasetDir, ...
+    'runDir',fullfile(folder,'new_run'));
+
+verifyError(testCase,@()cellLatentTracker.format(classifier,1,ctx), ...
+    'cellLatentTracker:ImmutableDatasetExists');
+verifyTrue(testCase,isfile(sentinel));
+verifyFalse(testCase,isfolder(ctx.runDir));
+end
+
+function testDirectTrackingTrainingRejectsChangedPublishedManifest(testCase)
+folder=tempname;
+mkdir(folder);
+classifier=classi(folder,'tracking_manifest_hash_gate',1);
+mkdir(fullfile(classifier.path,'trainingdataset'));
+cleanup=onCleanup(@()removeFolder(folder)); %#ok<NASGU>
+cellLatentTracker.setparam(classifier);
+manifestFile=fullfile(classifier.path,'trainingdataset','manifest.json');
+writeJsonFixture(manifestFile,struct('schema_version',1, ...
+    'format','detecdiv_latent_tracking_collection_v1', ...
+    'sequences',struct([])));
+pointerFile=fullfile(classifier.path,'trainingdataset', ...
+    'latest_latent_tracking_dataset.json');
+writeJsonFixture(pointerFile,struct('schema_version',1, ...
+    'manifest',normalizeTestPath(manifestFile), ...
+    'manifest_sha256',repmat('0',1,64)));
+
+verifyError(testCase,@()cellLatentTracker.train(classifier,struct()), ...
+    'cellLatentTracker:FormattedDatasetChanged');
 end
 
 function testFormattingAppliesPerRoiTrainingBounds(testCase)
@@ -623,6 +779,130 @@ verifyError(testCase, @() classifier.formatDataForTraining( ...
     'cellLatentModel:TrainingInputsNotReady');
 verifyTrue(testCase, isfile(sentinel), ...
     'Missing ROI inputs must be detected before replacing the dataset.');
+end
+
+function testManagedStaleApprovalBlocksFormattingBeforeDatasetReset(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'managed_stale_preflight', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'managed_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'managed_validation', 1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.gfpChannelName = 'ch2-GFP';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+approveManagedGroundTruth(testCase, classifier, 1);
+approveManagedGroundTruth(testCase, classifier, 2);
+
+datasetDir = fullfile(classifier.path, 'trainingdataset');
+mkdir(datasetDir);
+sentinel = fullfile(datasetDir, 'previous_dataset.marker');
+touchFile(sentinel);
+trackIndex = roi1.findChannelID('results_trackastra', 'exact');
+roi1.image(1,1,trackIndex,1) = roi1.image(1,1,trackIndex,1) + 7;
+roi1.save({'results_trackastra'}, false);
+
+verifyError(testCase, @() classifier.formatDataForTraining( ...
+    'Rois', 1, 'Frames', []), ...
+    'cellLatentModel:GroundTruthNotReady');
+verifyTrue(testCase, isfile(sentinel), ...
+    'A stale approval must be rejected before replacing formatted data.');
+end
+
+function testCompositeTrainingRejectsDifferentApprovalThanFormatted(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'formatted_approval_gate', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'snapshot_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'snapshot_validation', 1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+addFrameLocalInstances(roi1);
+addFrameLocalInstances(roi2);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'detecdiv_composite_v1';
+classifier.trainingParam.instanceChannelName = 'results_cellposeSAM_cell';
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+classifier.trainingParam.modelName = 'approval_gate_v001';
+approveManagedGroundTruth(testCase, classifier, 1);
+approveManagedGroundTruth(testCase, classifier, 2);
+approvals = cellLatentModel.assertGroundTruthReady(classifier, [1 2]);
+approvals(1).approved_hash = repmat('0', 1, 64);
+
+datasetRoot = fullfile(classifier.path, 'trainingdataset');
+mkdir(datasetRoot);
+manifestFile = fullfile(datasetRoot, 'composite_dataset_manifest.json');
+writeJsonFixture(manifestFile, struct( ...
+    'schema_version', 1, ...
+    'split', struct('train', 1, 'validation', 2, 'test', []), ...
+    'split_roi_ids', struct('train', {{'snapshot_train'}}, ...
+        'validation', {{'snapshot_validation'}}, 'test', {{}}), ...
+    'annotation_approvals', approvals));
+pointerFile = fullfile(datasetRoot, ...
+    'latest_cell_latent_composite_dataset.json');
+writeJsonFixture(pointerFile, struct('schema_version', 1, ...
+    'manifest', manifestFile));
+
+verifyError(testCase, @() cellLatentModel.train(classifier, struct()), ...
+    'cellLatentModel:GroundTruthNotReady');
+verifyFalse(testCase, isfolder(fullfile( ...
+    classifier.path, 'models', 'approval_gate_v001')), ...
+    'Training must stop before creating a model bundle.');
+end
+
+function testApprovalSnapshotTracksBoundsAndStableRoiIds(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'approval_identity_gate', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'identity_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'identity_validation', 1);
+writeReviewedLineage(roi1);
+writeReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'detecdiv_composite_v1';
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+approveManagedGroundTruth(testCase, classifier, 1);
+approveManagedGroundTruth(testCase, classifier, 2);
+snapshot = cellLatentModel.assertGroundTruthReady(classifier, [1 2]);
+verifyEqual(testCase, snapshot(1).frame_bounds, [1 12]);
+
+trainingBounds.setRoi(classifier, 1, '2:6', 'FrameCount', 12);
+verifyError(testCase, @() cellLatentModel.assertGroundTruthReady( ...
+    classifier, [], 'ExpectedApprovals', snapshot, ...
+    'ExpectedRoiIds', {snapshot.roi_id}), ...
+    'cellLatentModel:GroundTruthNotReady');
+
+trainingBounds.clearRoi(classifier, 1);
+classifier.roi = [roi2 roi1];
+current = cellLatentModel.assertGroundTruthReady(classifier, [], ...
+    'ExpectedApprovals', snapshot, ...
+    'ExpectedRoiIds', {snapshot.roi_id});
+verifyEqual(testCase, string({current.roi_id}), ...
+    string({snapshot.roi_id}), ...
+    'Approval matching must follow stable ROI IDs after a table reorder.');
+verifyEqual(testCase, string({current.approved_hash}), ...
+    string({snapshot.approved_hash}));
 end
 
 function testContinuousClassifierLifecycleUsesTypedMarkers(testCase)
@@ -763,6 +1043,33 @@ roiobj.addChannel(instances,'results_cellposeSAM_cell', ...
 index=roiobj.findChannelID('results_cellposeSAM_cell','exact');
 roiobj.display.indexed(index)=true;
 roiobj.save([],false);
+end
+
+function approveManagedGroundTruth(testCase, classifier, roiIndex)
+roiobj = classifier.roi(roiIndex);
+spec = annotationManager.specForClassifier(classifier);
+annotationManager.markReviewed(roiobj, spec, 'Save', false);
+report = annotationManager.validate(roiobj, spec, ...
+    'RequireReviewed', true);
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+entry = annotationManager.recordValidation(roiobj, spec, report, ...
+    'Save', false);
+verifyEqual(testCase, entry.status, 'approved');
+verifyNotEmpty(testCase, entry.approved_hash);
+end
+
+function writeJsonFixture(filename, value)
+fid = fopen(filename, 'w');
+if fid < 0
+    error('testCellLatentModel:WriteJsonFailed', ...
+        'Cannot create fixture %s.', filename);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fwrite(fid, jsonencode(value, 'PrettyPrint', true), 'char');
+end
+
+function value = normalizeTestPath(value)
+value = strrep(char(string(value)),'\','/');
 end
 
 function removeFolder(folder)

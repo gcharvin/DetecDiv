@@ -1,4 +1,4 @@
-function tp = preflightFormat(classif, rois, ctx)
+function [tp, approvals] = preflightFormat(classif, rois, ctx)
 %CELLLATENTMODEL.PREFLIGHTFORMAT Validate formatting configuration early.
 % This function must remain read-only: classi.formatDataForTraining calls it
 % before replacing an existing formatted dataset.
@@ -52,6 +52,7 @@ if strcmp(objective, 'continuous_lineage') && ...
 end
 
 roiIndices = formattingRois(classif, rois);
+approvals = cellLatentModel.assertGroundTruthReady(classif, roiIndices);
 validateChannels(classif, roiIndices, tp, objective, architecture);
 end
 

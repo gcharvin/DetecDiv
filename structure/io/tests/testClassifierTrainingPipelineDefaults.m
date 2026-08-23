@@ -282,9 +282,15 @@ worker.bounds=struct('SchemaVersion',2,'Type','Auto','Values',[], ...
 worker.trainingParam=struct('modelName','trained_v002');
 worker.executionParam=struct('backend','causal_composite', ...
     'instanceChannelName','results_cellposeSAM_cell');
+sidecar=fullfile(full.path,'training_execution_defaults.json');
+fid=fopen(sidecar,'w');
+fwrite(fid,jsonencode(struct('schemaVersion',1, ...
+    'executionDefaults',struct('backend','legacy'))),'char');
+fclose(fid);
 
 report=classifierPersistTrainingResult(worker);
 saved=load(target,'classiObj');
+defaults=jsondecode(fileread(sidecar));
 
 verifyTrue(testCase,report.usedAuthoritativeSnapshot);
 verifyEqual(testCase,report.workerRoiCount,1);
@@ -297,6 +303,9 @@ verifyEqual(testCase,saved.classiObj.bounds.Values,[1 20]);
 verifyEqual(testCase,saved.classiObj.bounds.RoiValues.roi_id,'R2');
 verifyEqual(testCase,saved.classiObj.trainingParam.modelName,'trained_v002');
 verifyEqual(testCase,saved.classiObj.executionParam.backend, ...
+    'causal_composite');
+verifyEqual(testCase,report.executionDefaultsFile,sidecar);
+verifyEqual(testCase,defaults.executionDefaults.backend, ...
     'causal_composite');
 end
 

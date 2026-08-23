@@ -75,6 +75,34 @@ idx = r.findChannelID('gt_demo_1_instances');
 r.image(1,1,idx,1) = uint16(9);
 r.save({'gt_demo_1_instances'}, false);
 verifyEqual(testCase, session.summary('VerifyHash', true).status, 'draft');
+rows = annotationManager.summarizeClassifier(c, 1, 'Fast', true);
+verifyEqual(testCase, rows.status, 'draft', ...
+    'classifierGUI must hash-check approved GT even in Fast summaries.');
+verifyEqual(testCase, rows.validationStatus, 'not_run');
+verifyTrue(testCase, rows.staleApproval);
+verifyNotEmpty(testCase, rows.hashVerificationError);
+end
+
+function testFastSummaryRequiresExplicitApprovalForDraftValidMetadata(testCase)
+[~, c, ~] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+session.markReviewed('Frames', 1:3);
+verifyTrue(testCase, session.validate().valid);
+[entry, found] = annotationManager.entryForSpec(session.Roi, session.Spec);
+verifyTrue(testCase, found);
+verifyEqual(testCase, entry.status, 'approved');
+
+% Reproduce the inconsistent historical metadata observed on Pos0_1_47:
+% the validation hash is current, but the lifecycle was left Draft.
+entry.status = 'draft';
+annotationManager.setEntry(session.Roi, session.Spec, entry, 'Save', false);
+rows = annotationManager.summarizeClassifier(c, 1, 'Fast', true);
+
+verifyEqual(testCase, rows.status, 'draft');
+verifyEqual(testCase, rows.validationStatus, 'not_run', ...
+    'A Draft must require an explicit Validate GT transition.');
+verifyFalse(testCase, rows.staleApproval);
 end
 
 function testBootstrapDoesNotOverwriteReviewedMask(testCase)

@@ -143,7 +143,7 @@ verifyTrue(testCase,contains(scopeText, ...
 verifyEqual(testCase,app.UITableParam.Data.Value{1},'lineage_only_v1');
 end
 
-function testPersistedValidDraftIsDisplayedAsReady(testCase)
+function testPersistedValidDraftRequiresExplicitValidation(testCase)
 folder = tempname;
 mkdir(folder);
 folderCleanup = onCleanup(@()removeFolder(folder)); %#ok<NASGU>
@@ -199,8 +199,9 @@ verifyEmpty(testCase, validatedColumn, ...
     'The duplicate validated checkbox must not remain user-visible.');
 verifyEmpty(testCase, validationColumn, ...
     'The duplicate validation column must not remain user-visible.');
-verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Ready', ...
-    'A persisted valid result must be training-ready without a second action.');
+verifyEqual(testCase, app.UITableData.Data{1, statusColumn}, 'Draft', ...
+    ['Draft+valid is inconsistent historical metadata; only the atomic ' ...
+     'Validate GT transition may make it training-ready.']);
 end
 
 function testRemoveSelectedRoiRemapsTrainingSelection(testCase)

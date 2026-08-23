@@ -206,7 +206,13 @@ end
             if ~isempty(which(preflightFun))
                 feval(preflightFun, classif, rois, ctx);
             end
-            if Keep == 0
+            % Versioned latent formatters own their immutable dataset
+            % lifecycle and publish a new run-scoped pointer atomically.
+            % Purging the shared trainingdataset root here would delete all
+            % prior completed versions before the new export even starts.
+            packageOwnsDatasetLifecycle = any(strcmpi(pkg, ...
+                {'cellLatentModel','cellLatentTracker'}));
+            if Keep == 0 && ~packageOwnsDatasetLifecycle
                 resetTrainingDatasetLocal(classif.path, foldername);
             end
             disp(['[PKG FORMAT] ' fmtFun]);

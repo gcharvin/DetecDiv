@@ -5,6 +5,15 @@ function runtime = resolvePythonRuntime(ctx)
 % as classifier static parameters.
 
 if nargin < 1, ctx = struct(); end
+try
+    resolved = ctx.resolvedPythonRuntime;
+    if isstruct(resolved) && isfield(resolved,'pythonExecutable') && ...
+            isfile(char(string(resolved.pythonExecutable)))
+        runtime = resolved;
+        return;
+    end
+catch
+end
 runtime = struct('pythonExecutable','','repositoryRoot','', ...
     'lineageRepositoryRoot','', ...
     'packageSource','','backend','local');

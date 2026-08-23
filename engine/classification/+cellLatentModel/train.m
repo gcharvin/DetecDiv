@@ -38,18 +38,17 @@ if strcmp(architecture,'detecdiv_composite_v1') && ~componentCall
     out = trainComposite(classif,ctx,tp,out);
     return;
 end
+if ~componentCall
+    cellLatentModel.assertGroundTruthReady( ...
+        classif,formattedTrainingRois(classif));
+end
 out.refs.trainingScope = classifierBinding.logTrainingScope(classif);
 if exist('detecdiv_progress','file') == 2
     detecdiv_progress(ctx,0,'Checking formatted latent training dataset...', ...
         'Scope','training');
 end
-if strcmp(objective,'continuous_lineage')
-    datasetDir = fullfile(classif.path,'trainingdataset', ...
-        'continuous_dataset');
-else
-    datasetDir = fullfile(classif.path,'trainingdataset','relation_dataset');
-end
-manifestFile = fullfile(datasetDir,'manifest.json');
+[datasetDir,manifestFile] = resolveFormattedDataset( ...
+    classif,objective,ctx);
 if ~isfile(manifestFile) || ...
         (strcmp(objective,'relation_ensemble') && ...
          ~isfile(fullfile(datasetDir,'relations.npz')))
@@ -214,6 +213,39 @@ if ~isfile(datasetManifest)
     error('cellLatentModel:MissingCompositeDataset', ...
         'The composite dataset manifest no longer exists: %s',datasetManifest);
 end
+verifyManifestHash(pointer,datasetManifest, ...
+    'cellLatentModel:CompositeDatasetChanged');
+datasetRecord=jsondecode(fileread(datasetManifest));
+datasetRois=[];
+datasetRoiIds={};
+try
+    datasetRois=unique([double(datasetRecord.split.train(:).') ...
+        double(datasetRecord.split.validation(:).')],'stable');
+catch
+end
+expectedApprovals=struct([]);
+try
+    if isstruct(datasetRecord.annotation_approvals)
+        expectedApprovals=datasetRecord.annotation_approvals;
+    end
+catch
+end
+try
+    datasetRoiIds=[textCell(datasetRecord.split_roi_ids.train) ...
+        textCell(datasetRecord.split_roi_ids.validation)];
+catch
+end
+if isempty(datasetRoiIds) && ~isempty(expectedApprovals)
+    try datasetRoiIds=cellstr(string({expectedApprovals.roi_id}));catch,end
+end
+if ~isempty(datasetRoiIds)
+    % Manifest indices are historical positions. Once stable IDs exist,
+    % never inspect whatever ROI happens to occupy those positions now.
+    datasetRois=[];
+end
+cellLatentModel.assertGroundTruthReady(classif,datasetRois, ...
+    'ExpectedApprovals',expectedApprovals, ...
+    'ExpectedRoiIds',datasetRoiIds);
 bundleName=safeName(tp.modelName);
 bundleDir=fullfile(classif.path,'models',bundleName);
 if isfolder(bundleDir)||isfile(bundleDir)
@@ -226,7 +258,9 @@ mkdir(stagingDir);
 stageCleanup=onCleanup(@()removeFolder(stagingDir));
 originalTraining=classif.trainingParam;
 originalExecution=classif.executionParam;
-restore=onCleanup(@()restoreClassifier(classif,originalTraining,originalExecution));
+rollbackState=containers.Map({'armed'},{true});
+restore=onCleanup(@()restoreClassifierIfArmed( ...
+    classif,originalTraining,originalExecution,rollbackState));
 components=struct(); artifacts=struct(); metrics=struct();
 componentCount=double(logical(tp.trainTrackingActions))+ ...
     double(logical(tp.trainMotherNull));
@@ -246,6 +280,8 @@ if logical(tp.trainTrackingActions)
         'executionParam',cellLatentTracker.utils.defaultExecutionParam());
     trackerCtx=ctx;
     trackerCtx.trainingParam=trackerParams;
+    trackerCtx.datasetManifest=componentManifest( ...
+        datasetRecord,'tracking');
     trackerCtx.outputDir=fullfile(stagingDir,'tracking');
     trackerCtx.runDir=fullfile(stagingDir,'runs','tracking');
     trackerCtx.embedded=true;
@@ -269,6 +305,8 @@ if logical(tp.trainMotherNull)
     classif.trainingParam=lineageTp;
     lineageCtx=ctx;
     lineageCtx.componentCall=true;
+    lineageCtx.datasetManifest=componentManifest( ...
+        datasetRecord,'lineage');
     lineageCtx.embedded=true;
     lineageCtx.componentOutputDir=fullfile(stagingDir,'lineage');
     lineageCtx.progress=componentProgress( ...
@@ -276,7 +314,8 @@ if logical(tp.trainMotherNull)
     lineage=cellLatentModel.train(classif,lineageCtx);
     components.lineage=trainedComponent( ...
         'mother_NULL',lineage.artifacts.model, ...
-        lineage.artifacts.report,struct());
+        lineage.artifacts.report,lineageSelection( ...
+        lineage.artifacts.report));
     artifacts.lineageCheckpoint=lineage.artifacts.model;
     artifacts.lineageReport=lineage.artifacts.report;
     metrics.lineage=lineage.metrics;
@@ -296,16 +335,22 @@ if strcmp(stateMode,'promoted_frozen_bf')
     stateRuntime=candidate;
 end
 components.biological_state=frozenStateComponent(stateMode,stateRuntime);
+bundleManifest=fullfile(bundleDir,'manifest.json');
 [ok,message]=movefile(stagingDir,bundleDir);
 if ~ok
     error('cellLatentModel:BundleFinalizeFailed', ...
         'Cannot finalize composite model bundle: %s',message);
 end
 clear stageCleanup;
+bundleCleanup=onCleanup(@()removeUnpublishedBundle( ...
+    bundleDir,bundleManifest)); %#ok<NASGU>
+[textRelocation]=cellLatentModel.utils.relocateTextArtifacts( ...
+    bundleDir,stagingDir,bundleDir);
 [components,componentRelocation]=cellLatentModel.utils.relocatePathTree( ...
     components,stagingDir,bundleDir);
 [artifacts,artifactRelocation]=cellLatentModel.utils.relocatePathTree( ...
     artifacts,stagingDir,bundleDir);
+components=refreshComponentHashes(components);
 [~,postRelocationCheck]=cellLatentModel.utils.relocatePathTree( ...
     struct('components',components,'artifacts',artifacts), ...
     stagingDir,bundleDir);
@@ -314,12 +359,17 @@ relocationAudit=struct( ...
     'target_root',normalizedPath(bundleDir), ...
     'checked_value_count',componentRelocation.checked_value_count+ ...
         artifactRelocation.checked_value_count, ...
+    'checked_text_file_count',textRelocation.checked_file_count, ...
+    'rewritten_text_file_count',textRelocation.rewritten_file_count, ...
     'relocated_path_count',componentRelocation.relocated_path_count+ ...
-        artifactRelocation.relocated_path_count, ...
+        artifactRelocation.relocated_path_count+ ...
+        textRelocation.relocated_path_count, ...
     'expected_minimum_relocated_paths',4*componentCount, ...
-    'source_paths_remaining',postRelocationCheck.relocated_path_count, ...
+    'source_paths_remaining',postRelocationCheck.relocated_path_count+ ...
+        textRelocation.source_paths_remaining, ...
     'verified_no_transient_paths', ...
-        postRelocationCheck.relocated_path_count==0);
+        postRelocationCheck.relocated_path_count==0&& ...
+        textRelocation.verified_no_transient_paths);
 if relocationAudit.relocated_path_count < ...
         relocationAudit.expected_minimum_relocated_paths
     error('cellLatentModel:BundlePathRelocationIncomplete', ...
@@ -328,30 +378,36 @@ if relocationAudit.relocated_path_count < ...
         relocationAudit.relocated_path_count, ...
         relocationAudit.expected_minimum_relocated_paths);
 end
+
 if ~relocationAudit.verified_no_transient_paths
     error('cellLatentModel:BundlePathRelocationFailed', ...
         ['Composite bundle finalization left %d path(s) pointing to its ' ...
          'transient staging directory.'], ...
         relocationAudit.source_paths_remaining);
 end
-bundleManifest=fullfile(bundleDir,'manifest.json');
+snapshotRuntime=cellLatentModel.utils.resolvePythonRuntime(ctx);
+codeSnapshot=cellLatentModel.utils.snapshotTrainingCode( ...
+    bundleDir,snapshotRuntime);
 classif.trainingParam=tp;
 scope=classifierBinding.trainingScopeSpec(classif);
+supersedes=previousCompositeModel(classif,bundleManifest);
 payload=struct( ...
     'schema_version',1, ...
     'format','detecdiv_cell_latent_composite_model_v1', ...
-    'created_at',char(datetime('now','Format', ...
-        'yyyy-MM-dd''T''HH:mm:ssXXX')), ...
+    'created_at',cellLatentModel.utils.utcIso8601(), ...
     'architecture','detecdiv_composite_v1', ...
     'classifier_id',char(string(classif.strid)), ...
+    'supersedes',supersedes, ...
     'dataset_manifest',normalizedPath(datasetManifest), ...
     'dataset_manifest_sha256',fileSha256(datasetManifest), ...
     'components',components, ...
+    'model_selection',componentSelections(components), ...
+    'code_snapshot',codeSnapshot, ...
     'packaging',struct('path_relocation',relocationAudit), ...
     'training_scope',scope, ...
     'inference_order',{{'tracking','mother_NULL','biological_state'}}, ...
     'targets_consumed_at_inference',false);
-writeJson(bundleManifest,payload);
+writeJsonAtomic(bundleManifest,payload);
 
 p=cellLatentModel.utils.defaultExecutionParam();
 p.backend='causal_composite';
@@ -388,11 +444,16 @@ if isfield(artifacts,'lineageCheckpoint')
     p.modelSource='trained';
     p.modelPath=classifierRelativePath(classif,artifacts.lineageCheckpoint);
 end
-clear restore;
 classif.trainingParam=tp;
 classif.executionParam=p;
 cellLatentModel.ensureClassMetadata(classif);
 classifierPersistTrainingResult(classif);
+% Keep the pre-training parameters armed as a rollback until both the
+% authoritative classifier MAT and its execution-defaults sidecar have
+% been persisted successfully.  Clearing this guard earlier left a failed
+% training call pointing at the unpublished model in memory.
+rollbackState('armed')=false;
+clear restore;
 if exist('detecdiv_progress','file')==2
     detecdiv_progress(ctx,1,'Composite latent-model bundle complete.', ...
         'Scope','training','Status','completed');
@@ -414,6 +475,82 @@ row=struct('component',name,'status','trained', ...
     'report',normalizedPath(report), ...
     'report_sha256',fileSha256(report), ...
     'selection',selection);
+end
+
+function selection=lineageSelection(reportFile)
+% Propagate the deployable lineage checkpoint decision into the composite
+% manifest.  The component report remains the detailed source of truth,
+% while this compact record makes the selected epoch/policy discoverable
+% without opening a nested artifact.
+selection=struct('selected_epoch',[],'best_validation_nll',[], ...
+    'selection_policy',struct(),'stopped_early',false, ...
+    'stop_epoch',[],'stop_reason','', ...
+    'calibration',struct(),'validation',struct());
+try
+    report=jsondecode(fileread(reportFile));
+    training=report.training;
+    if isfield(training,'best_epoch')
+        selection.selected_epoch=double(training.best_epoch);
+    end
+    if isfield(training,'best_validation_nll')
+        selection.best_validation_nll=double( ...
+            training.best_validation_nll);
+    end
+    if isfield(training,'selection_policy')
+        selection.selection_policy=training.selection_policy;
+    end
+    if isfield(training,'stopped_early')
+        selection.stopped_early=logical(training.stopped_early);
+    end
+    if isfield(training,'stop_epoch')
+        selection.stop_epoch=double(training.stop_epoch);
+    end
+    if isfield(training,'stop_reason')
+        rawReason=training.stop_reason;
+        if ischar(rawReason)
+            selection.stop_reason=strtrim(rawReason);
+        elseif isstring(rawReason)&&isscalar(rawReason)&&~ismissing(rawReason)
+            selection.stop_reason=strtrim(char(rawReason));
+        end
+    end
+    if isfield(report,'calibration')
+        selection.calibration=report.calibration;
+    end
+    if isfield(report,'validation')
+        selection.validation=report.validation;
+    end
+catch ME
+    error('cellLatentModel:InvalidLineageTrainingReport', ...
+        'Cannot propagate lineage checkpoint selection from %s: %s', ...
+        reportFile,ME.message);
+end
+end
+
+function selections=componentSelections(components)
+selections=struct();
+names=fieldnames(components);
+for index=1:numel(names)
+    record=components.(names{index});
+    if isfield(record,'selection')
+        selections.(names{index})=record.selection;
+    end
+end
+end
+
+function components=refreshComponentHashes(components)
+names=fieldnames(components);
+for index=1:numel(names)
+    name=names{index};
+    record=components.(name);
+    if isfield(record,'checkpoint')&&~isempty(record.checkpoint)
+        record.checkpoint_sha256=artifactSha256(record.checkpoint);
+    end
+    if isfield(record,'report')&&~isempty(record.report)&& ...
+            isfile(record.report)
+        record.report_sha256=fileSha256(record.report);
+    end
+    components.(name)=record;
+end
 end
 
 function row=frozenStateComponent(mode,runtimeConfig)
@@ -442,6 +579,141 @@ end
 function restoreClassifier(classif,tp,execution)
 try classif.trainingParam=tp;catch,end
 try classif.executionParam=execution;catch,end
+end
+
+function restoreClassifierIfArmed(classif,tp,execution,state)
+armed=true;
+try armed=logical(state('armed'));catch,end
+if armed,restoreClassifier(classif,tp,execution);end
+end
+
+function values=formattedTrainingRois(classif)
+% Prefer the ROI identities frozen by the formatter over a later GUI split.
+values=[];
+configFile=fullfile(classif.path,'trainingdataset','format_config.json');
+try
+    objective=trainingChoice(classif.trainingParam.trainingObjective, ...
+        'relation_ensemble');
+    pointerFile=fullfile(classif.path,'trainingdataset', ...
+        formattedPointerName(objective));
+    if isfile(pointerFile)
+        pointer=jsondecode(fileread(pointerFile));
+        if isfield(pointer,'config') && isfile(char(string(pointer.config)))
+            configFile=char(string(pointer.config));
+        end
+    end
+catch
+end
+if isfile(configFile)
+    try
+        config=jsondecode(fileread(configFile));
+        ids=string({config.rois.roi_id});
+        currentIds=string(arrayfun(@(x)char(string(x.id)),classif.roi, ...
+            'UniformOutput',false));
+        for i=1:numel(ids)
+            match=find(currentIds==ids(i),1,'first');
+            if ~isempty(match),values(end+1)=match;end %#ok<AGROW>
+        end
+        values=unique(values,'stable');
+    catch
+        values=[];
+    end
+end
+if ~isempty(values),return;end
+try
+    values=unique([double(classif.dataset.split.train(:).') ...
+        double(classif.dataset.split.val(:).')],'stable');
+    values=setdiff(values,double(classif.dataset.split.test(:).'),'stable');
+catch
+    try values=double(classif.trainingset(:).');catch,values=[];end
+end
+values=values(isfinite(values)&values>=1&values<=numel(classif.roi));
+end
+
+function [datasetDir,manifestFile]=resolveFormattedDataset( ...
+        classif,objective,ctx)
+manifestFile='';
+try manifestFile=textValue(ctx.datasetManifest);catch,end
+if isempty(manifestFile)
+    pointerFile=fullfile(classif.path,'trainingdataset', ...
+        formattedPointerName(objective));
+    if isfile(pointerFile)
+        pointer=jsondecode(fileread(pointerFile));
+        manifestFile=textValue(pointer.manifest);
+        if ~isfile(manifestFile)
+            error('cellLatentModel:MissingFormattedDataset', ...
+                'The formatted dataset manifest no longer exists: %s', ...
+                manifestFile);
+        end
+        verifyManifestHash(pointer,manifestFile, ...
+            'cellLatentModel:FormattedDatasetChanged');
+    end
+end
+if isempty(manifestFile)
+    % Read-only compatibility for datasets created before run-scoped
+    % formatting was introduced.
+    if strcmp(objective,'continuous_lineage')
+        datasetDir=fullfile(classif.path,'trainingdataset', ...
+            'continuous_dataset');
+    else
+        datasetDir=fullfile(classif.path,'trainingdataset', ...
+            'relation_dataset');
+    end
+    manifestFile=fullfile(datasetDir,'manifest.json');
+else
+    datasetDir=fileparts(manifestFile);
+end
+end
+
+function name=formattedPointerName(objective)
+if strcmp(objective,'continuous_lineage')
+    name='latest_cell_latent_continuous_dataset.json';
+else
+    name='latest_cell_latent_relation_dataset.json';
+end
+end
+
+function manifestFile=componentManifest(datasetRecord,name)
+if ~isfield(datasetRecord,'components') || ...
+        ~isfield(datasetRecord.components,name)
+    error('cellLatentModel:MissingCompositeComponent', ...
+        'The composite dataset has no %s component.',name);
+end
+record=datasetRecord.components.(name);
+manifestFile=textValue(record.manifest);
+if isempty(manifestFile)||~isfile(manifestFile)
+    error('cellLatentModel:MissingCompositeComponent', ...
+        'The composite %s manifest no longer exists: %s', ...
+        name,manifestFile);
+end
+verifyManifestHash(record,manifestFile, ...
+    'cellLatentModel:CompositeComponentChanged');
+end
+
+function verifyManifestHash(record,manifestFile,errorId)
+expected='';
+try expected=lower(textValue(record.manifest_sha256));catch,end
+if isempty(expected),return;end
+actual=fileSha256(manifestFile);
+if ~strcmpi(actual,expected)
+    error(errorId, ...
+        ['Immutable formatted dataset manifest changed after publication: ' ...
+         '%s'],manifestFile);
+end
+end
+
+function values=textCell(raw)
+if isempty(raw)
+    values={};
+elseif ischar(raw)||isstring(raw)
+    values=cellstr(string(raw));
+elseif iscell(raw)
+    values=cellfun(@(x)char(string(x)),raw(:).', ...
+        'UniformOutput',false);
+else
+    values={};
+end
+values=values(~cellfun(@isempty,values));
 end
 
 function modalities = continuousModalities(manifest)
@@ -519,7 +791,27 @@ function writeJson(filename,value)
 fid = fopen(filename,'w');
 if fid < 0, error('cellLatentModel:ConfigWriteFailed','Cannot write %s.',filename); end
 cleanup = onCleanup(@() fclose(fid));
-fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
+encoded=jsonencode(value,'PrettyPrint',true);
+written=fwrite(fid,encoded,'char');
+if written~=numel(encoded)
+    error('cellLatentModel:ConfigWriteFailed', ...
+        'Incomplete JSON write for %s (%d/%d characters).', ...
+        filename,written,numel(encoded));
+end
+end
+function writeJsonAtomic(filename,value)
+temporary=[filename '.tmp_' char(java.util.UUID.randomUUID)];
+cleanup=onCleanup(@()deleteIfPresent(temporary));
+writeJson(temporary,value);
+[ok,message]=movefile(temporary,filename,'f');
+if ~ok
+    error('cellLatentModel:ManifestPublishFailed', ...
+        'Cannot publish model manifest %s: %s',filename,message);
+end
+clear cleanup;
+end
+function deleteIfPresent(filename)
+if isfile(filename),try delete(filename);catch,end,end
 end
 function value = normalizedPath(value)
 value = strrep(char(string(value)),'\','/');
@@ -547,6 +839,22 @@ try
 catch
 end
 end
+
+function record=previousCompositeModel(classif,currentManifest)
+record=struct('manifest','','manifest_sha256','');
+candidate='';
+try candidate=textValue(classif.executionParam.compositeManifestPath);catch,end
+if isempty(candidate),return;end
+if ~isfile(candidate)
+    candidate=fullfile(char(string(classif.path)),candidate);
+end
+if ~isfile(candidate)||strcmpi(normalizedPath(candidate), ...
+        normalizedPath(currentManifest))
+    return;
+end
+record.manifest=normalizedPath(candidate);
+record.manifest_sha256=fileSha256(candidate);
+end
 function value = textValue(value)
 while iscell(value)
     if isempty(value),value='';return;else,value=value{end};end
@@ -568,6 +876,11 @@ function removeFolder(folder)
 folder=char(string(folder));
 if isempty(folder)||~isfolder(folder),return;end
 try rmdir(folder,'s');catch,end
+end
+
+function removeUnpublishedBundle(bundleDir,manifestFile)
+if isfile(manifestFile),return;end
+removeFolder(bundleDir);
 end
 
 function progress=componentProgress(ctx,localBase,localSpan)

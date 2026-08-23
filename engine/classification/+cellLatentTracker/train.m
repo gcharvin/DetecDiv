@@ -24,12 +24,17 @@ end
 out.refs.trainingScope=classifierBinding.logTrainingScope(classif);
 pointerFile=fullfile(classif.path,'trainingdataset', ...
     'latest_latent_tracking_dataset.json');
-if ~isfile(pointerFile)
-    error('cellLatentTracker:MissingFormattedDataset', ...
-        'Format the latent-tracker ROI set before training.');
+manifestFile='';
+try manifestFile=textValue(ctx.datasetManifest);catch,end
+if isempty(manifestFile)
+    if ~isfile(pointerFile)
+        error('cellLatentTracker:MissingFormattedDataset', ...
+            'Format the latent-tracker ROI set before training.');
+    end
+    pointer=jsondecode(fileread(pointerFile));
+    manifestFile=char(string(pointer.manifest));
+    verifyManifestHash(pointer,manifestFile);
 end
-pointer=jsondecode(fileread(pointerFile));
-manifestFile=char(string(pointer.manifest));
 if ~isfile(manifestFile)
     error('cellLatentTracker:MissingFormattedDataset', ...
         'The formatted tracking manifest no longer exists: %s',manifestFile);
@@ -124,6 +129,30 @@ function value=normalizedPath(value),value=strrep(char(string(value)),'\','/');e
 function value=textValue(value),while iscell(value),if isempty(value),value='';return;else,value=value{end};end,end,value=strtrim(char(string(value)));end
 function value=choice(value,allowed,fallback),value=lower(strrep(textValue(value),' ','_'));if ~any(strcmp(value,allowed)),value=fallback;end,end
 function value=safeName(value),value=regexprep(textValue(value),'[^A-Za-z0-9_.-]','_');if isempty(value),value='latent_tracker_v001';end,end
+function verifyManifestHash(record,filename)
+expected='';try expected=lower(textValue(record.manifest_sha256));catch,end
+if isempty(expected),return;end
+if ~isfile(filename)
+    error('cellLatentTracker:MissingFormattedDataset', ...
+        'The formatted tracking manifest no longer exists: %s',filename);
+end
+actual=fileSha256(filename);
+if ~strcmpi(actual,expected)
+    error('cellLatentTracker:FormattedDatasetChanged', ...
+        ['Immutable formatted tracking manifest changed after publication: ' ...
+         '%s'],filename);
+end
+end
+function value=fileSha256(filename)
+fid=fopen(filename,'r');
+if fid<0,error('cellLatentTracker:ManifestReadFailed', ...
+        'Cannot read %s.',filename);end
+cleanup=onCleanup(@()fclose(fid)); %#ok<NASGU>
+bytes=fread(fid,Inf,'*uint8');
+digest=java.security.MessageDigest.getInstance('SHA-256');
+hash=typecast(digest.digest(bytes),'uint8');
+value=lower(reshape(dec2hex(hash,2).',1,[]));
+end
 function value=classifierRelativePath(classif,value),value=textValue(value);try root=char(string(classif.path));if startsWith(lower(value),lower(root)),value=value(numel(root)+1:end);value=regexprep(value,'^[\\/]+','');end,catch,end,end
 function value=positiveScalar(raw,name),value=double(raw);if ~isscalar(value)||~isfinite(value)||value<=0,error('cellLatentTracker:InvalidParameter','%s must be positive.',name);end,end
 function value=positiveInteger(raw,name),value=round(positiveScalar(raw,name));end
