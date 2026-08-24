@@ -65,6 +65,29 @@ fragmentation, predicted-ID reuse switches, event recovery, mother/NULL
 accuracy, linked accuracy, and NULL accuracy. This avoids the misleading
 oracle-tracks validation used by the lineage-only compatibility mode.
 
+### Frozen external benchmark handoff
+
+`cellLatentModel.exportBenchmarkSnapshot` is the read-only bridge from an
+authoritative DetecDiv classifier to external evaluation code. It publishes a
+new immutable `experiments/<name>_vNNN` directory below the backed-up
+`cell_latent_model` data root. The handoff has two physically separate
+contracts:
+
+- `inputs/inputs_manifest.json` references only brightfield/raw pixels and
+  instance masks relabeled independently in every frame;
+- `targets/targets_manifest.json` references reviewed stable IDs, observed
+  birth/END labels, mother/NULL relations, relation namespaces, and DetecDiv
+  approval hashes.
+
+External inference may open only the inputs manifest. Targets are opened by a
+separate scorer after prediction. Unlike the in-process formatter described
+above, this boundary rejects use of the reviewed GT mask provider as its input
+mask channel, because an external frozen benchmark must also exclude reviewed
+spatial corrections. The top manifest records both manifest hashes, source ROI
+hashes, exact whole-ROI split, label quality, and the DetecDiv Git commit. A
+stale unsaved classifier, invalid parentage, ambiguous frame range, existing
+version, or source change aborts publication without calling `classiSave`.
+
 ## Pipeline compatibility
 
 The composite classifier remains an ordinary DetecDiv classifier node. A
