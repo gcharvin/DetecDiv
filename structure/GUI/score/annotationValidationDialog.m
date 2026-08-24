@@ -7,7 +7,7 @@ result = struct('action', 'close', 'row', 0, 'issueIndex', 0, ...
 if isempty(rows), return; end
 
 figureHandle = uifigure('Name', 'Annotation validation issues', ...
-    'Position', [100 100 940 520], 'Resize', 'on', ...
+    'Position', [100 100 1010 520], 'Resize', 'on', ...
     'WindowStyle', 'modal', 'Visible', 'off');
 figureHandle.CloseRequestFcn = @closeDialog;
 layout = uigridlayout(figureHandle, [4 1]);
@@ -15,17 +15,20 @@ layout.RowHeight = {30, '1x', 100, 38};
 layout.Padding = [12 12 12 12];
 layout.RowSpacing = 8;
 
+warningCount = nnz(strcmpi({rows.severity}, 'warning'));
+errorCount = numel(rows) - warningCount;
 summaryLabel = uilabel(layout, 'Text', sprintf( ...
-    '%d issue(s). Select a row to inspect or repair it.', numel(rows)), ...
+    '%d error(s), %d warning(s). Select a row to inspect it.', ...
+    errorCount, warningCount), ...
     'FontWeight', 'bold');
 summaryLabel.Layout.Row = 1;
 
 tableHandle = uitable(layout);
 tableHandle.Layout.Row = 2;
-tableHandle.ColumnName = {'Component','Problem','Frame', ...
+tableHandle.ColumnName = {'Severity','Component','Problem','Frame', ...
     'Related track','Missing track'};
-tableHandle.ColumnEditable = false(1,5);
-tableHandle.ColumnWidth = {105, 470, 70, 100, 100};
+tableHandle.ColumnEditable = false(1,6);
+tableHandle.ColumnWidth = {75, 105, 470, 70, 100, 100};
 tableHandle.RowName = {};
 tableHandle.Data = tableData(rows);
 tableHandle.CellSelectionCallback = @selectRow;
@@ -89,14 +92,21 @@ if isvalid(figureHandle), delete(figureHandle); end
 end
 
 function data = tableData(rows)
-data = cell(numel(rows), 5);
+data = cell(numel(rows), 6);
 for i = 1:numel(rows)
-    data{i,1} = rows(i).component;
-    data{i,2} = rows(i).summary;
-    data{i,3} = numberText(rows(i).frame);
-    data{i,4} = trackText(rows(i).related_track);
-    data{i,5} = trackText(rows(i).missing_track);
+    data{i,1} = severityText(rows(i).severity);
+    data{i,2} = rows(i).component;
+    data{i,3} = rows(i).summary;
+    data{i,4} = numberText(rows(i).frame);
+    data{i,5} = trackText(rows(i).related_track);
+    data{i,6} = trackText(rows(i).missing_track);
 end
+end
+
+function value = severityText(value)
+value = lower(char(string(value)));
+if isempty(value), value = 'issue'; end
+value(1) = upper(value(1));
 end
 
 function value = numberText(value)

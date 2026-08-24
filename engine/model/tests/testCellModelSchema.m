@@ -182,6 +182,79 @@ verifyEqual(testCase, model.relations.child_track_id, uint64(1));
 verifyTrue(testCase, cellModel.validate(model).ok);
 end
 
+function testDelayedParentAssignmentCanonicalizesToChildBirth(testCase)
+model = delayedParentageFixture();
+
+% Direct track-ID API: an action four frames after birth stores the birth,
+% and replacement rewrites the same relation using that canonical frame.
+[model, report] = cellModel.setParentTrack( ...
+    model, 1, 6, 20, 10, 'Fast', true);
+verifyEqual(testCase, report.requested_frame, uint32(6));
+verifyEqual(testCase, report.child_birth_frame, uint32(2));
+verifyEqual(testCase, report.event_frame, uint32(2));
+verifyEqual(testCase, model.relations.event_frame, uint32(2));
+relationId = model.relations.relation_id;
+model.relations.event_frame(:) = uint32(6); % stale link being replaced
+[model, report] = cellModel.setParentTrack( ...
+    model, 1, 6, 20, 11, 'Fast', true);
+verifyEqual(testCase, report.event_frame, uint32(2));
+verifyEqual(testCase, model.relations.relation_id, relationId);
+verifyEqual(testCase, model.relations.parent_track_id, uint64(11));
+verifyEqual(testCase, model.relations.event_frame, uint32(2));
+
+% A parent visible only on birth-1 is permitted by the shared convention.
+[model, report] = cellModel.setParentTrack( ...
+    model, 1, 6, 20, 13, 'Fast', true);
+verifyEqual(testCase, report.event_frame, uint32(2));
+verifyTrue(testCase, annotationManager.validateParentage(model, 1).valid);
+
+% Removal keeps its prior behavior: it removes the relation and reports
+% the frame where the UI action occurred.
+[model, report] = cellModel.setParentTrack( ...
+    model, 1, 6, 20, [], 'Fast', true);
+verifyEqual(testCase, report.status, 'removed');
+verifyEqual(testCase, report.event_frame, uint32(6));
+verifyEmpty(testCase, model.relations.relation_id);
+
+% Mask-label API delegates to the same canonical contract.
+model = delayedParentageFixture();
+[model, report] = cellModel.setParent( ...
+    model, 1, 6, 2, 1, 'Fast', true);
+verifyEqual(testCase, report.requested_frame, uint32(6));
+verifyEqual(testCase, report.event_frame, uint32(2));
+model.relations.event_frame(:) = uint32(6);
+[model, report] = cellModel.setParent( ...
+    model, 1, 6, 2, 3, 'Fast', true);
+verifyEqual(testCase, report.event_frame, uint32(2));
+verifyEqual(testCase, model.relations.parent_track_id, uint64(11));
+verifyEqual(testCase, model.relations.event_frame, uint32(2));
+[model, report] = cellModel.setParent( ...
+    model, 1, 6, 2, 3, 'Fast', true, 'Toggle', true);
+verifyEqual(testCase, report.status, 'removed');
+verifyEmpty(testCase, model.relations.relation_id);
+end
+
+function testDelayedParentAssignmentRejectsParentAbsentAtBirth(testCase)
+model = delayedParentageFixture();
+verifyError(testCase,@() cellModel.setParentTrack( ...
+    model, 1, 6, 20, 12, 'Fast', true), ...
+    'cellModel:ParentAbsentAtChildBirth');
+verifyError(testCase,@() cellModel.setParent( ...
+    model, 1, 6, 2, 5, 'Fast', true), ...
+    'cellModel:ParentAbsentAtChildBirth');
+verifyEmpty(testCase, model.relations.relation_id, ...
+    'A rejected link must not mutate the input model.');
+
+try
+    cellModel.setParentTrack(model, 1, 6, 20, 12);
+catch ME
+    verifyTrue(testCase, contains(ME.message, 'Parent Track 12'));
+    verifyTrue(testCase, contains(ME.message, 'Child Track 20'));
+    verifyTrue(testCase, contains(ME.message, 'Open frame 2'), ...
+        'The rejection must identify a frame the user can navigate to.');
+end
+end
+
 function testRemoveTrackBatchesInstancesAndLineage(testCase)
 model = modelFixture();
 for frame = 1:3
@@ -220,6 +293,23 @@ model.families.color_rgb = uint8([10 20 30]);
 model.states.state_id = uint16([1;2]);
 model.states.name = {'G1';'budded'};
 model.states.color_rgb = uint8([0 255 0;255 0 0]);
+end
+
+function model = delayedParentageFixture()
+model = modelFixture();
+% Track 20 (label 2) is born at frame 2. Tracks 10 and 11 are present at
+% birth, Track 13 only at birth-1, and Track 12 only much later.
+frames = [1:6 1:6 1 5:6 2:6];
+labels = [ones(1,6) 3*ones(1,6) 4 5*ones(1,2) 2*ones(1,5)];
+tracks = [10*ones(1,6) 11*ones(1,6) 13 12*ones(1,2) 20*ones(1,5)];
+n = numel(frames);
+model.instances.object_id = uint64((1:n)');
+model.instances.family_id = repmat(uint32(1),n,1);
+model.instances.frame = uint32(frames(:));
+model.instances.mask_label = uint32(labels(:));
+model.instances.track_id = uint64(tracks(:));
+model.instances.state_id = zeros(n,1,'uint16');
+model = cellModel.normalize(model);
 end
 
 function deleteIfPresent(filename)

@@ -51,17 +51,23 @@ for i = 1:numel(spec.components)
 end
 
 issues = collectStructuredIssues(roiObj, spec, summary);
+if ~isempty(issues)
+    warningMask = strcmpi(string({issues.severity}), 'warning');
+    if any(warningMask)
+        warnings = unique([warnings(:); ...
+            string({issues(warningMask).message}).'], 'stable');
+    end
+end
 report = struct('valid', isempty(errors), 'errors', errors, ...
     'warnings', warnings, 'summary', summary, 'issues', issues);
 end
 
 function issues = collectStructuredIssues(roiObj, spec, summary)
-issues = struct([]);
+issues = annotationManager.emptyValidationIssues();
 model = [];
 for i = 1:numel(spec.components)
     component = spec.components(i);
-    if ~strcmp(component.kind, 'lineage') || ...
-            ~strcmp(component.storage, 'cell_model_family') || ...
+    if ~strcmp(component.storage, 'cell_model_family') || ...
             ~summary.components(i).groundTruthExists
         continue;
     end
@@ -69,13 +75,18 @@ for i = 1:numel(spec.components)
         if isempty(model)
             [model, ~] = roiObj.loadCellModel('MigrateLegacy', true);
         end
-        parentage = annotationManager.validateParentage(model, ...
-            component.groundTruth.family, 'Frames', summary.reviewFrames);
-        if isempty(parentage.issues), continue; end
-        if isempty(issues)
-            issues = parentage.issues;
-        else
-            issues = [issues; parentage.issues]; %#ok<AGROW>
+        componentIssues = annotationManager.emptyValidationIssues();
+        if strcmp(component.kind, 'lineage')
+            parentage = annotationManager.validateParentage(model, ...
+                component.groundTruth.family, 'Frames', summary.reviewFrames);
+            componentIssues = parentage.issues;
+        elseif strcmp(component.kind, 'tracking')
+            componentIssues = annotationManager.auditStableTracks( ...
+                roiObj, model, component.groundTruth.family, ...
+                'Frames', summary.reviewFrames);
+        end
+        if ~isempty(componentIssues)
+            issues = [issues; componentIssues]; %#ok<AGROW>
         end
     catch
         % The textual component validation remains the fallback for model

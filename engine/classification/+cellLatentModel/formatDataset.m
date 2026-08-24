@@ -70,7 +70,7 @@ for i = 1:numel(entries)
             budneck = readStack(roiobj,budneckName,false);
         end
     end
-    tracks = sliceStack(tracks,selectedFrames,trackName);
+    trackMaskLabels = sliceStack(tracks,selectedFrames,trackName);
     if ~isempty(gfp), gfp = sliceStack(gfp,selectedFrames,gfpName); end
     if ~isempty(brightfield)
         brightfield = sliceStack(brightfield,selectedFrames,brightfieldName);
@@ -81,6 +81,22 @@ for i = 1:numel(entries)
     if ~isempty(budneck)
         budneck = sliceStack(budneck,selectedFrames,budneckName);
     end
+    [model,~] = roiobj.loadCellModel('MigrateLegacy',true);
+    % The indexed channel stores only frame-local mask labels. Reuse the
+    % tracker contract to reconstruct persistent identities from the
+    % reviewed cell model before any lineage observation is exported.
+    [tracks,stableFamily] = cellLatentTracker.materializeStableTracks( ...
+        trackMaskLabels,model,selectedFrames,trackName);
+    [relations,familyName] = reviewedRelations( ...
+        model,tp.groundTruthFamily,stableFamily,selectedFrames);
+    relations = selectRelations(relations,selectedFrames);
+    if isempty(relations)
+        error('cellLatentModel:EmptyGroundTruth', ...
+            'ROI %s has no reviewed lineage relations in family "%s".', ...
+            char(string(roiobj.id)),familyName);
+    end
+    assertRelationsMaterialized( ...
+        relations,tracks,familyName,char(string(roiobj.id)));
     inputFile = fullfile(stageRoot,sprintf('roi_%03d.h5',roiIndex));
     writeStack(inputFile,'/tracks',tracks,'uint32');
     if ~isempty(gfp), writeStack(inputFile,'/gfp',gfp,'single'); end
@@ -93,21 +109,14 @@ for i = 1:numel(entries)
     if ~isempty(budneck)
         writeStack(inputFile,'/budneck',budneck,'single');
     end
-    [model,~] = roiobj.loadCellModel('MigrateLegacy',true);
-    [relations,familyName] = reviewedRelations( ...
-        model,tp.groundTruthFamily,trackName);
-    relations = selectRelations(relations,selectedFrames);
-    if isempty(relations)
-        error('cellLatentModel:EmptyGroundTruth', ...
-            'ROI %s has no reviewed lineage relations in family "%s".', ...
-            char(string(roiobj.id)),familyName);
-    end
     spec = emptySpec();
     spec.roi_id = char(string(roiobj.id));
     spec.source_roi_path = normalizedPath(roiobj.path);
     spec.source_frames = selectedFrames;
     spec.input_path = normalizedPath(inputFile);
     spec.tracks_dataset = '/tracks';
+    spec.tracks_representation = 'cell_model_track_id';
+    spec.tracks_mask_provider = trackName;
     if ~isempty(gfp), spec.gfp_dataset = '/gfp'; end
     if ~isempty(brightfield), spec.brightfield_dataset = '/brightfield'; end
     if ~isempty(nucleus), spec.nucleus_dataset = '/nucleus'; end
@@ -253,6 +262,8 @@ spec = struct( ...
     'source_frames',[], ...
     'input_path','', ...
     'tracks_dataset','/tracks', ...
+    'tracks_representation','cell_model_track_id', ...
+    'tracks_mask_provider','', ...
     'gfp_dataset','', ...
     'brightfield_dataset','', ...
     'nucleus_dataset','', ...
@@ -342,25 +353,39 @@ end
 if isLabels, stack = uint32(stack); else, stack = single(stack); end
 end
 
-function [relations,familyName] = reviewedRelations(model,requested,trackName)
+function [relations,familyName] = reviewedRelations( ...
+        model,requested,stableFamily,selectedFrames)
 model = cellModel.normalize(model);
 requested = strtrim(char(string(requested)));
-[index,~] = cellModel.familyIndex(model,requested);
-if isempty(index) || strcmpi(requested,'<auto>')
-    counts = zeros(numel(model.families.family_id),1);
-    for i = 1:numel(counts)
-        counts(i) = nnz(model.relations.family_id == ...
-            model.families.family_id(i));
-        if strcmp(model.families.name{i},trackName), counts(i) = -1; end
-    end
-    [best,index] = max(counts);
-    if isempty(index) || best <= 0
+stableFamilyId = uint32(stableFamily.family_id);
+[index,~] = cellModel.familyIndex(model,stableFamilyId);
+if isempty(index)
+    error('cellLatentModel:GroundTruthFamilyNotFound', ...
+        'The stable-track GT family no longer exists in the cell model.');
+end
+if ~isempty(requested) && ~strcmpi(requested,'<auto>')
+    [requestedIndex,requestedId] = cellModel.familyIndex(model,requested);
+    if isempty(requestedIndex)
         error('cellLatentModel:GroundTruthFamilyNotFound', ...
-            'No cell-model family contains reviewed lineage relations.');
+            'Cell-model GT family "%s" was not found.',requested);
+    end
+    if requestedId ~= stableFamilyId
+        error('cellLatentModel:GroundTruthFamilyMismatch', ...
+            ['Requested lineage GT family "%s" is not the reviewed family ' ...
+             'that maps mask provider "%s" to stable track IDs ("%s").'], ...
+            model.families.name{requestedIndex},stableFamily.mask_provider, ...
+            stableFamily.name);
     end
 end
-familyId = model.families.family_id(index);
+familyId = stableFamilyId;
 familyName = model.families.name{index};
+parentage = annotationManager.validateParentage( ...
+    model,familyId,'Frames',selectedFrames);
+if ~parentage.valid
+    error('cellLatentModel:InvalidGroundTruthRelations', ...
+        'Invalid reviewed lineage in family "%s": %s',familyName, ...
+        strjoin(cellstr(parentage.errors),' '));
+end
 rows = find(model.relations.family_id == familyId & ...
     model.relations.type_id == uint8(1));
 relations = repmat(struct( ...
@@ -373,6 +398,19 @@ for i = 1:numel(rows)
         double(model.relations.parent_track_id(row));
     relations(i).event_frame = double(model.relations.event_frame(row));
 end
+end
+
+function assertRelationsMaterialized(relations,tracks,familyName,roiId)
+materializedIds = unique(uint64(tracks(tracks > 0)));
+parentIds = uint64([relations.parent_track_id]);
+childIds = uint64([relations.child_track_id]);
+missingIds = setdiff(unique([parentIds(:);childIds(:)]),materializedIds);
+if isempty(missingIds), return; end
+error('cellLatentModel:InvalidGroundTruthRelations', ...
+    ['ROI %s lineage family "%s" references stable track ID(s) %s in ' ...
+     'the selected relations, but those IDs are absent from the selected ' ...
+     'materialized GT frames.'],roiId,familyName, ...
+    char(strjoin(string(double(missingIds(:).')),',')));
 end
 
 function parameters = linkerParameters(p)

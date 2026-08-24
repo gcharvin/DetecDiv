@@ -42,6 +42,8 @@ spec = { ...
     'trackingAssociationLossWeight',1, 'EDGE/predecessor loss weight.'
     'trackingAppearanceLossWeight',0.5, 'APPEAR/new-track loss weight.'
     'trackingEndLossWeight',0.5, 'END/termination loss weight.'
+    'trackingSuccessorLossWeight',0, ['Auxiliary grouped EDGE-versus-END ' ...
+        'successor loss weight; zero disables it.']
     'minLifetime',5, 'Minimum lifetime of a new bud track.'
     'maxBirthArea',400, 'Maximum bud area at first appearance.'
     'minParentAge',2, 'Minimum candidate-mother age in frames.'

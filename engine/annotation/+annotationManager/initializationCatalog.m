@@ -61,7 +61,10 @@ if ~isempty(predictionFamily)
     end
 else
     try
-        summary = annotationManager.inspect(roiObj, spec);
+        % Asset discovery is full-ROI by design; pass that scope explicitly
+        % so this UI caller cannot accidentally inherit lifecycle semantics.
+        summary = annotationManager.inspect(roiObj, spec, ...
+            'ReviewFrames', 1:annotationManager.frameCount(roiObj));
         required = [summary.components.required];
         if isempty(required), required = true(1, numel(summary.components)); end
         prediction.available = ~isempty(summary.components) && ...

@@ -25,13 +25,8 @@ existing = find(model.relations.family_id == familyId & ...
     model.relations.type_id == uint8(1), 1, 'first');
 
 if isempty(parentLabel) || ~isfinite(parentLabel) || parentLabel <= 0
-    if ~isempty(existing)
-        model.relations = removeRow(model.relations, existing);
-    end
-    if ~fast
-        model = cellModel.normalize(model);
-    end
-    report = struct('status','removed','child_track_id',child.track_id,'parent_track_id',uint64(0));
+    [model, report] = cellModel.setParentTrack(model, familyId, frame, ...
+        child.track_id, [], 'Fast', fast);
     return;
 end
 
@@ -44,40 +39,10 @@ if parent.track_id == child.track_id
 end
 if toggle && ~isempty(existing) && ...
         model.relations.parent_track_id(existing) == parent.track_id
-    model.relations = removeRow(model.relations, existing);
-    if ~fast
-        model = cellModel.normalize(model);
-    end
-    report = struct('status','removed','child_track_id',child.track_id, ...
-        'parent_track_id',uint64(0));
+    [model, report] = cellModel.setParentTrack(model, familyId, frame, ...
+        child.track_id, [], 'Fast', fast);
     return;
 end
-if isempty(existing)
-    row = numel(model.relations.relation_id) + 1;
-    model.relations.relation_id(row,1) = ...
-        max([model.relations.relation_id; uint64(0)]) + uint64(1);
-    model.relations.family_id(row,1) = familyId;
-    model.relations.child_track_id(row,1) = child.track_id;
-    model.relations.type_id(row,1) = uint8(1);
-    model.relations.confidence(row,1) = single(1);
-else
-    row = existing;
-end
-model.relations.parent_track_id(row,1) = parent.track_id;
-model.relations.event_frame(row,1) = uint32(frame);
-if ~fast
-    model = cellModel.normalize(model);
-    cellModel.validate(model, 'Throw', true);
-end
-report = struct('status','set','child_track_id',child.track_id, ...
-    'parent_track_id',parent.track_id);
-end
-
-function columns = removeRow(columns, row)
-keep = true(numel(columns.relation_id), 1);
-keep(row) = false;
-names = fieldnames(columns);
-for i = 1:numel(names)
-    columns.(names{i}) = columns.(names{i})(keep,:);
-end
+[model, report] = cellModel.setParentTrack(model, familyId, frame, ...
+    child.track_id, parent.track_id, 'Fast', fast);
 end

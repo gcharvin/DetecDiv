@@ -20,6 +20,8 @@ spec = { ...
     'associationLossWeight',1, 'EDGE association loss weight.'
     'appearanceLossWeight',0.5, 'APPEAR action loss weight.'
     'endLossWeight',0.5, 'END action loss weight.'
+    'successorLossWeight',0, ['Auxiliary grouped EDGE-versus-END successor ' ...
+        'loss weight; zero disables it.']
     'device','automatic', 'automatic, cuda, or cpu.'
     'modelName','model_latent_tracker_cavity_budding_v001', 'Immutable EDGE/APPEAR/END model version folder.'
     };

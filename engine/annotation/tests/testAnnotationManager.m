@@ -149,9 +149,21 @@ verifyEqual(testCase,boundedSummary.coverage.total,2);
 verifyFalse(testCase,boundedSummary.entry.review(1).frames(1));
 verifyTrue(testCase,session.validate().valid, ...
     'Frames outside the training bounds must not block validation.');
+boundedSummary = session.summary('VerifyHash', true);
+verifyEqual(testCase, boundedSummary.status, 'approved');
+verifyEqual(testCase, boundedSummary.reviewFrames, 2:3);
 rows = annotationManager.summarizeClassifier(c,1,'Fast',true);
 verifyEqual(testCase,rows.total,2);
 verifyEqual(testCase,rows.reviewed,2);
+verifyEqual(testCase, rows.status, 'approved', ...
+    'Classifier-bound summaries must use the same partial bounds as Score.');
+fullRoiSummary = annotationManager.inspect(c.roi(1), session.Spec, ...
+    'CheckAssets', false);
+verifyEqual(testCase, fullRoiSummary.status, 'draft', ...
+    ['Bare inspect is deliberately full-ROI and must not be used by ' ...
+     'classifier-bound UI or preflight callers.']);
+verifyEqual(testCase, fullRoiSummary.coverage.total, 3);
+verifyEqual(testCase, fullRoiSummary.coverage.reviewed, 2);
 session.clearFrameBounds();
 verifyEmpty(testCase, session.frameBounds());
 verifyEqual(testCase, session.uiContext().frameBoundsText, 'all');
@@ -425,6 +437,99 @@ verifyEqual(testCase, numel(rows), 2);
 verifyEqual(testCase, rows(1).component, 'Coverage');
 verifyEqual(testCase, rows(2).component, 'Tracking');
 verifyEqual(testCase, rows(2).frame, 12);
+verifyFalse(testCase, any([rows.repairable]));
+end
+
+function testParentageTemporalConventionAcceptsBirthAndBirthPlusOne(testCase)
+model = temporalParentageModel(1:2, 2, 2);
+report = annotationManager.validateParentage(model, uint32(1));
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyEmpty(testCase, report.issues);
+
+model.relations.event_frame(:) = uint32(3);
+report = annotationManager.validateParentage(model, uint32(1));
+verifyTrue(testCase, report.valid, ...
+    'A one-frame child and parent at birth must remain valid at birth+1.');
+verifyEmpty(testCase, report.issues);
+convention = annotationManager.relationTemporalConvention();
+verifyEqual(testCase, convention.accepted_event_minus_birth, [0 1]);
+verifyEqual(testCase, ...
+    convention.accepted_presence_frames_relative_to_event, [0 -1]);
+end
+
+function testParentageTemporalImpossibleRelationsAreHardErrors(testCase)
+childLate = temporalParentageModel(1:3, 8:9, 3);
+report = annotationManager.validateParentage(childLate, uint32(1));
+verifyFalse(testCase, report.valid);
+verifyEqual(testCase, numel(report.issues), 1);
+verifyEqual(testCase, report.issues.code, ...
+    'relation_child_temporally_incompatible');
+verifyEqual(testCase, report.issues.severity, 'error');
+verifyFalse(testCase, report.issues.repairable);
+rows = annotationManager.validationIssueRows(report);
+verifyEqual(testCase, numel(rows), 1, ...
+    'Structured temporal error must not be duplicated as free text.');
+verifyEqual(testCase, rows.severity, 'error');
+verifyEqual(testCase, rows.component, 'Parentage');
+verifyEqual(testCase, rows.frame, 3);
+verifyEqual(testCase, rows.related_track, 1);
+
+parentGone = temporalParentageModel(1, 2:3, 3);
+report = annotationManager.validateParentage(parentGone, uint32(1));
+verifyFalse(testCase, report.valid);
+verifyEqual(testCase, numel(report.issues), 1);
+verifyEqual(testCase, report.issues.code, ...
+    'relation_parent_temporally_incompatible');
+verifyEqual(testCase, report.issues.focus_track_id, uint64(2));
+verifyEqual(testCase, report.issues.focus_frame, uint32(3));
+end
+
+function testStableTrackAuditProducesNavigableWarningsOnly(testCase)
+folder = freshFolder(testCase);
+r = roiWithRaw(folder, 'R1', 40, 40, 2);
+masks = zeros(40,40,1,2,'uint16');
+% Certain-like reuse: mature 100 px object becomes a 16 px object.
+masks(25:34,2:11,1,1) = 1;
+masks(28:31,5:8,1,2) = 2;
+% Benign fluctuation: 81 -> 40 px (ratio 0.494) stays spatially local.
+masks(2:10,2:10,1,1) = 3;
+masks(2:6,2:9,1,2) = 4;
+% Large jump with unchanged area.
+masks(15:18,2:5,1,1) = 5;
+masks(15:18,20:23,1,2) = 6;
+r.addChannel(masks, 'gt_tracks', [1 1 1], [0 0 0]);
+r.save([], false);
+
+model = trackingAuditModel(r.id);
+r.saveCellModel(model);
+spec = annotationManager.newSpec(struct('strid','audit'));
+spec.components = annotationManager.newComponent( ...
+    'id','tracking','kind','tracking','storage','cell_model_family', ...
+    'required',true,'coverageUnit','frame', ...
+    'groundTruth',annotationManager.newAsset( ...
+        'family','Reviewed GT','maskProvider','gt_tracks'));
+
+report = annotationManager.validate(r, spec, ...
+    'RequireReviewed', false, 'ReviewFrames', 1:2);
+verifyTrue(testCase, report.valid, ...
+    'Possible ID reuse is advisory and must not hard-fail GT.');
+verifyEqual(testCase, numel(report.issues), 2);
+verifyTrue(testCase, all(strcmp({report.issues.severity}, 'warning')));
+verifyEqual(testCase, sort(double([report.issues.focus_track_id])), [9 52]);
+verifyTrue(testCase, any(strcmp({report.issues.code}, ...
+    'possible_id_reuse_area_drop')));
+verifyTrue(testCase, any(strcmp({report.issues.code}, ...
+    'possible_id_reuse_centroid_jump')));
+verifyFalse(testCase, any(double([report.issues.focus_track_id]) == 7), ...
+    'The conservative area threshold must ignore the benign fluctuation.');
+verifyTrue(testCase, all(contains(string({report.issues.message}), ...
+    'Possible ID reuse')));
+rows = annotationManager.validationIssueRows(report);
+verifyEqual(testCase, numel(rows), 2, ...
+    'Structured warnings must not be duplicated by report.warnings.');
+verifyTrue(testCase, all(strcmp({rows.severity}, 'warning')));
+verifyTrue(testCase, all(strcmp({rows.component}, 'Tracking')));
+verifyTrue(testCase, all([rows.frame] == 2));
 verifyFalse(testCase, any([rows.repairable]));
 end
 
@@ -805,6 +910,48 @@ r.display.indexed = false;
 r.display.alpha = 1;
 r.display.contour = false;
 r.display.width = 1;
+end
+
+function model = temporalParentageModel(parentFrames, childFrames, eventFrame)
+model = cellModel.create('temporal');
+model.families.family_id = uint32(1);
+model.families.name = {'Reviewed GT'};
+model.families.mask_provider = {'gt_tracks'};
+model.families.lineage_source = {'human'};
+model.families.color_rgb = uint8([255 255 255]);
+frames = [parentFrames(:); childFrames(:)];
+tracks = [ones(numel(parentFrames),1); 2*ones(numel(childFrames),1)];
+n = numel(frames);
+model.instances.object_id = uint64((1:n)');
+model.instances.family_id = repmat(uint32(1), n, 1);
+model.instances.frame = uint32(frames);
+model.instances.mask_label = uint32((1:n)');
+model.instances.track_id = uint64(tracks);
+model.instances.state_id = zeros(n,1,'uint16');
+model.relations.relation_id = uint64(1);
+model.relations.family_id = uint32(1);
+model.relations.parent_track_id = uint64(1);
+model.relations.child_track_id = uint64(2);
+model.relations.event_frame = uint32(eventFrame);
+model.relations.type_id = uint8(1);
+model.relations.confidence = single(1);
+model = cellModel.normalize(model);
+end
+
+function model = trackingAuditModel(roiId)
+model = cellModel.create(roiId);
+model.families.family_id = uint32(1);
+model.families.name = {'Reviewed GT'};
+model.families.mask_provider = {'gt_tracks'};
+model.families.lineage_source = {'human'};
+model.families.color_rgb = uint8([255 255 255]);
+model.instances.object_id = uint64((1:6)');
+model.instances.family_id = repmat(uint32(1),6,1);
+model.instances.frame = uint32([1;2;1;2;1;2]);
+model.instances.mask_label = uint32([1;2;3;4;5;6]);
+model.instances.track_id = uint64([52;52;7;7;9;9]);
+model.instances.state_id = zeros(6,1,'uint16');
+model = cellModel.normalize(model);
 end
 
 function folder = freshFolder(testCase)

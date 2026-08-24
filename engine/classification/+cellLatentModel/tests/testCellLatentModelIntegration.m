@@ -695,6 +695,133 @@ verifyError(testCase,@()cellLatentTracker.train(classifier,struct()), ...
     'cellLatentTracker:FormattedDatasetChanged');
 end
 
+function testLineageFormatterExportsStableTrackIdsAndPreservesSources(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'stable_lineage_export',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'stable_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'stable_validation',1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.architectureVersion = 'lineage_only_v1';
+tp.trainingObjective = 'continuous_lineage';
+tp.trackChannelName = 'results_trackastra';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+tp.trainingDomain = 'synthetic_stable_identity';
+
+imageFile = roi1.getH5Filename();
+modelFile = cellModel.pathForROI(roi1);
+sourceHashes = {fixtureFileSha256(imageFile),fixtureFileSha256(modelFile)};
+datasetRoot = fullfile(folder,'formatted');
+runContext = struct('formatRunId','stable_identity_v001');
+formatted = cellLatentModel.formatDataset( ...
+    classifier,1,2,datasetRoot,runContext,tp);
+
+config = jsondecode(fileread(formatted.configFile));
+trainSpec = config.rois(strcmp(string({config.rois.split}),'train'));
+verifyEqual(testCase,trainSpec.tracks_representation, ...
+    'cell_model_track_id');
+verifyEqual(testCase,trainSpec.tracks_mask_provider, ...
+    'results_trackastra');
+materialized = h5read(trainSpec.input_path,trainSpec.tracks_dataset);
+verifyEqual(testCase,unique(materialized(:,:,3)), ...
+    uint32([0;40;41;50]));
+verifyEqual(testCase,unique(materialized(:,:,7)), ...
+    uint32([0;40;42;50]));
+verifyFalse(testCase,any(ismember(unique(materialized(:)),uint32(1:3))), ...
+    'Frame-local labels must never be exported as persistent track IDs.');
+relations = trainSpec.ground_truth_relations;
+verifyEqual(testCase,sort(double([relations.child_track_id])),[41 42]);
+verifyEqual(testCase,double([relations.parent_track_id]),[40 40]);
+verifyGreaterThan(testCase,min(double([relations.child_track_id])),3, ...
+    'Relation endpoints must remain stable IDs, not local mask labels.');
+verifyEqual(testCase,fixtureFileSha256(imageFile),sourceHashes{1});
+verifyEqual(testCase,fixtureFileSha256(modelFile),sourceHashes{2});
+
+publishedHash = fixtureFileSha256(formatted.manifestFile);
+verifyError(testCase,@() cellLatentModel.formatDataset( ...
+    classifier,1,2,datasetRoot,runContext,tp), ...
+    'cellLatentModel:ImmutableDatasetExists');
+verifyEqual(testCase,fixtureFileSha256(formatted.manifestFile),publishedHash, ...
+    'A completed versioned dataset must remain immutable.');
+end
+
+function testLineageFormatterRejectsRelationOutsideStableGt(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'invalid_stable_lineage',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'invalid_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'valid_validation',1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+[model,~] = roi1.loadCellModel('Force',true);
+model.relations.child_track_id(2) = uint64(999);
+roi1.saveCellModel(model,'KeepBackup',false);
+classifier.roi = [roi1 roi2];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.trainingObjective = 'continuous_lineage';
+tp.trackChannelName = 'results_trackastra';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+modelFile = cellModel.pathForROI(roi1);
+sourceHash = fixtureFileSha256(modelFile);
+datasetRoot = fullfile(folder,'formatted');
+
+verifyError(testCase,@() cellLatentModel.formatDataset( ...
+    classifier,1,2,datasetRoot,struct('formatRunId','invalid_v001'),tp), ...
+    'cellLatentModel:InvalidGroundTruthRelations');
+verifyEqual(testCase,fixtureFileSha256(modelFile),sourceHash);
+verifyFalse(testCase,isfolder(fullfile( ...
+    datasetRoot,'format_runs','invalid_v001')));
+end
+
+function testLineageFormatterUsesTolerantTemporalRelationContract(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder,'temporal_relation_contract',1);
+roi1 = syntheticROI(fullfile(folder,'roi1'),'birth_plus_one_train',0);
+roi2 = syntheticROI(fullfile(folder,'roi2'),'birth_plus_one_validation',1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+for roiobj = [roi1 roi2]
+    [model,~] = roiobj.loadCellModel('Force',true);
+    model.relations.event_frame = model.relations.event_frame + uint32(1);
+    roiobj.saveCellModel(model,'KeepBackup',false);
+end
+classifier.roi = [roi1 roi2];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.trainingObjective = 'continuous_lineage';
+tp.trackChannelName = 'results_trackastra';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+
+formatted = cellLatentModel.formatDataset( ...
+    classifier,1,2,fullfile(folder,'birth_plus_one'), ...
+    struct('formatRunId','birth_plus_one_v001'),tp);
+verifyTrue(testCase,isfile(formatted.manifestFile), ...
+    'A relation recorded at child birth+1 must remain format-compatible.');
+
+[model,~] = roi1.loadCellModel('Force',true);
+model.relations.event_frame(1) = uint32(9);
+roi1.saveCellModel(model,'KeepBackup',false);
+verifyError(testCase,@() cellLatentModel.formatDataset( ...
+    classifier,1,2,fullfile(folder,'impossible_relation'), ...
+    struct('formatRunId','impossible_v001'),tp), ...
+    'cellLatentModel:InvalidGroundTruthRelations');
+end
+
 function testFormattingAppliesPerRoiTrainingBounds(testCase)
 folder = tempname;
 mkdir(folder);
@@ -779,6 +906,27 @@ verifyError(testCase, @() classifier.formatDataForTraining( ...
     'cellLatentModel:TrainingInputsNotReady');
 verifyTrue(testCase, isfile(sentinel), ...
     'Missing ROI inputs must be detected before replacing the dataset.');
+end
+
+function testFormattingRejectsAnExistingImmutableModelVersion(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'immutable_format_target', 1);
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'relation_ensemble';
+classifier.trainingParam.modelName = 'model_cell_latent_composite_v004';
+target = fullfile(classifier.path, 'models', ...
+    classifier.trainingParam.modelName);
+mkdir(target);
+sentinel = fullfile(target, 'immutable.marker');
+touchFile(sentinel);
+
+verifyError(testCase, @() cellLatentModel.preflightFormat( ...
+    classifier, [], struct()), 'cellLatentModel:ImmutableModelExists');
+verifyTrue(testCase, isfile(sentinel), ...
+    'Preflight must not modify an existing model bundle.');
 end
 
 function testManagedStaleApprovalBlocksFormattingBeforeDatasetReset(testCase)
@@ -1036,6 +1184,50 @@ result = struct('edges',struct( ...
 roiobj.saveCellModel(model);
 end
 
+function writeStableReviewedLineage(roiobj)
+tracks = uint32(squeeze(roiobj.image(:,:,1,:)));
+roiobj.save([],false);
+model = cellModel.create(roiobj.id);
+familyId = uint32(7);
+model.families.family_id = familyId;
+model.families.name = {'Reviewed lineage'};
+model.families.mask_provider = {'results_trackastra'};
+model.families.lineage_source = {'ground_truth'};
+model.families.color_rgb = uint8([99 214 255]);
+nextObject = uint64(1);
+for frame = 1:size(tracks,3)
+    labels = unique(tracks(:,:,frame));
+    labels(labels == 0) = [];
+    for label = double(labels(:).')
+        row = numel(model.instances.object_id) + 1;
+        model.instances.object_id(row,1) = nextObject;
+        nextObject = nextObject + 1;
+        model.instances.family_id(row,1) = familyId;
+        model.instances.frame(row,1) = uint32(frame);
+        model.instances.mask_label(row,1) = uint32(label);
+        if label == 1
+            stableTrack = 40;
+        elseif label == 2
+            stableTrack = 50;
+        elseif frame <= 6
+            stableTrack = 41;
+        else
+            stableTrack = 42;
+        end
+        model.instances.track_id(row,1) = uint64(stableTrack);
+        model.instances.state_id(row,1) = uint16(0);
+    end
+end
+model.relations.relation_id = uint64([1;2]);
+model.relations.family_id = repmat(familyId,2,1);
+model.relations.parent_track_id = uint64([40;40]);
+model.relations.child_track_id = uint64([41;42]);
+model.relations.event_frame = uint32([3;7]);
+model.relations.type_id = uint8([1;1]);
+model.relations.confidence = single([1;1]);
+roiobj.saveCellModel(model,'KeepBackup',false);
+end
+
 function addFrameLocalInstances(roiobj)
 instances=uint16(roiobj.image(:,:,1,:));
 roiobj.addChannel(instances,'results_cellposeSAM_cell', ...
@@ -1070,6 +1262,19 @@ end
 
 function value = normalizeTestPath(value)
 value = strrep(char(string(value)),'\','/');
+end
+
+function value = fixtureFileSha256(filename)
+fid = fopen(filename,'r');
+if fid < 0
+    error('testCellLatentModel:HashReadFailed', ...
+        'Cannot read fixture %s.',filename);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+bytes = fread(fid,Inf,'*uint8');
+digest = java.security.MessageDigest.getInstance('SHA-256');
+hash = typecast(digest.digest(bytes),'uint8');
+value = lower(reshape(dec2hex(hash,2).',1,[]));
 end
 
 function removeFolder(folder)

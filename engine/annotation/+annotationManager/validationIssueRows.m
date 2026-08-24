@@ -9,13 +9,22 @@ end
 
 for i = 1:numel(structured)
     issue = structured(i);
-    role = char(string(issue.role));
-    summary = sprintf('Missing %s track', role);
+    role = fieldText(issue, 'role', '');
+    summary = fieldText(issue, 'summary', '');
+    if isempty(summary)
+        summary = sprintf('Missing %s track', role);
+    end
+    component = fieldText(issue, 'component', 'Parentage');
+    severity = fieldText(issue, 'severity', 'error');
+    repairable = fieldLogical(issue, 'repairable', ...
+        strcmp(fieldText(issue, 'code', ''), 'missing_track_reference'));
     rows(end+1,1) = makeRow( ...
-        'Parentage', char(string(issue.code)), summary, ...
-        char(string(issue.message)), double(issue.focus_frame), ...
-        double(issue.focus_track_id), double(issue.missing_track_id), ...
-        true, i); %#ok<AGROW>
+        component, fieldText(issue, 'code', ''), summary, ...
+        fieldText(issue, 'message', ''), ...
+        fieldDouble(issue, 'focus_frame', fieldDouble(issue, 'event_frame', NaN)), ...
+        fieldDouble(issue, 'focus_track_id', NaN), ...
+        positiveOrNaN(fieldDouble(issue, 'missing_track_id', NaN)), ...
+        repairable, i, severity); %#ok<AGROW>
 end
 
 errors = strings(0,1);
@@ -29,7 +38,21 @@ for i = 1:numel(errors)
     [component, summary] = genericSummary(message);
     rows(end+1,1) = makeRow( ...
         component, 'validation_error', summary, char(message), ...
-        firstFrame(message), NaN, NaN, false, 0); %#ok<AGROW>
+        firstFrame(message), NaN, NaN, false, 0, 'error'); %#ok<AGROW>
+end
+
+warnings = strings(0,1);
+if isstruct(report) && isfield(report, 'warnings') && ~isempty(report.warnings)
+    warnings = string(report.warnings(:));
+end
+for i = 1:numel(warnings)
+    message = strtrim(warnings(i));
+    if message == "", continue; end
+    if isStructuredDuplicate(message, structured), continue; end
+    [component, summary] = genericSummary(message);
+    rows(end+1,1) = makeRow( ...
+        component, 'validation_warning', summary, char(message), ...
+        firstFrame(message), NaN, NaN, false, 0, 'warning'); %#ok<AGROW>
 end
 end
 
@@ -77,8 +100,9 @@ value = [value(1:max(1, limit-3)) '...'];
 end
 
 function row = makeRow(component, code, summary, message, frame, ...
-        relatedTrack, missingTrack, repairable, issueIndex)
+        relatedTrack, missingTrack, repairable, issueIndex, severity)
 row = struct( ...
+    'severity', char(string(severity)), ...
     'component', char(string(component)), ...
     'code', char(string(code)), ...
     'summary', char(string(summary)), ...
@@ -91,5 +115,31 @@ row = struct( ...
 end
 
 function rows = emptyRows()
-rows = repmat(makeRow('', '', '', '', NaN, NaN, NaN, false, 0), 0, 1);
+rows = repmat(makeRow('', '', '', '', NaN, NaN, NaN, false, 0, ''), 0, 1);
+end
+
+function value = fieldText(issue, name, fallback)
+value = fallback;
+if isfield(issue, name) && ~isempty(issue.(name))
+    value = char(string(issue.(name)));
+end
+end
+
+function value = fieldDouble(issue, name, fallback)
+value = fallback;
+if isfield(issue, name) && ~isempty(issue.(name))
+    candidate = double(issue.(name));
+    if isscalar(candidate), value = candidate; end
+end
+end
+
+function value = fieldLogical(issue, name, fallback)
+value = fallback;
+if isfield(issue, name) && ~isempty(issue.(name))
+    value = logical(issue.(name));
+end
+end
+
+function value = positiveOrNaN(value)
+if ~isfinite(value) || value <= 0, value = NaN; end
 end

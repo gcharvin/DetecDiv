@@ -41,6 +41,8 @@ if ~any(model.instances.track_id(known) == parentTrackId)
     error('cellModel:UnknownParentTrack', ...
         'Parent track %u does not exist in this family.', parentTrackId);
 end
+[eventFrame, childBirthFrame] = canonicalEventFrame( ...
+    model, familyId, childTrackId, parentTrackId);
 if isempty(existing)
     row = numel(model.relations.relation_id) + 1;
     model.relations.relation_id(row,1) = ...
@@ -53,13 +55,51 @@ else
     row = existing;
 end
 model.relations.parent_track_id(row,1) = parentTrackId;
-model.relations.event_frame(row,1) = uint32(frame);
+% The UI action may occur long after appearance, but the stored biological
+% event is always canonicalized to the child's first visible frame. This
+% applies only to newly set/replaced links; existing GT is never migrated.
+model.relations.event_frame(row,1) = eventFrame;
 if ~fast
     model = cellModel.normalize(model);
     cellModel.validate(model, 'Throw', true);
 end
 report = struct('status', 'set', 'child_track_id', childTrackId, ...
-    'parent_track_id', parentTrackId, 'event_frame', uint32(frame));
+    'parent_track_id', parentTrackId, 'event_frame', eventFrame, ...
+    'requested_frame', uint32(frame), ...
+    'child_birth_frame', childBirthFrame);
+end
+
+function [eventFrame, childBirthFrame] = canonicalEventFrame( ...
+        model, familyId, childTrackId, parentTrackId)
+childRows = model.instances.family_id == familyId & ...
+    model.instances.track_id == childTrackId;
+childFrames = unique(double(model.instances.frame(childRows)));
+childBirth = min(childFrames);
+childBirthFrame = uint32(childBirth);
+eventFrame = childBirthFrame;
+
+convention = cellModel.relationTemporalConvention();
+acceptedParentFrames = childBirth + double( ...
+    convention.accepted_presence_frames_relative_to_event);
+acceptedParentFrames = acceptedParentFrames(acceptedParentFrames >= 1);
+parentRows = model.instances.family_id == familyId & ...
+    model.instances.track_id == parentTrackId;
+parentFrames = unique(double(model.instances.frame(parentRows)));
+if any(ismember(parentFrames, acceptedParentFrames)), return; end
+
+if childBirth > 1
+    expected = sprintf('frame %u or the preceding frame %u', ...
+        uint32(childBirth), uint32(childBirth-1));
+else
+    expected = 'frame 1';
+end
+error('cellModel:ParentAbsentAtChildBirth', ...
+    ['Cannot link Parent Track %u to Child Track %u: the child is born ' ...
+     'at frame %u, but the parent is absent at %s under convention %s. ' ...
+     'Open frame %u and inspect both tracks; correct their identities or ' ...
+     'choose a parent present at the child birth.'], ...
+    parentTrackId, childTrackId, childBirthFrame, expected, ...
+    convention.name, childBirthFrame);
 end
 
 function value = validTrackId(value, role)

@@ -29,6 +29,18 @@ for localFrame = 1:numel(frames)
     labels(labels == 0) = [];
     familyRows = instances.family_id == family.family_id & ...
         instances.frame == sourceFrame;
+    referencedLabels = unique(instances.mask_label(familyRows));
+    if ~isequal(labels(:),referencedLabels(:))
+        missingReferences = setdiff(labels,referencedLabels);
+        staleReferences = setdiff(referencedLabels,labels);
+        error('cellLatentTracker:GroundTruthInstanceMapping', ...
+            ['ROI GT family "%s" and mask provider "%s" disagree at ' ...
+             'frame %u (mask labels without an instance: %s; instance ' ...
+             'labels without mask pixels: %s).'],family.name,maskProvider, ...
+            sourceFrame,labelList(missingReferences), ...
+            labelList(staleReferences));
+    end
+    frameTrackIds = zeros(numel(labels),1,'uint32');
     for labelIndex = 1:numel(labels)
         label = labels(labelIndex);
         rows = find(familyRows & instances.mask_label == label);
@@ -45,11 +57,25 @@ for localFrame = 1:numel(frames)
                  'label %u at frame %u.'],family.name, ...
                 char(string(trackId)),label,sourceFrame);
         end
+        frameTrackIds(labelIndex) = uint32(trackId);
         frameTracks = stableTracks(:,:,localFrame);
         frameTracks(maskLabels(:,:,localFrame) == label) = uint32(trackId);
         stableTracks(:,:,localFrame) = frameTracks;
     end
+    if numel(unique(frameTrackIds)) ~= numel(frameTrackIds)
+        error('cellLatentTracker:GroundTruthInstanceMapping', ...
+            ['ROI GT family "%s" assigns several mask labels to the same ' ...
+             'stable track at frame %u.'],family.name,sourceFrame);
+    end
 end
+end
+
+function value = labelList(labels)
+if isempty(labels)
+    value = '<none>';
+    return;
+end
+value = char(strjoin(string(double(labels(:).')),','));
 end
 
 function family = resolveFamily(model,maskProvider)

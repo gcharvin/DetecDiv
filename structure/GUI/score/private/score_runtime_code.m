@@ -4706,7 +4706,7 @@ end
             score_display(app, 'refresh');
         end
 
-        function focusAnnotationParentageIssue(app, issue)
+        function focusAnnotationValidationIssue(app, issue)
             roi = app.getSelectedROI();
             if isempty(roi) || isempty(issue), return; end
             frame = double(issue.focus_frame);
@@ -4778,7 +4778,7 @@ end
             catch
             end
             app.ImageFigure.Name = sprintf( ...
-                'ROI:%s - Frame: %d/%d - Parentage conflict: Track %u', ...
+                'ROI:%s - Frame: %d/%d - Validation issue: Track %u', ...
                 char(string(roi.id)), frame, size(roi.image,4), ...
                 uint64(issue.focus_track_id));
             drawnow limitrate;
@@ -4792,6 +4792,11 @@ end
             [model, ~] = roi.loadCellModel('MigrateLegacy', true);
             seen = strings(0,1);
             for i = 1:numel(issues)
+                if ~isfield(issues, 'code') || ...
+                        ~strcmp(char(string(issues(i).code)), ...
+                        'missing_track_reference')
+                    continue;
+                end
                 key = sprintf('%u:%u', issues(i).family_id, ...
                     issues(i).missing_track_id);
                 if any(seen == string(key)), continue; end
@@ -4838,6 +4843,20 @@ end
                                 strjoin(cellstr(report.warnings), '\n'));
                         end
                         app.refreshAnnotationSessionUI();
+                        warningRows = annotationManager.validationIssueRows(report);
+                        warningRows = warningRows(strcmpi( ...
+                            {warningRows.severity}, 'warning'));
+                        if ~isempty(warningRows)
+                            choice = annotationValidationDialog( ...
+                                app.ScoreAppUIFigure, report);
+                            if strcmp(choice.action, 'go') && ...
+                                    choice.issueIndex >= 1 && ...
+                                    choice.issueIndex <= numel(report.issues)
+                                app.focusAnnotationValidationIssue( ...
+                                    report.issues(choice.issueIndex));
+                                return;
+                            end
+                        end
                         uialert(app.ScoreAppUIFigure, message, ...
                             'GT ready', 'Icon', 'success');
                         return;
@@ -4853,7 +4872,7 @@ end
                         case 'go'
                             if choice.issueIndex >= 1 && ...
                                     choice.issueIndex <= numel(report.issues)
-                                app.focusAnnotationParentageIssue( ...
+                                app.focusAnnotationValidationIssue( ...
                                     report.issues(choice.issueIndex));
                             elseif isfinite(choice.frame) && choice.frame > 0
                                 app.showAnnotationFrame(choice.frame);
@@ -4891,10 +4910,24 @@ end
         function ApproveAnnotationButtonPushed(app, event) %#ok<INUSD>
             if isempty(app.AnnotationSession), return; end
             try
-                app.AnnotationSession.approve();
+                [~, report] = app.AnnotationSession.approve();
                 app.AnnotationLastValidationValid = false;
                 app.AnnotationReviewDirty = false;
                 app.refreshAnnotationSessionUI();
+                warningRows = annotationManager.validationIssueRows(report);
+                warningRows = warningRows(strcmpi( ...
+                    {warningRows.severity}, 'warning'));
+                if ~isempty(warningRows)
+                    choice = annotationValidationDialog( ...
+                        app.ScoreAppUIFigure, report);
+                    if strcmp(choice.action, 'go') && ...
+                            choice.issueIndex >= 1 && ...
+                            choice.issueIndex <= numel(report.issues)
+                        app.focusAnnotationValidationIssue( ...
+                            report.issues(choice.issueIndex));
+                        return;
+                    end
+                end
                 uialert(app.ScoreAppUIFigure, ...
                     'GT approved and ready for training.', 'Annotation approved', ...
                     'Icon', 'success');

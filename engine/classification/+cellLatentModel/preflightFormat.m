@@ -37,6 +37,7 @@ if strcmp(architecture,'detecdiv_composite_v1') && ...
             'cell_latent_relation_v001')
     tp.modelName = 'model_cell_latent_composite_v001';
 end
+assertNewModelTarget(classif, tp.modelName);
 if ~any(strcmp(objective, {'relation_ensemble','continuous_lineage'}))
     error('cellLatentModel:InvalidTrainingObjective', ...
         ['trainingObjective must be relation_ensemble or ' ...
@@ -54,6 +55,24 @@ end
 roiIndices = formattingRois(classif, rois);
 approvals = cellLatentModel.assertGroundTruthReady(classif, roiIndices);
 validateChannels(classif, roiIndices, tp, objective, architecture);
+end
+
+function assertNewModelTarget(classif, rawModelName)
+% Formatting is the first publication step for an immutable model version.
+% Refuse a stale/default name immediately instead of producing a dataset
+% that train.m can only reject later after expensive formatting.
+modelName = regexprep(char(string(rawModelName)), ...
+    '[^A-Za-z0-9_.-]', '_');
+if isempty(modelName), modelName = 'cell_latent_relation_v001'; end
+classifierPath = '';
+try classifierPath = char(string(classif.path)); catch, end
+if isempty(classifierPath), return; end
+target = fullfile(classifierPath, 'models', modelName);
+if ~isfolder(target), return; end
+error('cellLatentModel:ImmutableModelExists', ...
+    ['Model version "%s" already exists and is immutable. Choose a new ' ...
+     'Target model version (for example the next vNNN) before formatting. ' ...
+     'Existing model and datasets were not modified.'], modelName);
 end
 
 function indices = formattingRois(classif, requested)

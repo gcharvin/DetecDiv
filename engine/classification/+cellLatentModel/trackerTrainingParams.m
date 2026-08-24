@@ -20,6 +20,7 @@ p.dropout = double(tp.trackingDropout);
 p.associationLossWeight = double(tp.trackingAssociationLossWeight);
 p.appearanceLossWeight = double(tp.trackingAppearanceLossWeight);
 p.endLossWeight = double(tp.trackingEndLossWeight);
+p.successorLossWeight = double(tp.trackingSuccessorLossWeight);
 p.device = textValue(tp.device);
 end
 
