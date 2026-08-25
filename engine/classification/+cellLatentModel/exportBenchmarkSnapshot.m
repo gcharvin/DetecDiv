@@ -824,8 +824,27 @@ value = struct( ...
     'annotation_id', char(string(approval.annotation_id)), ...
     'revision', double(approval.revision), ...
     'approved_sha256', char(string(approval.approved_hash)), ...
-    'validated_at', char(string(approval.validated_at)), ...
+    'validated_at', canonicalApprovalTimestamp(approval.validated_at), ...
     'frame_bounds', double(approval.frame_bounds));
+end
+
+function value = canonicalApprovalTimestamp(inputValue)
+raw = char(string(inputValue));
+if ~endsWith(raw, '***')
+    value = raw;
+    return;
+end
+base = extractBefore(string(raw), strlength(string(raw)) - 2);
+stamp = datetime(base, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss', ...
+    'TimeZone', 'Europe/Paris');
+offsetMinutes = round(minutes(tzoffset(stamp)));
+signValue = '+';
+if offsetMinutes < 0
+    signValue = '-';
+end
+offsetMinutes = abs(offsetMinutes);
+value = sprintf('%s%c%02d:%02d', char(base), signValue, ...
+    floor(offsetMinutes / 60), mod(offsetMinutes, 60));
 end
 
 function value = parentageEventPolicy()
