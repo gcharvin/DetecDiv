@@ -43,6 +43,23 @@ def test_gap_keeps_one_stable_track_and_division_starts_children():
     assert 1 in tracked[3]
 
 
+def test_isolated_candidate_detection_is_preserved_as_singleton_track():
+    selected = nx.DiGraph()
+    selected.add_node(0, time=0, label=1)
+    candidates = selected.copy()
+    candidates.add_node(1, time=1, label=2)
+    masks = np.zeros((2, 5, 5), dtype=np.uint16)
+    masks[0, 1:3, 1:3] = 1
+    masks[1, 2:4, 2:4] = 2
+
+    MODULE._preserve_isolated_detections(selected, candidates)
+    tracked, track_by_node = MODULE._stable_track_masks(selected, masks)
+
+    assert set(selected.nodes) == {0, 1}
+    assert track_by_node[0] != track_by_node[1]
+    assert np.array_equal(tracked > 0, masks > 0)
+
+
 def test_edge_audit_marks_gap_and_division():
     graph, masks = synthetic_graph_and_masks()
     _, track_by_node = MODULE._stable_track_masks(graph, masks)

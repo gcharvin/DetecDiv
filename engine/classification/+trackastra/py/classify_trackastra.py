@@ -106,9 +106,26 @@ def _track_with_gap_closing(
         max_neighbors=int(kwargs.get("max_neighbors", 10)),
         delta_t=delta_t,
     )
+    _preserve_isolated_detections(graph, candidate_graph)
     return graph, candidate_graph, _stable_track_masks(
         graph, masks, division_identity_mode=division_identity_mode
     )
+
+
+def _preserve_isolated_detections(
+    selected_graph: nx.DiGraph, candidate_graph: nx.DiGraph
+) -> None:
+    """Keep detections that Trackastra selected without any incident edge.
+
+    Trackastra's greedy solver may omit isolated vertices from its returned
+    graph even though they are present in the candidate graph and input mask.
+    They remain valid one-frame tracks; dropping them would erase foreground
+    pixels from the output segmentation.
+    """
+
+    for node_id, attributes in candidate_graph.nodes(data=True):
+        if node_id not in selected_graph:
+            selected_graph.add_node(node_id, **dict(attributes))
 
 
 def _stable_track_masks(
