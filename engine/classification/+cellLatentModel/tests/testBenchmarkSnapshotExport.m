@@ -267,6 +267,27 @@ verifyError(testCase, @() cellLatentModel.exportBenchmarkSnapshot( ...
     'cellLatentModel:InvalidBenchmarkSplit');
 end
 
+function testDistinctRoisMayShareClassifierStorageFolder(testCase)
+fixture = benchmarkFixture(testCase);
+cleanup = onCleanup(@() removeFolder(fixture.root));
+second = fixture.classifier.roi(2);
+for prefix = {'im_','objects_','data_'}
+    extension = '.mat';
+    if ~strcmp(prefix{1}, 'data_'), extension = '.h5'; end
+    name = [prefix{1} char(string(second.id)) extension];
+    copyfile(fullfile(second.path,name), ...
+        fullfile(fixture.classifier.roi(1).path,name),'f');
+end
+second.path = fixture.classifier.roi(1).path;
+classiSave(fixture.classifier);
+
+result = cellLatentModel.exportBenchmarkSnapshot( ...
+    fixture.classifier, fixture.split, 'synthetic_shared_root_v001', ...
+    'ExternalRoot', fixture.externalRoot, ...
+    'AllowUnitTestRoot', true);
+verifyTrue(testCase,isfile(result.manifest));
+end
+
 function testByteIdenticalRoiCopiesCannotCrossPartitions(testCase)
 fixture = benchmarkFixture(testCase);
 cleanup = onCleanup(@() removeFolder(fixture.root));
