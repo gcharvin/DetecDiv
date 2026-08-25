@@ -96,22 +96,11 @@ classdef Session < handle
             % in the training interval but still carry an unconfirmed
             % ROI-level unit such as parentage.
             obj.completeRoiReviewWhenFramesComplete([], true);
-            % A successful validation is persisted as an approval below.
-            % Materialize the exact live mask/model snapshot first so the
-            % approval can never outlive unsaved Score edits or refer to a
-            % different on-disk revision.
-            liveHash = annotationManager.contentHash(obj.Roi, obj.Spec);
-            obj.persistCurrentGroundTruth();
-            diskHash = annotationManager.materializedContentHash( ...
-                obj.Roi, obj.Spec);
-            if isempty(liveHash) || ~strcmpi(liveHash, diskHash)
-                error('annotationManager:GroundTruthPersistenceMismatch', ...
-                    ['The live GT and its materialized files differ after ' ...
-                     'saving. Validation was not recorded; reload the ROI ' ...
-                     'and retry.']);
-            end
+            [liveHash, migration] = ...
+                obj.prepareCurrentGroundTruthForValidation();
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
+            report = obj.attachParentageMigration(report, migration);
             annotationManager.recordValidation(obj.Roi, obj.Spec, report, ...
                 'ContentHash', liveHash);
             if report.valid
@@ -130,8 +119,10 @@ classdef Session < handle
         end
 
         function [entry, report] = approve(obj, varargin)
+            [~, migration] = obj.prepareCurrentGroundTruthForValidation();
             [entry, report] = annotationManager.approve(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
+            report = obj.attachParentageMigration(report, migration);
             obj.LastValidationStatus = 'valid';
             obj.LastValidationMessage = '';
             notify(obj, 'StateChanged');
@@ -324,6 +315,65 @@ classdef Session < handle
             if saveModel && isstruct(obj.Roi.cellModel) && ...
                     isfield(obj.Roi.cellModel, 'schema_version')
                 obj.Roi.saveCellModel(obj.Roi.cellModel);
+            end
+        end
+
+        function report = canonicalizeCurrentParentageEvents(obj)
+            % Legacy Score builds stored the UI click frame in event_frame.
+            % Migrate it only when this cell-model GT is explicitly
+            % validated: ordinary loading must not change approval hashes.
+            [~, report] = cellModel.canonicalizeParentageEvents(struct());
+            componentRows = find(strcmp({obj.Spec.components.storage}, ...
+                'cell_model_family'));
+            if isempty(componentRows)
+                return;
+            end
+            [model, ~] = obj.Roi.loadCellModel('MigrateLegacy', true);
+            model = cellModel.normalize(model, obj.Roi.id);
+            familyIds = zeros(0, 1, 'uint32');
+            for i = componentRows(:).'
+                familyName = obj.Spec.components(i).groundTruth.family;
+                [familyIndex, familyId] = cellModel.familyIndex( ...
+                    model, familyName);
+                if ~isempty(familyIndex)
+                    familyIds(end+1,1) = familyId; %#ok<AGROW>
+                end
+            end
+            familyIds = unique(familyIds);
+            if isempty(familyIds)
+                return;
+            end
+            [model, report] = cellModel.canonicalizeParentageEvents( ...
+                model, 'FamilyIds', familyIds);
+            if report.changed
+                obj.Roi.cellModel = model;
+            end
+        end
+
+        function [liveHash, migration] = ...
+                prepareCurrentGroundTruthForValidation(obj)
+            % A validation/approval must refer to the exact durable GT,
+            % including any deterministic legacy parent-event migration.
+            migration = obj.canonicalizeCurrentParentageEvents();
+            liveHash = annotationManager.contentHash(obj.Roi, obj.Spec);
+            obj.persistCurrentGroundTruth();
+            diskHash = annotationManager.materializedContentHash( ...
+                obj.Roi, obj.Spec);
+            if isempty(liveHash) || ~strcmpi(liveHash, diskHash)
+                error('annotationManager:GroundTruthPersistenceMismatch', ...
+                    ['The live GT and its materialized files differ after ' ...
+                     'saving. Validation was not recorded; reload the ROI ' ...
+                     'and retry.']);
+            end
+        end
+
+        function report = attachParentageMigration(~, report, migration)
+            report.parentageEventMigration = migration;
+            if migration.changed
+                report.warnings(end+1,1) = string(sprintf([ ...
+                    '%d legacy parentage event timestamp(s) were moved ' ...
+                    'to child birth; parent/child track IDs were unchanged.'], ...
+                    migration.count));
             end
         end
 

@@ -114,7 +114,9 @@ for i=1:numel(rois)
     frames=1:size(gtMask,3);
     [gtTracks,gtFamily]=cellLatentTracker.materializeStableTracks( ...
         gtMask,model,frames,gtName);
-    gtRelations=familyRelations(model,gtFamily.family_id);
+    eventModel=cellModel.normalize(model);
+    [eventModel,~]=cellModel.canonicalizeParentageEvents(eventModel);
+    gtRelations=familyRelations(eventModel,gtFamily.family_id);
     roiFolder=fullfile(root,safeName(roiobj.id));
     if exist(roiFolder,'dir')~=7,mkdir(roiFolder);end
     roiCtx=ctx;

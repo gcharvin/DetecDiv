@@ -402,6 +402,44 @@ verifyEqual(testCase, parentageCoverage.reviewed, 1, ...
     'Completing every bounded frame must also complete ROI-level review.');
 verifyTrue(testCase, session.validate().valid);
 
+% Reproduce a relation created by an older Score build at the frame of the
+% reviewer click. Validation must migrate only its derived event timestamp,
+% persist child birth, and keep the chosen parent/child identities.
+[cachedModel,~] = r.loadCellModel();
+gtRelation = find(cachedModel.relations.family_id == gtId, 1, 'first');
+predictionRelation = find( ...
+    cachedModel.relations.family_id == sourceId, 1, 'first');
+parentBefore = cachedModel.relations.parent_track_id(gtRelation);
+childBefore = cachedModel.relations.child_track_id(gtRelation);
+cachedModel.relations.event_frame(gtRelation) = uint32(43);
+cachedModel.relations.event_frame(predictionRelation) = uint32(42);
+r.cellModel = cachedModel;
+migrated = session.validate();
+verifyTrue(testCase, migrated.valid, strjoin(cellstr(migrated.errors), ' '));
+verifyTrue(testCase, migrated.parentageEventMigration.changed);
+verifyEqual(testCase, migrated.parentageEventMigration.count, 1);
+verifyTrue(testCase, any(contains(migrated.warnings, ...
+    'parent/child track IDs were unchanged')));
+verifyEqual(testCase, r.cellModel.relations.event_frame(gtRelation), uint32(2));
+verifyEqual(testCase, r.cellModel.relations.parent_track_id(gtRelation), ...
+    parentBefore);
+verifyEqual(testCase, r.cellModel.relations.child_track_id(gtRelation), ...
+    childBefore);
+verifyEqual(testCase, ...
+    r.cellModel.relations.event_frame(predictionRelation), uint32(42), ...
+    'Validating GT must not rewrite a separate prediction family.');
+diskModel = cellModel.readH5(cellModel.pathForROI(r));
+diskRelation = find(diskModel.relations.family_id == gtId, 1, 'first');
+diskPredictionRelation = find( ...
+    diskModel.relations.family_id == sourceId, 1, 'first');
+verifyEqual(testCase, diskModel.relations.event_frame(diskRelation), uint32(2));
+verifyEqual(testCase, diskModel.relations.parent_track_id(diskRelation), ...
+    parentBefore);
+verifyEqual(testCase, diskModel.relations.child_track_id(diskRelation), ...
+    childBefore);
+verifyEqual(testCase, ...
+    diskModel.relations.event_frame(diskPredictionRelation), uint32(42));
+
 % Reproduce an older session (and the stale-link repair workflow): all
 % frame units remain reviewed while a parentage edit resets its ROI flag.
 annotationManager.markChanged(r, session.Spec, 'Frames', 2, ...
@@ -440,21 +478,26 @@ verifyEqual(testCase, rows(2).frame, 12);
 verifyFalse(testCase, any([rows.repairable]));
 end
 
-function testParentageTemporalConventionAcceptsBirthAndBirthPlusOne(testCase)
+function testParentageTemporalConventionIgnoresLegacyClickFrame(testCase)
 model = temporalParentageModel(1:2, 2, 2);
 report = annotationManager.validateParentage(model, uint32(1));
 verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
 verifyEmpty(testCase, report.issues);
 
-model.relations.event_frame(:) = uint32(3);
+model.relations.event_frame(:) = uint32(43); % frame where reviewer clicked
 report = annotationManager.validateParentage(model, uint32(1));
 verifyTrue(testCase, report.valid, ...
-    'A one-frame child and parent at birth must remain valid at birth+1.');
+    'The frame of the UI action must not change the biological relation.');
 verifyEmpty(testCase, report.issues);
 convention = annotationManager.relationTemporalConvention();
-verifyEqual(testCase, convention.accepted_event_minus_birth, [0 1]);
+verifyEqual(testCase, convention.canonical_event, 'child_birth');
+verifyEqual(testCase, convention.accepted_event_minus_birth, 0);
 verifyEqual(testCase, ...
     convention.accepted_presence_frames_relative_to_event, [0 -1]);
+verifyEqual(testCase, ...
+    convention.required_annotation_parent_frame_relative_to_event, 0);
+verifyEqual(testCase, ...
+    convention.temporal_training_parent_frames_relative_to_event, [0 -1]);
 end
 
 function testParentageTemporalImpossibleRelationsAreHardErrors(testCase)
@@ -463,7 +506,7 @@ report = annotationManager.validateParentage(childLate, uint32(1));
 verifyFalse(testCase, report.valid);
 verifyEqual(testCase, numel(report.issues), 1);
 verifyEqual(testCase, report.issues.code, ...
-    'relation_child_temporally_incompatible');
+    'relation_parent_temporally_incompatible');
 verifyEqual(testCase, report.issues.severity, 'error');
 verifyFalse(testCase, report.issues.repairable);
 rows = annotationManager.validationIssueRows(report);
@@ -471,10 +514,10 @@ verifyEqual(testCase, numel(rows), 1, ...
     'Structured temporal error must not be duplicated as free text.');
 verifyEqual(testCase, rows.severity, 'error');
 verifyEqual(testCase, rows.component, 'Parentage');
-verifyEqual(testCase, rows.frame, 3);
-verifyEqual(testCase, rows.related_track, 1);
+verifyEqual(testCase, rows.frame, 8);
+verifyEqual(testCase, rows.related_track, 2);
 
-parentGone = temporalParentageModel(1, 2:3, 3);
+parentGone = temporalParentageModel(1, 3:4, 17);
 report = annotationManager.validateParentage(parentGone, uint32(1));
 verifyFalse(testCase, report.valid);
 verifyEqual(testCase, numel(report.issues), 1);
@@ -482,6 +525,62 @@ verifyEqual(testCase, report.issues.code, ...
     'relation_parent_temporally_incompatible');
 verifyEqual(testCase, report.issues.focus_track_id, uint64(2));
 verifyEqual(testCase, report.issues.focus_frame, uint32(3));
+end
+
+function testParentageRequiresMaterializedParentInsideTrainingBounds(testCase)
+model = temporalParentageModel(1, 2, 2);
+report = annotationManager.validateParentage( ...
+    model, uint32(1), 'Frames', 2);
+verifyFalse(testCase, report.valid, ...
+    ['A parent visible only before the selected range cannot be ' ...
+     'materialized by the training formatter.']);
+verifyEqual(testCase, numel(report.issues), 1);
+verifyEqual(testCase, report.issues.code, ...
+    'relation_parent_temporally_incompatible');
+end
+
+function testParentageIgnoresRelationsOutsideTrainingBounds(testCase)
+model = temporalParentageModel(246:247, 402:403, 402);
+fullReport = annotationManager.validateParentage(model, uint32(1));
+verifyFalse(testCase, fullReport.valid, ...
+    'The synthetic relation is deliberately incoherent without bounds.');
+
+boundedReport = annotationManager.validateParentage( ...
+    model, uint32(1), 'Frames', 1:333);
+verifyTrue(testCase, boundedReport.valid, ...
+    ['A relation whose canonical child-birth event is outside the ' ...
+     'configured ROI bounds must not affect validation or training.']);
+verifyEmpty(testCase, boundedReport.errors);
+verifyEmpty(testCase, boundedReport.issues);
+end
+
+function testParentageSeparatesStaticAndTemporalEligibility(testCase)
+onlyAtBirth = temporalParentageModel(2, 2, 2);
+report = annotationManager.validateParentage(onlyAtBirth, uint32(1));
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyEqual(testCase, numel(report.issues), 1);
+verifyEqual(testCase, report.issues.code, ...
+    'relation_static_only_parentage');
+verifyEqual(testCase, report.issues.severity, 'warning');
+[evidence,~] = cellModel.parentageEvidence(onlyAtBirth, uint32(1));
+verifyTrue(testCase, evidence.static_parentage_eligible);
+verifyFalse(testCase, evidence.temporal_parentage_eligible);
+verifyEqual(testCase, evidence.evidence_mode, 'left_censored_joint_entry');
+
+onlyBeforeBirth = temporalParentageModel(1, 2, 2);
+report = annotationManager.validateParentage(onlyBeforeBirth, uint32(1));
+verifyFalse(testCase, report.valid);
+
+% Slicing away birth-1 changes head eligibility, not annotation validity.
+report = annotationManager.validateParentage( ...
+    onlyAtBirth, uint32(1), 'Frames', 2);
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyEqual(testCase, report.issues.code, 'relation_static_only_parentage');
+
+persistentParent = temporalParentageModel(1:2, 2, 2);
+report = annotationManager.validateParentage(persistentParent, uint32(1));
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyEmpty(testCase, report.issues);
 end
 
 function testStableTrackAuditProducesNavigableWarningsOnly(testCase)
@@ -523,7 +622,7 @@ verifyTrue(testCase, any(strcmp({report.issues.code}, ...
 verifyFalse(testCase, any(double([report.issues.focus_track_id]) == 7), ...
     'The conservative area threshold must ignore the benign fluctuation.');
 verifyTrue(testCase, all(contains(string({report.issues.message}), ...
-    'Possible ID reuse')));
+    'does not block validation or training')));
 rows = annotationManager.validationIssueRows(report);
 verifyEqual(testCase, numel(rows), 2, ...
     'Structured warnings must not be duplicated by report.warnings.');
@@ -531,6 +630,14 @@ verifyTrue(testCase, all(strcmp({rows.severity}, 'warning')));
 verifyTrue(testCase, all(strcmp({rows.component}, 'Tracking')));
 verifyTrue(testCase, all([rows.frame] == 2));
 verifyFalse(testCase, any([rows.repairable]));
+
+oversized = model;
+oversized.instances.track_id(1:2) = uint64(intmax('uint32')) + uint64(1);
+r.cellModel = oversized;
+tooLarge = annotationManager.validate(r, spec, ...
+    'RequireReviewed', false, 'ReviewFrames', 1:2);
+verifyFalse(testCase, tooLarge.valid);
+verifyTrue(testCase, any(contains(tooLarge.errors, 'exceeds uint32')));
 end
 
 function testValidationAndHashUseUnsavedLoadedSnapshot(testCase)
@@ -936,6 +1043,8 @@ model.relations.event_frame = uint32(eventFrame);
 model.relations.type_id = uint8(1);
 model.relations.confidence = single(1);
 model = cellModel.normalize(model);
+% Allow tests to emulate the raw field written by older Score versions.
+model.relations.event_frame(:) = uint32(eventFrame);
 end
 
 function model = trackingAuditModel(roiId)

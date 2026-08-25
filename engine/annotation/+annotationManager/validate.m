@@ -153,6 +153,7 @@ switch char(string(component.storage))
                     model.families.mask_provider{idx}, expected);
             end
             if ~isempty(expected)
+                validateUniqueTrainingFamily(model, idx, expected);
                 validateFamilyMaskLabels(roiObj, model, ...
                     model.families.family_id(idx), expected, ...
                     model.families.name{idx},reviewFrames);
@@ -170,6 +171,10 @@ labels = model.instances.mask_label(rows);
 if any(tracks == 0)
     error('A reviewed object has no track identity.');
 end
+if any(tracks > uint64(intmax('uint32')))
+    error(['A reviewed track identity exceeds uint32 and cannot be ' ...
+        'materialized by the training formatter.']);
+end
 if any(labels == 0)
     error('A reviewed object uses the reserved background mask label.');
 end
@@ -181,6 +186,19 @@ labelKeys = [double(frameValues(:)) double(labels(:))];
 if size(unique(labelKeys,'rows'),1) ~= size(labelKeys,1)
     error('A reviewed frame contains duplicate mask-label references.');
 end
+end
+
+function validateUniqueTrainingFamily(model, targetIndex, provider)
+matches = find(strcmpi(string(model.families.mask_provider), ...
+    string(provider)));
+if numel(matches) <= 1, return; end
+reviewed = matches(strcmpi( ...
+    string(model.families.lineage_source(matches)), 'ground_truth'));
+if numel(reviewed) == 1 && reviewed == targetIndex, return; end
+names = strjoin(string(model.families.name(matches)), ', ');
+error(['Mask provider "%s" resolves to several object families (%s). ' ...
+    'Training requires one unambiguous reviewed family.'], ...
+    provider, char(names));
 end
 
 function validateFamilyMaskLabels(roiObj, model, familyId, channel, familyName,frames)

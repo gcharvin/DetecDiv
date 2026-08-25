@@ -785,7 +785,7 @@ verifyFalse(testCase,isfolder(fullfile( ...
     datasetRoot,'format_runs','invalid_v001')));
 end
 
-function testLineageFormatterUsesTolerantTemporalRelationContract(testCase)
+function testLineageFormatterCanonicalizesLegacyParentClickFrames(testCase)
 folder = tempname;
 mkdir(folder);
 cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
@@ -796,8 +796,13 @@ writeStableReviewedLineage(roi1);
 writeStableReviewedLineage(roi2);
 for roiobj = [roi1 roi2]
     [model,~] = roiobj.loadCellModel('Force',true);
-    model.relations.event_frame = model.relations.event_frame + uint32(1);
+    legacyClickFrames = model.relations.event_frame + uint32(40);
+    model.relations.event_frame = legacyClickFrames;
     roiobj.saveCellModel(model,'KeepBackup',false);
+    [savedModel,~] = roiobj.loadCellModel('Force',true);
+    verifyEqual(testCase, savedModel.relations.event_frame, ...
+        legacyClickFrames, ...
+        'Ordinary model saves must not silently rewrite reviewed GT.');
 end
 classifier.roi = [roi1 roi2];
 cellLatentModel.setparam(classifier);
@@ -811,15 +816,110 @@ formatted = cellLatentModel.formatDataset( ...
     classifier,1,2,fullfile(folder,'birth_plus_one'), ...
     struct('formatRunId','birth_plus_one_v001'),tp);
 verifyTrue(testCase,isfile(formatted.manifestFile), ...
-    'A relation recorded at child birth+1 must remain format-compatible.');
+    'A legacy click timestamp must be canonicalized while formatting.');
+[sourceAfterFormat,~] = roi1.loadCellModel('Force',true);
+verifyEqual(testCase, sourceAfterFormat.relations.event_frame, ...
+    uint32([43;47]), ...
+    'Formatting must not mutate the reviewed DetecDiv source.');
 
 [model,~] = roi1.loadCellModel('Force',true);
-model.relations.event_frame(1) = uint32(9);
+row = find(model.relations.child_track_id == uint64(41), 1, 'first');
+model.relations.parent_track_id(row) = uint64(42); % parent born after child
 roi1.saveCellModel(model,'KeepBackup',false);
 verifyError(testCase,@() cellLatentModel.formatDataset( ...
     classifier,1,2,fullfile(folder,'impossible_relation'), ...
     struct('formatRunId','impossible_v001'),tp), ...
     'cellLatentModel:InvalidGroundTruthRelations');
+end
+
+function testContinuousFormatterAcceptsImplicitNullOnlyRois(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'implicit_null_only', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'null_only_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'null_only_validation', 1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+for roiobj = [roi1 roi2]
+    [model,~] = roiobj.loadCellModel('Force',true);
+    emptyModel = cellModel.create(roiobj.id);
+    model.relations = emptyModel.relations;
+    roiobj.saveCellModel(model,'KeepBackup',false);
+end
+classifier.roi = [roi1 roi2];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.trainingObjective = 'continuous_lineage';
+tp.trackChannelName = 'results_trackastra';
+tp.brightfieldChannelName = 'ch2-GFP';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+
+formatted = cellLatentModel.formatDataset( ...
+    classifier,1,2,fullfile(folder,'null_only_dataset'), ...
+    struct('formatRunId','null_only_v001'),tp);
+verifyTrue(testCase,isfile(formatted.manifestFile));
+verifyGreaterThan(testCase,double(formatted.manifest.counts.events),0, ...
+    ['Unlinked appearances are valid NULL supervision and must not be ' ...
+     'rejected for having no explicit parent relation.']);
+end
+
+function testContinuousFormatterSeparatesStaticOnlyParentage(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'static_only_parentage', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'joint_entry_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'joint_entry_validation', 1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+for roiobj = [roi1 roi2]
+    [model,~] = roiobj.loadCellModel('Force',true);
+    % Track 50 and its linked child 42 now enter together at frame 7.
+    % This is valid static supervision, but has no parent history at 6.
+    earlyParent = model.instances.track_id == uint64(50) & ...
+        model.instances.frame < uint32(7);
+    model.instances.track_id(earlyParent) = uint64(51);
+    row = find(model.relations.child_track_id == uint64(42),1,'first');
+    model.relations.parent_track_id(row) = uint64(50);
+    roiobj.saveCellModel(model,'KeepBackup',false);
+    report = annotationManager.validateParentage(model,uint32(7));
+    verifyTrue(testCase,report.valid,strjoin(cellstr(report.errors),' '));
+    verifyTrue(testCase,any(strcmp({report.issues.code}, ...
+        'relation_static_only_parentage')));
+end
+classifier.roi = [roi1 roi2];
+cellLatentModel.setparam(classifier);
+tp = classifier.trainingParam;
+tp.trainingObjective = 'continuous_lineage';
+tp.trackChannelName = 'results_trackastra';
+tp.brightfieldChannelName = 'ch2-GFP';
+tp.groundTruthFamily = 'Reviewed lineage';
+tp.frameIntervalMinutes = 3;
+
+formatted = cellLatentModel.formatDataset( ...
+    classifier,1,2,fullfile(folder,'static_only_dataset'), ...
+    struct('formatRunId','static_only_v001'),tp);
+config = jsondecode(fileread(formatted.configFile));
+for roiSpec = reshape(config.rois,1,[])
+    relation = roiSpec.ground_truth_relations( ...
+        [roiSpec.ground_truth_relations.child_track_id] == 42);
+    verifyEqual(testCase,relation.event_frame,7);
+    verifyTrue(testCase,relation.static_parentage_eligible);
+    verifyFalse(testCase,relation.temporal_parentage_eligible);
+    verifyEqual(testCase,relation.evidence_mode, ...
+        'left_censored_joint_entry');
+end
+for sequence = reshape(formatted.manifest.sequences,1,[])
+    verifyEqual(testCase,double(sequence.counts.static_only_relations),1);
+    verifyEqual(testCase, ...
+        double(sequence.counts.temporal_parentage_relations),1);
+    staticRelation = sequence.relation_supervision( ...
+        [sequence.relation_supervision.child_track_id] == 42);
+    verifyTrue(testCase,staticRelation.static_parentage_eligible);
+    verifyFalse(testCase,staticRelation.temporal_parentage_eligible);
+end
 end
 
 function testFormattingAppliesPerRoiTrainingBounds(testCase)
@@ -964,6 +1064,51 @@ verifyError(testCase, @() classifier.formatDataForTraining( ...
     'cellLatentModel:GroundTruthNotReady');
 verifyTrue(testCase, isfile(sentinel), ...
     'A stale approval must be rejected before replacing formatted data.');
+end
+
+function testPreflightRevalidatesHistoricalApprovalWithCurrentContract(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'historical_contract_preflight', 1);
+roi1 = syntheticROI(fullfile(folder, 'roi1'), 'historical_train', 0);
+roi2 = syntheticROI(fullfile(folder, 'roi2'), 'historical_validation', 1);
+writeStableReviewedLineage(roi1);
+writeStableReviewedLineage(roi2);
+classifier.roi = [roi1 roi2];
+classifier.dataset.split.train = 1;
+classifier.dataset.split.val = 2;
+classifier.dataset.split.test = [];
+cellLatentModel.setparam(classifier);
+classifier.trainingParam.architectureVersion = 'lineage_only_v1';
+classifier.trainingParam.trainingObjective = 'continuous_lineage';
+classifier.trainingParam.frameIntervalMinutes = 3;
+classifier.trainingParam.trackChannelName = 'results_trackastra';
+classifier.trainingParam.brightfieldChannelName = 'ch2-GFP';
+classifier.trainingParam.groundTruthFamily = 'Reviewed lineage';
+approveManagedGroundTruth(testCase, classifier, 1);
+approveManagedGroundTruth(testCase, classifier, 2);
+
+% Emulate an approval produced by older validation code: its hash matches,
+% but the parent track starts after the linked child is born.
+[model,~] = roi1.loadCellModel('Force',true);
+row = find(model.relations.child_track_id == uint64(41), 1, 'first');
+model.relations.parent_track_id(row) = uint64(42);
+roi1.saveCellModel(model,'KeepBackup',false);
+spec = annotationManager.specForClassifier(classifier);
+[entry,found] = annotationManager.entryForSpec(roi1,spec);
+verifyTrue(testCase,found);
+historicalHash = annotationManager.contentHash(roi1,spec);
+entry.status = 'approved';
+entry.approved_hash = historicalHash;
+entry.validation_status = 'valid';
+entry.validated_hash = historicalHash;
+entry.validated_revision = entry.revision;
+annotationManager.setEntry(roi1,spec,entry,'Save',false);
+
+verifyError(testCase,@() cellLatentModel.preflightFormat( ...
+    classifier,1,struct()), ...
+    'cellLatentModel:GroundTruthValidationFailed');
 end
 
 function testCompositeTrainingRejectsDifferentApprovalThanFormatted(testCase)

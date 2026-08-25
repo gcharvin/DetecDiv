@@ -7,6 +7,7 @@ function report = publishLegacyLineage(roiobj,model,familyId,outputName,channelN
 
 if nargin < 6, auditFile = ''; end
 model = cellModel.normalize(model);
+[model, ~] = cellModel.canonicalizeParentageEvents(model);
 familyRows = model.relations.family_id == uint32(familyId) & ...
     model.relations.type_id == uint8(1);
 relationRows = find(familyRows);

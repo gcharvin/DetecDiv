@@ -1,11 +1,9 @@
 function convention = relationTemporalConvention()
 %ANNOTATIONMANAGER.RELATIONTEMPORALCONVENTION Parent-event timing contract.
-% A reviewed parent relation may be recorded either on the child's first
-% visible frame (birth) or on the following frame (birth+1). This preserves
-% the established Score workflow where a link can be confirmed after the
-% new track has appeared. Consequently the child birth must be event_frame
-% or event_frame-1, and both child and parent presence are accepted on
-% event_frame or event_frame-1. Larger offsets are temporal GT errors.
+% The stored event is the child's first visible frame, never the later frame
+% at which a reviewer happened to assign the parent. Parent presence is
+% required at child birth. Presence at birth-1 is eligibility metadata for
+% the temporal head, not a condition for validity of static/censored GT.
 
 convention = cellModel.relationTemporalConvention();
 end

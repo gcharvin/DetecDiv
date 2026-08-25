@@ -55,6 +55,35 @@ end
 roiIndices = formattingRois(classif, rois);
 approvals = cellLatentModel.assertGroundTruthReady(classif, roiIndices);
 validateChannels(classif, roiIndices, tp, objective, architecture);
+assertCurrentAnnotationContract(classif, roiIndices);
+end
+
+function assertCurrentAnnotationContract(classif, roiIndices)
+% Re-run the current validator even for approvals created by older code.
+% Warnings (including centroid motion) remain advisory and never enter the
+% blocking problem list.
+spec = annotationManager.specForClassifier(classif);
+problems = strings(0,1);
+for i = 1:numel(roiIndices)
+    roiIndex = roiIndices(i);
+    roiObj = classif.roi(roiIndex);
+    bounds = trainingBounds.resolve(classif, roiIndex);
+    reviewFrames = [];
+    if ~isempty(bounds), reviewFrames = bounds(1):bounds(2); end
+    [~, managed] = annotationManager.entryForSpec(roiObj, spec);
+    report = annotationManager.validate(roiObj, spec, ...
+        'RequireReviewed', managed, 'ReviewFrames', reviewFrames);
+    if report.valid, continue; end
+    problems(end+1,1) = sprintf('ROI %s: %s', ... %#ok<AGROW>
+        char(string(roiObj.id)), strjoin(cellstr(report.errors), ' '));
+end
+if ~isempty(problems)
+    error('cellLatentModel:GroundTruthValidationFailed', ...
+        ['Selected formatting ROIs fail the current GT validation ' ...
+         'contract:' newline '%s' newline ...
+         'Open each ROI, inspect the reported errors, and run Validate GT.'], ...
+        strjoin(problems, newline));
+end
 end
 
 function assertNewModelTarget(classif, rawModelName)

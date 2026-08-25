@@ -19,6 +19,8 @@ for roiPosition = 1:numel(roiIndices)
     stack = getTrackStack(roiobj, channelName);
     if isempty(externalGt)
         [cellState, ~] = roiobj.loadCellModel('MigrateLegacy',true);
+        cellState = cellModel.normalize(cellState);
+        [cellState, ~] = cellModel.canonicalizeParentageEvents(cellState);
         [familyId, familyName] = resolveGroundTruthFamily( ...
             cellState, channelName, tp.groundTruthFamily);
         gt = cellState.relations;

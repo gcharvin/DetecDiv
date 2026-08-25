@@ -764,6 +764,8 @@ try
     if ~strcmp(status, 'ok')
         return;
     end
+    model = cellModel.normalize(model);
+    [model, ~] = cellModel.canonicalizeParentageEvents(model);
     [familyIndex, familyId] = score_resolveCellModelFamily( ...
         model, cfg, channelName);
     if isempty(familyIndex)

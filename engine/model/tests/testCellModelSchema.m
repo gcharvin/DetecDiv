@@ -202,11 +202,23 @@ verifyEqual(testCase, model.relations.relation_id, relationId);
 verifyEqual(testCase, model.relations.parent_track_id, uint64(11));
 verifyEqual(testCase, model.relations.event_frame, uint32(2));
 
-% A parent visible only on birth-1 is permitted by the shared convention.
+% A parent visible only on birth-1 cannot be a persistent training
+% candidate and is rejected by the shared convention.
+verifyError(testCase,@() cellModel.setParentTrack( ...
+    model, 1, 6, 20, 13, 'Fast', true), ...
+    'cellModel:ParentAbsentAtChildBirth');
+
+% Track 14 enters together with the child. Assigning it four frames later
+% remains valid static supervision and still stores the child's birth.
 [model, report] = cellModel.setParentTrack( ...
-    model, 1, 6, 20, 13, 'Fast', true);
+    model, 1, 6, 20, 14, 'Fast', true);
+verifyEqual(testCase, report.requested_frame, uint32(6));
 verifyEqual(testCase, report.event_frame, uint32(2));
-verifyTrue(testCase, annotationManager.validateParentage(model, 1).valid);
+verifyEqual(testCase, model.relations.event_frame, uint32(2));
+[evidence,~] = cellModel.parentageEvidence(model, 1);
+verifyTrue(testCase, evidence.static_parentage_eligible);
+verifyFalse(testCase, evidence.temporal_parentage_eligible);
+verifyEqual(testCase, evidence.evidence_mode, 'left_censored_joint_entry');
 
 % Removal keeps its prior behavior: it removes the relation and reports
 % the frame where the UI action occurred.
@@ -232,6 +244,37 @@ verifyEqual(testCase, model.relations.event_frame, uint32(2));
     model, 1, 6, 2, 3, 'Fast', true, 'Toggle', true);
 verifyEqual(testCase, report.status, 'removed');
 verifyEmpty(testCase, model.relations.relation_id);
+end
+
+function testExplicitlyMigratesLegacyParentClickFrame(testCase)
+model = delayedParentageFixture();
+[model, ~] = cellModel.setParentTrack( ...
+    model, 1, 6, 20, 10, 'Fast', true);
+model.relations.event_frame(:) = uint32(6); % legacy frame of the UI click
+parentBefore = model.relations.parent_track_id;
+childBefore = model.relations.child_track_id;
+
+[canonical, migration] = cellModel.canonicalizeParentageEvents(model);
+verifyTrue(testCase, migration.changed);
+verifyEqual(testCase, migration.count, 1);
+verifyEqual(testCase, migration.previous_event_frame, uint32(6));
+verifyEqual(testCase, migration.event_frame, uint32(2));
+verifyEqual(testCase, canonical.relations.parent_track_id, parentBefore);
+verifyEqual(testCase, canonical.relations.child_track_id, childBefore);
+
+normalized = cellModel.normalize(model);
+verifyEqual(testCase, normalized.relations.event_frame, uint32(6), ...
+    'Ordinary normalization must preserve approval hashes on load.');
+verifyEqual(testCase, normalized.relations.parent_track_id, parentBefore);
+verifyEqual(testCase, normalized.relations.child_track_id, childBefore);
+
+filename = [tempname '.h5'];
+cleanup = onCleanup(@()deleteIfPresent(filename)); %#ok<NASGU>
+cellModel.writeH5(filename, canonical, 'KeepBackup', false);
+persisted = cellModel.readH5(filename);
+verifyEqual(testCase, persisted.relations.event_frame, uint32(2));
+verifyEqual(testCase, persisted.relations.parent_track_id, parentBefore);
+verifyEqual(testCase, persisted.relations.child_track_id, childBefore);
 end
 
 function testDelayedParentAssignmentRejectsParentAbsentAtBirth(testCase)
@@ -298,10 +341,13 @@ end
 function model = delayedParentageFixture()
 model = modelFixture();
 % Track 20 (label 2) is born at frame 2. Tracks 10 and 11 are present at
-% birth, Track 13 only at birth-1, and Track 12 only much later.
-frames = [1:6 1:6 1 5:6 2:6];
-labels = [ones(1,6) 3*ones(1,6) 4 5*ones(1,2) 2*ones(1,5)];
-tracks = [10*ones(1,6) 11*ones(1,6) 13 12*ones(1,2) 20*ones(1,5)];
+% birth and birth-1, Track 13 only at birth-1, Track 12 only much later,
+% and Track 14 enters on the same frame as Track 20.
+frames = [1:6 1:6 1 5:6 2:6 2:6];
+labels = [ones(1,6) 3*ones(1,6) 4 5*ones(1,2) ...
+    2*ones(1,5) 6*ones(1,5)];
+tracks = [10*ones(1,6) 11*ones(1,6) 13 12*ones(1,2) ...
+    20*ones(1,5) 14*ones(1,5)];
 n = numel(frames);
 model.instances.object_id = uint64((1:n)');
 model.instances.family_id = repmat(uint32(1),n,1);

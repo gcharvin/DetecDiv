@@ -57,7 +57,8 @@ end
 model.relations.parent_track_id(row,1) = parentTrackId;
 % The UI action may occur long after appearance, but the stored biological
 % event is always canonicalized to the child's first visible frame. This
-% applies only to newly set/replaced links; existing GT is never migrated.
+% also matches the explicit migration applied to existing GT at managed
+% validation and export boundaries.
 model.relations.event_frame(row,1) = eventFrame;
 if ~fast
     model = cellModel.normalize(model);
@@ -78,28 +79,20 @@ childBirth = min(childFrames);
 childBirthFrame = uint32(childBirth);
 eventFrame = childBirthFrame;
 
-convention = cellModel.relationTemporalConvention();
-acceptedParentFrames = childBirth + double( ...
-    convention.accepted_presence_frames_relative_to_event);
-acceptedParentFrames = acceptedParentFrames(acceptedParentFrames >= 1);
 parentRows = model.instances.family_id == familyId & ...
     model.instances.track_id == parentTrackId;
 parentFrames = unique(double(model.instances.frame(parentRows)));
-if any(ismember(parentFrames, acceptedParentFrames)), return; end
+if ismember(childBirth, parentFrames), return; end
 
-if childBirth > 1
-    expected = sprintf('frame %u or the preceding frame %u', ...
-        uint32(childBirth), uint32(childBirth-1));
-else
-    expected = 'frame 1';
-end
+convention = cellModel.relationTemporalConvention();
 error('cellModel:ParentAbsentAtChildBirth', ...
     ['Cannot link Parent Track %u to Child Track %u: the child is born ' ...
-     'at frame %u, but the parent is absent at %s under convention %s. ' ...
+     'at frame %u, but the parent is absent on that frame under ' ...
+     'convention %s. ' ...
      'Open frame %u and inspect both tracks; correct their identities or ' ...
      'choose a parent present at the child birth.'], ...
-    parentTrackId, childTrackId, childBirthFrame, expected, ...
-    convention.name, childBirthFrame);
+    parentTrackId, childTrackId, childBirthFrame, convention.name, ...
+    childBirthFrame);
 end
 
 function value = validTrackId(value, role)
