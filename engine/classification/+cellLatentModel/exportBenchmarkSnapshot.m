@@ -1223,7 +1223,10 @@ end
 
 function value = bytesSha256(bytes)
 digest = java.security.MessageDigest.getInstance('SHA-256');
-hash = typecast(digest.digest(uint8(bytes(:))), 'uint8');
+if ~isempty(bytes)
+    digest.update(uint8(bytes(:)));
+end
+hash = typecast(digest.digest(), 'uint8');
 value = lower(reshape(dec2hex(hash,2).',1,[]));
 end
 
