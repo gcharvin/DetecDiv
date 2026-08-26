@@ -95,7 +95,7 @@ function manifest = normalizeManifest(value)
 manifest = emptyManifest();
 if ~isstruct(value), return; end
 if isfield(value, 'schema_version') && ~isempty(value.schema_version)
-    manifest.schema_version = max(uint16(2), uint16(value.schema_version));
+    manifest.schema_version = max(uint16(3), uint16(value.schema_version));
 end
 if isfield(value, 'entries') && isstruct(value.entries)
     manifest.entries = normalizeEntries(value.entries);
@@ -103,7 +103,7 @@ end
 end
 
 function manifest = emptyManifest()
-manifest = struct('schema_version', uint16(2), 'entries', emptyEntries());
+manifest = struct('schema_version', uint16(3), 'entries', emptyEntries());
 end
 
 function entries = normalizeEntries(source)

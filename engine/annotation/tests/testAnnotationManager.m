@@ -988,6 +988,120 @@ verifyEqual(testCase, nnz(model.instances.family_id == targetId), 0);
 verifyEqual(testCase, nnz(model.relations.family_id == targetId), 0);
 end
 
+function testImportBundleFromExistingFamilyPreservesPartialCoverage(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'latent_import', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 4, 4, 3);
+masks = zeros(4,4,1,3,'uint16');
+masks(1:2,1:2,1,:) = 1;
+masks(3:4,3:4,1,2:3) = 2;
+r.addChannel(masks, 'existing_tracks', [1 1 1], [0 0 0]);
+r.save([], false);
+model = cellModel.create(r.id);
+[model, ~] = cellModel.applyLineageResult(model, squeeze(masks(:,:,1,:)), ...
+    'existing_tracks', '', 'Imported tracking', struct('edges', struct([])), ...
+    true, 'import');
+r.saveCellModel(model);
+c.roi = r;
+
+bundle = struct( ...
+    'format', 'detecdiv_managed_gt_import_v1', ...
+    'roi_id', 'R1', ...
+    'source_family', 'Imported tracking', ...
+    'relations', struct('parent_track_id', 1, 'child_track_id', 2, ...
+        'event_frame', 3, 'confidence', 0.75), ...
+    'coverage', struct('tracked_mask_frames', 1:2, ...
+        'tracking_frames', 1:2, 'parentage_complete', false), ...
+    'provenance', struct('source_id', 'legacy_review_v1', ...
+        'source_run_id', 'run7', 'manifest_path', 'manifest.json', ...
+        'manifest_sha256', repmat('a',1,64), ...
+        'label_authority', 'weak_supervision'), ...
+    'notes', 'Positive links only', ...
+    'exclusions', {{'ambiguous cases excluded'}});
+
+session = c.annotationSession(1);
+bundleFile = fullfile(folder, 'legacy_review_bundle.json');
+fid = fopen(bundleFile, 'w');
+cleanup = onCleanup(@() fclose(fid));
+fwrite(fid, unicode2native(jsonencode(bundle), 'UTF-8'), 'uint8');
+clear cleanup;
+report = session.importBundle(bundleFile);
+verifyEqual(testCase, report.status, 'draft');
+verifyEqual(testCase, report.relations.stored_event_frame, uint32(2), ...
+    'Import must ignore a late review click and store child birth.');
+verifyEqual(testCase, report.entry.label_authority, 'weak_supervision');
+verifyEqual(testCase, report.entry.source_manifest_sha256, repmat('a',1,64));
+verifyEqual(testCase, strlength(string( ...
+    report.entry.source_bundle_sha256)), 64);
+verifyEqual(testCase, report.entry.import_exclusions, ...
+    {'ambiguous cases excluded'}');
+maskReview = report.entry.review(strcmp({report.entry.review.component_id}, ...
+    'tracked_mask'));
+trackingReview = report.entry.review(strcmp({report.entry.review.component_id}, ...
+    'tracking'));
+parentReview = report.entry.review(strcmp({report.entry.review.component_id}, ...
+    'parentage'));
+verifyEqual(testCase, maskReview.frames, logical([1 1 0]));
+verifyEqual(testCase, trackingReview.frames, logical([1 1 0]));
+verifyFalse(testCase, parentReview.complete);
+summary = session.summary();
+verifyEqual(testCase, summary.status, 'draft');
+verifyLessThan(testCase, summary.coverage.fraction, 1);
+end
+
+function testImportBundleWithTrackedMaskCreatesCanonicalFamily(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'latent_mask_import', 1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName', '', ...
+    'outputFamilyName', 'Predicted lineage');
+c.channelName = {'raw'};
+c.trainingParam = struct('groundTruthFamily', '<auto>', ...
+    'trackChannelName', '');
+r = roiWithRaw(c.path, 'R1', 4, 4, 3);
+c.roi = r;
+
+stack = zeros(4,4,3,'uint16');
+stack(1:2,1:2,:) = 10;
+stack(3:4,3:4,2:3) = 20;
+bundle = struct( ...
+    'format', 'detecdiv_managed_gt_import_v1', ...
+    'roi_id', 'R1', ...
+    'tracked_mask', stack, ...
+    'relations', struct('parent_track_id', 10, 'child_track_id', 20, ...
+        'event_frame', 3, 'confidence', 1), ...
+    'coverage', struct('tracked_mask_frames', 1:3, ...
+        'tracking_frames', 1:3, 'parentage_complete', true), ...
+    'provenance', struct('source_id', 'human_export_v1', ...
+        'label_authority', 'human_ground_truth'), ...
+    'notes', '', 'exclusions', {{}});
+
+session = c.annotationSession(1);
+report = session.importBundle(bundle);
+verifyEqual(testCase, report.relations.stored_event_frame, uint32(2));
+verifyEqual(testCase, report.entry.label_authority, 'human_ground_truth');
+verifyTrue(testCase, all([report.entry.review.complete]));
+gt = annotationManager.readChannel(r, report.target_channel);
+verifyEqual(testCase, squeeze(gt), stack);
+[model, ~] = r.loadCellModel();
+[familyIndex, familyId] = cellModel.familyIndex(model, report.target_family);
+verifyNotEmpty(testCase, familyIndex);
+verifyEqual(testCase, sort(unique(model.instances.track_id( ...
+    model.instances.family_id == familyId))), uint64([10;20]));
+relationRow = model.relations.family_id == familyId;
+verifyEqual(testCase, model.relations.event_frame(relationRow), uint32(2));
+end
+
 function [roiFolder, c, r] = maskFixture(testCase)
 folder = freshFolder(testCase);
 c = classi(folder, 'demo', 1);

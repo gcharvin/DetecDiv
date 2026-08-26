@@ -13,6 +13,60 @@ The visible lifecycle is `missing -> draft/invalid -> ready`. Prediction is an
 input asset, not a GT status. Review coverage is explicit, so an annotated
 empty frame is distinguishable from a frame that was never reviewed.
 
+## Importing external reviewed GT
+
+Legacy or externally curated annotations can be loaded without pretending
+that they are complete DetecDiv GT. Use a versioned MAT or JSON bundle with
+format `detecdiv_managed_gt_import_v1`, then import it through the annotation
+session:
+
+```matlab
+session = classiObj.annotationSession(roiIndex);
+report = session.importBundle(bundleFile, 'Overwrite', false);
+```
+
+The bundle identifies exactly one ROI and provides either a full stable-track
+label stack (`tracked_mask`, shaped `H x W x T`) or the name of an existing
+DetecDiv object family (`source_family`) whose TrackIDs match the imported
+relations. Relations are a struct array with `parent_track_id`,
+`child_track_id`, optional `event_frame`, and optional `confidence`. Their
+stored event frame is always canonicalized to the child's first visible frame;
+the historical frame at which a reviewer clicked is never retained as the
+biological event.
+
+```matlab
+bundle = struct;
+bundle.format = 'detecdiv_managed_gt_import_v1';
+bundle.roi_id = 'Pos0_1_50';
+bundle.source_family = 'Imported tracking';
+bundle.relations = struct( ...
+    'parent_track_id', {1, 7}, ...
+    'child_track_id', {2, 13}, ...
+    'event_frame', {43, 43}, ...
+    'confidence', {1, 1});
+bundle.coverage = struct( ...
+    'tracked_mask_frames', 1:405, ...
+    'tracking_frames', 1:405, ...
+    'parentage_complete', true);
+bundle.provenance = struct( ...
+    'source_id', 'reviewed_export_v001', ...
+    'source_run_id', '', ...
+    'manifest_path', 'manifest.json', ...
+    'manifest_sha256', repmat('0', 1, 64), ...
+    'label_authority', 'human_ground_truth');
+bundle.notes = 'Imported from a frozen reviewed snapshot.';
+bundle.exclusions = {'none'};
+save('Pos0_1_50_gt_bundle_v001.mat', 'bundle', '-v7.3');
+```
+
+Coverage is never inferred. A bundle containing only accepted positive
+parentage links must leave `parentage_complete` false, and must omit tracking
+or mask frames that were not actually reviewed. Imported content therefore
+starts as `Draft`; the user inspects the reported exclusions or mismatches in
+Score and runs **Validate GT** only after all required components are covered.
+The manifest records source ID, authority, bundle hash, external manifest hash,
+notes, and exclusions.
+
 ## GUI entry points
 
 Create a session from the selected classifier ROI:

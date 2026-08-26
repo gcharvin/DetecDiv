@@ -68,6 +68,12 @@ if isempty(entry.source_id)
     entry.source_id = sourceDescription(componentReports);
 end
 entry.source_run_id = char(string(p.Results.SourceRunId));
+entry.source_manifest_path = '';
+entry.source_manifest_sha256 = '';
+entry.source_bundle_sha256 = '';
+entry.label_authority = '';
+entry.import_notes = '';
+entry.import_exclusions = cell(0,1);
 entry = resetReview(entry);
 entry = annotationManager.setEntry(roiObj, spec, entry, 'Save', p.Results.Save);
 

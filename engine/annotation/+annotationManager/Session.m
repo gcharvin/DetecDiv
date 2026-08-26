@@ -67,6 +67,16 @@ classdef Session < handle
             obj.changed();
         end
 
+        function report = importBundle(obj, bundle, varargin)
+            % Import a provenance-bearing external GT bundle as editable
+            % managed Draft data. Coverage is copied explicitly; absent
+            % coverage is never inferred from the presence of assets.
+            report = annotationManager.importBundle( ...
+                obj.Classifier, obj.Roi, obj.Spec, bundle, varargin{:});
+            obj.refresh();
+            obj.changed();
+        end
+
         function report = startBlank(obj, varargin)
             report = annotationManager.startBlank( ...
                 obj.Classifier, obj.Roi, obj.Spec, varargin{:});
