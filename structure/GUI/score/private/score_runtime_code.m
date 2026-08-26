@@ -134,6 +134,7 @@ classdef score < matlab.apps.AppBase
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
+        ReviewFindingsButton             matlab.ui.control.Button
         MarkThroughCurrentButton         matlab.ui.control.Button
         ReviewWhileNavigatingCheckBox    matlab.ui.control.CheckBox
         LineageLinkWidthEditFieldLabel   matlab.ui.control.Label
@@ -1943,6 +1944,20 @@ end
             end
             app.NextIncompleteButton.Enable = app.onOff( ...
                 hasDraft && summary.coverage.reviewed < summary.coverage.total);
+            try
+                hints = annotationManager.reviewHints( ...
+                    app.AnnotationSession.Classifier, app.AnnotationSession.Roi, ...
+                    'ReviewFrames', app.AnnotationSession.trainingFrames());
+                app.ReviewFindingsButton.Text = sprintf( ...
+                    'Review findings (%d)', hints.total);
+                app.ReviewFindingsButton.Tooltip = sprintf([ ...
+                    'Open persistent validation findings; %d imported ' ...
+                    'review hint(s) apply to this ROI.'], hints.total);
+            catch ME
+                app.ReviewFindingsButton.Text = 'Review findings';
+                app.ReviewFindingsButton.Tooltip = ME.message;
+            end
+            app.ReviewFindingsButton.Enable = app.onOff(hasDraft);
             app.ValidateAnnotationButton.Enable = app.onOff(hasDraft);
             app.ApproveAnnotationButton.Enable = 'off';
             app.ApproveAnnotationButton.Visible = 'off';
@@ -4695,6 +4710,17 @@ end
             app.showAnnotationFrame(frame);
         end
 
+        function ReviewFindingsButtonPushed(app, event) %#ok<INUSD>
+            if isempty(app.AnnotationSession), return; end
+            try
+                report = app.AnnotationSession.findings();
+                app.openPersistentAnnotationFindings(report);
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, ...
+                    'Annotation review findings');
+            end
+        end
+
         function showAnnotationFrame(app, frame)
             roi = app.getSelectedROI();
             if isempty(roi), return; end
@@ -4704,6 +4730,47 @@ end
             app.FrameEditField.Value = frame;
             app.FrameEditField_2.Value = frame;
             score_display(app, 'refresh');
+        end
+
+        function openPersistentAnnotationFindings(app, report)
+            rows = annotationManager.validationIssueRows(report);
+            if isempty(rows)
+                uialert(app.ScoreAppUIFigure, ...
+                    'No validation errors, warnings, or imported review hints.', ...
+                    'Annotation review findings', 'Icon', 'success');
+                return;
+            end
+            old = findall(0, 'Type', 'figure', ...
+                'Tag', 'ScoreAnnotationFindings');
+            for i = 1:numel(old)
+                try, delete(old(i)); catch, end
+            end
+            annotationValidationDialog(app.ScoreAppUIFigure, report, ...
+                'Persistent', true, ...
+                'Title', 'Annotation review findings', ...
+                'OnGo', @(issue,row) app.goToAnnotationFinding(issue,row), ...
+                'OnRepair', @(issue) app.repairAnnotationFindings(issue), ...
+                'OnRepairAll', @(issues) app.repairAnnotationFindings(issues));
+        end
+
+        function goToAnnotationFinding(app, issue, row)
+            if ~isempty(issue)
+                app.focusAnnotationValidationIssue(issue);
+                return;
+            end
+            if isstruct(row) && isfield(row, 'frame') && ...
+                    isfinite(row.frame) && row.frame > 0
+                app.showAnnotationFrame(row.frame);
+            end
+        end
+
+        function report = repairAnnotationFindings(app, issues)
+            repair = app.removeAnnotationParentageIssues(issues);
+            if repair.relationsRemoved > 0
+                app.AnnotationLastValidationValid = false;
+                app.refreshAnnotationSessionUI();
+            end
+            report = app.AnnotationSession.findings();
         end
 
         function focusAnnotationValidationIssue(app, issue)
@@ -4718,10 +4785,29 @@ end
             [model, ~] = roi.loadCellModel('MigrateLegacy', true);
             [familyIndex, familyId] = cellModel.familyIndex( ...
                 model, issue.family_id);
-            if isempty(familyIndex), return; end
+            if isempty(familyIndex) && ~isempty(app.AnnotationSession)
+                componentRows = find(strcmp( ...
+                    {app.AnnotationSession.Spec.components.storage}, ...
+                    'cell_model_family'));
+                for componentRow = componentRows(:).'
+                    familyName = app.AnnotationSession.Spec.components( ...
+                        componentRow).groundTruth.family;
+                    [familyIndex, familyId] = cellModel.familyIndex( ...
+                        model, familyName);
+                    if ~isempty(familyIndex), break; end
+                end
+            end
+            if isempty(familyIndex)
+                app.showAnnotationFrame(frame);
+                return;
+            end
             provider = char(string(model.families.mask_provider{familyIndex}));
+            focusTrack = uint64(issue.focus_track_id);
+            if focusTrack < 1 && isfield(issue, 'child_track_id')
+                focusTrack = uint64(issue.child_track_id);
+            end
             instance = cellModel.findTrackInstance(model, familyId, frame, ...
-                issue.focus_track_id);
+                focusTrack);
             if isempty(instance)
                 app.showAnnotationFrame(frame);
                 return;
@@ -4751,7 +4837,7 @@ end
 
             app.SelectedObjectLabel = maskLabel;
             app.SelectedObjectLabelCell = maskLabel;
-            app.SelectedTrackIDCell = double(issue.focus_track_id);
+            app.SelectedTrackIDCell = double(focusTrack);
             app.SelectedObjectChannelIdx = channelIndex;
             app.SelectedObjectRoiId = string(roi.id);
             app.KeepSelection = true;
@@ -4780,7 +4866,7 @@ end
             app.ImageFigure.Name = sprintf( ...
                 'ROI:%s - Frame: %d/%d - Validation issue: Track %u', ...
                 char(string(roi.id)), frame, size(roi.image,4), ...
-                uint64(issue.focus_track_id));
+                focusTrack);
             drawnow limitrate;
         end
 
@@ -4823,82 +4909,25 @@ end
         function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>
             if isempty(app.AnnotationSession), return; end
             try
-                repairedRelations = 0;
-                while true
-                    report = app.AnnotationSession.validate();
-                    app.AnnotationLastValidationValid = logical(report.valid);
-                    if report.valid
-                        app.AnnotationQuickValidationState = 'valid';
-                        app.AnnotationQuickValidationMessage = ...
-                            'Full validation passed.';
-                        message = 'GT validated and ready for training.';
-                        if repairedRelations > 0
-                            message = sprintf([ ...
-                                '%s\n\n%d stale parentage link(s) were repaired ' ...
-                                'in memory. Save the ROI to persist the repair.'], ...
-                                message, repairedRelations);
-                        end
-                        if ~isempty(report.warnings)
-                            message = sprintf('%s\n\nWarnings:\n%s', message, ...
-                                strjoin(cellstr(report.warnings), '\n'));
-                        end
-                        app.refreshAnnotationSessionUI();
-                        warningRows = annotationManager.validationIssueRows(report);
-                        warningRows = warningRows(strcmpi( ...
-                            {warningRows.severity}, 'warning'));
-                        if ~isempty(warningRows)
-                            choice = annotationValidationDialog( ...
-                                app.ScoreAppUIFigure, report);
-                            if strcmp(choice.action, 'go') && ...
-                                    choice.issueIndex >= 1 && ...
-                                    choice.issueIndex <= numel(report.issues)
-                                app.focusAnnotationValidationIssue( ...
-                                    report.issues(choice.issueIndex));
-                                return;
-                            end
-                        end
-                        uialert(app.ScoreAppUIFigure, message, ...
-                            'GT ready', 'Icon', 'success');
-                        return;
-                    end
-
+                report = app.AnnotationSession.validate();
+                app.AnnotationLastValidationValid = logical(report.valid);
+                if report.valid
+                    app.AnnotationQuickValidationState = 'valid';
+                    app.AnnotationQuickValidationMessage = ...
+                        'Full validation passed.';
+                else
                     app.AnnotationQuickValidationState = 'invalid';
                     app.AnnotationQuickValidationMessage = char(strjoin( ...
                         cellstr(report.errors), newline));
-                    app.refreshAnnotationSessionUI();
-                    choice = annotationValidationDialog( ...
-                        app.ScoreAppUIFigure, report);
-                    switch choice.action
-                        case 'go'
-                            if choice.issueIndex >= 1 && ...
-                                    choice.issueIndex <= numel(report.issues)
-                                app.focusAnnotationValidationIssue( ...
-                                    report.issues(choice.issueIndex));
-                            elseif isfinite(choice.frame) && choice.frame > 0
-                                app.showAnnotationFrame(choice.frame);
-                            end
-                            return;
-                        case 'repair'
-                            if choice.issueIndex < 1 || ...
-                                    choice.issueIndex > numel(report.issues)
-                                return;
-                            end
-                            repair = app.removeAnnotationParentageIssues( ...
-                                report.issues(choice.issueIndex));
-                        case 'repair_all'
-                            repair = app.removeAnnotationParentageIssues( ...
-                                report.issues);
-                        otherwise
-                            return;
-                    end
-                    if repair.relationsRemoved < 1
-                        uialert(app.ScoreAppUIFigure, ...
-                            'The selected broken relation is no longer present.', ...
-                            'Parentage repair');
-                        return;
-                    end
-                    repairedRelations = repairedRelations + ...
-                        repair.relationsRemoved;
+                end
+                app.refreshAnnotationSessionUI();
+                rows = annotationManager.validationIssueRows(report);
+                if ~isempty(rows)
+                    app.openPersistentAnnotationFindings(report);
+                elseif report.valid
+                    uialert(app.ScoreAppUIFigure, ...
+                        'GT validated and ready for training.', ...
+                        'GT ready', 'Icon', 'success');
                 end
             catch ME
                 app.AnnotationLastValidationValid = false;
@@ -4915,18 +4944,9 @@ end
                 app.AnnotationReviewDirty = false;
                 app.refreshAnnotationSessionUI();
                 warningRows = annotationManager.validationIssueRows(report);
-                warningRows = warningRows(strcmpi( ...
-                    {warningRows.severity}, 'warning'));
                 if ~isempty(warningRows)
-                    choice = annotationValidationDialog( ...
-                        app.ScoreAppUIFigure, report);
-                    if strcmp(choice.action, 'go') && ...
-                            choice.issueIndex >= 1 && ...
-                            choice.issueIndex <= numel(report.issues)
-                        app.focusAnnotationValidationIssue( ...
-                            report.issues(choice.issueIndex));
-                        return;
-                    end
+                    app.openPersistentAnnotationFindings(report);
+                    return;
                 end
                 uialert(app.ScoreAppUIFigure, ...
                     'GT approved and ready for training.', 'Annotation approved', ...
@@ -8216,6 +8236,11 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.ReviewWhileNavigatingCheckBox.Text = 'Review while navigating';
             app.ReviewWhileNavigatingCheckBox.Position = [421 36 166 22];
             app.ReviewWhileNavigatingCheckBox.Value = false;
+            % Create ReviewFindingsButton
+            app.ReviewFindingsButton = uibutton(app.AnnotationSessionPanel, 'push');
+            app.ReviewFindingsButton.ButtonPushedFcn = createCallbackFcn(app, @ReviewFindingsButtonPushed, true);
+            app.ReviewFindingsButton.Position = [421 5 166 23];
+            app.ReviewFindingsButton.Text = 'Review findings';
             % Create ShowPredictionCheckBox
             app.ShowPredictionCheckBox = uicheckbox(app.AnnotationSessionPanel);
             app.ShowPredictionCheckBox.ValueChangedFcn = createCallbackFcn(app, @ShowPredictionCheckBoxValueChanged, true);

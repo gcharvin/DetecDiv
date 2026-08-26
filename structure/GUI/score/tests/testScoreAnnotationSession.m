@@ -78,6 +78,8 @@ verifyNotEmpty(testCase, app.CreateFromPredictionButton.ButtonPushedFcn);
 verifyTrue(testCase, isvalid(app.MarkThroughCurrentButton));
 verifyNotEmpty(testCase, app.MarkThroughCurrentButton.ButtonPushedFcn);
 verifyTrue(testCase, isvalid(app.ReviewWhileNavigatingCheckBox));
+verifyTrue(testCase, isvalid(app.ReviewFindingsButton));
+verifyNotEmpty(testCase, app.ReviewFindingsButton.ButtonPushedFcn);
 
 callback = app.CreateFromPredictionButton.ButtonPushedFcn;
 callback(app.CreateFromPredictionButton, []);

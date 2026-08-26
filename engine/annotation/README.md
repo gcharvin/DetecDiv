@@ -289,16 +289,27 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
 9. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
    incomplete** and **Next incomplete**. Navigate through frames not covered by
    every required frame-level component.
-10. `ValidateAnnotationButton`, text **Validate GT**. Call `validate()` and show
+10. `ReviewFindingsButton`, text **Review findings (N)**. Call the read-only
+    `AnnotationSession.findings()` audit independently of validation. Display
+    all errors, warnings and classifier-local `review_hints.json` items in the
+    shared non-modal findings dialog. **Go to selected** must keep the dialog
+    open, navigate to the event frame and select the implicated track when it
+    exists in the reviewed GT family.
+11. `ValidateAnnotationButton`, text **Validate GT**. Call `validate()` and show
     every returned issue in one selectable table. Navigable rows expose their
     frame and related track; stale parentage links can be repaired individually
-    or as one batch without reopening validation after every issue. A successful
+    or as one batch without reopening validation after every issue. The same
+    persistent dialog is used here; navigation must not close it. A successful
     validation immediately marks that GT revision `Ready` and records its hash.
-11. Keep `ApproveAnnotationButton` hidden only for compatibility with older
+12. Keep `ApproveAnnotationButton` hidden only for compatibility with older
     layouts and scripts. No separate approval action is exposed.
-12. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only
+13. `ShowPredictionCheckBox`, text **Show prediction overlay**. It toggles only
     the read-only prediction overlays from `context.displayPreset`; it must
     never select a prediction channel for painting.
+
+External review hints are advisory and provenance-bearing. They must never
+edit GT automatically or change `report.valid`; the human reviewer decides
+whether the flagged track, parentage or NULL assignment needs correction.
 
 Button state rules:
 

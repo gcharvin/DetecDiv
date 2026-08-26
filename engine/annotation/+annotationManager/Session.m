@@ -111,6 +111,7 @@ classdef Session < handle
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
+            report = obj.attachReviewHints(report);
             annotationManager.recordValidation(obj.Roi, obj.Spec, report, ...
                 'ContentHash', liveHash);
             if report.valid
@@ -128,11 +129,20 @@ classdef Session < handle
             report = annotationManager.quickValidate(obj.Roi, obj.Spec, varargin{:});
         end
 
+        function report = findings(obj, varargin)
+            % Read-only full audit for Score.  Unlike validate(), this does
+            % not persist, approve, hash or otherwise change GT lifecycle.
+            report = annotationManager.validate(obj.Roi, obj.Spec, ...
+                'ReviewFrames', obj.trainingFrames(), varargin{:});
+            report = obj.attachReviewHints(report);
+        end
+
         function [entry, report] = approve(obj, varargin)
             [~, migration] = obj.prepareCurrentGroundTruthForValidation();
             [entry, report] = annotationManager.approve(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
+            report = obj.attachReviewHints(report);
             obj.LastValidationStatus = 'valid';
             obj.LastValidationMessage = '';
             notify(obj, 'StateChanged');
@@ -385,6 +395,18 @@ classdef Session < handle
                     'to child birth; parent/child track IDs were unchanged.'], ...
                     migration.count));
             end
+        end
+
+        function report = attachReviewHints(obj, report)
+            hints = annotationManager.reviewHints( ...
+                obj.Classifier, obj.Roi, ...
+                'ReviewFrames', obj.trainingFrames());
+            if ~isfield(report, 'issues') || isempty(report.issues)
+                report.issues = hints.issues;
+            elseif ~isempty(hints.issues)
+                report.issues = [report.issues(:); hints.issues(:)];
+            end
+            report.reviewHints = hints;
         end
 
         function resetValidationState(obj)

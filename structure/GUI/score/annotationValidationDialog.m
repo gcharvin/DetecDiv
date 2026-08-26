@@ -1,14 +1,29 @@
-function result = annotationValidationDialog(parentFigure, report)
-%ANNOTATIONVALIDATIONDIALOG Select and act on one validation issue.
+function result = annotationValidationDialog(parentFigure, report, varargin)
+%ANNOTATIONVALIDATIONDIALOG Inspect and act on navigable validation findings.
+% By default this preserves the historical modal/result contract.  The
+% persistent mode is non-modal: Go invokes OnGo without closing the window,
+% so Score can navigate and select the implicated cell while the table stays
+% available.
+
+p = inputParser;
+p.addParameter('Persistent', false, @(x)islogical(x) && isscalar(x));
+p.addParameter('OnGo', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnRepair', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnRepairAll', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('Title', 'Annotation validation findings', ...
+    @(x)ischar(x) || (isstring(x) && isscalar(x)));
+p.parse(varargin{:});
+persistentMode = p.Results.Persistent;
 
 rows = annotationManager.validationIssueRows(report);
 result = struct('action', 'close', 'row', 0, 'issueIndex', 0, ...
     'frame', NaN, 'relatedTrack', NaN);
 if isempty(rows), return; end
 
-figureHandle = uifigure('Name', 'Annotation validation findings', ...
+figureHandle = uifigure('Name', char(string(p.Results.Title)), ...
     'Position', [100 100 1010 520], 'Resize', 'on', ...
-    'WindowStyle', 'modal', 'Visible', 'off');
+    'WindowStyle', windowStyle(persistentMode), 'Visible', 'off');
+figureHandle.Tag = 'ScoreAnnotationFindings';
 figureHandle.CloseRequestFcn = @closeDialog;
 layout = uigridlayout(figureHandle, [4 1]);
 layout.RowHeight = {30, '1x', 100, 38};
@@ -62,6 +77,10 @@ tableHandle.Selection = [1 1];
 refreshSelection();
 positionNearParent(figureHandle, parentFigure);
 figureHandle.Visible = 'on';
+if persistentMode
+    result = figureHandle;
+    return;
+end
 uiwait(figureHandle);
 if isvalid(figureHandle), delete(figureHandle); end
 
@@ -80,6 +99,10 @@ if isvalid(figureHandle), delete(figureHandle); end
     end
 
     function finish(action)
+        if persistentMode
+            actPersistent(action);
+            return;
+        end
         result.action = action;
         result.row = selectedRow;
         result.issueIndex = rows(selectedRow).issue_index;
@@ -89,6 +112,10 @@ if isvalid(figureHandle), delete(figureHandle); end
     end
 
     function closeDialog(~, ~)
+        if persistentMode
+            delete(figureHandle);
+            return;
+        end
         result.action = 'close';
         result.row = selectedRow;
         result.issueIndex = rows(selectedRow).issue_index;
@@ -96,6 +123,73 @@ if isvalid(figureHandle), delete(figureHandle); end
         result.relatedTrack = rows(selectedRow).related_track;
         uiresume(figureHandle);
     end
+
+    function actPersistent(action)
+        if isempty(rows), return; end
+        issueIndex = rows(selectedRow).issue_index;
+        issue = struct([]);
+        if issueIndex >= 1 && isfield(report, 'issues') && ...
+                issueIndex <= numel(report.issues)
+            issue = report.issues(issueIndex);
+        end
+        switch action
+            case 'go'
+                if ~isempty(p.Results.OnGo)
+                    p.Results.OnGo(issue, rows(selectedRow));
+                end
+            case 'repair'
+                if isempty(p.Results.OnRepair) || isempty(issue), return; end
+                updated = p.Results.OnRepair(issue);
+                applyUpdatedReport(updated);
+            case 'repair_all'
+                if isempty(p.Results.OnRepairAll), return; end
+                repairable = false(size(report.issues));
+                for k = 1:numel(report.issues)
+                    try
+                        repairable(k) = logical(report.issues(k).repairable);
+                    catch
+                    end
+                end
+                updated = p.Results.OnRepairAll(report.issues(repairable));
+                applyUpdatedReport(updated);
+            otherwise
+                delete(figureHandle);
+        end
+    end
+
+    function applyUpdatedReport(updated)
+        if ~isstruct(updated) || ~isfield(updated, 'issues'), return; end
+        report = updated;
+        rows = annotationManager.validationIssueRows(report);
+        if isempty(rows)
+            delete(figureHandle);
+            return;
+        end
+        selectedRow = min(selectedRow, numel(rows));
+        tableHandle.Data = tableData(rows);
+        tableHandle.Selection = [selectedRow 1];
+        [summaryText, ~, ~] = reportSummary(rows);
+        summaryLabel.Text = summaryText;
+        refreshSelection();
+    end
+end
+
+function style = windowStyle(persistentMode)
+if persistentMode, style = 'normal'; else, style = 'modal'; end
+end
+
+function [text, warningCount, errorCount] = reportSummary(rows)
+warningCount = nnz(strcmpi({rows.severity}, 'warning'));
+errorCount = numel(rows) - warningCount;
+if errorCount == 0
+    text = sprintf([ ...
+        'Validation passed. %d advisory warning(s); warnings do not ' ...
+        'block Ready status or training.'], warningCount);
+else
+    text = sprintf( ...
+        '%d error(s), %d warning(s). Select a row to inspect it.', ...
+        errorCount, warningCount);
+end
 end
 
 function data = tableData(rows)
