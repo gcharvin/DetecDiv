@@ -10,6 +10,11 @@ classdef Session < handle
         LastValidationMessage = ''
     end
 
+    properties (Access = private)
+        FindingsCache = []
+        ReviewHintCountCache = []
+    end
+
     events
         StateChanged
         BoundsChanged
@@ -33,12 +38,16 @@ classdef Session < handle
             obj.RoiIndex = index;
             obj.Roi = obj.Classifier.roi(index);
             obj.Roi.parent = obj.Classifier;
+            obj.clearFindingsCache();
+            obj.clearReviewHintCountCache();
             obj.restoreValidationState();
         end
 
         function refresh(obj)
             obj.Spec = annotationManager.specForClassifier(obj.Classifier);
             obj.Roi = obj.Classifier.roi(obj.RoiIndex);
+            obj.clearFindingsCache();
+            obj.clearReviewHintCountCache();
             obj.restoreValidationState();
         end
 
@@ -112,6 +121,7 @@ classdef Session < handle
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
             report = obj.attachReviewHints(report);
+            obj.FindingsCache = report;
             annotationManager.recordValidation(obj.Roi, obj.Spec, report, ...
                 'ContentHash', liveHash);
             if report.valid
@@ -132,9 +142,35 @@ classdef Session < handle
         function report = findings(obj, varargin)
             % Read-only full audit for Score.  Unlike validate(), this does
             % not persist, approve, hash or otherwise change GT lifecycle.
+            if isempty(varargin) && ~isempty(obj.FindingsCache)
+                report = obj.FindingsCache;
+                return;
+            end
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachReviewHints(report);
+            if isempty(varargin)
+                obj.FindingsCache = report;
+            end
+        end
+
+        function count = reviewHintCount(obj)
+            % Lightweight, stable UI count.  Resolving cell-model families
+            % is deferred until the findings dialog actually needs them.
+            if isempty(obj.ReviewHintCountCache)
+                hints = annotationManager.reviewHints( ...
+                    obj.Classifier, obj.Roi, ...
+                    'ReviewFrames', obj.trainingFrames(), ...
+                    'ResolveFamily', false);
+                obj.ReviewHintCountCache = double(hints.total);
+            end
+            count = obj.ReviewHintCountCache;
+        end
+
+        function tf = findingsAreStale(obj)
+            % Score uses this inexpensive signal to refresh an already-open
+            % findings window only after GT content or bounds changed.
+            tf = isempty(obj.FindingsCache);
         end
 
         function [entry, report] = approve(obj, varargin)
@@ -143,6 +179,7 @@ classdef Session < handle
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
             report = obj.attachReviewHints(report);
+            obj.FindingsCache = report;
             obj.LastValidationStatus = 'valid';
             obj.LastValidationMessage = '';
             notify(obj, 'StateChanged');
@@ -162,6 +199,8 @@ classdef Session < handle
             trainingBounds.setRoi(obj.Classifier, obj.RoiIndex, value, ...
                 'FrameCount', annotationManager.frameCount(obj.Roi));
             obj.clearPersistedValidation();
+            obj.clearFindingsCache();
+            obj.clearReviewHintCountCache();
             obj.resetValidationState();
             notify(obj, 'BoundsChanged');
         end
@@ -169,6 +208,8 @@ classdef Session < handle
         function clearFrameBounds(obj)
             trainingBounds.clearRoi(obj.Classifier, obj.RoiIndex);
             obj.clearPersistedValidation();
+            obj.clearFindingsCache();
+            obj.clearReviewHintCountCache();
             obj.resetValidationState();
             notify(obj, 'BoundsChanged');
         end
@@ -241,8 +282,17 @@ classdef Session < handle
         end
 
         function changed(obj)
+            obj.clearFindingsCache();
             obj.resetValidationState();
             notify(obj, 'StateChanged');
+        end
+
+        function clearFindingsCache(obj)
+            obj.FindingsCache = [];
+        end
+
+        function clearReviewHintCountCache(obj)
+            obj.ReviewHintCountCache = [];
         end
 
         function restoreValidationState(obj)

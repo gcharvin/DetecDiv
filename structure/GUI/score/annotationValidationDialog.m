@@ -10,6 +10,8 @@ p.addParameter('Persistent', false, @(x)islogical(x) && isscalar(x));
 p.addParameter('OnGo', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('OnRepair', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('OnRepairAll', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnRefresh', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnIsStale', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('Title', 'Annotation validation findings', ...
     @(x)ischar(x) || (isstring(x) && isscalar(x)));
 p.parse(varargin{:});
@@ -68,16 +70,24 @@ repairButton = uibutton(buttonLayout, 'Text', 'Repair selected link', ...
     'ButtonPushedFcn', @(~,~) finish('repair'));
 repairAllButton = uibutton(buttonLayout, 'Text', 'Repair all broken links', ...
     'ButtonPushedFcn', @(~,~) finish('repair_all'));
-uilabel(buttonLayout, 'Text', '');
+refreshButton = uibutton(buttonLayout, 'Text', 'Refresh', ...
+    'ButtonPushedFcn', @(~,~) refreshDialog());
+refreshButton.Enable = onOff(persistentMode && ~isempty(p.Results.OnRefresh));
 uibutton(buttonLayout, 'Text', 'Close', ...
     'ButtonPushedFcn', @(~,~) finish('close'));
 
 selectedRow = 1;
+refreshing = false;
 tableHandle.Selection = [1 1];
 refreshSelection();
 positionNearParent(figureHandle, parentFigure);
 figureHandle.Visible = 'on';
 if persistentMode
+    figureHandle.WindowButtonDownFcn = @refreshIfStale;
+    % Let App Designer finish painting the table before returning control to
+    % Score.  Without this yield, a large findings list can remain visually
+    % blank while subsequent Score refreshes compete for the graphics queue.
+    drawnow;
     result = figureHandle;
     return;
 end
@@ -171,6 +181,41 @@ if isvalid(figureHandle), delete(figureHandle); end
         [summaryText, ~, ~] = reportSummary(rows);
         summaryLabel.Text = summaryText;
         refreshSelection();
+    end
+
+    function refreshIfStale(~, ~)
+        if refreshing || isempty(p.Results.OnRefresh), return; end
+        stale = true;
+        if ~isempty(p.Results.OnIsStale)
+            try
+                stale = logical(p.Results.OnIsStale());
+            catch
+                stale = true;
+            end
+        end
+        if stale, refreshDialog(); end
+    end
+
+    function refreshDialog()
+        if refreshing || isempty(p.Results.OnRefresh), return; end
+        refreshing = true;
+        oldSummary = summaryLabel.Text;
+        summaryLabel.Text = 'Refreshing findings after GT changes...';
+        try, figureHandle.Pointer = 'watch'; catch, end
+        drawnow limitrate;
+        try
+            updated = p.Results.OnRefresh();
+            applyUpdatedReport(updated);
+        catch ME
+            if isvalid(figureHandle)
+                summaryLabel.Text = oldSummary;
+                detail.Value = cellstr(splitlines(string(ME.message)));
+            end
+        end
+        if isvalid(figureHandle)
+            try, figureHandle.Pointer = 'arrow'; catch, end
+        end
+        refreshing = false;
     end
 end
 

@@ -6,6 +6,7 @@ function report = reviewHints(classif, roiObj, varargin)
 
 p = inputParser;
 p.addParameter('ReviewFrames', [], @isnumeric);
+p.addParameter('ResolveFamily', true, @(x)islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 report = struct( ...
@@ -37,7 +38,10 @@ if ~isfield(payload, 'items') || isempty(payload.items), return; end
 items = payload.items;
 roiId = char(string(roiObj.id));
 reviewFrames = unique(round(double(p.Results.ReviewFrames(:).')));
-familyId = reviewedFamilyId(roiObj, classif);
+familyId = uint32(0);
+if p.Results.ResolveFamily
+    familyId = reviewedFamilyId(roiObj, classif);
+end
 for i = 1:numel(items)
     item = items(i);
     if ~strcmpi(fieldText(item, 'roi_id', ''), roiId), continue; end

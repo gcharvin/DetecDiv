@@ -39,6 +39,12 @@ verifyEqual(testCase, report.issues.code, ...
 verifyEqual(testCase, report.issues.focus_frame, uint32(4));
 verifyEqual(testCase, report.issues.focus_track_id, uint64(12));
 verifyEqual(testCase, report.issues.severity, 'warning');
+
+fastReport = annotationManager.reviewHints( ...
+    classif, roiObj, 'ReviewFrames', 1:5, 'ResolveFamily', false);
+verifyEqual(testCase, fastReport.total, report.total);
+verifyEqual(testCase, fastReport.issues.family_id, uint32(0), ...
+    'The lightweight UI count must not load or resolve a cell-model family.');
 end
 
 function value = hint(id, roiId, frame, child, parent, decision)
