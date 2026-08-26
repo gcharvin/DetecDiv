@@ -23,6 +23,7 @@ candidates = textList(predictionTrackChannel);
 candidates = [candidates textList(trackChannel)]; %#ok<AGROW>
 candidates = [candidates classifierChannels(classif)]; %#ok<AGROW>
 candidates = unique(candidates(~cellfun(@isempty, candidates)), 'stable');
+candidates = excludeAnnotationInputs(candidates, classif, gtMask);
 if isempty(candidates), primaryChannel = ''; else, primaryChannel = candidates{1}; end
 
 maskComponent = annotationManager.newComponent( ...
@@ -93,6 +94,34 @@ try
     values = reshape(values, 1, []);
 catch
 end
+end
+
+function values = excludeAnnotationInputs(values, classif, gtMask)
+% A GT mask and typed image observations are never prediction overlays.
+% classifier.channelName may contain both masks and raw images, so using it
+% unfiltered can make brightfield appear as an editable annotation channel.
+excluded = textList(gtMask);
+observationFields = {'brightfieldChannelName','gfpChannelName', ...
+    'nucleusChannelName','budneckChannelName'};
+containers = {'executionParam','trainingParam'};
+for i = 1:numel(containers)
+    try
+        param = classif.(containers{i});
+    catch
+        param = [];
+    end
+    if ~isstruct(param), continue; end
+    for j = 1:numel(observationFields)
+        field = observationFields{j};
+        if isfield(param, field)
+            excluded = [excluded textList(param.(field))]; %#ok<AGROW>
+        end
+    end
+end
+excluded = excluded(~cellfun(@isempty, excluded));
+if isempty(excluded), return; end
+drop = ismember(lower(string(values)), lower(string(excluded)));
+values = values(~drop);
 end
 
 function values = textList(value)

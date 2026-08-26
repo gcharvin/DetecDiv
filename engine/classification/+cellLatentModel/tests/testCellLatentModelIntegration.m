@@ -28,6 +28,30 @@ verifyTrue(testCase, any(strcmp( ...
 verifyTrue(testCase, any(strcmp(prediction.channelCandidates, 'ch2-GFP')));
 end
 
+function testAnnotationSpecExcludesGroundTruthAndTypedObservations(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'latent_managed_gt', 1);
+cellLatentModel.setparam(classifier);
+classifier.channelName = {'brightfield'; 'gt_stable_tracks'};
+classifier.trainingParam.trackChannelName = 'gt_stable_tracks';
+classifier.trainingParam.groundTruthChannelName = 'gt_stable_tracks';
+classifier.trainingParam.brightfieldChannelName = 'brightfield';
+classifier.executionParam.trackChannelName = 'gt_stable_tracks';
+classifier.executionParam.brightfieldChannelName = 'brightfield';
+
+spec = cellLatentModel.annotationSpec(classifier);
+prediction = spec.components(1).prediction;
+
+verifyFalse(testCase, any(strcmpi( ...
+    prediction.channelCandidates, 'brightfield')));
+verifyFalse(testCase, any(strcmpi( ...
+    prediction.channelCandidates, 'gt_stable_tracks')));
+verifyEqual(testCase, prediction.channelCandidates, {prediction.channel});
+verifyTrue(testCase, startsWith(prediction.channel, 'pred_'));
+end
+
 function testBuiltinInferencePersistsMultimodalLineage(testCase)
 folder = tempname;
 mkdir(folder);
