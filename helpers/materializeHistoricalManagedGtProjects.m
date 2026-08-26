@@ -87,6 +87,7 @@ for i = 1:numel(latent.roi)
     items(i) = reportItem(imported, bundlePath);
 end
 
+materializeClassifierRoiFiles(latent);
 classiSave(latent);
 project.processing.classification = latent;
 shallowProjectExportLight(project, projectJson);

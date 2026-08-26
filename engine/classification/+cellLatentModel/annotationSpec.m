@@ -90,6 +90,7 @@ try
     elseif iscell(raw)
         values = cellfun(@(x) char(string(x)), raw, 'UniformOutput', false);
     end
+    values = reshape(values, 1, []);
 catch
 end
 end
@@ -104,4 +105,5 @@ elseif iscell(value)
 else
     values = {};
 end
+values = reshape(values, 1, []);
 end

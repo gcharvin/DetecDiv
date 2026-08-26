@@ -11,6 +11,23 @@ verifyNotEmpty(testCase,regexp(value, ...
 verifyFalse(testCase,contains(value,'***'));
 end
 
+function testAnnotationSpecAcceptsColumnChannelCatalog(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classifier = classi(folder, 'latent_column_channels', 1);
+cellLatentModel.setparam(classifier);
+classifier.channelName = {'results_trackastra'; 'ch2-GFP'};
+
+spec = cellLatentModel.annotationSpec(classifier);
+prediction = spec.components(1).prediction;
+
+verifyEqual(testCase, size(prediction.channelCandidates, 1), 1);
+verifyTrue(testCase, any(strcmp( ...
+    prediction.channelCandidates, 'results_trackastra')));
+verifyTrue(testCase, any(strcmp(prediction.channelCandidates, 'ch2-GFP')));
+end
+
 function testBuiltinInferencePersistsMultimodalLineage(testCase)
 folder = tempname;
 mkdir(folder);
