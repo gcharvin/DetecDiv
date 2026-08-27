@@ -10,6 +10,31 @@ addpath(repoRoot);
 startup;
 end
 
+function testValidateGtShowsProgressAndKeepsAdvisoriesManual(testCase)
+repoRoot = fileparts(fileparts(fileparts(fileparts(fileparts( ...
+    mfilename('fullpath'))))));
+source = fileread(fullfile(repoRoot, 'structure', 'GUI', 'score', ...
+    'private', 'score_runtime_code.m'));
+startIndex = strfind(source, ...
+    'function ValidateAnnotationButtonPushed(app, event)');
+endIndex = strfind(source, ...
+    'function ApproveAnnotationButtonPushed(app, event)');
+verifyNumElements(testCase, startIndex, 1);
+verifyNumElements(testCase, endIndex, 1);
+block = source(startIndex:endIndex-1);
+verifyTrue(testCase, contains(block, 'uiprogressdlg'));
+verifyTrue(testCase, contains(block, "'Indeterminate', 'on'"));
+verifyTrue(testCase, contains(block, ...
+    'they do not block Ready status'));
+validIndex = strfind(block, 'if report.valid');
+openIndex = strfind(block, 'app.openPersistentAnnotationFindings(report)');
+verifyNotEmpty(testCase, validIndex);
+verifyNotEmpty(testCase, openIndex);
+verifyGreaterThan(testCase, openIndex(end), validIndex(end), ...
+    ['The findings dialog must only open on the invalid branch; ' ...
+     'advisory warnings must not obscure successful validation.']);
+end
+
 function testPredictionBootstrapCreatesExplicitEditableGt(testCase)
 folder = tempname;
 mkdir(folder);

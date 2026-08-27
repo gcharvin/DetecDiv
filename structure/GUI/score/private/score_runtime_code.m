@@ -5042,7 +5042,14 @@ end
 
         function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>
             if isempty(app.AnnotationSession), return; end
+            progress = [];
             try
+                progress = uiprogressdlg(app.ScoreAppUIFigure, ...
+                    'Title', 'Validate ground truth', ...
+                    'Message', ['Auditing masks, tracks, parentage and ' ...
+                        'review coverage...'], ...
+                    'Indeterminate', 'on', 'Cancelable', 'off');
+                drawnow limitrate;
                 report = app.AnnotationSession.validate();
                 app.AnnotationLastValidationValid = logical(report.valid);
                 if report.valid
@@ -5055,15 +5062,33 @@ end
                         cellstr(report.errors), newline));
                 end
                 app.refreshAnnotationSessionUI();
+                if ~isempty(progress) && isvalid(progress), delete(progress); end
+                progress = [];
                 rows = annotationManager.validationIssueRows(report);
-                if ~isempty(rows)
-                    app.openPersistentAnnotationFindings(report);
-                elseif report.valid
-                    uialert(app.ScoreAppUIFigure, ...
-                        'GT validated and ready for training.', ...
+                if report.valid
+                    if isempty(rows)
+                        message = 'GT validated and ready for training.';
+                    else
+                        message = sprintf([ ...
+                            'GT validated and ready for training.\n\n' ...
+                            '%d advisory finding(s) remain available from ' ...
+                            'Review findings; they do not block Ready status.'], ...
+                            numel(rows));
+                    end
+                    % A successful validation must be visibly distinct from
+                    % reviewing. Do not replace/reopen the findings window
+                    % merely because non-blocking advisories remain.
+                    uialert(app.ScoreAppUIFigure, message, ...
                         'GT ready', 'Icon', 'success');
+                elseif ~isempty(rows)
+                    app.openPersistentAnnotationFindings(report);
+                else
+                    uialert(app.ScoreAppUIFigure, ...
+                        app.AnnotationQuickValidationMessage, ...
+                        'GT validation blocked', 'Icon', 'error');
                 end
             catch ME
+                if ~isempty(progress) && isvalid(progress), delete(progress); end
                 app.AnnotationLastValidationValid = false;
                 app.refreshAnnotationSessionUI();
                 uialert(app.ScoreAppUIFigure, ME.message, 'Annotation validation');
