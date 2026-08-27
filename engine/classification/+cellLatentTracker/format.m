@@ -95,10 +95,13 @@ for i = 1:numel(entries)
     [cellState,~] = roiobj.loadCellModel('MigrateLegacy',true);
     [gt,gtFamily] = cellLatentTracker.materializeStableTracks( ...
         gtMaskLabels,cellState,frames,gtName);
+    censoring = cellModel.materializeCensoring( ...
+        cellState,gtFamily.family_id,frames);
     if ~isempty(brightfield), brightfield = brightfield(:,:,frames); end
     inputFile = fullfile(stageRoot,sprintf('roi_%03d_input_and_gt.h5',roiIndex));
     writeStack(inputFile,'/input_frame_local_instances',instances,'uint32');
     writeStack(inputFile,'/gt_stable_tracks',gt,'uint32');
+    writeCensoring(inputFile,censoring);
     if ~isempty(brightfield)
         writeStack(inputFile,'/input_brightfield',brightfield,'single');
     end
@@ -114,6 +117,8 @@ for i = 1:numel(entries)
     spec.tracking_gt_channel = gtName;
     spec.tracking_gt_family = gtFamily.name;
     spec.tracking_gt_representation = 'cell_model_track_id';
+    spec.ground_truth_censoring = censoring;
+    if ~isempty(censoring), spec.censoring_group = '/censoring'; end
     spec.brightfield_channel = brightfieldName;
     spec.frame_interval_minutes = positiveScalar( ...
         tp.frameIntervalMinutes,'frameIntervalMinutes');
@@ -250,7 +255,15 @@ s = struct('roi_id','','source_roi_path','','source_frames',[], ...
     'brightfield_dataset','','instance_channel','', ...
     'tracking_gt_channel','','tracking_gt_family','', ...
     'tracking_gt_representation','','brightfield_channel','', ...
+    'ground_truth_censoring',emptyCensoring(), ...
+    'censoring_group','', ...
     'frame_interval_minutes',1,'domain','','split','');
+end
+function records=emptyCensoring()
+records=struct('censor_id',{},'track_id',{}, ...
+    'frame_start',{},'frame_end',{}, ...
+    'source_frame_start',{},'source_frame_end',{}, ...
+    'scope_flags',{},'scopes',{},'reason',{},'source',{});
 end
 function [train,val] = resolveSplits(classif,requested,fraction)
 [train,val] = cellLatentModel.resolveRoiSplits( ...
@@ -276,6 +289,21 @@ stored=permute(stack,[2 1 3]); sz=[size(stack,2),size(stack,1),size(stack,3)];
 h5create(filename,dataset,sz,'Datatype',datatype, ...
     'ChunkSize',[min(sz(1),256),min(sz(2),256),1],'Deflate',1);
 h5write(filename,dataset,stored); h5writeatt(filename,dataset,'axis_order','time,y,x');
+end
+function writeCensoring(filename,records)
+if isempty(records),return;end
+writeVector(filename,'/censoring/censor_id',[records.censor_id],'uint64');
+writeVector(filename,'/censoring/track_id',[records.track_id],'uint64');
+writeVector(filename,'/censoring/frame_start',[records.frame_start],'uint32');
+writeVector(filename,'/censoring/frame_end',[records.frame_end],'uint32');
+writeVector(filename,'/censoring/source_frame_start',[records.source_frame_start],'uint32');
+writeVector(filename,'/censoring/source_frame_end',[records.source_frame_end],'uint32');
+writeVector(filename,'/censoring/scope_flags',[records.scope_flags],'uint16');
+end
+function writeVector(filename,dataset,values,datatype)
+values=cast(values(:),datatype);
+h5create(filename,dataset,size(values),'Datatype',datatype);
+h5write(filename,dataset,values);
 end
 function writeJson(filename,value)
 folder=fileparts(filename); if ~isempty(folder)&&exist(folder,'dir')~=7, mkdir(folder); end

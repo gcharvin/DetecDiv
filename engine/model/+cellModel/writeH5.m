@@ -3,6 +3,7 @@ function report = writeH5(filename, model, varargin)
 
 p=inputParser;
 p.addParameter('KeepBackup',true,@(x)islogical(x)&&isscalar(x));
+p.addParameter('Fast',false,@(x)islogical(x)&&isscalar(x));
 p.parse(varargin{:});
 filename=char(string(filename));
 if isempty(filename), error('cellModel:MissingFilename','A target filename is required.'); end
@@ -10,8 +11,12 @@ targetDir=fileparts(filename);
 if isempty(targetDir), targetDir=pwd; filename=fullfile(targetDir,filename); end
 if ~isfolder(targetDir), mkdir(targetDir); end
 
-model=cellModel.normalize(model);
-cellModel.validate(model,'Throw',true);
+if p.Results.Fast
+    assertFastModelShape(model);
+else
+    model=cellModel.normalize(model);
+    cellModel.validate(model,'Throw',true);
+end
 model.provenance.updated_at=char(datetime('now','Format','yyyy-MM-dd''T''HH:mm:ssXXX'));
 
 localFile=[tempname '.h5'];
@@ -27,12 +32,18 @@ h5writeatt(localFile,'/','storage_layout','columnar_1d');
 
 writeColumns(localFile,'/instances',model.instances);
 writeColumns(localFile,'/relations',model.relations);
+writeColumns(localFile,'/censoring',model.censoring);
 
-roundTrip=cellModel.readH5(localFile);
-cellModel.validate(roundTrip,'Throw',true);
-if ~isequal(model.instances.object_id,roundTrip.instances.object_id) || ...
-        ~isequal(model.relations.relation_id,roundTrip.relations.relation_id)
-    error('cellModel:RoundTripMismatch','Temporary HDF5 verification failed.');
+if p.Results.Fast
+    verifyWrittenColumns(localFile,model);
+else
+    roundTrip=cellModel.readH5(localFile);
+    cellModel.validate(roundTrip,'Throw',true);
+    if ~isequal(model.instances.object_id,roundTrip.instances.object_id) || ...
+            ~isequal(model.relations.relation_id,roundTrip.relations.relation_id) || ...
+            ~isequal(model.censoring.censor_id,roundTrip.censoring.censor_id)
+        error('cellModel:RoundTripMismatch','Temporary HDF5 verification failed.');
+    end
 end
 
 uuid=char(java.util.UUID.randomUUID);
@@ -59,13 +70,70 @@ deleteIfPresent(localFile);
 
 info=dir(filename);
 report=struct('filename',string(filename),'backup',string(backup), ...
-    'bytes',info.bytes,'counts',cellModel.validate(model).counts,'status','ok');
+    'bytes',info.bytes,'counts',modelCounts(model),'status','ok');
+end
+
+function assertFastModelShape(model)
+required={'format','schema_version','index_base','roi_id','families','states', ...
+    'relation_types','instances','relations','censoring','censor_reasons', ...
+    'censor_sources','provenance'};
+if ~isstruct(model)||~all(isfield(model,required))|| ...
+        ~strcmp(model.format,'detecdiv_cell_model')||model.schema_version~=1
+    error('cellModel:InvalidFastWrite','Fast write requires a canonical schema-v1 model.');
+end
+assertColumnLengths(model.instances,'instances');
+assertColumnLengths(model.relations,'relations');
+assertColumnLengths(model.censoring,'censoring');
+cen=model.censoring;
+if any(cen.censor_id==0)||numel(unique(cen.censor_id))~=numel(cen.censor_id)|| ...
+        any(cen.frame_start==0|cen.frame_end<cen.frame_start)|| ...
+        any(cen.track_id==0)||any(cen.scope_flags==0)
+    error('cellModel:InvalidFastWrite','Fast write received invalid censoring rows.');
+end
+end
+
+function assertColumnLengths(value,label)
+names=fieldnames(value);
+if isempty(names), return; end
+sizes=cellfun(@(name)numel(value.(name)),names);
+if numel(unique(sizes))>1
+    error('cellModel:InvalidFastWrite','%s columns have inconsistent lengths.',label);
+end
+end
+
+function verifyWrittenColumns(filename,model)
+tables={'instances','relations','censoring'};
+for i=1:numel(tables)
+    value=model.(tables{i});
+    names=fieldnames(value);
+    for k=1:numel(names)
+        expected=numel(value.(names{k}));
+        if expected==0, continue; end
+        info=h5info(filename,['/' tables{i} '/' names{k}]);
+        if prod(double(info.Dataspace.Size))~=expected
+            error('cellModel:RoundTripMismatch', ...
+                'Temporary HDF5 column verification failed for %s.%s.', ...
+                tables{i},names{k});
+        end
+    end
+end
+end
+
+function counts=modelCounts(model)
+counts=struct('families',numel(model.families.family_id), ...
+    'states',numel(model.states.state_id), ...
+    'instances',numel(model.instances.object_id), ...
+    'relations',numel(model.relations.relation_id), ...
+    'censoring',numel(model.censoring.censor_id));
 end
 
 function metadata=buildMetadata(model)
 metadata=struct('format',model.format,'schema_version',double(model.schema_version), ...
     'index_base',double(model.index_base),'roi_id',model.roi_id, ...
     'families',[],'states',[],'relation_types',model.relation_types, ...
+    'censor_reasons',model.censor_reasons, ...
+    'censor_sources',model.censor_sources, ...
+    'censor_scope_flags',cellModel.censorScope(), ...
     'provenance',model.provenance);
 
 n=numel(model.families.family_id);

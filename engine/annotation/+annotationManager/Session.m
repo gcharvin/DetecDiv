@@ -121,6 +121,7 @@ classdef Session < handle
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
             report = obj.attachReviewHints(report);
+            report = obj.attachCensorSuggestionTriage(report);
             obj.FindingsCache = report;
             annotationManager.recordValidation(obj.Roi, obj.Spec, report, ...
                 'ContentHash', liveHash);
@@ -149,6 +150,7 @@ classdef Session < handle
             report = annotationManager.validate(obj.Roi, obj.Spec, ...
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachReviewHints(report);
+            report = obj.attachCensorSuggestionTriage(report);
             if isempty(varargin)
                 obj.FindingsCache = report;
             end
@@ -179,6 +181,7 @@ classdef Session < handle
                 'ReviewFrames', obj.trainingFrames(), varargin{:});
             report = obj.attachParentageMigration(report, migration);
             report = obj.attachReviewHints(report);
+            report = obj.attachCensorSuggestionTriage(report);
             obj.FindingsCache = report;
             obj.LastValidationStatus = 'valid';
             obj.LastValidationMessage = '';
@@ -193,6 +196,31 @@ classdef Session < handle
         function frames = trainingFrames(obj)
             frames = trainingBounds.frames(obj.Classifier,obj.RoiIndex, ...
                 annotationManager.frameCount(obj.Roi),[]);
+        end
+
+        function report = recordCensorSuggestionDecision(obj, issue, decision)
+            % Persist UI triage separately from GT and remove the treated
+            % row from the cached dialog snapshot. Re-running the complete
+            % geometry audit for every click makes large ROIs unusable.
+            annotationManager.censorSuggestionLedger( ...
+                obj.Classifier, obj.Roi, 'Issue', issue, ...
+                'Decision', decision);
+            if isempty(obj.FindingsCache)
+                report = obj.findings();
+            else
+                report = obj.removeCensorSuggestionFromReport( ...
+                    obj.FindingsCache, issue);
+                obj.FindingsCache = report;
+            end
+            notify(obj, 'StateChanged');
+        end
+
+        function retainFindingsSnapshot(obj, report)
+            % A local censor edit changes lifecycle metadata but its dialog
+            % effect is known exactly: keep the incrementally filtered list.
+            if isstruct(report) && isfield(report,'issues')
+                obj.FindingsCache = report;
+            end
         end
 
         function setFrameBounds(obj, value)
@@ -457,6 +485,80 @@ classdef Session < handle
                 report.issues = [report.issues(:); hints.issues(:)];
             end
             report.reviewHints = hints;
+        end
+
+        function report = attachCensorSuggestionTriage(obj, report)
+            if ~isfield(report, 'issues') || isempty(report.issues)
+                report.censorSuggestions = struct( ...
+                    'pending', 0, 'resolved', 0);
+                return;
+            end
+            issues = report.issues(:);
+            suggested = arrayfun(@(x) isfield(x,'suggested_censor') && ...
+                logical(x.suggested_censor), issues);
+            for i = find(suggested(:)).'
+                if isempty(char(string(issues(i).suggestion_id)))
+                    issues(i).suggestion_id = ...
+                        annotationManager.censorSuggestionId(obj.Roi, issues(i));
+                end
+            end
+            [ledger, ~] = annotationManager.censorSuggestionLedger( ...
+                obj.Classifier, obj.Roi);
+            resolved = false(size(issues));
+            if ~isempty(ledger.items)
+                roiId = string(obj.Roi.id);
+                ids = string({ledger.items.suggestion_id});
+                roiIds = string({ledger.items.roi_id});
+                for i = find(suggested(:)).'
+                    resolved(i) = any(ids == string(issues(i).suggestion_id) & ...
+                        strcmpi(roiIds, roiId));
+                end
+            end
+            removedMessages = string({issues(resolved).message});
+            report.issues = issues(~resolved);
+            if isfield(report, 'warnings') && ~isempty(report.warnings) && ...
+                    ~isempty(removedMessages)
+                report.warnings = report.warnings( ...
+                    ~ismember(string(report.warnings), removedMessages));
+            end
+            report.censorSuggestions = struct( ...
+                'pending', nnz(suggested & ~resolved), ...
+                'resolved', nnz(suggested & resolved));
+        end
+
+        function report = removeCensorSuggestionFromReport(obj, report, issue)
+            if ~isfield(report,'issues') || isempty(report.issues), return; end
+            suggestionId = char(string(issue.suggestion_id));
+            if isempty(suggestionId)
+                suggestionId = annotationManager.censorSuggestionId( ...
+                    obj.Roi, issue);
+            end
+            issues = report.issues(:);
+            ids = strings(size(issues));
+            suggested = false(size(issues));
+            for i = 1:numel(issues)
+                suggested(i) = logical(issues(i).suggested_censor);
+                if ~suggested(i), continue; end
+                ids(i) = string(issues(i).suggestion_id);
+                if ids(i) == ""
+                    ids(i) = string(annotationManager.censorSuggestionId( ...
+                        obj.Roi, issues(i)));
+                end
+            end
+            remove = suggested & ids == string(suggestionId);
+            removedMessages = string({issues(remove).message});
+            report.issues = issues(~remove);
+            if isfield(report,'warnings') && ~isempty(report.warnings) && ...
+                    ~isempty(removedMessages)
+                report.warnings = report.warnings( ...
+                    ~ismember(string(report.warnings),removedMessages));
+            end
+            if isfield(report,'censorSuggestions')
+                report.censorSuggestions.pending = max(0, ...
+                    double(report.censorSuggestions.pending) - nnz(remove));
+                report.censorSuggestions.resolved = ...
+                    double(report.censorSuggestions.resolved) + nnz(remove);
+            end
         end
 
         function resetValidationState(obj)

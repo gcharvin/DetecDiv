@@ -12,6 +12,8 @@ p.addParameter('OnRepair', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('OnRepairAll', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('OnRefresh', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('OnIsStale', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnAcceptCensor', [], @(x)isempty(x) || isa(x,'function_handle'));
+p.addParameter('OnKeepUsable', [], @(x)isempty(x) || isa(x,'function_handle'));
 p.addParameter('Title', 'Annotation validation findings', ...
     @(x)ischar(x) || (isstring(x) && isscalar(x)));
 p.parse(varargin{:});
@@ -23,7 +25,7 @@ result = struct('action', 'close', 'row', 0, 'issueIndex', 0, ...
 if isempty(rows), return; end
 
 figureHandle = uifigure('Name', char(string(p.Results.Title)), ...
-    'Position', [100 100 1010 520], 'Resize', 'on', ...
+    'Position', [100 100 1280 540], 'Resize', 'on', ...
     'WindowStyle', windowStyle(persistentMode), 'Visible', 'off');
 figureHandle.Tag = 'ScoreAnnotationFindings';
 figureHandle.CloseRequestFcn = @closeDialog;
@@ -32,17 +34,7 @@ layout.RowHeight = {30, '1x', 100, 38};
 layout.Padding = [12 12 12 12];
 layout.RowSpacing = 8;
 
-warningCount = nnz(strcmpi({rows.severity}, 'warning'));
-errorCount = numel(rows) - warningCount;
-if errorCount == 0
-    summaryText = sprintf([ ...
-        'Validation passed. %d advisory warning(s); warnings do not ' ...
-        'block Ready status or training.'], warningCount);
-else
-    summaryText = sprintf( ...
-        '%d error(s), %d warning(s). Select a row to inspect it.', ...
-        errorCount, warningCount);
-end
+[summaryText, ~, ~] = reportSummary(rows);
 summaryLabel = uilabel(layout, 'Text', summaryText, ...
     'FontWeight', 'bold');
 summaryLabel.Layout.Row = 1;
@@ -60,9 +52,9 @@ tableHandle.CellSelectionCallback = @selectRow;
 detail = uitextarea(layout, 'Editable', 'off');
 detail.Layout.Row = 3;
 
-buttonLayout = uigridlayout(layout, [1 5]);
+buttonLayout = uigridlayout(layout, [1 7]);
 buttonLayout.Layout.Row = 4;
-buttonLayout.ColumnWidth = {150, 175, 190, '1x', 90};
+buttonLayout.ColumnWidth = {140, 170, 185, 180, 145, '1x', 80};
 buttonLayout.Padding = [0 0 0 0];
 goButton = uibutton(buttonLayout, 'Text', 'Go to selected', ...
     'ButtonPushedFcn', @(~,~) finish('go'));
@@ -70,6 +62,12 @@ repairButton = uibutton(buttonLayout, 'Text', 'Repair selected link', ...
     'ButtonPushedFcn', @(~,~) finish('repair'));
 repairAllButton = uibutton(buttonLayout, 'Text', 'Repair all broken links', ...
     'ButtonPushedFcn', @(~,~) finish('repair_all'));
+acceptCensorButton = uibutton(buttonLayout, ...
+    'Text', 'Censor as suggested [C]', ...
+    'ButtonPushedFcn', @(~,~) finish('accept_censor'));
+keepUsableButton = uibutton(buttonLayout, ...
+    'Text', 'Keep usable [K]', ...
+    'ButtonPushedFcn', @(~,~) finish('keep_usable'));
 refreshButton = uibutton(buttonLayout, 'Text', 'Refresh', ...
     'ButtonPushedFcn', @(~,~) refreshDialog());
 refreshButton.Enable = onOff(persistentMode && ~isempty(p.Results.OnRefresh));
@@ -78,6 +76,7 @@ uibutton(buttonLayout, 'Text', 'Close', ...
 
 selectedRow = 1;
 refreshing = false;
+figureHandle.KeyPressFcn = @keyPressed;
 tableHandle.Selection = [1 1];
 refreshSelection();
 positionNearParent(figureHandle, parentFigure);
@@ -102,10 +101,32 @@ if isvalid(figureHandle), delete(figureHandle); end
 
     function refreshSelection()
         row = rows(selectedRow);
-        detail.Value = cellstr(splitlines(string(row.message)));
+        detailLines = splitlines(string(row.message));
+        if row.suggested_censor && row.issue_index >= 1 && ...
+                row.issue_index <= numel(report.issues)
+            issue = report.issues(row.issue_index);
+            detailLines(end+1,1) = "";
+            detailLines(end+1,1) = string(sprintf( ...
+                'Suggested action: censor %s, frames %u-%u; reason: %s.', ...
+                scopeText(issue.suggested_scope_flags), ...
+                uint32(issue.suggested_frame_start), ...
+                uint32(issue.suggested_frame_end), ...
+                humanText(issue.suggested_reason)));
+            if isfinite(double(issue.suggestion_confidence))
+                detailLines(end+1,1) = string(sprintf( ...
+                    'Suggestion confidence: %.0f%%. No GT changes until you accept.', ...
+                    100 * double(issue.suggestion_confidence)));
+            end
+        end
+        detail.Value = cellstr(detailLines);
         goButton.Enable = onOff(isfinite(row.frame) && row.frame > 0);
         repairButton.Enable = onOff(row.repairable);
         repairAllButton.Enable = onOff(any([rows.repairable]));
+        actionable = row.suggested_censor && persistentMode;
+        acceptCensorButton.Enable = onOff(actionable && ...
+            ~isempty(p.Results.OnAcceptCensor));
+        keepUsableButton.Enable = onOff(actionable && ...
+            ~isempty(p.Results.OnKeepUsable));
     end
 
     function finish(action)
@@ -162,8 +183,34 @@ if isvalid(figureHandle), delete(figureHandle); end
                 end
                 updated = p.Results.OnRepairAll(report.issues(repairable));
                 applyUpdatedReport(updated);
+            case 'accept_censor'
+                if isempty(p.Results.OnAcceptCensor) || isempty(issue) || ...
+                        ~rows(selectedRow).suggested_censor, return; end
+                updated = p.Results.OnAcceptCensor(issue);
+                applyUpdatedReport(updated);
+            case 'keep_usable'
+                if isempty(p.Results.OnKeepUsable) || isempty(issue) || ...
+                        ~rows(selectedRow).suggested_censor, return; end
+                updated = p.Results.OnKeepUsable(issue);
+                applyUpdatedReport(updated);
             otherwise
                 delete(figureHandle);
+        end
+    end
+
+    function keyPressed(~, event)
+        if isempty(rows), return; end
+        switch lower(char(string(event.Key)))
+            case 'c'
+                if strcmp(char(acceptCensorButton.Enable), 'on')
+                    finish('accept_censor');
+                end
+            case 'k'
+                if strcmp(char(keepUsableButton.Enable), 'on')
+                    finish('keep_usable');
+                end
+            case 'r'
+                if strcmp(char(refreshButton.Enable), 'on'), refreshDialog(); end
         end
     end
 
@@ -226,6 +273,7 @@ end
 function [text, warningCount, errorCount] = reportSummary(rows)
 warningCount = nnz(strcmpi({rows.severity}, 'warning'));
 errorCount = numel(rows) - warningCount;
+suggestionCount = nnz([rows.suggested_censor]);
 if errorCount == 0
     text = sprintf([ ...
         'Validation passed. %d advisory warning(s); warnings do not ' ...
@@ -234,6 +282,10 @@ else
     text = sprintf( ...
         '%d error(s), %d warning(s). Select a row to inspect it.', ...
         errorCount, warningCount);
+end
+if suggestionCount > 0
+    text = sprintf('%s %d censor suggestion(s) await a decision.', ...
+        text, suggestionCount);
 end
 end
 
@@ -273,6 +325,23 @@ end
 
 function value = onOff(tf)
 if tf, value = 'on'; else, value = 'off'; end
+end
+
+function text = scopeText(flags)
+names = {'segmentation','tracking','appearance','end','parentage','state'};
+selected = strings(0,1);
+for i = 1:numel(names)
+    if bitand(uint16(flags),cellModel.censorScope(names{i})) ~= 0
+        selected(end+1,1) = string(names{i}); %#ok<AGROW>
+    end
+end
+if isempty(selected), text = 'unspecified task';
+else, text = char(strjoin(selected, ' + '));
+end
+end
+
+function value = humanText(value)
+value = strrep(char(string(value)),'_',' ');
 end
 
 function positionNearParent(figureHandle, parentFigure)

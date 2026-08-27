@@ -18,6 +18,11 @@ model.roi_id = char(string(model.roi_id));
 model.families = normalizeFamilies(model.families);
 model.states = normalizeStates(model.states);
 model.instances = normalizeInstances(model.instances);
+model.censoring = normalizeCensoring(model.censoring);
+model.censor_reasons = normalizeNamedRows(model.censor_reasons, ...
+    defaults.censor_reasons, 'reason_id', 'uint16', true);
+model.censor_sources = normalizeNamedRows(model.censor_sources, ...
+    defaults.censor_sources, 'source_id', 'uint8', false);
 model.relations = normalizeRelations(model.relations);
 model.relation_types = normalizeRelationTypes(model.relation_types);
 
@@ -45,6 +50,14 @@ if ~isempty(model.relations.relation_id)
     [~, order] = sortrows([double(model.relations.family_id), ...
         double(model.relations.event_frame), double(model.relations.child_track_id)]);
     model.relations = reorderColumns(model.relations, order);
+end
+if ~isempty(model.censoring.censor_id)
+    [~, order] = sortrows([double(model.censoring.family_id), ...
+        double(model.censoring.track_id), ...
+        double(model.censoring.frame_start), ...
+        double(model.censoring.scope_flags), ...
+        double(model.censoring.reason_id)]);
+    model.censoring = reorderColumns(model.censoring, order);
 end
 end
 
@@ -84,6 +97,38 @@ instances.frame = numericColumn(instances, 'frame', n, 'uint32', 0);
 instances.mask_label = numericColumn(instances, 'mask_label', n, 'uint32', 0);
 instances.track_id = numericColumn(instances, 'track_id', n, 'uint64', 0);
 instances.state_id = numericColumn(instances, 'state_id', n, 'uint16', 0);
+end
+
+function censoring = normalizeCensoring(censoring)
+template = cellModel.create(''); template = template.censoring;
+if ~isstruct(censoring), censoring = template; return; end
+n = maxColumnLength(censoring, fieldnames(template));
+censoring.censor_id = numericColumn(censoring, 'censor_id', n, 'uint64', (1:n)');
+censoring.family_id = numericColumn(censoring, 'family_id', n, 'uint32', 0);
+censoring.track_id = numericColumn(censoring, 'track_id', n, 'uint64', 0);
+censoring.frame_start = numericColumn(censoring, 'frame_start', n, 'uint32', 0);
+censoring.frame_end = numericColumn(censoring, 'frame_end', n, 'uint32', 0);
+censoring.scope_flags = numericColumn(censoring, 'scope_flags', n, 'uint16', 0);
+censoring.reason_id = numericColumn(censoring, 'reason_id', n, 'uint16', 0);
+censoring.source_id = numericColumn(censoring, 'source_id', n, 'uint8', 1);
+end
+
+function rows = normalizeNamedRows(rows, defaults, idField, idClass, withDescription)
+if ~isstruct(rows) || isempty(rows), rows = defaults; return; end
+ids = cast([rows.(idField)], idClass);
+names = cellstr(string({rows.name}));
+if withDescription && isfield(rows, 'description')
+    descriptions = cellstr(string({rows.description}));
+else
+    descriptions = repmat({''}, 1, numel(ids));
+end
+template = defaults(1);
+rows = repmat(template, numel(ids), 1);
+for i = 1:numel(ids)
+    rows(i).(idField) = ids(i);
+    rows(i).name = names{i};
+    if withDescription, rows(i).description = descriptions{i}; end
+end
 end
 
 function relations = normalizeRelations(relations)

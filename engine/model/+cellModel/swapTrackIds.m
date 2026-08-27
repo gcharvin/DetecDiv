@@ -38,6 +38,12 @@ model.relations.parent_track_id(parentB) = trackA;
 model.relations.child_track_id(childA) = trackB;
 model.relations.child_track_id(childB) = trackA;
 
+censorRows = model.censoring.family_id == familyId;
+censorA = censorRows & model.censoring.track_id == trackA;
+censorB = censorRows & model.censoring.track_id == trackB;
+model.censoring.track_id(censorA) = trackB;
+model.censoring.track_id(censorB) = trackA;
+
 model = cellModel.normalize(model);
 cellModel.validate(model, 'Throw', true);
 report = struct('status', 'swapped', 'family_id', familyId, ...

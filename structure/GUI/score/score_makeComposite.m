@@ -355,6 +355,8 @@ for ch = 1:numel(channel)
             end
         end
     end
+    levmap = localApplyCensorColors( ...
+        roitmp, objectCfg, thisName, actualFrame, indices, levmap);
 
     % paramètres overlay
     wid       = localScalarNumber(levCh{5}, 1);
@@ -510,13 +512,38 @@ end
 function [rgbOut, alphaOut] = compositePerLabelColorOverlay(rgbIn, alphaIn, L, indices, colors, alpha)
 rgbOut = rgbIn;
 alphaOut = alphaIn;
-for i = 1:numel(indices)
-    mask = (L == indices(i));
-    if any(mask(:))
-        [rgbOut, alphaOut] = compositeOverlayLayer( ...
-            rgbOut, alphaOut, mask, colors(i,:), alpha);
-    end
+
+alpha = min(1, max(0, double(alpha)));
+if alpha <= 0 || isempty(indices)
+    return;
 end
+
+% Labels in one indexed mask are mutually exclusive.  Map every displayed
+% pixel to its colour row once instead of scanning the complete image once
+% per cell (which made Project47 Go-to-selected scale with cell count).
+[mask, colorRows] = ismember(double(L), double(indices(:)));
+if ~any(mask(:))
+    return;
+end
+colors = double(colors);
+if size(colors,1) < numel(indices) || size(colors,2) ~= 3
+    colors = repmat([1 1 1], numel(indices), 1);
+end
+colors = min(1, max(0, colors));
+
+oldAlpha = alphaOut(mask);
+newAlpha = alpha + oldAlpha .* (1 - alpha);
+safeAlpha = max(newAlpha, eps);
+rows = colorRows(mask);
+for c = 1:3
+    plane = rgbOut(:,:,c);
+    oldColor = plane(mask);
+    newColor = colors(rows, c);
+    plane(mask) = (newColor .* alpha + ...
+        oldColor .* oldAlpha .* (1 - alpha)) ./ safeAlpha;
+    rgbOut(:,:,c) = plane;
+end
+alphaOut(mask) = newAlpha;
 end
 
 function img = adjustIntensityImage(img, lims)
@@ -813,6 +840,34 @@ try
     end
 catch
     handled = false;
+end
+end
+
+function colors = localApplyCensorColors( ...
+        roiobj, cfg, channelName, frame, labels, colors)
+% Explicit censoring is always visible, independently of the color mode.
+% A geometric border touch has no model record and therefore no effect.
+if isempty(cfg) || isempty(labels), return; end
+try
+    [model, status] = score_getCellModel(roiobj);
+    if ~strcmp(status, 'ok') || isempty(model.censoring.censor_id), return; end
+    [familyIndex, familyId] = score_resolveCellModelFamily( ...
+        model, cfg, channelName);
+    if isempty(familyIndex), return; end
+    rows = find(model.instances.family_id == familyId & ...
+        model.instances.frame == uint32(frame));
+    frameLabels = double(model.instances.mask_label(rows));
+    for i = 1:numel(labels)
+        hit = find(frameLabels == double(labels(i)), 1, 'first');
+        if isempty(hit), continue; end
+        trackId = model.instances.track_id(rows(hit));
+        active = model.censoring.family_id == familyId & ...
+            model.censoring.track_id == trackId & ...
+            model.censoring.frame_start <= uint32(frame) & ...
+            model.censoring.frame_end >= uint32(frame);
+        if any(active), colors(i,:) = [1 0 1]; end
+    end
+catch
 end
 end
 

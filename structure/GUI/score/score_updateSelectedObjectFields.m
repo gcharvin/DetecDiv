@@ -64,6 +64,7 @@ try
     app.SelectedCellStateDropDown.Enable = onOff(stateEnabled);
 catch
 end
+score_updateSelectedCensoringFields(app);
 end
 
 function value = onOff(tf)

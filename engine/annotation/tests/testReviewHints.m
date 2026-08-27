@@ -3,6 +3,33 @@ function tests = testReviewHints
 tests = functiontests(localfunctions);
 end
 
+function testCensorSuggestionDecisionLedgerIsDurableAndSeparate(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+classif = struct('path',folder,'strid','review_demo');
+roiObj = struct('id','R1');
+issue = annotationManager.newValidationIssue( ...
+    'code','possible_roi_boundary_truncation', ...
+    'focus_track_id',uint64(12),'focus_frame',uint32(4), ...
+    'suggested_censor',true, ...
+    'suggested_scope_flags',cellModel.censorScope('segmentation'), ...
+    'suggested_reason','truncated_at_roi_boundary', ...
+    'suggested_frame_start',uint32(4), ...
+    'suggested_frame_end',uint32(6));
+[ledger,record] = annotationManager.censorSuggestionLedger( ...
+    classif,roiObj,'Issue',issue,'Decision','keep');
+verifyEqual(testCase,record.decision,'keep');
+verifyEqual(testCase,numel(ledger.items),1);
+verifyEqual(testCase,record.suggestion_id, ...
+    annotationManager.censorSuggestionId(roiObj,issue));
+verifyEqual(testCase,exist(fullfile(folder, ...
+    'censor_suggestion_decisions.json'),'file'),2);
+[reloaded,~] = annotationManager.censorSuggestionLedger(classif,roiObj);
+verifyEqual(testCase,reloaded.items.suggestion_id,record.suggestion_id);
+verifyEqual(testCase,reloaded.items.roi_id,'R1');
+end
+
 function setupOnce(~)
 repoRoot = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
 addpath(genpath(repoRoot));

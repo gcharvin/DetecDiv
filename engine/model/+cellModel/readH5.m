@@ -25,12 +25,19 @@ model.states=readStates(metadata);
 if isfield(metadata,'relation_types') && ~isempty(metadata.relation_types)
     model.relation_types=metadata.relation_types;
 end
+if isfield(metadata,'censor_reasons') && ~isempty(metadata.censor_reasons)
+    model.censor_reasons=metadata.censor_reasons;
+end
+if isfield(metadata,'censor_sources') && ~isempty(metadata.censor_sources)
+    model.censor_sources=metadata.censor_sources;
+end
 if isfield(metadata,'provenance') && isstruct(metadata.provenance)
     model.provenance=metadata.provenance;
 end
 
 model.instances=readColumns(filename,'/instances',model.instances);
 model.relations=readColumns(filename,'/relations',model.relations);
+model.censoring=readColumns(filename,'/censoring',model.censoring);
 model=cellModel.normalize(model);
 cellModel.validate(model,'Throw',true);
 end

@@ -59,6 +59,10 @@ if ~isempty(conflictRows)
 end
 
 model.instances.track_id(rows) = newTrackId;
+if oldTrackId > 0 && oldTrackId ~= newTrackId
+    model = transferCensoring(model, familyId, oldTrackId, newTrackId, ...
+        double(affectedFrames(:)).');
+end
 relationsUpdated = false;
 if strcmp(scope, 'all') && oldTrackId > 0 && oldTrackId ~= newTrackId && ...
         ~any(model.instances.family_id == familyId & ...
@@ -76,6 +80,66 @@ report = struct('status', 'ok', 'scope', scope, ...
     'new_track_id', newTrackId, 'rows_changed', numel(rows), ...
     'frames', double(unique(affectedFrames(:)).'), ...
     'relations_updated', relationsUpdated);
+end
+
+function model = transferCensoring(model, familyId, oldTrackId, newTrackId, affectedFrames)
+% Censoring follows the biological identity segment that was reassigned.
+recordRows = find(model.censoring.family_id == familyId & ...
+    model.censoring.track_id == oldTrackId);
+if isempty(recordRows), return; end
+affectedFrames = unique(round(double(affectedFrames(:).')));
+for row = flip(recordRows(:).')
+    first = double(model.censoring.frame_start(row));
+    last = double(model.censoring.frame_end(row));
+    moved = affectedFrames(affectedFrames >= first & affectedFrames <= last);
+    if isempty(moved), continue; end
+    original = rowStruct(model.censoring, row);
+    model.censoring = deleteRow(model.censoring, row);
+    oldFrames = setdiff(first:last, moved, 'stable');
+    oldRuns = contiguousRuns(oldFrames);
+    newRuns = contiguousRuns(moved);
+    blocks = [tagRuns(oldRuns, oldTrackId); tagRuns(newRuns, newTrackId)];
+    nextId = max([model.censoring.censor_id; original.censor_id; uint64(0)]) + uint64(1);
+    for i = 1:size(blocks,1)
+        item = original;
+        if i > 1, item.censor_id = nextId; nextId = nextId + uint64(1); end
+        item.track_id = uint64(blocks(i,1));
+        item.frame_start = uint32(blocks(i,2));
+        item.frame_end = uint32(blocks(i,3));
+        model.censoring = appendRow(model.censoring, item);
+    end
+end
+end
+
+function runs = contiguousRuns(frames)
+runs = zeros(0,2);
+if isempty(frames), return; end
+frames = unique(sort(frames));
+cuts = [1 find(diff(frames)>1)+1 numel(frames)+1];
+for i = 1:numel(cuts)-1
+    block = frames(cuts(i):cuts(i+1)-1);
+    runs(end+1,:) = [block(1) block(end)]; %#ok<AGROW>
+end
+end
+
+function tagged = tagRuns(runs, trackId)
+if isempty(runs), tagged = zeros(0,3); return; end
+tagged = [repmat(double(trackId),size(runs,1),1) runs];
+end
+
+function item = rowStruct(columns, row)
+item = struct(); names = fieldnames(columns);
+for i = 1:numel(names), item.(names{i}) = columns.(names{i})(row); end
+end
+
+function columns = deleteRow(columns, row)
+names = fieldnames(columns);
+for i = 1:numel(names), columns.(names{i})(row,:) = []; end
+end
+
+function columns = appendRow(columns, item)
+names = fieldnames(columns);
+for i = 1:numel(names), columns.(names{i})(end+1,1) = item.(names{i}); end
 end
 
 function rows = scopedRows(model, familyId, frame, maskLabel, oldTrackId, fromFrame)

@@ -527,6 +527,64 @@ verifyEqual(testCase, report.issues.focus_track_id, uint64(2));
 verifyEqual(testCase, report.issues.focus_frame, uint32(3));
 end
 
+function testExplicitParentageCensoringMasksOnlyTheTarget(testCase)
+model = temporalParentageModel(1, 3:4, 17);
+[model, ~] = cellModel.setCensoring(model, 1, 2, 3, 3, ...
+    'Scope', 'parentage', 'Reason', 'ambiguous_parentage');
+report = annotationManager.validateParentage(model, uint32(1));
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyEqual(testCase, numel(report.issues), 1);
+verifyEqual(testCase, report.issues.code, ...
+    'explicitly_censored_parentage');
+verifyEqual(testCase, report.issues.severity, 'warning');
+verifyTrue(testCase, contains(report.issues.message, ...
+    'excluded from parentage training and scoring'));
+
+% Censoring parentage must not silently censor tracking or segmentation.
+verifyTrue(testCase, cellModel.isCensored(model, 1, 2, 3, 'parentage'));
+verifyFalse(testCase, cellModel.isCensored(model, 1, 2, 3, 'tracking'));
+end
+
+function testOptionalCensorSchemaPreservesLegacyApprovalHash(testCase)
+folder = freshFolder(testCase);
+r = roiWithRaw(folder, 'R1', 8, 8, 2);
+masks = zeros(8,8,1,2,'uint16');
+masks(2:4,2:4,1,:) = 1;
+r.addChannel(masks,'gt_tracks',[1 1 1],[0 0 0]);
+model = cellModel.create(r.id);
+model.families.family_id = uint32(1);
+model.families.name = {'Reviewed GT'};
+model.families.mask_provider = {'gt_tracks'};
+model.families.lineage_source = {'human'};
+model.families.color_rgb = uint8([1 2 3]);
+for frame = 1:2
+    [model,~] = cellModel.syncFrame(model,1,frame,masks(:,:,1,frame), ...
+        'TrackPolicy','preserve_or_label');
+end
+r.saveCellModel(model,'KeepBackup',false);
+spec = annotationManager.newSpec(struct('strid','hash_compat'));
+spec.components = annotationManager.newComponent( ...
+    'id','tracking','kind','tracking','storage','cell_model_family', ...
+    'required',true,'coverageUnit','frame', ...
+    'groundTruth',annotationManager.newAsset( ...
+        'family','Reviewed GT','maskProvider','gt_tracks'));
+
+legacyHash = annotationManager.contentHash(r,spec);
+catalogOnly = model;
+catalogOnly.censor_reasons(1).description = ...
+    'Optional catalog metadata added after the historical approval.';
+r.saveCellModel(catalogOnly,'KeepBackup',false);
+verifyEqual(testCase,annotationManager.contentHash(r,spec),legacyHash, ...
+    ['Optional censor schema defaults must not make an unchanged legacy ' ...
+     'approval stale.']);
+
+[withCensor,~] = cellModel.setCensoring(model,1,1,1,1, ...
+    'Scope','tracking','Reason','ambiguous_identity');
+r.saveCellModel(withCensor,'KeepBackup',false);
+verifyNotEqual(testCase,annotationManager.contentHash(r,spec),legacyHash, ...
+    'An actual explicit censor record must invalidate the approval hash.');
+end
+
 function testParentageRequiresMaterializedParentInsideTrainingBounds(testCase)
 model = temporalParentageModel(1, 2, 2);
 report = annotationManager.validateParentage( ...
@@ -631,6 +689,16 @@ verifyTrue(testCase, all(strcmp({rows.component}, 'Tracking')));
 verifyTrue(testCase, all([rows.frame] == 2));
 verifyFalse(testCase, any([rows.repairable]));
 
+% Human tracking censorship removes only the explicitly covered anomaly.
+[censoredModel, ~] = cellModel.setCensoring(model, 1, 52, 1, 2, ...
+    'Scope', 'tracking', 'Reason', 'ambiguous_identity');
+r.cellModel = censoredModel;
+censored = annotationManager.validate(r, spec, ...
+    'RequireReviewed', false, 'ReviewFrames', 1:2);
+verifyTrue(testCase, censored.valid);
+verifyEqual(testCase, numel(censored.issues), 1);
+verifyEqual(testCase, censored.issues.focus_track_id, uint64(9));
+
 oversized = model;
 oversized.instances.track_id(1:2) = uint64(intmax('uint32')) + uint64(1);
 r.cellModel = oversized;
@@ -638,6 +706,105 @@ tooLarge = annotationManager.validate(r, spec, ...
     'RequireReviewed', false, 'ReviewFrames', 1:2);
 verifyFalse(testCase, tooLarge.valid);
 verifyTrue(testCase, any(contains(tooLarge.errors, 'exceeds uint32')));
+end
+
+function testStrongImageBoundaryClippingCreatesOneSegmentationSuggestion(testCase)
+folder = freshFolder(testCase);
+r = roiWithRaw(folder, 'R1', 30, 30, 2);
+masks = zeros(30,30,1,2,'uint16');
+masks(10:18,1:4,1,1) = 1;
+masks(10:18,1:4,1,2) = 2;
+r.addChannel(masks,'gt_tracks',[1 1 1],[0 0 0]);
+r.save([],false);
+
+model = cellModel.create(r.id);
+model.families.family_id = uint32(1);
+model.families.name = {'Reviewed GT'};
+model.families.mask_provider = {'gt_tracks'};
+model.families.lineage_source = {'human'};
+model.families.color_rgb = uint8([255 255 255]);
+model.instances.object_id = uint64([1;2]);
+model.instances.family_id = uint32([1;1]);
+model.instances.frame = uint32([1;2]);
+model.instances.mask_label = uint32([1;2]);
+model.instances.track_id = uint64([4;4]);
+model.instances.state_id = uint16([0;0]);
+model = cellModel.normalize(model);
+
+issues = annotationManager.auditStableTracks( ...
+    r,model,uint32(1),'Frames',1:2);
+boundary = issues(strcmp({issues.code}, ...
+    'possible_roi_boundary_truncation'));
+verifyEqual(testCase,numel(boundary),1);
+verifyTrue(testCase,boundary.suggested_censor);
+verifyEqual(testCase,boundary.suggested_scope_flags, ...
+    cellModel.censorScope('segmentation'));
+verifyEqual(testCase,boundary.suggested_reason, ...
+    'truncated_at_roi_boundary');
+verifyEqual(testCase,boundary.suggested_frame_start,uint32(1));
+verifyEqual(testCase,boundary.suggested_frame_end,uint32(2));
+
+[model,~] = cellModel.setCensoring(model,1,4,1,2, ...
+    'Scope','segmentation','Reason','truncated_at_roi_boundary');
+verifyEmpty(testCase,annotationManager.auditStableTracks( ...
+    r,model,uint32(1),'Frames',1:2));
+end
+
+function testSessionKeepsRejectedCensorSuggestionOutOfQueueWithoutChangingGt(testCase)
+folder = freshFolder(testCase);
+c = classi(folder,'latent_triage',1);
+c.classifierPkg = 'cellLatentModel';
+c.category = {'Tracking'};
+c.classes = {'latent lineage link'};
+c.executionParam = struct('trackChannelName','', ...
+    'outputFamilyName','Predicted lineage');
+c.channelName = {'raw'};
+familyName = 'latent_triage_1 reviewed GT';
+channelName = 'gt_latent_triage_1_stable_tracks';
+c.trainingParam = struct('groundTruthFamily',familyName, ...
+    'trackChannelName',channelName);
+
+r = roiWithRaw(folder,'R1',30,30,2);
+masks = zeros(30,30,1,2,'uint16');
+masks(10:18,1:4,1,1) = 1;
+masks(10:18,1:4,1,2) = 2;
+r.addChannel(masks,channelName,[1 1 1],[0 0 0]);
+r.save([],false);
+model = cellModel.create(r.id);
+model.families.family_id = uint32(1);
+model.families.name = {familyName};
+model.families.mask_provider = {channelName};
+model.families.lineage_source = {'human'};
+model.families.color_rgb = uint8([255 255 255]);
+model.instances.object_id = uint64([1;2]);
+model.instances.family_id = uint32([1;1]);
+model.instances.frame = uint32([1;2]);
+model.instances.mask_label = uint32([1;2]);
+model.instances.track_id = uint64([4;4]);
+model.instances.state_id = uint16([0;0]);
+r.saveCellModel(cellModel.normalize(model));
+c.roi = r;
+
+session = c.annotationSession(1);
+report = session.findings();
+candidate = report.issues(strcmp({report.issues.code}, ...
+    'possible_roi_boundary_truncation'));
+verifyEqual(testCase,numel(candidate),1);
+verifyNotEmpty(testCase,candidate.suggestion_id);
+updated = session.recordCensorSuggestionDecision(candidate,'keep');
+verifyFalse(testCase,any(strcmp({updated.issues.code}, ...
+    'possible_roi_boundary_truncation')));
+verifyGreaterThanOrEqual(testCase, ...
+    double(updated.censorSuggestions.resolved),1);
+[unchanged,~] = r.loadCellModel('MigrateLegacy',true);
+verifyEmpty(testCase,unchanged.censoring.censor_id, ...
+    'Keeping a suggestion must not modify scientific GT.');
+
+reopened = c.annotationSession(1);
+reopenedReport = reopened.findings('RequireReviewed',false);
+verifyFalse(testCase,any(strcmp({reopenedReport.issues.code}, ...
+    'possible_roi_boundary_truncation')), ...
+    'Rejected suggestions must remain resolved after reopening the session.');
 end
 
 function testValidationAndHashUseUnsavedLoadedSnapshot(testCase)

@@ -80,6 +80,9 @@ verifyNotEmpty(testCase, app.MarkThroughCurrentButton.ButtonPushedFcn);
 verifyTrue(testCase, isvalid(app.ReviewWhileNavigatingCheckBox));
 verifyTrue(testCase, isvalid(app.ReviewFindingsButton));
 verifyNotEmpty(testCase, app.ReviewFindingsButton.ButtonPushedFcn);
+verifyTrue(testCase, isvalid(app.CensorSelectedTrackButton));
+verifyTrue(testCase, isvalid(app.CensorStatusLabel));
+verifyNotEmpty(testCase, app.CensorSelectedTrackButton.ButtonPushedFcn);
 
 callback = app.CreateFromPredictionButton.ButtonPushedFcn;
 callback(app.CreateFromPredictionButton, []);
@@ -157,6 +160,32 @@ r.display.frame = 1;
 instance = score_resolveSelectedTrackForFrame(app, r);
 verifyEqual(testCase, instance.track_id, uint64(1));
 verifyEqual(testCase, app.SelectedObjectLabelCell, 1);
+
+% Censoring is explicit and visibly distinct. Merely touching an image
+% boundary did not create a record; a human record turns the object
+% magenta and can be removed without changing its identity.
+score_updateSelectedObjectFields(app);
+verifyTrue(testCase, contains(app.CensorStatusLabel.Text, 'Usable GT'));
+[censorModel, status] = score_getCellModel(r);
+verifyEqual(testCase, status, 'ok');
+[~, censorFamily] = cellModel.familyIndex(censorModel, 'reviewed tracks');
+[censorModel, ~] = cellModel.setCensoring( ...
+    censorModel, censorFamily, 1, 1, 1, 'Scope', 'all', ...
+    'Reason', 'truncated_at_roi_boundary');
+r.cellModel = censorModel;
+score_updateSelectedObjectFields(app);
+verifyTrue(testCase, contains(app.CensorStatusLabel.Text, 'CENSORED here'));
+score_display(app, 'fast');
+[~, ~, censoredOverlay] = score_makeComposite(r, 1, app.layoutOptions);
+verifyGreaterThan(testCase, double(censoredOverlay(2,2,1)), 0.9);
+verifyLessThan(testCase, double(censoredOverlay(2,2,2)), 0.1);
+verifyGreaterThan(testCase, double(censoredOverlay(2,2,3)), 0.9);
+[censorModel, removal] = cellModel.removeCensoring( ...
+    censorModel, censorFamily, 1);
+verifyEqual(testCase, removal.records_removed, 1);
+r.cellModel = censorModel;
+score_updateSelectedObjectFields(app);
+verifyTrue(testCase, contains(app.CensorStatusLabel.Text, 'Usable GT'));
 
 % Reviewing an unchanged frame is a one-click operation and immediately
 % advances to the next incomplete frame.

@@ -311,6 +311,17 @@ External review hints are advisory and provenance-bearing. They must never
 edit GT automatically or change `report.valid`; the human reviewer decides
 whether the flagged track, parentage or NULL assignment needs correction.
 
+The same persistent findings dialog is also the triage queue for conservative
+censor suggestions. Existing identity-reuse warnings, actionable imported
+review hints, and masks strongly clipped by the *actual ROI image boundary*
+may expose **Censor as suggested [C]** and **Keep usable [K]**. Accepting uses
+the proposed task scope/reason/interval and writes explicit human-review GT;
+keeping the cell writes only `censor_suggestion_decisions.json` beside the
+classifier so the suggestion does not return. Neither a suggestion nor its
+rejection changes training data. A mere border contact, especially contact
+with an internal mother-cavity wall, is not automatically censored. Consecutive
+boundary frames are grouped into one interval to avoid per-frame editing.
+
 Button state rules:
 
 | Status | Initialize GT | Mark reviewed | Validate |
@@ -386,6 +397,27 @@ Score sessions. When `AnnotationSession` is non-empty:
    boundary.
 3. Never copy prediction colors, track IDs, or object overlays into lifecycle
    metadata. Only the editable GT content and manifest determine readiness.
+
+#### Explicit censoring of uncertain cells
+
+Score persists censoring on a reviewed family, TrackID, inclusive frame
+interval, reason and task scope. It is never inferred from geometry: a mask
+that merely touches the ROI edge remains ordinary usable GT. Use **Censor
+selected track...** only when the visible object is actually cut, its identity
+is unknowable, its parentage is ambiguous, or its segmentation is unusable.
+
+Choose the narrowest scope that matches the uncertainty. In particular,
+**Segmentation only: current frame** keeps a clearly identifiable boundary
+cell available to tracking; **Parentage only at birth** keeps its APPEAR,
+tracking and segmentation targets. All-task censoring is reserved for an
+observation that is unusable for every head. The selected cell is shown in
+magenta and the status line names the active scopes. Editing/removing a record
+invalidates the managed approval and requires validation again.
+
+Formatters and benchmark exports carry the records as target-only metadata.
+They mask only the requested losses. A censored tracking gap cannot create a
+synthetic END/APPEAR pair, and parentage censorship creates neither a positive
+mother target nor a false NULL target.
 
 ### 3. Manual acceptance sequence after editing the `.mlapp` files
 

@@ -48,12 +48,25 @@ switch char(string(component.storage))
                 'GT object family "%s" does not exist.', asset.family); end
         instanceRows = model.instances.family_id == familyId;
         relationRows = model.relations.family_id == familyId;
+        censorRows = model.censoring.family_id == familyId;
+        % Preserve the historical hash byte-for-byte when no explicit
+        % censor record exists.  Adding optional schema defaults must not
+        % invalidate every previously approved GT.  Once a record exists,
+        % its scoped semantics become part of the reviewed content hash.
         value = struct( ...
             'family', struct('name', model.families.name{idx}, ...
                 'mask_provider', model.families.mask_provider{idx}, ...
                 'lineage_source', model.families.lineage_source{idx}), ...
             'instances', subsetRows(model.instances, instanceRows), ...
             'relations', subsetRows(model.relations, relationRows));
+        if any(censorRows)
+            selected = subsetRows(model.censoring, censorRows);
+            value.censoring = selected;
+            value.censor_reasons = selectedNamedRows( ...
+                model.censor_reasons,'reason_id',selected.reason_id);
+            value.censor_sources = selectedNamedRows( ...
+                model.censor_sources,'source_id',selected.source_id);
+        end
     otherwise
         value = [];
 end
@@ -74,6 +87,12 @@ names = fieldnames(columns);
 for i = 1:numel(names)
     columns.(names{i}) = columns.(names{i})(keep,:);
 end
+end
+
+function rows = selectedNamedRows(rows,idField,selectedIds)
+if isempty(rows), return; end
+keep = ismember([rows.(idField)],unique(selectedIds));
+rows = rows(keep);
 end
 
 function updateDigest(digest, bytes)

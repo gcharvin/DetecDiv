@@ -38,6 +38,42 @@ knownStates=model.states.state_id;
 usedStates=unique(model.instances.state_id(model.instances.state_id~=0));
 if any(~ismember(usedStates,knownStates)), errors(end+1)="Instances reference unknown states"; end %#ok<AGROW>
 
+cen=model.censoring;
+if any(cen.censor_id==0), errors(end+1)="censor_id must be positive"; end %#ok<AGROW>
+if numel(unique(cen.censor_id))~=numel(cen.censor_id)
+    errors(end+1)="censor_id values must be unique"; %#ok<AGROW>
+end
+if any(~ismember(cen.family_id,fid))
+    errors(end+1)="Censoring records reference unknown families"; %#ok<AGROW>
+end
+if any(cen.track_id==0), errors(end+1)="Censoring track IDs must be positive"; end %#ok<AGROW>
+if any(cen.frame_start==0 | cen.frame_end<cen.frame_start)
+    errors(end+1)="Censoring intervals must use positive ordered frames"; %#ok<AGROW>
+end
+validScopeMask=cellModel.censorScope('all');
+if any(cen.scope_flags==0 | bitand(cen.scope_flags,bitcmp(validScopeMask))~=0)
+    errors(end+1)="Censoring scope flags are invalid"; %#ok<AGROW>
+end
+knownReasons=uint16([model.censor_reasons.reason_id]);
+knownSources=uint8([model.censor_sources.source_id]);
+if any(~ismember(cen.reason_id,knownReasons))
+    errors(end+1)="Censoring records reference unknown reasons"; %#ok<AGROW>
+end
+if any(~ismember(cen.source_id,knownSources))
+    errors(end+1)="Censoring records reference unknown sources"; %#ok<AGROW>
+end
+for i=1:numel(cen.censor_id)
+    overlap=model.instances.family_id==cen.family_id(i) & ...
+        model.instances.track_id==cen.track_id(i) & ...
+        model.instances.frame>=cen.frame_start(i) & ...
+        model.instances.frame<=cen.frame_end(i);
+    if ~any(overlap)
+        warnings(end+1)=sprintf( ... %#ok<AGROW>
+            'Censoring record %u does not overlap its track trajectory', ...
+            cen.censor_id(i));
+    end
+end
+
 rel=model.relations;
 if any(rel.relation_id==0), errors(end+1)="relation_id must be positive"; end %#ok<AGROW>
 if numel(unique(rel.relation_id))~=numel(rel.relation_id), errors(end+1)="relation_id values must be unique"; end %#ok<AGROW>
@@ -62,7 +98,8 @@ end
 
 report=struct('ok',isempty(errors),'errors',{cellstr(errors)},'warnings',{cellstr(warnings)}, ...
     'counts',struct('families',numel(fid),'states',numel(knownStates), ...
-    'instances',numel(oid),'relations',numel(rel.relation_id)));
+    'instances',numel(oid),'relations',numel(rel.relation_id), ...
+    'censoring',numel(cen.censor_id)));
 if p.Results.Throw && ~report.ok
     error('cellModel:InvalidModel','Invalid cell model:\n%s',strjoin(report.errors,newline));
 end

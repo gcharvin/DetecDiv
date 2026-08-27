@@ -87,8 +87,11 @@ for i = 1:numel(entries)
     % reviewed cell model before any lineage observation is exported.
     [tracks,stableFamily] = cellLatentTracker.materializeStableTracks( ...
         trackMaskLabels,model,selectedFrames,trackName);
-    [relations,familyName] = reviewedRelations( ...
+    [relations,familyName,familyId,model] = reviewedRelations( ...
         model,tp.groundTruthFamily,stableFamily,selectedFrames);
+    [censoring,tracks] = reviewedCensoring( ...
+        model,familyId,selectedFrames,tracks);
+    relations = applyRelationCensoring(relations,censoring);
     relations = selectRelations(relations,selectedFrames);
     % A sequence without an explicit mother link is still valid continuous
     % supervision: each unlinked track appearance is formatted as NULL.
@@ -96,6 +99,7 @@ for i = 1:numel(entries)
         relations,tracks,familyName,char(string(roiobj.id)));
     inputFile = fullfile(stageRoot,sprintf('roi_%03d.h5',roiIndex));
     writeStack(inputFile,'/tracks',tracks,'uint32');
+    writeCensoring(inputFile,censoring);
     if ~isempty(gfp), writeStack(inputFile,'/gfp',gfp,'single'); end
     if ~isempty(brightfield)
         writeStack(inputFile,'/brightfield',brightfield,'single');
@@ -126,6 +130,8 @@ for i = 1:numel(entries)
     spec.domain = char(string(tp.trainingDomain));
     spec.ground_truth_family = familyName;
     spec.ground_truth_relations = relations;
+    spec.ground_truth_censoring = censoring;
+    if ~isempty(censoring), spec.censoring_group = '/censoring'; end
     specs(end+1,1) = spec; %#ok<AGROW>
     if exist('detecdiv_progress','file') == 2
         detecdiv_progress(ctx,i/numel(entries), ...
@@ -273,7 +279,10 @@ spec = struct( ...
         'relation_id',{},'child_track_id',{},'parent_track_id',{}, ...
         'event_frame',{},'evidence_mode',{}, ...
         'temporal_parentage_eligible',{}, ...
-        'static_parentage_eligible',{},'exclusion_reason',{}));
+        'static_parentage_eligible',{},'exclusion_reason',{}, ...
+        'explicitly_censored',{},'censor_reason',{}), ...
+    'ground_truth_censoring',emptyCensoring(), ...
+    'censoring_group','');
 end
 
 function stack = sliceStack(stack,frames,name)
@@ -353,7 +362,7 @@ end
 if isLabels, stack = uint32(stack); else, stack = single(stack); end
 end
 
-function [relations,familyName] = reviewedRelations( ...
+function [relations,familyName,familyId,model] = reviewedRelations( ...
         model,requested,stableFamily,selectedFrames)
 model = cellModel.normalize(model);
 [model,~] = cellModel.canonicalizeParentageEvents(model);
@@ -395,7 +404,8 @@ relations = repmat(struct( ...
     'relation_id',0,'child_track_id',0,'parent_track_id',0, ...
     'event_frame',0,'evidence_mode','', ...
     'temporal_parentage_eligible',false, ...
-    'static_parentage_eligible',false,'exclusion_reason',''),numel(rows),1);
+    'static_parentage_eligible',false,'exclusion_reason','', ...
+    'explicitly_censored',false,'censor_reason',''),numel(rows),1);
 for i = 1:numel(rows)
     row = rows(i);
     relations(i).relation_id = double(model.relations.relation_id(row));
@@ -416,7 +426,60 @@ for i = 1:numel(rows)
 end
 end
 
+function [records,tracks] = reviewedCensoring( ...
+        model,familyId,selectedFrames,tracks)
+% Convert source-frame intervals to local formatter intervals.  Merely
+% touching an ROI edge never reaches this function: only persistent,
+% explicit cell-model records are materialized.
+records = emptyCensoring();
+records = cellModel.materializeCensoring(model,familyId,selectedFrames);
+if isempty(records), return; end
+
+trackingMask = bitor(cellModel.censorScope('segmentation'), ...
+    cellModel.censorScope('tracking'));
+for index = 1:numel(records)
+    if bitand(uint16(records(index).scope_flags),trackingMask) == 0
+        continue;
+    end
+    for frame = records(index).frame_start:records(index).frame_end
+        plane = tracks(:,:,frame);
+        plane(plane == uint32(records(index).track_id)) = uint32(0);
+        tracks(:,:,frame) = plane;
+    end
+end
+end
+
+function relations = applyRelationCensoring(relations,censoring)
+if isempty(relations) || isempty(censoring), return; end
+parentageFlag = cellModel.censorScope('parentage');
+for relationIndex = 1:numel(relations)
+    child = relations(relationIndex).child_track_id;
+    eventFrame = relations(relationIndex).event_frame;
+    hit = find([censoring.track_id] == child & ...
+        eventFrame >= [censoring.source_frame_start] & ...
+        eventFrame <= [censoring.source_frame_end] & ...
+        bitand(uint16([censoring.scope_flags]),parentageFlag) ~= 0,1);
+    if isempty(hit), continue; end
+    relations(relationIndex).temporal_parentage_eligible = false;
+    relations(relationIndex).static_parentage_eligible = false;
+    relations(relationIndex).exclusion_reason = ...
+        'explicitly_censored_parentage';
+    relations(relationIndex).explicitly_censored = true;
+    relations(relationIndex).censor_reason = censoring(hit).reason;
+end
+end
+
+function records = emptyCensoring()
+records = struct('censor_id',{},'track_id',{}, ...
+    'frame_start',{},'frame_end',{}, ...
+    'source_frame_start',{},'source_frame_end',{}, ...
+    'scope_flags',{},'scopes',{},'reason',{},'source',{});
+end
+
 function assertRelationsMaterialized(relations,tracks,familyName,roiId)
+if ~isempty(relations) && isfield(relations,'explicitly_censored')
+    relations = relations(~[relations.explicitly_censored]);
+end
 materializedIds = unique(uint64(tracks(tracks > 0)));
 parentIds = uint64([relations.parent_track_id]);
 childIds = uint64([relations.child_track_id]);
@@ -427,6 +490,25 @@ error('cellLatentModel:InvalidGroundTruthRelations', ...
      'the selected relations, but those IDs are absent from the selected ' ...
      'materialized GT frames.'],roiId,familyName, ...
     char(strjoin(string(double(missingIds(:).')),',')));
+end
+
+function writeCensoring(filename,records)
+if isempty(records), return; end
+writeVector(filename,'/censoring/censor_id',[records.censor_id],'uint64');
+writeVector(filename,'/censoring/track_id',[records.track_id],'uint64');
+writeVector(filename,'/censoring/frame_start',[records.frame_start],'uint32');
+writeVector(filename,'/censoring/frame_end',[records.frame_end],'uint32');
+writeVector(filename,'/censoring/source_frame_start', ...
+    [records.source_frame_start],'uint32');
+writeVector(filename,'/censoring/source_frame_end', ...
+    [records.source_frame_end],'uint32');
+writeVector(filename,'/censoring/scope_flags',[records.scope_flags],'uint16');
+end
+
+function writeVector(filename,dataset,values,datatype)
+values = cast(values(:),datatype);
+h5create(filename,dataset,size(values),'Datatype',datatype);
+h5write(filename,dataset,values);
 end
 
 function parameters = linkerParameters(p)

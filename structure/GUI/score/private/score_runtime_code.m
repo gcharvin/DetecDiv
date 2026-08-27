@@ -134,6 +134,8 @@ classdef score < matlab.apps.AppBase
         UIAnnotationTable               matlab.ui.control.Table
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
+        CensorStatusLabel                matlab.ui.control.Label
+        CensorSelectedTrackButton        matlab.ui.control.Button
         ReviewFindingsButton             matlab.ui.control.Button
         MarkThroughCurrentButton         matlab.ui.control.Button
         ReviewWhileNavigatingCheckBox    matlab.ui.control.CheckBox
@@ -2200,6 +2202,9 @@ end
                 app.SelectedCellStateDropDownLabel.Position = [28 113 102 22];
                 app.SelectedCellStateDropDown.Position = [145 113 100 22];
                 app.CellModelStatusLabel.Position = [16 71 250 22];
+                app.CensorSelectedTrackButton.Visible = 'on';
+                app.CensorStatusLabel.Visible = 'on';
+                score_updateSelectedCensoringFields(app);
             else
                 app.UIAnnotationTable.Position = [13 519 589 279];
                 positions = {[4 832 95 23],[103 832 109 23], ...
@@ -2220,6 +2225,8 @@ end
                 app.SelectedCellStateDropDownLabel.Position = [28 34 102 22];
                 app.SelectedCellStateDropDown.Position = [145 34 100 22];
                 app.CellModelStatusLabel.Position = [16 7 133 22];
+                app.CensorSelectedTrackButton.Visible = 'off';
+                app.CensorStatusLabel.Visible = 'off';
             end
         end
 
@@ -2242,6 +2249,7 @@ end
                              char(string(component.groundTruth.valueField))]}]; %#ok<AGROW>
                     case 'cell_model_family'
                         candidates{end+1} = char(string(component.groundTruth.family)); %#ok<AGROW>
+                        candidates{end+1} = 'censoring'; %#ok<AGROW>
                         if strcmp(component.kind, 'tracking')
                             candidates = [candidates, { ...
                                 char(string(component.groundTruth.maskProvider)), ...
@@ -4727,6 +4735,20 @@ end
             end
         end
 
+        function CensorSelectedTrackButtonPushed(app, event) %#ok<INUSD>
+            try
+                changed = score_editSelectedTrackCensoring(app);
+                if changed
+                    app.AnnotationLastValidationValid = false;
+                    score_updateSelectedObjectFields(app);
+                    app.refreshAnnotationSessionUI();
+                end
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, ...
+                    'Cell censoring');
+            end
+        end
+
         function showAnnotationFrame(app, frame)
             roi = app.getSelectedROI();
             if isempty(roi), return; end
@@ -4758,8 +4780,62 @@ end
                 'OnGo', @(issue,row) app.goToAnnotationFinding(issue,row), ...
                 'OnRepair', @(issue) app.repairAnnotationFindings(issue), ...
                 'OnRepairAll', @(issues) app.repairAnnotationFindings(issues), ...
+                'OnAcceptCensor', @(issue) ...
+                    app.acceptAnnotationCensorSuggestion(issue), ...
+                'OnKeepUsable', @(issue) ...
+                    app.keepAnnotationCensorSuggestion(issue), ...
                 'OnRefresh', @() session.findings(), ...
                 'OnIsStale', @() session.findingsAreStale());
+        end
+
+        function report = acceptAnnotationCensorSuggestion(app, issue)
+            if isempty(app.AnnotationSession) || ...
+                    ~logical(issue.suggested_censor)
+                error('score:NotCensorSuggestion', ...
+                    'The selected finding is not an actionable censor suggestion.');
+            end
+            roi = app.getSelectedROI();
+            if isempty(roi), error('score:NoROI', 'No ROI is selected.'); end
+            familyId = uint32(issue.family_id);
+            trackId = uint64(issue.focus_track_id);
+            frameStart = uint32(issue.suggested_frame_start);
+            frameEnd = uint32(issue.suggested_frame_end);
+            scope = uint16(issue.suggested_scope_flags);
+            reason = char(string(issue.suggested_reason));
+            if familyId < 1 || trackId < 1 || frameStart < 1 || ...
+                    frameEnd < frameStart || scope < 1 || isempty(reason)
+                error('score:IncompleteCensorSuggestion', ...
+                    'The selected suggestion lacks a valid track, interval, scope, or reason.');
+            end
+            [model, modelStatus] = score_getCellModel(roi);
+            if ~strcmp(modelStatus, 'ok')
+                [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+            end
+            [model, applied] = cellModel.setCensoring(model, familyId, ...
+                trackId, frameStart, frameEnd, 'Scope', scope, ...
+                'Reason', reason, 'Source', 'human_review', 'Fast', true);
+            roi.saveCellModel(model, 'Fast', true);
+            % Remove the treated row from the current snapshot before the
+            % lifecycle notification invalidates the session cache.
+            report = app.AnnotationSession.recordCensorSuggestionDecision( ...
+                issue, 'censored');
+            app.notifyAnnotationChanged('censoring', ...
+                double(applied.frame_start):double(applied.frame_end), ...
+                'Save', false);
+            app.AnnotationSession.retainFindingsSnapshot(report);
+            score_updateSelectedObjectFields(app);
+            app.refreshAnnotationSessionUI();
+        end
+
+        function report = keepAnnotationCensorSuggestion(app, issue)
+            if isempty(app.AnnotationSession) || ...
+                    ~logical(issue.suggested_censor)
+                error('score:NotCensorSuggestion', ...
+                    'The selected finding is not an actionable censor suggestion.');
+            end
+            report = app.AnnotationSession.recordCensorSuggestionDecision( ...
+                issue, 'keep');
+            app.refreshAnnotationSessionUI();
         end
 
         function goToAnnotationFinding(app, issue, row)
@@ -4783,6 +4859,7 @@ end
         end
 
         function focusAnnotationValidationIssue(app, issue)
+            totalTimer = tic;
             roi = app.getSelectedROI();
             if isempty(roi) || isempty(issue), return; end
             frame = double(issue.focus_frame);
@@ -4791,7 +4868,12 @@ end
             end
             if ~isfinite(frame) || frame < 1, return; end
 
-            [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+            modelTimer = tic;
+            [model, modelStatus] = score_getCellModel(roi);
+            if ~strcmp(modelStatus, 'ok')
+                [model, ~] = roi.loadCellModel('MigrateLegacy', true);
+            end
+            modelSeconds = toc(modelTimer);
             [familyIndex, familyId] = cellModel.familyIndex( ...
                 model, issue.family_id);
             if isempty(familyIndex) && ~isempty(app.AnnotationSession)
@@ -4807,7 +4889,7 @@ end
                 end
             end
             if isempty(familyIndex)
-                app.showAnnotationFrame(frame);
+                app.showAnnotationFindingFrame(roi, frame);
                 return;
             end
             provider = char(string(model.families.mask_provider{familyIndex}));
@@ -4818,7 +4900,7 @@ end
             instance = cellModel.findTrackInstance(model, familyId, frame, ...
                 focusTrack);
             if isempty(instance)
-                app.showAnnotationFrame(frame);
+                app.showAnnotationFindingFrame(roi, frame);
                 return;
             end
 
@@ -4829,11 +4911,28 @@ end
                     break;
                 end
             end
+
+            % Finding navigation is inspection, not sequential review: do
+            % not call reviewFrameBeforeNavigation here.  That path may save
+            % coverage and rebuild the whole findings audit.  Stage frame,
+            % row and object identity first, then render at most once.
+            previousFrame = roi.display.frame;
+            roi.display.frame = frame;
+            app.FrameSlider.Value = frame;
+            app.FrameEditField.Value = frame;
+            app.FrameEditField_2.Value = frame;
+            selectionChanged = false;
             if ~isempty(targetRow)
-                app.UIAnnotationTable.Selection = [targetRow 1];
-                app.UIAnnotationTableSelectionChanged([]);
+                currentSelection = app.UIAnnotationTable.Selection;
+                selectionChanged = isempty(currentSelection) || ...
+                    currentSelection(1) ~= targetRow;
+                if selectionChanged
+                    app.UIAnnotationTable.Selection = [targetRow 1];
+                    if score_isEditMode(app)
+                        app.DisplaySettings.Movie.paintChannel = provider;
+                    end
+                end
             end
-            app.showAnnotationFrame(frame);
 
             pix = roi.findChannelID(provider);
             channelIndex = find(strcmp(roi.display.channel, provider), ...
@@ -4850,6 +4949,12 @@ end
             app.SelectedObjectChannelIdx = channelIndex;
             app.SelectedObjectRoiId = string(roi.id);
             app.KeepSelection = true;
+
+            renderTimer = tic;
+            if previousFrame ~= frame || selectionChanged
+                score_display(app, 'refresh');
+            end
+            renderSeconds = toc(renderTimer);
             score_updateSelectedObjectFields(app);
 
             try
@@ -4877,6 +4982,26 @@ end
                 char(string(roi.id)), frame, size(roi.image,4), ...
                 focusTrack);
             drawnow limitrate;
+            totalSeconds = toc(totalTimer);
+            if totalSeconds >= 2
+                fprintf([ ...
+                    '[score] Go to finding: %.2f s total ' ...
+                    '(cell model %.2f s, render %.2f s).\n'], ...
+                    totalSeconds, modelSeconds, renderSeconds);
+            end
+        end
+
+        function showAnnotationFindingFrame(app, roi, frame)
+            % Minimal fallback when a finding has no selectable cell.
+            % Deliberately bypasses "Review while navigating" side effects.
+            previousFrame = roi.display.frame;
+            roi.display.frame = frame;
+            app.FrameSlider.Value = frame;
+            app.FrameEditField.Value = frame;
+            app.FrameEditField_2.Value = frame;
+            if previousFrame ~= frame
+                score_display(app, 'refresh');
+            end
         end
 
         function summary = removeAnnotationParentageIssues(app, issues)
@@ -8067,6 +8192,21 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.CellModelStatusLabel.Position = [16 7 133 22];
             app.CellModelStatusLabel.Text = 'No cellular object model';
 
+            % Create CensorSelectedTrackButton
+            app.CensorSelectedTrackButton = uibutton(app.ObjectspanelPanel, 'push');
+            app.CensorSelectedTrackButton.ButtonPushedFcn = createCallbackFcn(app, @CensorSelectedTrackButtonPushed, true);
+            app.CensorSelectedTrackButton.Visible = 'off';
+            app.CensorSelectedTrackButton.Position = [15 35 230 28];
+            app.CensorSelectedTrackButton.Text = 'Censor selected track...';
+
+            % Create CensorStatusLabel
+            app.CensorStatusLabel = uilabel(app.ObjectspanelPanel);
+            app.CensorStatusLabel.Visible = 'off';
+            app.CensorStatusLabel.Position = [15 5 330 22];
+            app.CensorStatusLabel.Text = 'Censoring: select a tracked cell';
+            app.CensorStatusLabel.Tooltip = ['Boundary contact alone ' ...
+                'does not censor a cell; censor only visibly truncated ' ...
+                'or genuinely ambiguous observations.'];
             % Create NewAnnotationButton
             app.NewAnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.NewAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @NewAnnotationButtonPushed, true);

@@ -326,6 +326,100 @@ verifyTrue(testCase, cellModel.validate(fastModel).ok);
 verifyTrue(testCase, cellModel.validate(model).ok);
 end
 
+function testExplicitTaskScopedCensoringRoundTrip(testCase)
+model = modelFixture();
+for frame = 1:3
+    % Track 1 touches the image boundary. That geometry alone must never
+    % create censoring; only the explicit action below may do so.
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+verifyEmpty(testCase, model.censoring.censor_id);
+verifyFalse(testCase, any(cellModel.isCensored(model, 1, 1, 1:3, 'all')));
+
+[model, report] = cellModel.setCensoring(model, 1, 1, 1, 3, ...
+    'Scope', {'appearance','parentage'}, ...
+    'Reason', 'truncated_at_roi_boundary');
+verifyEqual(testCase, report.frame_start, uint32(1));
+verifyEqual(testCase, report.frame_end, uint32(3));
+verifyTrue(testCase, all(cellModel.isCensored( ...
+    model, 1, 1, 1:3, 'parentage')));
+verifyFalse(testCase, any(cellModel.isCensored( ...
+    model, 1, 1, 1:3, 'tracking')));
+verifyTrue(testCase, cellModel.validate(model).ok);
+
+filename = [tempname '.h5'];
+cleanup = onCleanup(@()deleteIfPresent(filename)); %#ok<NASGU>
+cellModel.writeH5(filename, model, 'KeepBackup', false);
+loaded = cellModel.readH5(filename);
+verifyEqual(testCase, loaded.censoring, model.censoring);
+metadata = cellModel.readMetadata(filename);
+verifyTrue(testCase, isfield(metadata, 'censor_reasons'));
+verifyTrue(testCase, isfield(metadata, 'censor_scope_flags'));
+
+fastFilename = [tempname '.h5'];
+fastCleanup = onCleanup(@()deleteIfPresent(fastFilename)); %#ok<NASGU>
+fastReport = cellModel.writeH5(fastFilename, model, ...
+    'KeepBackup', false, 'Fast', true);
+verifyEqual(testCase, fastReport.counts.instances, ...
+    numel(model.instances.object_id));
+fastLoaded = cellModel.readH5(fastFilename);
+verifyEqual(testCase, fastLoaded.censoring, model.censoring);
+verifyEqual(testCase, fastLoaded.instances.object_id, ...
+    model.instances.object_id);
+end
+
+function testCensoringMaterializationUsesSelectedFrameCoordinates(testCase)
+model = modelFixture();
+for frame = 1:6
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+[model, ~] = cellModel.setCensoring(model, 1, 2, 2, 5, ...
+    'Scope', {'tracking','parentage'}, ...
+    'Reason', 'ambiguous_identity');
+
+records = cellModel.materializeCensoring(model, 1, [1 2 4 5 6]);
+verifyEqual(testCase, numel(records), 1);
+verifyEqual(testCase, records.frame_start, 2);
+verifyEqual(testCase, records.frame_end, 4);
+verifyEqual(testCase, records.source_frame_start, 2);
+verifyEqual(testCase, records.source_frame_end, 5);
+verifyEqual(testCase, records.track_id, 2);
+verifyEqual(testCase, string(records.scopes), ...
+    ["tracking";"parentage"]);
+
+% If the selected sequence reorders the same source frames, each local run
+% remains explicit instead of silently widening the source interval.
+split = cellModel.materializeCensoring(model, 1, [2 6 3]);
+verifyEqual(testCase, numel(split), 2);
+verifyEqual(testCase, [split.frame_start], [1 3]);
+verifyEqual(testCase, [split.source_frame_start], [2 3]);
+end
+
+function testCensoringFollowsTrackEdits(testCase)
+model = modelFixture();
+for frame = 1:3
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+[model, ~] = cellModel.setCensoring(model, 1, 1, 1, 3, ...
+    'Scope', 'all', 'Reason', 'ambiguous_identity');
+[model, ~] = cellModel.reassignTrack(model, 1, 2, 1, 9, 'frame');
+verifyTrue(testCase, all(cellModel.isCensored(model, 1, 1, [1 3], 'tracking')));
+verifyFalse(testCase, cellModel.isCensored(model, 1, 1, 2, 'tracking'));
+verifyTrue(testCase, cellModel.isCensored(model, 1, 9, 2, 'tracking'));
+verifyTrue(testCase, cellModel.validate(model).ok);
+
+[model, report] = cellModel.removeTrack(model, 1, 9);
+verifyEqual(testCase, report.censoring_removed, 1);
+verifyFalse(testCase, any(model.censoring.track_id == 9));
+verifyTrue(testCase, cellModel.validate(model).ok);
+end
+
 function model = modelFixture()
 model = cellModel.create('test');
 model.families.family_id = uint32(1);

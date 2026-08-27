@@ -16,6 +16,7 @@ report = struct( ...
     'issues', annotationManager.emptyValidationIssues(), ...
     'sourcePath', '', ...
     'sourceId', '', ...
+    'resolved', 0, ...
     'total', 0);
 
 root = char(string(classif.path));
@@ -39,8 +40,9 @@ items = payload.items;
 roiId = char(string(roiObj.id));
 reviewFrames = unique(round(double(p.Results.ReviewFrames(:).')));
 familyId = uint32(0);
+model = [];
 if p.Results.ResolveFamily
-    familyId = reviewedFamilyId(roiObj, classif);
+    [familyId, model] = reviewedFamily(roiObj, classif);
 end
 for i = 1:numel(items)
     item = items(i);
@@ -54,6 +56,12 @@ for i = 1:numel(items)
     parent = positiveUint64(fieldDouble(item, 'parent_track_id', NaN));
     eventId = fieldText(item, 'hint_id', fieldText(item, 'event_id', ''));
     note = fieldText(item, 'note', '');
+    scope = decisionScope(decision);
+    if ~isempty(model) && familyId > 0 && child > 0 && scope > 0 && ...
+            cellModel.isCensored(model, familyId, child, frame, scope)
+        report.resolved = report.resolved + 1;
+        continue;
+    end
     summary = decisionSummary(decision, child);
     message = sprintf([ ...
         'Imported review hint %s at frame %d (child Track %s, ' ...
@@ -74,14 +82,42 @@ for i = 1:numel(items)
         'parent_track_id', parent, ...
         'child_track_id', child, ...
         'focus_track_id', child, ...
+        'suggested_censor', scope > 0 && familyId > 0 && child > 0, ...
+        'suggested_scope_flags', uint16(scope), ...
+        'suggested_reason', decisionReason(decision), ...
+        'suggested_frame_start', uint32(round(frame)), ...
+        'suggested_frame_end', uint32(round(frame)), ...
+        'suggestion_confidence', hintConfidence(decision), ...
         'repairable', false);
     report.issues(end+1,1) = issue;
 end
 report.total = numel(report.issues);
 end
 
-function familyId = reviewedFamilyId(roiObj, classif)
+function value = decisionReason(decision)
+switch decision
+    case 'ambiguous'
+        value = 'ambiguous_parentage';
+    case 'tracking_error'
+        value = 'ambiguous_identity';
+    case 'skip'
+        value = 'other';
+    otherwise
+        value = '';
+end
+end
+
+function value = hintConfidence(decision)
+if any(strcmp(decision, {'ambiguous','tracking_error','skip'}))
+    value = 1.0; % An imported human review decision, not model confidence.
+else
+    value = NaN;
+end
+end
+
+function [familyId, model] = reviewedFamily(roiObj, classif)
 familyId = uint32(0);
+model = [];
 try
     spec = annotationManager.specForClassifier(classif);
     rows = find(strcmp({spec.components.storage}, 'cell_model_family'));
@@ -96,6 +132,21 @@ try
         end
     end
 catch
+    model = [];
+end
+end
+
+function scope = decisionScope(decision)
+switch decision
+    case 'ambiguous'
+        scope = cellModel.censorScope('parentage');
+    case 'tracking_error'
+        scope = cellModel.censorScope('tracking');
+    case 'skip'
+        scope = cellModel.censorScope('all');
+    otherwise
+        % "not_bud" is a useful reviewed NULL decision, not a censor.
+        scope = uint16(0);
 end
 end
 

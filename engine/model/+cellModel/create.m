@@ -30,6 +30,25 @@ model.instances.mask_label = zeros(0,1,'uint32');
 model.instances.track_id = zeros(0,1,'uint64');
 model.instances.state_id = zeros(0,1,'uint16');
 
+% Optional, backward-compatible quality exclusions.  Censoring is an
+% explicit human/model annotation, never inferred merely because a mask
+% touches the ROI boundary.  scope_flags is a bit mask defined by
+% cellModel.censorScope().
+model.censoring = struct();
+model.censoring.censor_id = zeros(0,1,'uint64');
+model.censoring.family_id = zeros(0,1,'uint32');
+model.censoring.track_id = zeros(0,1,'uint64');
+model.censoring.frame_start = zeros(0,1,'uint32');
+model.censoring.frame_end = zeros(0,1,'uint32');
+model.censoring.scope_flags = zeros(0,1,'uint16');
+model.censoring.reason_id = zeros(0,1,'uint16');
+model.censoring.source_id = zeros(0,1,'uint8');
+
+model.censor_reasons = defaultCensorReasons();
+model.censor_sources = struct( ...
+    'source_id', {uint8(1), uint8(2)}, ...
+    'name', {'human_review', 'imported_review'});
+
 model.relations = struct();
 model.relations.relation_id = zeros(0,1,'uint64');
 model.relations.family_id = zeros(0,1,'uint32');
@@ -42,4 +61,18 @@ model.relations.confidence = zeros(0,1,'single');
 model.relation_types = struct('type_id', uint8(1), 'name', 'parent');
 model.provenance = struct('created_at', nowText, 'updated_at', nowText, ...
     'source', 'detecdiv', 'source_version', '1');
+end
+
+function reasons = defaultCensorReasons()
+reasons = struct( ...
+    'reason_id', {uint16(1), uint16(2), uint16(3), uint16(4), uint16(5)}, ...
+    'name', {'truncated_at_roi_boundary', 'ambiguous_identity', ...
+        'ambiguous_parentage', 'unusable_segmentation', 'other'}, ...
+    'description', { ...
+        ['The cell or mask is visibly cut by the ROI boundary. Merely ' ...
+         'touching the boundary is not sufficient.'], ...
+        'The biological identity cannot be assigned reliably.', ...
+        'The mother/NULL lineage decision cannot be assigned reliably.', ...
+        'The segmentation is unusable for the selected evaluation units.', ...
+        'Human-reviewed exclusion for another documented reason.'});
 end
