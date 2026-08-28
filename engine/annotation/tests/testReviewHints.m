@@ -74,6 +74,34 @@ verifyEqual(testCase, fastReport.issues.family_id, uint32(0), ...
     'The lightweight UI count must not load or resolve a cell-model family.');
 end
 
+function testLatentHintsLoadBesidePriorReviewAndPreserveConfidence(testCase)
+folder = tempname;
+mkdir(folder);
+cleanup = onCleanup(@() removeFolder(folder)); %#ok<NASGU>
+writeJson(fullfile(folder, 'review_hints.json'), struct( ...
+    'classifier_id','review_demo','source_id','prior', ...
+    'items',hint('prior_1','R1',2,8,0,'not_bud')));
+latent = hint('latent_1','R1',3,12,4,'latent_parent');
+latent.suggestion_confidence = 0.75;
+writeJson(fullfile(folder, 'review_hints_latent_v4.json'), struct( ...
+    'classifier_id','review_demo','source_id','latent_v4', ...
+    'items',latent));
+
+classif = struct('path',folder,'strid','review_demo', ...
+    'classifierPkg','','category',{{'Tracking'}},'classes',{{'tracks'}}, ...
+    'executionParam',struct(),'trainingParam',struct(),'channelName',{{'mask'}});
+roiObj = struct('id','R1');
+report = annotationManager.reviewHints(classif,roiObj, ...
+    'ResolveFamily',false);
+verifyEqual(testCase,report.total,2);
+verifyTrue(testCase,contains(report.sourceId,'prior'));
+verifyTrue(testCase,contains(report.sourceId,'latent_v4'));
+verifyEqual(testCase,report.issues(2).component,'Latent v4 suggestion');
+verifyEqual(testCase,report.issues(2).focus_track_id,uint64(12));
+verifyEqual(testCase,report.issues(2).parent_track_id,uint64(4));
+verifyEqual(testCase,report.issues(2).suggestion_confidence,0.75);
+end
+
 function value = hint(id, roiId, frame, child, parent, decision)
 value = struct('hint_id', id, 'roi_id', roiId, 'frame', frame, ...
     'child_track_id', child, 'parent_track_id', parent, ...
