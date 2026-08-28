@@ -139,6 +139,24 @@ for frame = 1:3
 end
 [model, ~] = cellModel.reassignTrack(model, 1, 2, 1, 2, 'to-last');
 r.saveCellModel(model);
+
+% The Selected track field is a read-only-in-spirit navigator: entering a
+% stable identity jumps to its first instance without reassigning any GT.
+score_refreshObjectDisplayUI(app);
+verifyEqual(testCase, char(app.SelectedTrackIDEditField.Editable), 'on');
+trackCallback = app.SelectedTrackIDEditField.ValueChangedFcn;
+app.SelectedTrackIDEditField.Value = '2';
+trackCallback(app.SelectedTrackIDEditField, struct('Value', '2'));
+verifyEqual(testCase, r.display.frame, 2);
+verifyEqual(testCase, app.SelectedTrackIDCell, 2);
+verifyEqual(testCase, app.SelectedObjectLabelCell, 1);
+verifyTrue(testCase, contains(app.CellModelStatusLabel.Text, ...
+    'Track 2 selected at its first frame (2)'));
+[navigatedModel, navigatedStatus] = score_getCellModel(r);
+verifyEqual(testCase, navigatedStatus, 'ok');
+verifyEqual(testCase, navigatedModel.instances.track_id, ...
+    model.instances.track_id, 'Track lookup must not mutate identities.');
+
 r.display.frame = 1;
 score_display(app, 'fast');
 [~, ~, overlay1] = score_makeComposite(r, 1, app.layoutOptions);

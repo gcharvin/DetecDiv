@@ -4457,14 +4457,19 @@ end
             if ~isfinite(value) || value < 1 || value ~= round(value)
                 score_updateSelectedObjectFields(app);
                 uialert(app.ScoreAppUIFigure, ...
-                    'Track ID must be a positive integer.', 'Assign track');
+                    'Track ID must be a positive integer.', 'Find track');
                 return;
             end
             try
-                score_assignSelectedTrack(app, value, 'frame');
+                app.goToTrackStart(value);
             catch ME
                 score_updateSelectedObjectFields(app);
-                uialert(app.ScoreAppUIFigure, ME.message, 'Assign track');
+                try
+                    app.CellModelStatusLabel.Text = ME.message;
+                    app.CellModelStatusLabel.Tooltip = ME.message;
+                catch
+                end
+                uialert(app.ScoreAppUIFigure, ME.message, 'Find track');
             end
         end
 
@@ -4849,6 +4854,59 @@ end
             end
         end
 
+        function goToTrackStart(app, trackId)
+            % The human-facing track field is a navigator. Track editing
+            % remains available through the explicit context-menu actions,
+            % so typing an ID can never mutate the ground truth.
+            roi = app.getSelectedROI();
+            if isempty(roi)
+                error('score:NoSelectedROI', 'No ROI is selected.');
+            end
+            [selectedRoi, channelName] = score_selectedObjectChannel(app);
+            if isempty(selectedRoi) || isempty(channelName) || ...
+                    string(selectedRoi.id) ~= string(roi.id)
+                error('score:NoSelectedObjectChannel', ...
+                    'Select an object annotation channel first.');
+            end
+            [model, modelStatus] = score_getCellModel(roi);
+            if ~strcmp(modelStatus, 'ok')
+                error('score:MissingCellModel', ...
+                    'No valid cellular object model is loaded.');
+            end
+            cfg = score_getObjectDisplayConfig(roi, channelName);
+            [familyIndex, familyId, familyName] = ...
+                score_resolveCellModelFamily(model, cfg, channelName);
+            if isempty(familyIndex)
+                error('score:MissingObjectFamily', ...
+                    'No object family is associated with the selected channel.');
+            end
+            rows = model.instances.family_id == familyId & ...
+                model.instances.track_id == uint64(trackId);
+            if ~any(rows)
+                error('score:TrackNotFound', ...
+                    ['Track %u does not exist in object family "%s". ' ...
+                     'It may only be referenced by a stale parentage relation.'], ...
+                    uint64(trackId), familyName);
+            end
+            firstFrame = min(model.instances.frame(rows));
+            issue = annotationManager.newValidationIssue( ...
+                'code', 'track_lookup', 'severity', 'warning', ...
+                'component', 'Tracking', ...
+                'summary', sprintf('Track %u', uint64(trackId)), ...
+                'family_id', familyId, ...
+                'event_frame', firstFrame, ...
+                'focus_frame', firstFrame, ...
+                'focus_track_id', uint64(trackId));
+            app.focusAnnotationValidationIssue(issue);
+            message = sprintf('Track %u selected at its first frame (%u)', ...
+                uint64(trackId), firstFrame);
+            try
+                app.CellModelStatusLabel.Text = message;
+                app.CellModelStatusLabel.Tooltip = message;
+            catch
+            end
+        end
+
         function report = repairAnnotationFindings(app, issues)
             repair = app.removeAnnotationParentageIssues(issues);
             if repair.relationsRemoved > 0
@@ -4867,6 +4925,32 @@ end
                 frame = double(issue.event_frame);
             end
             if ~isfinite(frame) || frame < 1, return; end
+
+            focusTrackForStatus = uint64(issue.focus_track_id);
+            if focusTrackForStatus < 1 && isfield(issue, 'child_track_id')
+                focusTrackForStatus = uint64(issue.child_track_id);
+            end
+            missingTrackForStatus = uint64(0);
+            if isfield(issue, 'missing_track_id')
+                missingTrackForStatus = uint64(issue.missing_track_id);
+            end
+            if missingTrackForStatus > 0
+                contextMessage = sprintf( ...
+                    'Missing Track %u; showing related Track %u at frame %d', ...
+                    missingTrackForStatus, focusTrackForStatus, frame);
+            elseif focusTrackForStatus > 0
+                contextMessage = sprintf( ...
+                    'Validation finding: Track %u at frame %d', ...
+                    focusTrackForStatus, frame);
+            else
+                contextMessage = sprintf( ...
+                    'Validation finding at frame %d', frame);
+            end
+            try
+                app.CellModelStatusLabel.Text = contextMessage;
+                app.CellModelStatusLabel.Tooltip = contextMessage;
+            catch
+            end
 
             modelTimer = tic;
             [model, modelStatus] = score_getCellModel(roi);
@@ -5160,7 +5244,8 @@ end
             app.SelectedTrackIDEditField.ValueChangedFcn = ...
                 @(src, event) SelectedTrackIDEditFieldValueChanged(app, event); %#ok<NASGU>
             app.SelectedTrackIDEditField.Tooltip = ...
-                'Edit the selected object track on the current frame.';
+                ['Enter a Track ID and press Enter to select it at its ' ...
+                 'first frame. This field does not edit Track IDs.'];
             app.CreateFromPredictionButton.Tooltip = ...
                 ['Initialize editable GT from the model prediction, an existing ' ...
                  'object family, a segmentation mask, or blank content.'];

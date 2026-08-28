@@ -42,7 +42,7 @@ app.DisplayCriterionDropDown.Enable = onOff(~strcmp(cfg.mode, 'normal'));
 app.SemanticValueDropDown.Enable = onOff(isSemantic);
 app.SemanticValueColorPicker.Enable = onOff(isSemantic);
 app.MasklabelEditField.Enable = onOff(strcmp(cfg.mode, 'edit'));
-app.SelectedTrackIDEditField.Editable = 'off';
+app.SelectedTrackIDEditField.Editable = onOff(strcmp(modelStatus, 'ok'));
 
 if strcmp(modelStatus, 'ok')
     setStatus(app, sprintf('Cell model v1: %d families', numel(model.families.family_id)));

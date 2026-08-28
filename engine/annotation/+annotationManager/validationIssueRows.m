@@ -56,6 +56,14 @@ for i = 1:numel(warnings)
         component, 'validation_warning', summary, char(message), ...
         firstFrame(message), NaN, NaN, false, 0, 'warning'); %#ok<AGROW>
 end
+
+% Blocking findings must never be buried below a long advisory queue.
+% Keep the ordering stable inside each severity group so issue_index still
+% points to the exact structured issue used by Go/Repair callbacks.
+if ~isempty(rows)
+    blocking = strcmpi(string({rows.severity}), 'error');
+    rows = [rows(blocking); rows(~blocking)];
+end
 end
 
 function tf = isStructuredDuplicate(message, issues)
