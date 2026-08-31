@@ -471,7 +471,8 @@ classdef workflow < matlab.apps.AppBase
                 mode = uidropdown(app.ChannelsPanel, 'Items', {'Movie (MP4)','Sequence (PDF)'}, ...
                     'ItemsData', {'Movie','Sequence'}, 'Value', 'Movie', 'Position', [514 109 126 22]);
                 target = uidropdown(app.ChannelsPanel, 'Items', {'Local','Hub'}, ...
-                    'ItemsData', {'local','hub'}, 'Value', 'local', 'Position', [646 109 74 22]);
+                    'ItemsData', {'local','hub'}, 'Value', 'local', 'Position', [646 109 74 22], ...
+                    'ValueChangedFcn', @(~,~)app.WorkflowMovieTargetChanged());
                 connect = uibutton(app.ChannelsPanel, 'push', 'Text', 'Hub…', ...
                     'Position', [726 109 89 22], 'ButtonPushedFcn', @(~,~)app.WorkflowHubConnectionButtonPushed());
                 generate = uibutton(app.ChannelsPanel, 'push', 'Text', 'Generate raw movie…', ...
@@ -485,6 +486,16 @@ classdef workflow < matlab.apps.AppBase
 
         function WorkflowHubConnectionButtonPushed(app)
             detecdiv_hub_connection_dialog(app.UIFigure);
+        end
+
+        function WorkflowMovieTargetChanged(app)
+            if ~strcmpi(char(string(app.MovieExportControls.target.Value)), 'hub')
+                return;
+            end
+            uialert(app.UIFigure, ...
+                ['Choose a local destination below the Local root configured in Hub connection settings. ' ...
+                 'The path will be mapped to the worker Remote root before rendering.'], ...
+                'Hub output path', 'Icon', 'warning');
         end
 
         function GenerateWorkflowMovieButtonPushed(app)
@@ -501,19 +512,16 @@ classdef workflow < matlab.apps.AppBase
             end
             mode = char(string(app.MovieExportControls.mode.Value));
             target = char(string(app.MovieExportControls.target.Value));
-            outputPath = '';
-            if strcmpi(target, 'local')
-                extension = '*.mp4'; if strcmpi(mode, 'Sequence'), extension = '*.pdf'; end
-                [file, folder] = uiputfile(extension, 'Raw movie export', ...
-                    fullfile(app.Project.io.path, ['raw_' app.getFovLabel(app.SelectedFov)]));
-                if isequal(file, 0), return; end
-                outputPath = fullfile(folder, file);
-            end
+            extension = '*.mp4'; if strcmpi(mode, 'Sequence'), extension = '*.pdf'; end
+            [file, folder] = uiputfile(extension, 'Raw movie export', ...
+                fullfile(app.Project.io.path, ['raw_' app.getFovLabel(app.SelectedFov)]));
+            if isequal(file, 0), return; end
+            outputPath = fullfile(folder, file);
             params = movieExport.setparam(struct());
             params.sourceType = 'raw_fov';
             params.outputMode = mode;
             params.outputPath = outputPath;
-            params.useRunArtifactFolder = strcmpi(target, 'hub');
+            params.useRunArtifactFolder = false;
             params.raw = struct('fovIndex', app.SelectedFov, 'frames', 1:app.getMaxFrame(), ...
                 'channelCfg', app.ChannelCfg, 'framesPerSecond', 10, ...
                 'title', app.getFovLabel(app.SelectedFov));
@@ -4450,7 +4458,7 @@ classdef workflow < matlab.apps.AppBase
 
                     if ~isempty(scoreApp) && isvalid(scoreApp)
 
-                        scoreApp.addROI(roiObj);
+                        scoreApp.addROI(roiObj, '', 'Project', app.Project);
 
                         return;
 
@@ -4466,7 +4474,7 @@ classdef workflow < matlab.apps.AppBase
 
                 clear score
                 rehash
-                score(roiObj);
+                score(roiObj, '', 'Project', app.Project);
 
             catch ME
 

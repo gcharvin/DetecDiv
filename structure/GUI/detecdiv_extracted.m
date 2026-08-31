@@ -7712,13 +7712,17 @@ end
                 end
 
                 openedInExistingScore = false;
+                projectArg = {};
+                if exist('shallowObj', 'var') && isa(shallowObj, 'shallow')
+                    projectArg = {'Project', shallowObj};
+                end
                 try
                     figures=findall(0,'Type','figure');
                     appFigure=findobj(figures,'Name','ScoreApp');
                     if ~isempty(appFigure) && isprop(appFigure(1),'RunningAppInstance')
                         scoreApp = appFigure(1).RunningAppInstance;
                         if ~isempty(scoreApp) && isvalid(scoreApp)
-                            scoreApp.addROI(roiObj);
+                            scoreApp.addROI(roiObj, '', projectArg{:});
                             try
                                 figure(scoreApp.ScoreAppUIFigure);
                             catch
@@ -7738,7 +7742,7 @@ end
                         rehash
                     catch
                     end
-                    score(roiObj);
+                    score(roiObj, '', projectArg{:});
                 end
 
                 d.Value=0.67;

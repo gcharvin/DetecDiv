@@ -1,12 +1,12 @@
-function [runObj, result] = detecdiv_movie_export_submit(shallowObj, params, varargin)
+function [runObj, result] = detecdiv_movie_export_submit(targetObj, params, varargin)
 %detecdiv_movie_export_submit  Run a one-node movie export locally or on Hub.
 %
 % The GUI supplies only a serializable recipe.  This helper builds the
 % transient pipeline template required by the existing pipelineRun/Hub
 % protocol; pipeline2 is intentionally not involved.
 
-if nargin < 1 || isempty(shallowObj) || ~isa(shallowObj, 'shallow')
-    error('detecdiv_movie_export_submit:MissingProject', 'A shallow project is required.');
+if nargin < 1 || isempty(targetObj) || ~(isa(targetObj, 'shallow') || isa(targetObj, 'classi'))
+    error('detecdiv_movie_export_submit:MissingTarget', 'A shallow project or classifier is required.');
 end
 if nargin < 2 || ~isstruct(params)
     error('detecdiv_movie_export_submit:MissingParams', 'Movie export parameters are required.');
@@ -16,13 +16,24 @@ target = lower(char(string(opts.Target)));
 if ~any(strcmp(target, {'local','hub'}))
     error('detecdiv_movie_export_submit:Target', 'Target must be local or hub.');
 end
+if strcmp(target, 'hub')
+    params = localMapHubOutputPath(params);
+end
+isClassifierTarget = isa(targetObj, 'classi');
 
 ctx = struct();
-ctx.shallow = shallowObj;
-ctx.shallowObj = shallowObj;
+if isClassifierTarget
+    ctx.targetRef = localClassifierTargetRef(targetObj);
+    ctx.sel = struct('fovs', [], 'frames', [], ...
+        'rois', localField(params, 'classifierRoiIndices', []), 'channels', {{}});
+else
+    ctx.shallow = targetObj;
+    ctx.shallowObj = targetObj;
+    ctx.sel = struct('fovs', [], 'frames', [], 'rois', [], 'channels', {{}});
+end
 ctx.params = params;
-ctx.sel = struct('fovs', [], 'frames', [], 'rois', [], 'channels', {{}});
-ctx.run = struct('runPolicy', 'restart', 'inputSource', 'existing_project', ...
+inputSource = 'existing_project'; if isClassifierTarget, inputSource = 'classifier_snapshot'; end
+ctx.run = struct('runPolicy', 'restart', 'inputSource', inputSource, ...
     'selectedNodes', {{'movie_export_1'}}, 'nodeParams', struct('movie_export_1', params), ...
     'intent', 'export', 'executionTarget', target);
 ctx.io = struct('existingPolicy', 'replace', 'cachePolicy', 'none');
@@ -30,8 +41,12 @@ ctx.store = struct();
 ctx.allowGUI = false;
 ctx.interactive = false;
 
-runObj = pipelineRunNew(shallowObj, 'movie_export', '', ...
-    'Description', localDescription(params), 'Ctx', ctx, 'Status', 'new');
+if isClassifierTarget
+    runObj = localNewClassifierRun(targetObj, ctx, params);
+else
+    runObj = pipelineRunNew(targetObj, 'movie_export', '', ...
+        'Description', localDescription(params), 'Ctx', ctx, 'Status', 'new');
+end
 pipeObj = localCreatePipeline(runObj, params);
 runObj.pipelineRef = struct('id', pipeObj.strid, 'path', pipeObj.path, 'version', char(string(pipeObj.version)));
 runObj.templateId = runObj.pipelineRef.id;
@@ -42,10 +57,10 @@ pipelineRunSave(runObj);
 
 result = struct('target', target, 'status', 'new', 'job', struct(), 'report', struct());
 if strcmp(target, 'hub')
-    runObj.ctx.params.useRunArtifactFolder = true;
-    runObj.ctx.run.nodeParams.movie_export_1.useRunArtifactFolder = true;
     pipelineRunSave(runObj);
-    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, ...
+    hubProject = [];
+    if ~isClassifierTarget, hubProject = targetObj; end
+    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, hubProject, ...
         'SaveProject', false, 'WriteScope', 'project_update');
     result.status = char(string(job.status));
     result.job = job;
@@ -56,8 +71,13 @@ runObj.status = 'running';
 % pipelineRun persistence deliberately strips handle-heavy objects.  The
 % local execution path still needs the in-memory project; the Hub worker
 % reconstructs it from the submitted project reference instead.
-runObj.ctx.shallow = shallowObj;
-runObj.ctx.shallowObj = shallowObj;
+if isClassifierTarget
+    runObj.ctx.roiList = targetObj.roi;
+    runObj.ctx.rois = targetObj.roi;
+else
+    runObj.ctx.shallow = targetObj;
+    runObj.ctx.shallowObj = targetObj;
+end
 pipelineRunSave(runObj);
 try
     [ctxOut, report] = runPipelineDetecDiv(pipeObj, runObj.ctx);
@@ -72,6 +92,46 @@ catch ME
     pipelineRunSave(runObj);
     rethrow(ME);
 end
+
+function runObj = localNewClassifierRun(classiObj, ctx, params)
+    runId = sprintf('movie_export_%s', datestr(now, 'yyyymmdd_HHMMSSFFF'));
+    runRoot = fullfile(char(string(classiObj.path)), 'pipeline_runs', runId);
+    if exist(runRoot, 'dir') ~= 7, mkdir(runRoot); end
+    runObj = pipelineRun('', runId, 1);
+    runObj.path = runRoot;
+    runObj.description = localDescription(params);
+    runObj.status = 'new';
+    runObj.targetRef = ctx.targetRef;
+    ctx.run.path = runRoot;
+    ctx.run.classiPath = char(string(classiObj.path));
+    runObj.ctx = ctx;
+end
+
+function ref = localClassifierTargetRef(classiObj)
+    ref = struct('type', 'classi', 'projectPath', '', 'projectName', '', ...
+        'fovIds', [], 'roiIds', {{}}, 'classiPath', char(string(classiObj.path)), ...
+        'notes', 'Score movie export');
+end
+end
+
+function params = localMapHubOutputPath(params)
+    requested = char(string(localField(params, 'outputPath', '')));
+    if isempty(strtrim(requested))
+        error('detecdiv_movie_export_submit:HubOutputPathMissing', ...
+            ['Select a local output path before submitting to the Hub. ' ...
+             'It must be under the Local root configured in Hub connection settings.']);
+    end
+    hub = detecdiv_hub_settings_get();
+    [remotePath, mapped] = detecdiv_paths_map_module_path(requested, struct('hub', hub), 'server');
+    if ~mapped
+        error('detecdiv_movie_export_submit:HubOutputPathUnmapped', ...
+            ['The selected output path is not compatible with the Hub path mapping:\n%s\n\n' ...
+             'Configure a matching Local root and Remote root in Hub connection settings, ' ...
+             'then choose a path below that Local root.'], requested);
+    end
+    params.outputPath = remotePath;
+    params.useRunArtifactFolder = false;
+    params.hubOutputPath = struct('localPath', requested, 'remotePath', remotePath);
 end
 
 function pipeObj = localCreatePipeline(runObj, params)

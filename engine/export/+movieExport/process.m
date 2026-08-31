@@ -11,7 +11,7 @@ params = localParams(ctx);
 sourceType = lower(strtrim(char(string(localField(params, 'sourceType', 'score_roi')))));
 
 switch sourceType
-    case 'score_roi'
+    case {'score_roi','score_classifier'}
         [outputPath, kind] = localRenderScore(ctx, params);
     case 'raw_fov'
         [outputPath, kind] = localRenderRawFov(ctx, params);
@@ -143,7 +143,12 @@ function rois = localSelectedRois(ctx, params)
 rois = roi.empty;
 refs = localField(params, 'roiRefs', struct('fovIndex', {}, 'roiIndex', {}, 'id', {}));
 shallowObj = localShallow(ctx);
-if isempty(shallowObj), return; end
+if isempty(shallowObj)
+    % Classifier-scoped Hub jobs attach the selected classifier snapshot
+    % ROI inventory directly to ctx; no shallow project exists in that mode.
+    rois = localField(ctx, 'roiList', localField(ctx, 'rois', roi.empty));
+    return;
+end
 if isempty(refs)
     for f = 1:numel(shallowObj.fov)
         rois = [rois shallowObj.fov(f).roi]; %#ok<AGROW>

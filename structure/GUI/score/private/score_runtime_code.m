@@ -189,6 +189,7 @@ classdef score < matlab.apps.AppBase
 
     properties (Access = public)
         content = struct('ROIList',[]); % Description
+        ProjectContext = [] % owning shallow project when Score was opened from a project UI
         SliderTickLabels % Description
         HistogramEdges % Stocke les bords des bins de l'histogramme
         HistogramData  % Stocke les valeurs de l'histogramme pour chaque canal affiché
@@ -1674,7 +1675,8 @@ end
                 target = uidropdown(app.MoviePanel, ...
                     'Items', {'Local MATLAB session','DetecDiv Hub'}, ...
                     'ItemsData', {'local','hub'}, 'Value', 'local', ...
-                    'Position', [269 38 171 22]);
+                    'Position', [269 38 171 22], ...
+                    'ValueChangedFcn', @(~,~)app.MovieExecutionTargetChanged());
                 connect = uibutton(app.MoviePanel, 'push', ...
                     'Text', 'Hub connection...', 'Position', [269 64 171 22], ...
                     'ButtonPushedFcn', @(~,~)app.MovieHubConnectionButtonPushed());
@@ -1687,6 +1689,17 @@ end
 
         function MovieHubConnectionButtonPushed(app)
             detecdiv_hub_connection_dialog(app.ScoreAppUIFigure);
+        end
+
+        function MovieExecutionTargetChanged(app)
+            if ~strcmpi(app.getMovieExecutionTarget(), 'hub')
+                return;
+            end
+            uialert(app.ScoreAppUIFigure, ...
+                ['The selected output path remains a local path. Before submission it must be ' ...
+                 'translated through Hub connection settings (Local root → Remote root).\n\n' ...
+                 'Choose a path below the configured Local root, or update the two roots with “Hub connection…”.'], ...
+                'Hub output path', 'Icon', 'warning');
         end
 
         function target = getMovieExecutionTarget(app)
@@ -1704,32 +1717,61 @@ end
             if isempty(roilist)
                 error('score:MovieHubNoROI', 'Select at least one ROI before submitting a Hub export.');
             end
-            shallowObj = [];
-            try
-                parentFov = roilist(1).parent;
-                if isa(parentFov, 'fov') && isa(parentFov.parent, 'shallow')
-                    shallowObj = parentFov.parent;
-                end
-            catch
-            end
+            shallowObj = app.resolveScoreHubProject(roilist);
+            classiObj = [];
             if isempty(shallowObj)
-                error('score:MovieHubNoProject', 'The selected ROI is not attached to a shallow project.');
+                try
+                    if isa(roilist(1).parent, 'classi'), classiObj = roilist(1).parent; end
+                catch
+                end
+            end
+            if isempty(shallowObj) && isempty(classiObj)
+                error('score:MovieHubNoTarget', ...
+                    'The selected ROI is attached to neither a shallow project nor a classifier.');
             end
             params = movieExport.setparam(struct());
             params.sourceType = 'score_roi';
             params.outputMode = char(string(app.MovieoutputtypeDropDown.Value));
             params.outputPath = char(string(app.MovieoutputfilenameEditField.Value));
-            params.useRunArtifactFolder = true;
+            params.useRunArtifactFolder = false;
             params.layoutOptions = opts;
-            params.roiRefs = app.scoreMovieRoiRefs(shallowObj, roilist);
-            if isempty(params.roiRefs)
-                error('score:MovieHubNoROI', 'The selected ROI could not be resolved in its project.');
+            targetObj = shallowObj;
+            if isempty(shallowObj)
+                targetObj = classiObj;
+                params.sourceType = 'score_classifier';
+                params.classifierRoiIndices = app.scoreMovieClassifierRoiIndices(classiObj, roilist);
+                if isempty(params.classifierRoiIndices)
+                    error('score:MovieHubNoROI', 'The selected ROI could not be resolved in its classifier.');
+                end
+            else
+                params.roiRefs = app.scoreMovieRoiRefs(shallowObj, roilist);
+                if isempty(params.roiRefs)
+                    error('score:MovieHubNoROI', 'The selected ROI could not be resolved in its project.');
+                end
             end
-            [runObj, result] = detecdiv_movie_export_submit(shallowObj, params, 'Target', 'hub'); %#ok<ASGLU>
+            [runObj, result] = detecdiv_movie_export_submit(targetObj, params, 'Target', 'hub'); %#ok<ASGLU>
             jobId = '';
             try, jobId = char(string(result.job.id)); catch, end
             uialert(app.ScoreAppUIFigure, sprintf('Movie export submitted to Hub.\nRun: %s\nJob: %s', runObj.runId, jobId), ...
                 'Hub movie export', 'Icon', 'success');
+        end
+
+        function indices = scoreMovieClassifierRoiIndices(~, classiObj, roilist)
+            indices = [];
+            for q = 1:numel(roilist)
+                for r = 1:numel(classiObj.roi)
+                    sameRoi = false;
+                    try, sameRoi = classiObj.roi(r) == roilist(q); catch, end
+                    if ~sameRoi
+                        try, sameRoi = strcmp(char(string(classiObj.roi(r).id)), char(string(roilist(q).id))); catch, end
+                    end
+                    if sameRoi
+                        indices(end+1) = r; %#ok<AGROW>
+                        break;
+                    end
+                end
+            end
+            indices = unique(indices, 'stable');
         end
 
         function refs = scoreMovieRoiRefs(app, shallowObj, roilist) %#ok<INUSD>
@@ -1738,15 +1780,79 @@ end
                 for r = 1:numel(shallowObj.fov(f).roi)
                     for q = 1:numel(roilist)
                         try
-                            if shallowObj.fov(f).roi(r) == roilist(q)
+                            sameRoi = shallowObj.fov(f).roi(r) == roilist(q);
+                        catch
+                            sameRoi = false;
+                        end
+                        if ~sameRoi
+                            try
+                                sameRoi = strcmp(char(string(shallowObj.fov(f).roi(r).id)), ...
+                                    char(string(roilist(q).id))) && ...
+                                    app.scoreMovieRoiParentMatches(shallowObj.fov(f), roilist(q));
+                            catch
+                                sameRoi = false;
+                            end
+                        end
+                        if sameRoi
                                 refs(end+1) = struct('fovIndex', f, 'roiIndex', r, ...
                                     'id', char(string(roilist(q).id))); %#ok<AGROW>
                                 break;
-                            end
-                        catch
                         end
                     end
                 end
+            end
+        end
+
+        function shallowObj = resolveScoreHubProject(app, roilist)
+            shallowObj = [];
+            % Preferred path: the GUI that opened Score passes the actual
+            % project. This also survives missing transient parent links.
+            if isa(app.ProjectContext, 'shallow') && ...
+                    numel(app.scoreMovieRoiRefs(app.ProjectContext, roilist)) == numel(roilist)
+                shallowObj = app.ProjectContext;
+                return;
+            end
+            try
+                parentFov = roilist(1).parent;
+                if isa(parentFov, 'fov') && isa(parentFov.parent, 'shallow')
+                    candidate = parentFov.parent;
+                    if numel(app.scoreMovieRoiRefs(candidate, roilist)) == numel(roilist)
+                        shallowObj = candidate;
+                        return;
+                    end
+                end
+            catch
+            end
+            % Legacy Score sessions may contain detached ROI handles. When
+            % a project is already held in the base workspace, recover the
+            % unique project that owns the same FOV/ROI IDs.
+            try
+                variables = evalin('base', 'whos');
+                for i = 1:numel(variables)
+                    if ~strcmp(variables(i).class, 'shallow')
+                        continue;
+                    end
+                    candidate = evalin('base', variables(i).name);
+                    if isa(candidate, 'shallow') && ...
+                            numel(app.scoreMovieRoiRefs(candidate, roilist)) == numel(roilist)
+                        shallowObj = candidate;
+                        return;
+                    end
+                end
+            catch
+            end
+        end
+
+        function tf = scoreMovieRoiParentMatches(~, fovObj, roiObj)
+            tf = true;
+            try
+                parentObj = roiObj.parent;
+                if isa(parentObj, 'fov')
+                    tf = strcmp(char(string(parentObj.id)), char(string(fovObj.id)));
+                end
+            catch
+                % A detached ROI has no parent identity; its unique ROI ID
+                % is still enough within a project FOV.
             end
         end
 
@@ -2557,8 +2663,12 @@ end
             p = inputParser;
             p.addParameter('CacheIsFresh', false, ...
                 @(x)islogical(x) && isscalar(x));
+            p.addParameter('Project', [], @(x)isempty(x) || isa(x, 'shallow'));
             p.parse(varargin{:});
             cacheIsFresh = p.Results.CacheIsFresh;
+            if isa(p.Results.Project, 'shallow')
+                app.ProjectContext = p.Results.Project;
+            end
             hasLayoutOption = strlength(string(options)) > 0;
 
             isPresent = false;
