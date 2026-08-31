@@ -102,7 +102,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         result.project_mat_path = projectMatPath;
         result.pipeline_json_path = localCanonicalPipelineJsonPath(pipeObj, pipelineInputPath);
         result.run_json_path = fullfile(runObj.path, 'run.json');
-        result.artifacts = localBuildArtifacts(result.run_json_path);
+        result.artifacts = localBuildArtifacts(result.run_json_path, ctxOut);
         result.mutation_manifest = mutationManifest;
         result.summary = localBuildResultSummary(pipeObj, report, ctxOut);
         result.dependency_audit = dependencyAudit;
@@ -142,7 +142,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
                 end
                 result.run_id = char(string(runObj.runId));
                 result.run_json_path = fullfile(runObj.path, 'run.json');
-                result.artifacts = localBuildArtifacts(result.run_json_path);
+                result.artifacts = localBuildArtifacts(result.run_json_path, ctx);
             end
         catch
         end
@@ -1270,8 +1270,11 @@ function summary = localBuildFailureSummary(report)
     end
 end
 
-function artifacts = localBuildArtifacts(runJsonPath)
+function artifacts = localBuildArtifacts(runJsonPath, ctx)
     artifacts = struct('kind', {}, 'path', {});
+    if nargin < 2
+        ctx = struct();
+    end
     if nargin < 1 || isempty(runJsonPath)
         return;
     end
@@ -1294,6 +1297,21 @@ function artifacts = localBuildArtifacts(runJsonPath)
             artifacts(end+1).kind = 'run_events';
             artifacts(end).path = eventPath;
         end
+    end
+    % Exporter nodes may create files that are neither a pipeline log nor
+    % part of the project.  Preserve their declared artifacts in the Hub
+    % response so clients can retrieve a movie or sequence PDF directly.
+    produced = localGetField(ctx, 'artifacts', struct('kind', {}, 'path', {}));
+    if ~isstruct(produced)
+        return;
+    end
+    for i = 1:numel(produced)
+        artifactPath = char(string(localGetField(produced(i), 'path', '')));
+        if isempty(artifactPath) || exist(artifactPath, 'file') ~= 2
+            continue;
+        end
+        artifacts(end+1).kind = char(string(localGetField(produced(i), 'kind', 'artifact')));
+        artifacts(end).path = artifactPath;
     end
 end
 
@@ -1589,6 +1607,25 @@ function localAssertFunctionFromRepo(funName, repoRoot, required)
         error('detecdiv_run_pipeline_job:RuntimeFunctionFromForbiddenPath', ...
             'Runtime function %s resolves from a forbidden backup/cache path: %s', ...
             funName, resolved);
+    end
+    % Exporter nodes publish their concrete files through ctx.artifacts.
+    % Keep those entries in the worker result so the Hub can expose MP4/PDF
+    % files exactly like it already exposes raw-data preview movies.
+    try
+        extra = localGetField(ctx, 'artifacts', struct('kind', {}, 'path', {}));
+        if isstruct(extra)
+            for i = 1:numel(extra)
+                kind = localGetText(extra(i), {'kind'}, 'file');
+                pathText = localGetText(extra(i), {'path'}, '');
+                if isempty(pathText) || exist(pathText, 'file') ~= 2
+                    continue;
+                end
+                if ~any(strcmp({artifacts.path}, pathText))
+                    artifacts(end+1) = struct('kind', kind, 'path', pathText); %#ok<AGROW>
+                end
+            end
+        end
+    catch
     end
 end
 

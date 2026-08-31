@@ -235,6 +235,7 @@ classdef score < matlab.apps.AppBase
 
     properties (Access = private)
         PipelineRunEventListenerId char = ''
+        HubMovieControls struct = struct()
     end
 
     methods (Access = private)
@@ -1656,7 +1657,97 @@ end
             end
 
             assignin('base', 'DisplaySettings',app.DisplaySettings);
+            app.configureMovieExecutionControls();
 
+        end
+
+        function configureMovieExecutionControls(app)
+            % Keep target selection and Hub credentials out of the movie
+            % recipe itself.  The recipe stays portable; the connection
+            % settings remain the same persisted settings used by pipeline2.
+            try
+                if isstruct(app.HubMovieControls) && isfield(app.HubMovieControls, 'target') && ...
+                        isvalid(app.HubMovieControls.target)
+                    return;
+                end
+                app.GrenerateMovieButton.Position = [269 8 171 25];
+                target = uidropdown(app.MoviePanel, ...
+                    'Items', {'Local MATLAB session','DetecDiv Hub'}, ...
+                    'ItemsData', {'local','hub'}, 'Value', 'local', ...
+                    'Position', [269 38 171 22]);
+                connect = uibutton(app.MoviePanel, 'push', ...
+                    'Text', 'Hub connection...', 'Position', [269 64 171 22], ...
+                    'ButtonPushedFcn', @(~,~)app.MovieHubConnectionButtonPushed());
+                target.Tooltip = 'Generate the configured Movie or Sequence/PDF locally, or submit it to DetecDiv Hub.';
+                app.HubMovieControls = struct('target', target, 'connect', connect);
+            catch ME
+                warning('score:MovieExecutionControls', '%s', ME.message);
+            end
+        end
+
+        function MovieHubConnectionButtonPushed(app)
+            detecdiv_hub_connection_dialog(app.ScoreAppUIFigure);
+        end
+
+        function target = getMovieExecutionTarget(app)
+            target = 'local';
+            try
+                if isstruct(app.HubMovieControls) && isfield(app.HubMovieControls, 'target') && ...
+                        isvalid(app.HubMovieControls.target)
+                    target = char(string(app.HubMovieControls.target.Value));
+                end
+            catch
+            end
+        end
+
+        function submitScoreMovieToHub(app, roilist, opts)
+            if isempty(roilist)
+                error('score:MovieHubNoROI', 'Select at least one ROI before submitting a Hub export.');
+            end
+            shallowObj = [];
+            try
+                parentFov = roilist(1).parent;
+                if isa(parentFov, 'fov') && isa(parentFov.parent, 'shallow')
+                    shallowObj = parentFov.parent;
+                end
+            catch
+            end
+            if isempty(shallowObj)
+                error('score:MovieHubNoProject', 'The selected ROI is not attached to a shallow project.');
+            end
+            params = movieExport.setparam(struct());
+            params.sourceType = 'score_roi';
+            params.outputMode = char(string(app.MovieoutputtypeDropDown.Value));
+            params.outputPath = char(string(app.MovieoutputfilenameEditField.Value));
+            params.useRunArtifactFolder = true;
+            params.layoutOptions = opts;
+            params.roiRefs = app.scoreMovieRoiRefs(shallowObj, roilist);
+            if isempty(params.roiRefs)
+                error('score:MovieHubNoROI', 'The selected ROI could not be resolved in its project.');
+            end
+            [runObj, result] = detecdiv_movie_export_submit(shallowObj, params, 'Target', 'hub'); %#ok<ASGLU>
+            jobId = '';
+            try, jobId = char(string(result.job.id)); catch, end
+            uialert(app.ScoreAppUIFigure, sprintf('Movie export submitted to Hub.\nRun: %s\nJob: %s', runObj.runId, jobId), ...
+                'Hub movie export', 'Icon', 'success');
+        end
+
+        function refs = scoreMovieRoiRefs(app, shallowObj, roilist) %#ok<INUSD>
+            refs = struct('fovIndex', {}, 'roiIndex', {}, 'id', {});
+            for f = 1:numel(shallowObj.fov)
+                for r = 1:numel(shallowObj.fov(f).roi)
+                    for q = 1:numel(roilist)
+                        try
+                            if shallowObj.fov(f).roi(r) == roilist(q)
+                                refs(end+1) = struct('fovIndex', f, 'roiIndex', r, ...
+                                    'id', char(string(roilist(q).id))); %#ok<AGROW>
+                                break;
+                            end
+                        catch
+                        end
+                    end
+                end
+            end
         end
 
         function initMovieDisplaySettings(app)
@@ -7229,6 +7320,8 @@ end
         % Button pushed function: GrenerateMovieButton
         function GrenerateMovieButtonPushed(app, event)
 
+            target = app.getMovieExecutionTarget();
+
                % --- Progress bar indéterminée ---
     d = uiprogressdlg(app.ScoreAppUIFigure, ...
         'Title', 'Generating movie or sequence', ...
@@ -7264,9 +7357,18 @@ end
             return;
              end
 
-            app.layoutOptions=opts;
+             app.layoutOptions=opts;
 
-            displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
+             if strcmpi(target, 'hub')
+                 try
+                     close(d);
+                 catch
+                 end
+                 app.submitScoreMovieToHub(roilist, opts);
+                 return;
+             end
+
+             displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
             htrash=score_renderFinalFrame(displayHandles , roilist, opts);
 
             close(d);

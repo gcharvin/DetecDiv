@@ -38,9 +38,16 @@ background=layoutOptions.background;
             figWidth = MasterCols * layoutOptions.tileW + (MasterCols+1)*margin;
             figHeight = MasterRows * layoutOptions.tileH + (MasterRows+1)*margin + extraMargin;
 
-            fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
-    'Position', [100, 100, figWidth, figHeight]);
-set(fig, 'Color', background);
+            if nargin==2 && ~isempty(hfig) && ishandle(hfig) && isvalid(hfig)
+                fig = hfig;
+                set(fig, 'Color', background);
+                localResizeScoreFigure(fig, figWidth, figHeight);
+                clf(fig);
+            else
+                fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
+                    'Position', [100, 100, figWidth, figHeight]);
+                set(fig, 'Color', background);
+            end
 
             masterTL = tiledlayout(fig, MasterRows, MasterCols, 'TileSpacing', 'none', 'Padding', 'tight');
             displayHandles.masterTiledLayout = masterTL;
@@ -103,9 +110,16 @@ set(fig, 'Color', background);
             figWidth = MasterCols * layoutOptions.tileW + (MasterCols+1)*margin;
             figHeight = MasterRows * layoutOptions.tileH + (MasterRows+1)*margin + extraMargin;
 
-            fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
-    'Position', [100, 100, figWidth, figHeight],'Tag','ScoreDisplayFigure');
-set(fig, 'Color', background);
+            if nargin==2 && ~isempty(hfig) && ishandle(hfig) && isvalid(hfig)
+                fig = hfig;
+                set(fig, 'Color', background);
+                localResizeScoreFigure(fig, figWidth, figHeight);
+                clf(fig);
+            else
+                fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
+                    'Position', [100, 100, figWidth, figHeight],'Tag','ScoreDisplayFigure');
+                set(fig, 'Color', background);
+            end
 
             masterTL = tiledlayout(fig, MasterRows, MasterCols, 'TileSpacing', 'none', 'Padding', 'none');
             displayHandles.masterTiledLayout = masterTL;

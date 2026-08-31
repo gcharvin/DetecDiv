@@ -545,7 +545,15 @@ newPath = fullfile(folder, [name fileExt]);
 
 % 5) Création du VideoWriter avec un profil valide
 v = VideoWriter(newPath, requestedProfile);
-v.FrameRate = 10;  % Ajuste selon tes besoins
+fps = 10;
+try
+    fps = double(layoutOptions.IPS);
+catch
+end
+if ~isscalar(fps) || ~isfinite(fps) || fps <= 0
+    fps = 10;
+end
+v.FrameRate = fps;
 
 open(v);
 fig = get(masterTL, 'Parent');

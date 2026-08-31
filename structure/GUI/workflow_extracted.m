@@ -105,6 +105,8 @@ classdef workflow < matlab.apps.AppBase
 
         LastGraphicRoiClickTime double = 0
 
+        MovieExportControls struct = struct()
+
     end
 
 
@@ -453,6 +455,81 @@ classdef workflow < matlab.apps.AppBase
 
             app.reflowTables();
 
+            app.configureMovieExportControls();
+
+        end
+
+        function configureMovieExportControls(app)
+            % Raw movie rendering is a backend export.  Workflow only
+            % supplies its existing blended channel configuration.
+            try
+                if isstruct(app.MovieExportControls) && isfield(app.MovieExportControls, 'generate') && ...
+                        isvalid(app.MovieExportControls.generate)
+                    return;
+                end
+                app.selectedFOVEditField.Position = [12 9 480 127];
+                mode = uidropdown(app.ChannelsPanel, 'Items', {'Movie (MP4)','Sequence (PDF)'}, ...
+                    'ItemsData', {'Movie','Sequence'}, 'Value', 'Movie', 'Position', [514 109 126 22]);
+                target = uidropdown(app.ChannelsPanel, 'Items', {'Local','Hub'}, ...
+                    'ItemsData', {'local','hub'}, 'Value', 'local', 'Position', [646 109 74 22]);
+                connect = uibutton(app.ChannelsPanel, 'push', 'Text', 'Hub…', ...
+                    'Position', [726 109 89 22], 'ButtonPushedFcn', @(~,~)app.WorkflowHubConnectionButtonPushed());
+                generate = uibutton(app.ChannelsPanel, 'push', 'Text', 'Generate raw movie…', ...
+                    'Position', [514 78 301 24], 'ButtonPushedFcn', @(~,~)app.GenerateWorkflowMovieButtonPushed());
+                generate.Tooltip = 'Exports all frames of the selected raw FOV using the active blended channel configuration.';
+                app.MovieExportControls = struct('mode', mode, 'target', target, 'connect', connect, 'generate', generate);
+            catch ME
+                warning('workflow:MovieControls', '%s', ME.message);
+            end
+        end
+
+        function WorkflowHubConnectionButtonPushed(app)
+            detecdiv_hub_connection_dialog(app.UIFigure);
+        end
+
+        function GenerateWorkflowMovieButtonPushed(app)
+            if isempty(app.Project) || isempty(app.SelectedFov) || isempty(app.ChannelCfg)
+                uialert(app.UIFigure, 'Open a project, select a FOV and enable at least one channel first.', ...
+                    'Raw movie export', 'Icon', 'warning');
+                return;
+            end
+            active = [app.ChannelCfg.enabled];
+            if ~any(active)
+                uialert(app.UIFigure, 'Enable at least one display channel before exporting.', ...
+                    'Raw movie export', 'Icon', 'warning');
+                return;
+            end
+            mode = char(string(app.MovieExportControls.mode.Value));
+            target = char(string(app.MovieExportControls.target.Value));
+            outputPath = '';
+            if strcmpi(target, 'local')
+                extension = '*.mp4'; if strcmpi(mode, 'Sequence'), extension = '*.pdf'; end
+                [file, folder] = uiputfile(extension, 'Raw movie export', ...
+                    fullfile(app.Project.io.path, ['raw_' app.getFovLabel(app.SelectedFov)]));
+                if isequal(file, 0), return; end
+                outputPath = fullfile(folder, file);
+            end
+            params = movieExport.setparam(struct());
+            params.sourceType = 'raw_fov';
+            params.outputMode = mode;
+            params.outputPath = outputPath;
+            params.useRunArtifactFolder = strcmpi(target, 'hub');
+            params.raw = struct('fovIndex', app.SelectedFov, 'frames', 1:app.getMaxFrame(), ...
+                'channelCfg', app.ChannelCfg, 'framesPerSecond', 10, ...
+                'title', app.getFovLabel(app.SelectedFov));
+            try
+                [runObj, result] = detecdiv_movie_export_submit(app.Project, params, 'Target', target);
+                if strcmpi(target, 'hub')
+                    jobId = ''; try, jobId = char(string(result.job.id)); catch, end
+                    uialert(app.UIFigure, sprintf('Raw movie submitted to Hub.\nRun: %s\nJob: %s', runObj.runId, jobId), ...
+                        'Raw movie export', 'Icon', 'success');
+                else
+                    uialert(app.UIFigure, sprintf('Raw %s export completed.\nRun: %s', lower(mode), runObj.runId), ...
+                        'Raw movie export', 'Icon', 'success');
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Raw movie export failed', 'Icon', 'error');
+            end
         end
 
 
