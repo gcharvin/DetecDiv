@@ -34,6 +34,17 @@ try
     if isstruct(classif.executionParam), parameters = classif.executionParam; end
 catch
 end
+% Training can replace the deployable backend and artifacts without
+% rewriting the classifier object immediately.  Resolve the same immutable
+% post-training snapshot used by classify/annotation inference; otherwise a
+% stale legacy executionParam hides a valid trained model from the GT seed
+% dialog even though prediction would run the trained model.
+try
+    spec = cellLatentModel.executionSpec(classif);
+    parameters = classifierApplyTrainingExecutionDefaults( ...
+        parameters, classif, spec, 'active_model');
+catch
+end
 if ~isempty(plan)
     info = applyPlan(info, plan);
     return;

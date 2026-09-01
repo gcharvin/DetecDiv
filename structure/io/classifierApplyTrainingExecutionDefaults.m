@@ -13,9 +13,8 @@ if ~any(strcmp(intent, {'validate','annotation','active_model'}))
     return;
 end
 defaults = classifierTrainingExecutionDefaults(classiObj, spec);
-if isempty(defaults) || ~isstruct(defaults) || ~isstruct(spec)
-    return;
-end
+if isempty(defaults) || ~isstruct(defaults),defaults=struct();end
+if ~isstruct(spec),spec=struct();end
 
 % Pipeline validation inherits only graph-safe static values.  Artifact
 % paths, typed input bindings and canonical PRED names stay private to the
@@ -38,5 +37,21 @@ declared = unique(declared, 'stable');
 keys = intersect(declared, fieldnames(defaults), 'stable');
 for i = 1:numel(keys)
     params.(keys{i}) = defaults.(keys{i});
+end
+params = resolvePackageDeployment(classiObj, params, intent);
+end
+
+function params = resolvePackageDeployment(classiObj,params,intent)
+pkg='';
+try,pkg=char(string(classiObj.classifierPkg));catch,end
+if isempty(pkg),return;end
+hook=[pkg '.resolvePromotedRelease'];
+try
+    if ~isempty(which(hook)),params=feval(hook,classiObj,params);end
+catch ME
+    if startsWith(ME.identifier,'cellLatentModel:'),rethrow(ME);end
+    error('classifierApplyTrainingExecutionDefaults:ReleaseResolutionFailed', ...
+        'Could not resolve the promoted %s release for %s: %s', ...
+        pkg,intent,ME.message);
 end
 end
