@@ -23,11 +23,7 @@ if any(frames<1)||any(frames>size(outImage,4))||numel(unique(frames))~=numel(fra
         'Track frames must be unique valid ROI frame indices.');
 end
 
-logicalIdx=findLogicalChannel(roiobj,name);
-if numel(logicalIdx)>1
-    error('cellLatentModel:DuplicateTrackChannelNames', ...
-        'ROI display contains duplicate logical channel name "%s".',name);
-end
+logicalIdx=coalesceLogicalChannel(roiobj,name);
 idx=findChannel(roiobj,name);
 if isempty(idx)
     if ~isempty(logicalIdx)
@@ -81,6 +77,56 @@ if ~isstruct(roiobj.display)||~isfield(roiobj.display,'channel')|| ...
 end
 names=cellstr(string(roiobj.display.channel));
 idx=find(strcmpi(strtrim(names),strtrim(char(string(name)))));
+end
+
+function idx=coalesceLogicalChannel(roiobj,name)
+% Failed compact saves from older runtimes could persist an extra display
+% row even though HDF5 correctly rejected the duplicate dataset name. Keep
+% the first (canonical HDF5-order) identity and remap any loaded planes from
+% its duplicate rows before removing those rows from the display cache.
+idx=findLogicalChannel(roiobj,name);
+if numel(idx)<=1
+    return;
+end
+names=cellstr(string(roiobj.display.channel));
+nLogical=numel(names);
+canonical=idx(1);
+drop=idx(2:end);
+keep=setdiff(1:nLogical,drop,'stable');
+oldToNew=zeros(1,nLogical);
+oldToNew(keep)=1:numel(keep);
+oldToNew(drop)=oldToNew(canonical);
+channelMap=double(reshape(roiobj.channelid,1,[]));
+if any(channelMap<1)||any(channelMap>nLogical)||any(channelMap~=fix(channelMap))
+    error('cellLatentModel:InvalidCompactChannelMapping', ...
+        'ROI channelid contains invalid logical channel identifiers.');
+end
+roiobj.channelid=oldToNew(channelMap);
+roiobj.display=keepLogicalDisplayRows(roiobj.display,keep,nLogical);
+roiobj.normalizeDisplayCache();
+idx=oldToNew(canonical);
+end
+
+function display=keepLogicalDisplayRows(display,keep,nLogical)
+display.channel=cellstr(string(display.channel(keep)));
+rowFields={'intensity','rgb'};
+for i=1:numel(rowFields)
+    field=rowFields{i};
+    if isfield(display,field)&&size(display.(field),1)>=nLogical
+        value=display.(field);
+        display.(field)=value(keep,:);
+    end
+end
+vectorFields={'selectedchannel','indexed','alpha','contour','width', ...
+    'log','scale','colorMode','colormapName','valueTransform'};
+for i=1:numel(vectorFields)
+    field=vectorFields{i};
+    if ~isfield(display,field)||numel(display.(field))<nLogical
+        continue;
+    end
+    value=display.(field);
+    display.(field)=value(keep);
+end
 end
 
 function attachEmptyPlane(roiobj,logicalIdx)

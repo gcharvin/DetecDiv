@@ -118,15 +118,26 @@ idx=fresh.findChannelID('results_pred_tracks','exact');
 verifyEqual(testCase,squeeze(fresh.image(:,:,idx,:)),tracks);
 end
 
-function testRejectsDuplicateLogicalTrackNames(testCase)
+function testRepairsDuplicateLogicalTrackNames(testCase)
 r=roi('synthetic',[1 1 5 4]);
 r.image=zeros(4,5,2,3,'uint16');
 r.display.channel={'BF','results_pred_tracks','results_pred_tracks'};
-r.channelid=[1 1];
+r.display.intensity=[1 1 1;0 0 0;0 0 0];
+r.display.rgb=ones(3,3);
+r.display.indexed=[false true true];
+r.display.alpha=[1 .35 .35];
+r.display.contour=[false true true];
+r.display.width=[1 1.5 1.5];
+r.display.selectedchannel=ones(1,3);
+r.channelid=[1 3];
+tracks=uint16(13*ones(4,5,3));
 
-verifyError(testCase,@()cellLatentModel.utils.materializeTracks( ...
-    r,zeros(4,5,3,'uint16'),'results_pred_tracks',1:3), ...
-    'cellLatentModel:DuplicateTrackChannelNames');
+image=cellLatentModel.utils.materializeTracks( ...
+    r,tracks,'results_pred_tracks',1:3);
+
+verifyEqual(testCase,r.display.channel,{'BF','results_pred_tracks'});
+verifyEqual(testCase,r.channelid,[1 2]);
+verifyEqual(testCase,squeeze(image(:,:,2,:)),tracks);
 end
 
 function testRejectsMismatchedTrackShape(testCase)
