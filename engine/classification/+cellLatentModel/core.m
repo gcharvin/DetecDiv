@@ -26,7 +26,8 @@ if strcmp(paramout.backend,'causal_composite')
     end
     trackChannelName = physicalTrackChannel( ...
         paramout.outputTrackChannelName);
-    [compositeImage,trackChannelName] = materializeTracks( ...
+    [compositeImage,trackChannelName] = ...
+        cellLatentModel.utils.materializeTracks( ...
         roiobj,tracks,trackChannelName,frames);
     paramout.trackChannelName = trackChannelName;
 else
@@ -284,28 +285,4 @@ if isempty(name),name='pred_latent_model_tracks';end
 if ~startsWith(name,'results_','IgnoreCase',true)
     name=['results_' name];
 end
-end
-
-function [outImage,name] = materializeTracks(roiobj,tracks,name,frames)
-if max(tracks(:))>intmax('uint16')
-    error('cellLatentModel:TooManyTracks', ...
-        'Predicted stable track ID exceeds uint16 ROI storage.');
-end
-outImage=roiobj.image;
-try idx=roiobj.findChannelID(name,'exact');
-catch,idx=roiobj.findChannelID(name);
-end
-if isempty(idx)
-    empty=zeros(size(outImage,1),size(outImage,2),1, ...
-        size(outImage,4),'uint16');
-    roiobj.addChannel(empty,name,[1 1 1],[0 0 0]);
-    outImage=roiobj.image;
-    try idx=roiobj.findChannelID(name,'exact');
-    catch,idx=roiobj.findChannelID(name);
-    end
-end
-idx=idx(1);
-outImage(:,:,idx,frames)=reshape(uint16(tracks), ...
-    size(tracks,1),size(tracks,2),1,size(tracks,3));
-roiobj.image=outImage;
 end
