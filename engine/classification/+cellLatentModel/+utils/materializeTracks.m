@@ -1,8 +1,8 @@
 function [outImage,name] = materializeTracks(roiobj,tracks,name,frames)
 %MATERIALIZETRACKS Persist stable IDs in one indexed ROI channel.
-% Compact ROI loads can temporarily expose incomplete logical-channel
-% metadata. The newly appended physical plane remains authoritative and is
-% therefore used as a checked fallback when lookup by name is unavailable.
+% Compact ROI loads can expose a logical channel in display.channel without
+% loading its physical plane. Reuse that logical identity instead of adding
+% a second channel with the same name.
 
 if max(tracks(:))>intmax('uint16')
     error('cellLatentModel:TooManyTracks', ...
@@ -23,26 +23,36 @@ if any(frames<1)||any(frames>size(outImage,4))||numel(unique(frames))~=numel(fra
         'Track frames must be unique valid ROI frame indices.');
 end
 
+logicalIdx=findLogicalChannel(roiobj,name);
+if numel(logicalIdx)>1
+    error('cellLatentModel:DuplicateTrackChannelNames', ...
+        'ROI display contains duplicate logical channel name "%s".',name);
+end
 idx=findChannel(roiobj,name);
 if isempty(idx)
-    oldPlaneCount=size(outImage,3);
-    empty=zeros(size(outImage,1),size(outImage,2),1, ...
-        size(outImage,4),'uint16');
-    roiobj.addChannel(empty,name,[1 1 1],[0 0 0]);
-    outImage=roiobj.image;
-    newPlaneCount=size(outImage,3);
-    if newPlaneCount~=oldPlaneCount+1
-        error('cellLatentModel:TrackChannelCreationFailed', ...
-            ['Adding track channel "%s" changed the physical-plane count ' ...
-             'from %d to %d; expected exactly one new plane.'], ...
-            name,oldPlaneCount,newPlaneCount);
+    if ~isempty(logicalIdx)
+        % Prefer the persisted plane when this is a compact HDF5 load. This
+        % preserves unselected frames and lets roi.load maintain channelid.
+        try
+            roiobj.load('Channel',name,'Data',false,'Silent');
+        catch ME
+            if ~strcmp(ME.identifier,'loadFromH5_single:NotFound')
+                rethrow(ME);
+            end
+        end
+        if isempty(findChannel(roiobj,name))
+            attachEmptyPlane(roiobj,logicalIdx);
+        end
+    else
+        empty=zeros(size(outImage,1),size(outImage,2),1, ...
+            size(outImage,4),'uint16');
+        roiobj.addChannel(empty,name,[1 1 1],[0 0 0]);
     end
+    outImage=roiobj.image;
     idx=findChannel(roiobj,name);
     if isempty(idx)
-        % The channel plane was appended successfully, but a compact ROI's
-        % logical metadata has not made it searchable yet. Never index an
-        % empty lookup result: use the uniquely verified appended plane.
-        idx=newPlaneCount;
+        error('cellLatentModel:TrackChannelCreationFailed', ...
+            'Track channel "%s" has no physical ROI plane after loading.',name);
     end
 end
 idx=idx(1);
@@ -61,4 +71,30 @@ try
 catch
     idx=roiobj.findChannelID(name);
 end
+end
+
+function idx=findLogicalChannel(roiobj,name)
+idx=[];
+if ~isstruct(roiobj.display)||~isfield(roiobj.display,'channel')|| ...
+        isempty(roiobj.display.channel)
+    return;
+end
+names=cellstr(string(roiobj.display.channel));
+idx=find(strcmpi(strtrim(names),strtrim(char(string(name)))));
+end
+
+function attachEmptyPlane(roiobj,logicalIdx)
+% The logical channel can pre-exist without a persisted HDF5 dataset (for
+% example in a newly initialized compact ROI). Attach one physical plane to
+% that identity without modifying display.channel.
+image=roiobj.image;
+if numel(roiobj.channelid)~=size(image,3)
+    error('cellLatentModel:InvalidCompactChannelMapping', ...
+        ['ROI image contains %d physical planes but channelid contains %d ' ...
+         'entries.'],size(image,3),numel(roiobj.channelid));
+end
+image(:,:,end+1,:)=zeros(size(image,1),size(image,2),1,size(image,4), ...
+    'like',image);
+roiobj.image=image;
+roiobj.channelid=[reshape(roiobj.channelid,1,[]) logicalIdx];
 end

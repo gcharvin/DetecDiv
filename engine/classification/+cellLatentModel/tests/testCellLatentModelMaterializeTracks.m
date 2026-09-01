@@ -48,10 +48,98 @@ verifyEqual(testCase,size(image,3),2);
 verifyEqual(testCase,squeeze(image(:,:,2,:)),tracks);
 end
 
+function testAttachesCompactLogicalTrackChannelWithoutDuplicate(testCase)
+r=roi('synthetic',[1 1 5 4]);
+r.image=zeros(4,5,2,3,'uint16');
+r.display.channel={'BF','instances','results_pred_tracks'};
+r.display.intensity=[1 1 1;0 0 0;0 0 0];
+r.display.rgb=ones(3,3);
+r.display.indexed=[false true true];
+r.display.alpha=ones(1,3);
+r.display.contour=[false true true];
+r.display.width=ones(1,3);
+r.display.selectedchannel=ones(1,3);
+r.channelid=[1 2];
+tracks=uint16(9*ones(4,5,3));
+
+image=cellLatentModel.utils.materializeTracks( ...
+    r,tracks,'results_pred_tracks',1:3);
+
+verifyEqual(testCase,size(image,3),3);
+verifyEqual(testCase,r.channelid,[1 2 3]);
+verifyEqual(testCase,r.display.channel, ...
+    {'BF','instances','results_pred_tracks'});
+verifyEqual(testCase,sum(strcmpi(r.display.channel, ...
+    'results_pred_tracks')),1);
+verifyEqual(testCase,squeeze(image(:,:,3,:)),tracks);
+end
+
+function testReloadsPersistedCompactTrackChannelAndSaves(testCase)
+testRoot=tempname;
+mkdir(testRoot);
+cleanup=onCleanup(@()cleanupDir(testRoot)); %#ok<NASGU>
+r=roi('compact_tracks',[1 1 5 4]);
+r.path=testRoot;
+r.image=zeros(4,5,1,3,'uint16');
+r.display.channel={'BF'};
+r.display.intensity=ones(1,3);
+r.display.rgb=ones(1,3);
+r.display.indexed=false;
+r.display.alpha=1;
+r.display.contour=false;
+r.display.width=1;
+r.display.selectedchannel=1;
+r.channelid=1;
+r.addChannel(ones(4,5,1,3,'uint16'),'instances', ...
+    [1 1 1],[0 0 0]);
+r.addChannel(2*ones(4,5,1,3,'uint16'),'results_pred_tracks', ...
+    [1 1 1],[0 0 0]);
+verifyTrue(testCase,r.save([],false));
+
+r.image=[];
+r.load('Channel',{'BF','instances'},'Data',false,'Silent');
+verifyEmpty(testCase,r.findChannelID('results_pred_tracks','exact'));
+verifyEqual(testCase,sum(strcmpi(r.display.channel, ...
+    'results_pred_tracks')),1);
+tracks=uint16(11*ones(4,5,3));
+cellLatentModel.utils.materializeTracks( ...
+    r,tracks,'results_pred_tracks',1:3);
+
+verifyEqual(testCase,r.channelid,[1 2 3]);
+verifyEqual(testCase,sum(strcmpi(r.display.channel, ...
+    'results_pred_tracks')),1);
+verifyTrue(testCase,r.save([],false));
+fresh=roi(r.id,r.value);
+fresh.path=testRoot;
+fresh.load('Silent');
+verifyEqual(testCase,sum(strcmpi(fresh.display.channel, ...
+    'results_pred_tracks')),1);
+idx=fresh.findChannelID('results_pred_tracks','exact');
+verifyEqual(testCase,squeeze(fresh.image(:,:,idx,:)),tracks);
+end
+
+function testRejectsDuplicateLogicalTrackNames(testCase)
+r=roi('synthetic',[1 1 5 4]);
+r.image=zeros(4,5,2,3,'uint16');
+r.display.channel={'BF','results_pred_tracks','results_pred_tracks'};
+r.channelid=[1 1];
+
+verifyError(testCase,@()cellLatentModel.utils.materializeTracks( ...
+    r,zeros(4,5,3,'uint16'),'results_pred_tracks',1:3), ...
+    'cellLatentModel:DuplicateTrackChannelNames');
+end
+
 function testRejectsMismatchedTrackShape(testCase)
 r=roi('synthetic',[1 1 5 4]);
 r.image=zeros(4,5,1,3,'uint16');
 verifyError(testCase,@()cellLatentModel.utils.materializeTracks( ...
     r,zeros(4,4,3,'uint16'),'results_pred_tracks',1:3), ...
     'cellLatentModel:TrackShapeMismatch');
+end
+
+
+function cleanupDir(pathStr)
+if exist(pathStr,'dir')==7
+    rmdir(pathStr,'s');
+end
 end
