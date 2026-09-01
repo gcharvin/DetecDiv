@@ -62,6 +62,9 @@ for i=1:numel(artifacts)
     kind=lower(textField(artifacts(i),'kind'));
     if strcmp(kind,'directory_manifest')
         value=fileparts(artifactPath);
+        if strcmp(parameter,'runtimeCodeRoot')
+            verifyDirectoryManifest(artifactPath,value);
+        end
     elseif strcmp(kind,'file')
         value=artifactPath;
     else
@@ -70,6 +73,7 @@ for i=1:numel(artifacts)
     end
     if ~any(strcmp(parameter,{'modelPath','compositeManifestPath', ...
             'trackingCheckpointDir','stateRuntimeConfigPath', ...
+            'sceneParentRuntimeManifestPath','runtimeCodeRoot', ...
             'adaptiveMarkerModelPath'}))
         error('cellLatentModel:InvalidModelRelease', ...
             'Artifact parameter "%s" is not deployable.',parameter);
@@ -89,6 +93,36 @@ params.modelUpdatePolicy='follow_promoted';
 params.modelReleaseChannelPath=channelPath;
 params.resolvedModelReleaseId=releaseId;
 params.resolvedModelReleaseManifestPath=releasePath;
+end
+
+function verifyDirectoryManifest(manifestPath,root)
+manifest=readJson(manifestPath,'runtime code directory manifest');
+if ~isfield(manifest,'generated_files')||~isstruct(manifest.generated_files)
+    error('cellLatentModel:InvalidModelRelease', ...
+        'Runtime code manifest has no generated_files contract.');
+end
+files=manifest.generated_files;
+for j=1:numel(files)
+    relative=textField(files(j),'path');
+    candidate=resolvePath(relative,root);
+    expected=lower(textField(files(j),'sha256'));
+    try
+        canonicalRoot=char(java.io.File(root).getCanonicalPath());
+        canonicalFile=char(java.io.File(candidate).getCanonicalPath());
+    catch
+        canonicalRoot=root;canonicalFile=candidate;
+    end
+    prefix=[canonicalRoot filesep];
+    if ~startsWith(lower(canonicalFile),lower(prefix))
+        error('cellLatentModel:InvalidModelRelease', ...
+            'Runtime code manifest escapes its release root.');
+    end
+    verifyFile(candidate,expected,['runtime code ' relative]);
+end
+if ~isfolder(fullfile(root,'src','cell_latent_model'))
+    error('cellLatentModel:InvalidModelRelease', ...
+        'Runtime code snapshot has no src/cell_latent_model package.');
+end
 end
 
 function value=conventionalChannel(classif)

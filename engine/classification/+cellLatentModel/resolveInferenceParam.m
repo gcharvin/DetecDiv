@@ -27,9 +27,16 @@ catch
 end
 execution = cellLatentModel.executionSpec(classif);
 p = classifierApplyTrainingExecutionDefaults( ...
-    p, classif, execution, 'active_model');
+    p, classif, execution, 'pipeline');
 if isfield(ctx, 'params') && isstruct(ctx.params)
     runtime = ctx.params;
+    % Empty values saved by older Pipeline2 templates mean "not
+    % configured". They must not erase a concrete temporal cadence owned
+    % by the trained classifier snapshot.
+    if isfield(runtime, 'frameIntervalMinutes') && ...
+            isempty(runtime.frameIntervalMinutes)
+        runtime = rmfield(runtime, 'frameIntervalMinutes');
+    end
     % Artifact identity belongs to the classifier deployment snapshot.  A
     % normal pipeline runtime may select channels and static controls, but
     % it cannot redirect a trained model to arbitrary files.
@@ -42,6 +49,12 @@ if isfield(ctx, 'params') && isstruct(ctx.params)
     if ~isempty(protected), runtime = rmfield(runtime, protected); end
     p = cellLatentModel.utils.applyOverrides(p, runtime);
 end
+% An older pipeline may still carry stale execution choices such as
+% backend=legacy.  When the classifier follows the promoted channel, the
+% immutable release is authoritative for every deployment field it
+% declares.  Resolve once more after pipeline overrides so those stale
+% values cannot silently downgrade the selected model generation.
+p = cellLatentModel.resolvePromotedRelease(classif, p);
 end
 
 function [snapshot, requested] = pinnedAnnotationSnapshot(ctx)

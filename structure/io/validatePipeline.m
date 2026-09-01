@@ -1509,6 +1509,12 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
     compatible = findCompatibleResources(availableResources, spec);
     graphCompatible = nonContextResources(compatible);
     configuredPatternMatches = resourcePatternMatchesConfiguredValue(configured, compatible, spec);
+    configuredConcreteMatches = resourceInventoryDef();
+    if ~isempty(configured) && strcmpi(char(string(getField(spec, 'type', ''))), 'channel') && ...
+            ~isChannelPatternSelector(configured)
+        configuredConcreteMatches = findCompatibleResourceByConfiguredChannelName( ...
+            configured, compatible);
+    end
     [configuredChannelSet, configuredChannelSetMatches, configuredChannelSetMissing] = ...
         resourceConfiguredChannelSetMatches(hasConfiguredRaw, configuredRaw, compatible, spec);
     status = 'resolved';
@@ -1535,7 +1541,17 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
                 msg = sprintf('Node %s binds %s resource pattern "%s" to %s (%d match(es)).', ...
                     char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)), numel(configuredPatternMatches));
             end
+        elseif strcmpi(char(string(getField(spec, 'type', ''))), 'channel') && ...
+                ~isempty(compatible) && isempty(configuredConcreteMatches)
+            status = 'invalid';
+            msg = sprintf(['Node %s binds channel resource "%s" to %s, but that channel ' ...
+                'is not available upstream. Available channels: %s.'], ...
+                char(string(getField(node, 'id', ''))), configured, ...
+                char(string(spec.param)), strjoin(resourceDisplayNames(compatible), ', '));
         else
+            if ~isempty(configuredConcreteMatches)
+                autoChoice = configuredConcreteMatches;
+            end
             msg = sprintf('Node %s binds %s resource "%s" to %s.', ...
                 char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
         end
@@ -1606,6 +1622,24 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
     br.configured = configured;
     br.available = compatible;
     br.autoChoice = autoChoice;
+end
+
+function names = resourceDisplayNames(resources)
+names = {};
+resources = normalizeResourceInventory(resources);
+for i = 1:numel(resources)
+    name = strtrim(char(string(getField(resources(i), 'concreteName', ''))));
+    if isempty(name)
+        name = strtrim(char(string(getField(resources(i), 'symbol', ''))));
+    end
+    if ~isempty(name)
+        names{end+1} = name; %#ok<AGROW>
+    end
+end
+names = unique(names, 'stable');
+if isempty(names)
+    names = {'<none>'};
+end
 end
 
 function [names, matches, missing] = resourceConfiguredChannelSetMatches(hasRaw, raw, compatibleResources, spec)
@@ -1970,11 +2004,13 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
                 artifactReport.status = 'missing_model';
                 return;
             end
-        case {'cellposesam','sam31','trackastra','celllatenttracker'}
+        case {'cellposesam','sam31','trackastra','celllatenttracker', ...
+                'celllatentmodel'}
             % Python-backed classifiers may intentionally use package-managed
-            % default weights or explicit checkpoint paths from their runtime
-            % config. The linked classi snapshot is sufficient for pipeline
-            % wiring; do not require a MATLAB <classifierId>.mat model file.
+            % default weights, explicit checkpoint paths, or an immutable
+            % promoted-release manifest. The linked classi snapshot is
+            % sufficient for pipeline wiring; do not require a MATLAB
+            % <classifierId>.mat model file.
         otherwise
             modelPath = fullfile(modulePath, [moduleId '.mat']);
             artifactReport.modelPath = modelPath;
@@ -3835,12 +3871,41 @@ function keys = resourceSpecParamKeys(node, spec)
     keys = { ...
         char(string(getField(spec, 'param', ''))), ...
         char(string(getField(spec, 'nameParam', '')))};
+    keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
+    % A resource declaration with its own param is authoritative. Falling
+    % through to every legacy selector key can bind one resource through a
+    % different input (for example, treating trackChannelName as the
+    % optional gfpChannelName of cellLatentModel).
     contract = getField(node, 'contract', struct());
     binding = getField(contract, 'binding', struct());
     if isstruct(binding) && isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
-        keys = [keys, cellstr(string(binding.selectorKeys(:)))']; %#ok<AGROW>
+        selectors = cellstr(string(binding.selectorKeys(:)))';
+        if isempty(keys)
+            keys = selectors;
+        else
+            primary = keys{1};
+            for i = 1:numel(selectors)
+                if resourceParamKeysAreAliases(primary, selectors{i})
+                    keys{end+1} = selectors{i}; %#ok<AGROW>
+                end
+            end
+        end
     end
     keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
+end
+
+function tf = resourceParamKeysAreAliases(left, right)
+left = normalizedResourceParamKey(left);
+right = normalizedResourceParamKey(right);
+tf = ~isempty(left) && strcmp(left, right);
+end
+
+function key = normalizedResourceParamKey(value)
+key = lower(regexprep(char(string(value)), '[^a-z0-9]', ''));
+key = regexprep(key, 'name$', '');
+if endsWith(key, 'channels')
+    key = key(1:end-1);
+end
 end
 
 function tf = isSymbolicResourceBinding(v)

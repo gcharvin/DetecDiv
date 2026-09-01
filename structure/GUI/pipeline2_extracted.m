@@ -8230,6 +8230,51 @@ classdef pipeline2 < matlab.apps.AppBase
                 spec = spec(1);
             end
             spec = normalizeClassifierExecutionSpec(app, spec);
+            if available && strcmpi(char(string(pkg)), 'cellLatentModel') && ...
+                    ~isempty(classiObj) && isa(classiObj, 'classi')
+                spec.defaults = classifierApplyTrainingExecutionDefaults( ...
+                    spec.defaults, classiObj, spec, 'pipeline');
+            end
+        end
+
+        function params = migrateCellLatentBindings(app, params) %#ok<INUSD>
+            if ~isstruct(params), params = struct(); end
+            backend = lower(strtrim(char(string(getField(app, params, ...
+                'backend', 'legacy')))));
+            if ~strcmp(backend, 'causal_composite'), return; end
+            hasInstance = isfield(params, 'instanceChannelName') && ...
+                ~isempty(strtrim(char(string(params.instanceChannelName))));
+            hasTrack = isfield(params, 'trackChannelName') && ...
+                ~isempty(strtrim(char(string(params.trackChannelName))));
+            if ~hasInstance && hasTrack
+                % Old nodes exposed the Cellpose result in the stable-track
+                % slot because their stale backend was legacy.  The promoted
+                % composite consumes that same symbolic result as frame-local
+                % instances and creates stable tracks itself.
+                params.instanceChannelName = params.trackChannelName;
+            end
+            if isfield(params, 'trackChannelName')
+                params.trackChannelName = '';
+            end
+        end
+
+        function nodes = synchronizeCellLatentModelNodes(app, nodes)
+            for ii = 1:numel(nodes)
+                if ~strcmpi(char(string(getField(app, nodes(ii), 'type', ''))), 'classifier') || ...
+                        ~strcmpi(char(string(getField(app, nodes(ii), 'pkg', ''))), 'cellLatentModel')
+                    continue;
+                end
+                try
+                    classiObj = linkedClassifierObject(app, nodes(ii));
+                    if isempty(classiObj), continue; end
+                    nodes(ii).params = applyClassifierExecutionDefaults(app, ...
+                        nodes(ii).params, 'cellLatentModel', classiObj, 'overwrite');
+                    nodes(ii).params = migrateCellLatentBindings(app, nodes(ii).params);
+                catch
+                    % Keep the saved node inspectable; ordinary validation
+                    % will report an unavailable or invalid linked artifact.
+                end
+            end
         end
 
         function spec = normalizeClassifierExecutionSpec(app, spec)
@@ -10567,7 +10612,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctrl = createBindingControl(app, grid, node, param, value, choices, direction, editable);
                 ctrl.Layout.Row = i;
                 ctrl.Layout.Column = 3;
-                ctrl.Tooltip = tooltip;
+                if isempty(ctrl.Tooltip)
+                    ctrl.Tooltip = tooltip;
+                elseif ~isempty(tooltip)
+                    ctrl.Tooltip = [char(string(ctrl.Tooltip)) newline tooltip];
+                end
             end
         end
 
@@ -10870,6 +10919,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isInput || ~isempty(choices)
                 displayValue = choiceScalarText(app, value);
                 placeholder = '<unconfigured>';
+                invalidStoredValue = false;
                 if isempty(choices)
                     choices = {displayValue};
                 end
@@ -10883,6 +10933,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     % binding were selected while the model still stores a
                     % different value. Keep the stored value visible until
                     % the user explicitly chooses another binding.
+                    invalidStoredValue = isInput;
                     choices = [{displayValue} choices]; %#ok<AGROW>
                 end
                 if isempty(choices)
@@ -10896,7 +10947,20 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 ctrl = uidropdown(parent);
-                ctrl.Items = choices;
+                if invalidStoredValue
+                    itemLabels = choices;
+                    invalidIndex = find(strcmp(choices, displayValue), 1);
+                    if ~isempty(invalidIndex)
+                        itemLabels{invalidIndex} = ['[INVALID] ' displayValue];
+                    end
+                    ctrl.Items = itemLabels;
+                    ctrl.ItemsData = choices;
+                    ctrl.BackgroundColor = [1.00 0.88 0.88];
+                    ctrl.Tooltip = ['Stored channel "' displayValue ...
+                        '" is absent from the authoritative runtime inventory. Select a valid channel.'];
+                else
+                    ctrl.Items = choices;
+                end
                 ctrl.Value = displayValue;
                 ctrl.Enable = enableState;
                 ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
@@ -11848,7 +11912,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 runtimeChoices = [{'<all>'} runtimeChoices]; %#ok<AGROW>
             end
             graphChoices = graphResourceChoiceLabels(app, node, spec);
-            choices = [upstreamChoices runtimeChoices graphChoices]; %#ok<AGROW>
+            if parsedChannelInventoryIsAuthoritative(app, spec, runtimeChoices)
+                % In raw-parser mode, concrete source/ROI image names come
+                % exclusively from the parser inventory. Generic graph
+                % placeholders such as Channel1 must not masquerade as
+                % valid alternatives to the parsed channel names.
+                choices = runtimeChoices;
+            else
+                choices = [upstreamChoices runtimeChoices graphChoices]; %#ok<AGROW>
+            end
 
             if isempty(choices) && ~isempty(currentValue)
                 choices{end+1} = currentValue; %#ok<AGROW>
@@ -11859,6 +11931,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 choices = {['<' role ' output>']};
             end
             choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
+        function tf = parsedChannelInventoryIsAuthoritative(app, spec, runtimeChoices)
+            tf = false;
+            if isempty(runtimeChoices) || runtimeStartsFromExistingProject(app) || ...
+                    runtimeStartsFromClassifier(app)
+                return;
+            end
+            type = lower(char(string(getField(app, spec, 'type', ''))));
+            role = lower(char(string(getField(app, spec, 'role', ''))));
+            tf = strcmp(type, 'channel') && ...
+                any(strcmp(role, {'source','roi_image','score_roi_image', ...
+                'derived_roi_image','z_stack'})) && ...
+                isfield(app.RuntimeParseInfo, 'channels') && ...
+                ~isempty(app.RuntimeParseInfo.channels);
         end
 
         function choices = appendDataSeriesVariableSuffixToSymbolicChoices(app, choices, currentValue)
@@ -15397,6 +15484,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function nodes = sanitizeClassifierNodeParams(app, nodes) %#ok<INUSD>
+            nodes = synchronizeCellLatentModelNodes(app, nodes);
             for i = 1:numel(nodes)
                 nodeType = lower(char(string(getField(app, nodes(i), 'type', ''))));
                 if ~strcmp(nodeType, 'classifier') || ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
@@ -16073,6 +16161,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 nodes = struct([]);
             end
             nodes = normalizeLoadedNodeLayouts(app, nodes);
+            nodes = synchronizeCellLatentModelNodes(app, nodes);
             for i = 1:numel(nodes)
                 if ~isfield(nodes(i), 'layout') || isempty(nodes(i).layout)
                     nodes(i).layout = [i 1 1 1];

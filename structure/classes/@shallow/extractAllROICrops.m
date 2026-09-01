@@ -1612,10 +1612,13 @@ end
 end
 
 function im2 = safeResizeTo(im,H,W)
-im2 = zeros(H,W,class(im));
-h0 = min(H,size(im,1));
-w0 = min(W,size(im,2));
-im2(1:h0,1:w0) = im(1:h0,1:w0);
+% Raw channels can use different acquisition binning while sharing the
+% same physical field of view (for example 2048x2048 phase contrast and
+% 1024x1024 GFP).  ROI coordinates live on the reference-channel grid, so
+% every selected raw channel must cover that complete grid before crop.
+% Padding the smaller image in the upper-left corner corrupts registration
+% and creates a mostly-zero fluorescence plane.
+im2 = roiExtract.resizeToReferenceGrid(im,H,W);
 end
 
 function outCrop = cropWithPad(frameImg, xmin, ymin, w, h)

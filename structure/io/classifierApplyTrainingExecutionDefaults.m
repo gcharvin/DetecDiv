@@ -9,7 +9,7 @@ if nargin < 4
     return;
 end
 intent = lower(strtrim(char(string(intent))));
-if ~any(strcmp(intent, {'validate','annotation','active_model'}))
+if ~any(strcmp(intent, {'validate','pipeline','annotation','active_model'}))
     return;
 end
 defaults = classifierTrainingExecutionDefaults(classiObj, spec);
@@ -24,6 +24,13 @@ if ~isstruct(spec),spec=struct();end
 % select the wrong backend or make the newly written PRED family
 % undiscoverable by the GT bootstrap catalog.
 groups = {'staticKeys'};
+if strcmp(intent, 'pipeline')
+    % A pipeline owns its dataset bindings.  In particular, never inherit
+    % training-only names such as "Channel1_z2" into a new acquisition.
+    % Deployment controls, immutable artifacts and canonical PRED outputs
+    % still follow the linked classifier and its promoted release.
+    groups = {'staticKeys','artifactKeys','outputKeys'};
+end
 if any(strcmp(intent, {'annotation','active_model'}))
     groups = {'staticKeys','inputKeys','artifactKeys','outputKeys'};
 end

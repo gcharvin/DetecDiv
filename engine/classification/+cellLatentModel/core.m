@@ -71,7 +71,11 @@ if exist('detecdiv_progress','file') == 2
 end
 if strcmp(paramout.backend,'causal_composite')
     lineageParam = paramout;
-    lineageParam.backend = 'continuous_cell_state';
+    if ~isempty(paramout.sceneParentRuntimeManifestPath)
+        lineageParam.backend = 'scene_parent_v54';
+    else
+        lineageParam.backend = 'continuous_cell_state';
+    end
     lineageParam.trackChannelName = trackChannelName;
     lineageParam.modelSource = 'trained';
     lineageParam.materializeCellStates = false;
