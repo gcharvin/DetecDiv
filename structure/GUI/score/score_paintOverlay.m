@@ -9,6 +9,11 @@ function score_paintOverlay(src, event, app)
 
 %% --- Contexte & récupérations ---
 seltype = src.SelectionType;  % 'normal' 'alt' 'extend' 'open' (figure classique)
+% Recover from an earlier drag whose mouse-up event was lost outside the
+% figure, or whose motion callback failed. Without this reset MATLAB keeps
+% dispatching the stale nested callback and painting/selection appears to
+% stop until Score is reopened.
+resetAbandonedPaintInteraction(src);
 
 % ROI sélectionnée
 if isempty(app.content.ROIList), return; end
@@ -184,8 +189,30 @@ catch
     dragStartPoint = [xinit yinit];
 end
 
-src.WindowButtonMotionFcn = @wbmcb;
-src.WindowButtonUpFcn     = @wbucb;
+src.WindowButtonMotionFcn = @safeWbmcb;
+src.WindowButtonUpFcn     = @safeWbucb;
+
+    function safeWbmcb(varargin)
+        try
+            wbmcb(varargin{:});
+        catch ME
+            releasePaintInteraction();
+            warning('score:PaintMotionCallback', ...
+                ['Painting was interrupted and the mouse callbacks were ' ...
+                 'reset automatically: %s'], ME.message);
+        end
+    end
+
+    function safeWbucb(varargin)
+        try
+            wbucb(varargin{:});
+        catch ME
+            releasePaintInteraction();
+            warning('score:PaintReleaseCallback', ...
+                ['The paint-release callback failed and was reset ' ...
+                 'automatically: %s'], ME.message);
+        end
+    end
 
     function wbmcb(~, ~)
         % re-force le curseur à chaque mouvement
@@ -307,10 +334,7 @@ end
     end
 
   function wbucb(~, ~)
-    src.Pointer = 'arrow';
-    src.WindowButtonMotionFcn = '';
-    src.WindowButtonUpFcn     = '';
-    if exist('iptPointerManager','file')==2, iptPointerManager(src,'enable'); end
+    releasePaintInteraction();
     % --- NEW: fin de trait -> on libère l'ID/couleur verrouillés
     % A short left click selects the object. This also makes the legacy
     % double-click responsive without letting its first click paint.
@@ -341,9 +365,33 @@ end
     drawnow limitrate nocallbacks;
 end
 
+  function releasePaintInteraction()
+    try src.WindowButtonMotionFcn = ''; catch, end
+    try src.WindowButtonUpFcn = ''; catch, end
+    try src.Pointer = 'arrow'; catch, end
+    try
+        if exist('iptPointerManager','file')==2
+            iptPointerManager(src,'enable');
+        end
+    catch
+    end
+  end
+
 end
 
 %% ===== Helpers =====
+function resetAbandonedPaintInteraction(fig)
+try fig.WindowButtonMotionFcn = ''; catch, end
+try fig.WindowButtonUpFcn = ''; catch, end
+try fig.Pointer = 'arrow'; catch, end
+try
+    if exist('iptPointerManager','file')==2
+        iptPointerManager(fig,'enable');
+    end
+catch
+end
+end
+
 function ok = hasActiveSelection(app, roi)
 ok = isprop(app,'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && ...
     isgraphics(app.SelectedObjectRectangle) && ...

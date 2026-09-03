@@ -4,6 +4,7 @@ function score_display(app, mode)
 %profile on
 %% --- Vérification de la ROI et chargement de l'image ---
 checkOrCreateImageFigure(app); % to be removed later
+restorePaintCallbacksIfEditing(app);
 
 if isempty(app.content.ROIList)
     return;
@@ -281,6 +282,29 @@ end
 
 
 %profile viewer
+end
+
+function restorePaintCallbacksIfEditing(app)
+% A refresh is a safe interaction boundary. Reattach the edit callback and
+% discard transient drag callbacks that may have survived a lost mouse-up.
+try
+    if ~score_isEditMode(app) || isempty(app.ImageFigure) || ...
+            ~isgraphics(app.ImageFigure)
+        return;
+    end
+    fig = app.ImageFigure;
+    fig.WindowButtonMotionFcn = '';
+    fig.WindowButtonUpFcn = '';
+    fig.WindowButtonDownFcn = ...
+        @(src,event) score_paintOverlay(src,event,app);
+    fig.Pointer = 'arrow';
+    if exist('iptPointerManager','file')==2
+        iptPointerManager(fig,'enable');
+    end
+catch ME
+    warning('score:PaintCallbackRecovery', ...
+        'Could not restore annotation mouse callbacks: %s',ME.message);
+end
 end
 
 function state = captureScoreFigureState(app)
