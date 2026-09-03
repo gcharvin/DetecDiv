@@ -74,6 +74,42 @@ verifyFalse(testCase,contains(logText,'Retrying once'));
 clear cleanupFolder;
 end
 
+function testLongConfigAndPayloadPathsAreReadable(testCase)
+assumeTrue(testCase,ispc, ...
+    'Extended-length path handling is intentionally Windows-only.');
+[runtimeRoot,packageFolder,cleanupRuntime] = temporaryPackage(); %#ok<ASGLU>
+cleanupEnvironment = selectTemporaryRuntime(testCase,runtimeRoot); %#ok<NASGU>
+
+longRoot = tempdir;
+while strlength(string(fullfile(longRoot,'infer_config.json'))) < 275
+    longRoot = fullfile(longRoot, ...
+        'detecdiv_long_path_regression_0123456789');
+end
+mkdir(longRoot);
+cleanupLongRoot = onCleanup(@() removeFolder(longRoot)); %#ok<NASGU>
+payloadPath = fullfile(longRoot,'observations_payload.txt');
+configPath = fullfile(longRoot,'infer_config.json');
+stdoutPath = fullfile(longRoot,'runner_stdout.txt');
+writeText(payloadPath,'LONG_PATH_PAYLOAD_OK');
+pythonPayloadPath = ...
+    cellLatentModel.utils.windowsLongPath(payloadPath);
+writeText(configPath,jsonencode(struct('input_path',pythonPayloadPath)));
+
+writeText(fullfile(packageFolder,'__init__.py'),'');
+writeText(fullfile(packageFolder,'__main__.py'),strjoin({ ...
+    'from pathlib import Path', ...
+    'import json, sys', ...
+    'config = json.loads(Path(sys.argv[-1]).read_text(encoding="utf-8"))', ...
+    'print(Path(config["input_path"]).read_text(encoding="utf-8"), flush=True)', ...
+    ''},newline));
+
+runtime = cellLatentModel.utils.runPythonModule( ...
+    'fake-command',configPath,struct(),stdoutPath);
+verifyEqual(testCase,runtime.status,0);
+verifySubstring(testCase,fileread(stdoutPath),'LONG_PATH_PAYLOAD_OK');
+clear cleanupLongRoot cleanupRuntime;
+end
+
 function [root,packageFolder,cleanup] = temporaryPackage()
 root = tempname;
 packageFolder = fullfile(root,'src','cell_latent_model');

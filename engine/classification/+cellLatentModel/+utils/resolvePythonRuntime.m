@@ -38,6 +38,21 @@ if isempty(runtime.pythonExecutable)
     end
 end
 if isempty(runtime.pythonExecutable)
+    % A pre-existing canonical environment is already the execution
+    % boundary required by this package. Do not run DetecDiv's global
+    % CellposeSAM/Trackastra bootstrap for every latent-model subprocess:
+    % neither the latent tracker nor its lineage/state heads import
+    % Trackastra. Missing latent dependencies will be reported by the real
+    % package command, while a genuinely absent environment still falls
+    % through to the installer below.
+    canonicalPython = fullfile(getenv('USERPROFILE'),'.conda','envs', ...
+        'detecdiv_python','python.exe');
+    if isfile(canonicalPython)
+        runtime.pythonExecutable = canonicalPython;
+        runtime.packageSource = 'detecdiv_python_existing';
+    end
+end
+if isempty(runtime.pythonExecutable)
     try
         args = pythonSelectionArgs(ctx);
         select_and_load_conda_env(args{:});
@@ -52,8 +67,6 @@ if isempty(runtime.pythonExecutable)
 end
 if isempty(runtime.pythonExecutable)
     candidates = { ...
-        fullfile(getenv('USERPROFILE'),'.conda','envs', ...
-            'detecdiv_python','python.exe'), ...
         'python3','python'};
     for i = 1:numel(candidates)
         candidate = candidates{i};

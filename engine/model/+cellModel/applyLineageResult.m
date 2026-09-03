@@ -15,7 +15,8 @@ if isempty(sourceIndex)
     sourceIndex = automaticSourceIndex( ...
         model, channelName, outputIndex);
 end
-if ~isempty(outputIndex) && outputIndex == sourceIndex
+if ~isempty(outputIndex) && ~isempty(sourceIndex) && ...
+        outputIndex == sourceIndex
     error('cellModel:SourceOutputCollision', ...
         ['The output family must be distinct from the tracking/source ' ...
          'family so source states and genealogy remain immutable.']);
@@ -137,7 +138,12 @@ if isempty(candidates),return;end
 
 distinct=candidates(candidates~=outputIndex);
 if isempty(distinct)
-    index=candidates(1);
+    % On a repeated inference the only family using the freshly
+    % materialized track provider can be the previous PRED output itself.
+    % It is not an immutable source and must not collide with its own
+    % overwrite. Explicit inputFamily==outputFamily is still rejected by
+    % the main guard above.
+    if isempty(outputIndex),index=candidates(1);else,index=[];end
     return;
 end
 if numel(distinct)==1

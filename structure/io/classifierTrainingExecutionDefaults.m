@@ -62,7 +62,16 @@ end
 for i = 1:numel(keys)
     key = keys{i};
     if isfield(trainingParam, key)
-        defaults.(key) = selectedValue(trainingParam.(key));
+        value = selectedValue(trainingParam.(key));
+        % Historical trainingParam structs often contain empty placeholders
+        % for values that were never established by training.  They are not
+        % deployment decisions and must not erase an explicit runtime value
+        % (for example a known acquisition cadence).  A dedicated
+        % training_execution_defaults.json remains authoritative, including
+        % any values it explicitly stores, because it is overlaid below.
+        if ~isempty(value)
+            defaults.(key) = value;
+        end
     end
 end
 end

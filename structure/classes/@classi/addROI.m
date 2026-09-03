@@ -32,6 +32,8 @@ function addROI(classif, obj, varargin)
 %   'adjustChannel': list of source channel names to keep (others removed)
 %   'adjustName'   : legacy mapping helper (kept for backward compatibility)
 %   'ioMap'        : struct array mapping channels (from roiImporterGUI)
+%   'duplicatePolicy': namespace (default), skip, or error.  namespace
+%                    preserves same-named ROIs from different sources.
 %
 % NOTE:
 % - This file assumes helper functions exist:
@@ -50,6 +52,7 @@ convert      = {};
 adjustName   = {};   % legacy channel-name mapping helper
 adjustChannel= {};
 ioMap        = [];
+duplicatePolicy = "namespace";
 
 for i = 1:2:numel(varargin)
     key = varargin{i};
@@ -67,7 +70,14 @@ for i = 1:2:numel(varargin)
             adjustChannel = val;
         case "iomap"
             ioMap = val;
+        case "duplicatepolicy"
+            duplicatePolicy = lower(strtrim(string(val)));
     end
+end
+if ~isscalar(duplicatePolicy) || ...
+        ~any(duplicatePolicy == ["namespace","skip","error"])
+    error('classi:addROI:InvalidDuplicatePolicy', ...
+        'duplicatePolicy must be namespace, skip, or error.');
 end
 
 disp('==== addROI ====');
@@ -106,8 +116,6 @@ end
 for ii = 1:length(rois)
     disp(['Processing ROI ' num2str(ii) '/' num2str(length(rois))]);
 
-    duplicate = 0;
-
     roitocopy = obj.roi(rois(ii));
     if isempty(roitocopy.image)
         roitocopy.load;
@@ -117,16 +125,32 @@ for ii = 1:length(rois)
         end
     end
 
-    % ----- Prevent duplicates by ROI name -----
-    for j=1:numel(classif.roi)
-        if strcmp(roitocopy.id, classif.roi(j).id)
-            disp(['WARNING: Imported ROI "' roitocopy.id '" already exists in ' classif.strid '. Skipping.']);
-            duplicate=j;
-            break
-        end
-    end
-    if duplicate > 0
+    sourceIdentity = roiImportSourceIdentity(roitocopy, obj);
+    if findImportedSource(classif.roi, sourceIdentity.file) > 0
+        disp(['WARNING: Source ROI "' roitocopy.id '" was already imported ' ...
+            'from ' sourceIdentity.file '. Skipping.']);
         continue
+    end
+    destinationId = char(string(roitocopy.id));
+    duplicate = find(strcmpi({classif.roi.id}, destinationId), 1, 'first');
+    if ~isempty(duplicate)
+        switch char(duplicatePolicy)
+            case 'skip'
+                disp(['WARNING: Imported ROI "' destinationId '" already exists in ' ...
+                    classif.strid '. Skipping.']);
+                continue
+            case 'error'
+                error('classi:addROI:DuplicateRoiId', ...
+                    'Imported ROI "%s" already exists in %s.', ...
+                    destinationId, classif.strid);
+            otherwise
+                destinationId = uniqueImportedRoiId(classif.roi, ...
+                    sourceIdentity.namespace, destinationId);
+                warning('classi:addROI:NamespacedDuplicate', ...
+                    ['ROI ID "%s" already exists in %s. Importing the ' ...
+                     'different source as "%s".'], ...
+                    roitocopy.id, classif.strid, destinationId);
+        end
     end
 
     % ----- Allocate new ROI slot -----
@@ -138,6 +162,34 @@ for ii = 1:length(rois)
 
     % Copy properties (but not .data; propValues excludes 'data')
     classif.roi(cc+1) = propValues(classif.roi(cc+1), roitocopy);
+
+    % roiImporterGUI is commonly opened from Score while only the displayed
+    % mask channel is resident in memory.  display.channel still lists every
+    % source channel in that situation, so copying the partial cache creates
+    % a destination HDF5 whose metadata advertises BF/GFP channels that were
+    % never written.  Reload the detached destination object from the source
+    % HDF5 before changing its path.  This leaves the source ROI cache alone
+    % and guarantees that the import contains all physical source datasets.
+    sourcePath = classif.roi(cc+1).path;
+    sourceH5 = fullfile(sourcePath, ['im_' roitocopy.id '.h5']);
+    if isfile(sourceH5)
+        try
+            classif.roi(cc+1).load('Data', false, 'Silent');
+        catch ME
+            error('classi:addROI:SourceImageLoadFailed', ...
+                'Could not load every source channel for ROI "%s": %s', ...
+                roitocopy.id, ME.message);
+        end
+    end
+    classif.roi(cc+1).id = destinationId;
+    if ~isstruct(classif.roi(cc+1).extraction)
+        classif.roi(cc+1).extraction = struct();
+    end
+    classif.roi(cc+1).extraction.importSourceFile = sourceIdentity.file;
+    classif.roi(cc+1).extraction.importSourceRoiId = ...
+        char(string(roitocopy.id));
+    classif.roi(cc+1).extraction.importedAt = ...
+        char(datetime('now','Format','yyyy-MM-dd''T''HH:mm:ssXXX'));
     classif.roi(cc+1).path = classif.path;
     classif.roi(cc+1).classes = classif.classes;
 
@@ -360,6 +412,14 @@ for ii = 1:length(rois)
         end
 
         selectClassifierDisplayChannels(classif.roi(cc+1), classif, outName);
+    end
+    if ~strcmp(destinationId, char(string(roitocopy.id)))
+        for ij = 1:numel(classif.roi(cc+1).data)
+            try
+                classif.roi(cc+1).data(ij).parentid = destinationId;
+            catch
+            end
+        end
     end
 
     % ============================================================
@@ -1045,4 +1105,70 @@ for k = 1:length(pl)
         newObj.(pl{k}) = orgObj.(pl{k});
     end
 end
+end
+
+function info = roiImportSourceIdentity(roiObj, sourceContainer)
+sourcePath = '';
+sourceId = '';
+try, sourcePath = char(string(roiObj.path)); catch, end
+try, sourceId = char(string(roiObj.id)); catch, end
+sourceFile = fullfile(sourcePath, ['im_' sourceId '.h5']);
+try
+    sourceFile = char(java.io.File(sourceFile).getCanonicalPath());
+catch
+end
+namespace = '';
+if isa(sourceContainer, 'classi')
+    try, namespace = char(string(sourceContainer.strid)); catch, end
+end
+if isempty(strtrim(namespace))
+    trimmed = regexprep(sourcePath, '[\\/]+$', '');
+    [parentPath, leaf] = fileparts(trimmed);
+    [~, parentLeaf] = fileparts(parentPath);
+    namespace = parentLeaf;
+    if isempty(namespace), namespace = leaf; end
+end
+namespace = regexprep(char(string(namespace)), '[^A-Za-z0-9_.-]', '_');
+namespace = regexprep(namespace, '_+', '_');
+namespace = regexprep(namespace, '^_+|_+$', '');
+if isempty(namespace), namespace = 'source'; end
+info = struct('file', sourceFile, 'namespace', namespace);
+end
+
+function index = findImportedSource(rois, sourceFile)
+index = 0;
+if isempty(sourceFile), return; end
+for i = 1:numel(rois)
+    candidate = '';
+    try
+        if isstruct(rois(i).extraction) && ...
+                isfield(rois(i).extraction, 'importSourceFile')
+            candidate = char(string(rois(i).extraction.importSourceFile));
+        end
+    catch
+    end
+    if sameImportPath(candidate, sourceFile)
+        index = i;
+        return
+    end
+end
+end
+
+function id = uniqueImportedRoiId(rois, namespace, sourceId)
+base = [namespace '__' char(string(sourceId))];
+base = regexprep(base, '[^A-Za-z0-9_.-]', '_');
+existing = lower(string({rois.id}));
+id = base;
+suffix = 2;
+while any(existing == lower(string(id)))
+    id = sprintf('%s_%d', base, suffix);
+    suffix = suffix + 1;
+end
+end
+
+function tf = sameImportPath(a, b)
+a = strrep(strtrim(char(string(a))), '/', filesep);
+b = strrep(strtrim(char(string(b))), '/', filesep);
+if isempty(a) || isempty(b), tf = false; return; end
+if ispc, tf = strcmpi(a, b); else, tf = strcmp(a, b); end
 end

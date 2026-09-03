@@ -314,5 +314,11 @@ fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 
 function value = normalizedPath(value)
-value = strrep(char(string(value)),'\','/');
+value = cellLatentModel.utils.windowsLongPath(value);
+% h5py's native Windows HDF5 backend accepts the extended-length prefix
+% only in canonical Win32 form (\\?\C:\...), whereas pathlib also accepts
+% //?/C:/.... Preserve backslashes for extended paths.
+if ~(ispc && startsWith(value, '\\?\'))
+    value = strrep(char(string(value)),'\','/');
+end
 end

@@ -181,6 +181,21 @@ verifyEqual(testCase, actual.minLifetime, 7);
 verifyFalse(testCase, isfield(actual, 'epochs'));
 end
 
+function testEmptyHistoricalTrainingValueDoesNotEraseExplicitRuntime(testCase)
+classifier = struct( ...
+    'trainingParam', struct('frameIntervalMinutes', []), ...
+    'executionParam', struct('frameIntervalMinutes', 5), ...
+    'classifierPkg', '', 'trainingFun', '', 'path', '', 'strid', 'test');
+spec = struct( ...
+    'staticKeys', {{'frameIntervalMinutes'}}, ...
+    'artifactKeys', {{}}, 'environmentKeys', {{}}, 'outputKeys', {{}});
+
+actual = classifierApplyTrainingExecutionDefaults( ...
+    classifier.executionParam, classifier, spec, 'annotation');
+
+verifyEqual(testCase, actual.frameIntervalMinutes, 5);
+end
+
 function testTrainingExecutionSnapshotWinsOverStaleClassifierState(testCase)
 folder = tempname;
 mkdir(folder);

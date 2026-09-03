@@ -9,7 +9,14 @@ if catalog.prediction.available
     ids{end+1} = 'prediction'; %#ok<AGROW>
 end
 if activeModelCanUseExistingInputs(activeModel)
-    labels{end+1} = 'Apply active latent model to existing masks/tracks'; %#ok<AGROW>
+    releaseId = fieldText(activeModel, 'releaseId');
+    if isempty(releaseId)
+        label = 'Apply active latent model to existing masks/tracks';
+    else
+        label = sprintf('Apply latent model %s to existing masks/tracks', ...
+            releaseId);
+    end
+    labels{end+1} = label; %#ok<AGROW>
     ids{end+1} = 'run_prediction'; %#ok<AGROW>
 end
 if catalog.supports.family && any([catalog.families.usable])
@@ -19,6 +26,16 @@ end
 if catalog.supports.mask && ~isempty(catalog.maskChannels)
     labels{end+1} = 'Copy existing segmentation mask as Draft GT'; %#ok<AGROW>
     ids{end+1} = 'mask'; %#ok<AGROW>
+end
+end
+
+function value = fieldText(item, name)
+value = '';
+try
+    if isstruct(item) && isfield(item, name)
+        value = strtrim(char(string(item.(name))));
+    end
+catch
 end
 end
 

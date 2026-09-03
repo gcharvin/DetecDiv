@@ -51,3 +51,29 @@ verifyError(testCase,@()cellModel.applyLineageResult( ...
     'prediction',struct('edges',struct([])),true,'cellLatentModel'), ...
     'cellModel:SourceOutputCollision');
 end
+
+function testAutoSourceAllowsRepeatedPredictionOverwrite(testCase)
+model = cellModel.create('repeat_prediction');
+model.families.family_id = uint32(1);
+model.families.name = {'prediction'};
+model.families.mask_provider = {'tracked'};
+model.families.lineage_source = {'pred:cellLatentModel'};
+model.families.color_rgb = uint8([10 20 30]);
+model.instances.object_id = uint64(1);
+model.instances.family_id = uint32(1);
+model.instances.frame = uint32(1);
+model.instances.mask_label = uint32(7);
+model.instances.track_id = uint64(7);
+model.instances.state_id = uint16(0);
+model = cellModel.normalize(model);
+
+stack = uint32(7 * ones(2,2,1));
+[actual,familyId] = cellModel.applyLineageResult( ...
+    model,stack,'tracked','<auto>','prediction', ...
+    struct('edges',struct([])),true,'pred:cellLatentModel');
+
+verifyEqual(testCase,familyId,uint32(1));
+verifyEqual(testCase,actual.instances.mask_label,uint32(7));
+verifyEqual(testCase,actual.instances.track_id,uint64(7));
+verifyTrue(testCase,cellModel.validate(actual).ok);
+end

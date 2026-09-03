@@ -88,5 +88,8 @@ fwrite(fid,jsonencode(value,'PrettyPrint',true),'char');
 end
 
 function value=normalizedPath(value)
-value=strrep(char(string(value)),'\','/');
+value=cellLatentModel.utils.windowsLongPath(value);
+if ~(ispc&&startsWith(value,'\\?\'))
+    value=strrep(char(string(value)),'\','/');
+end
 end

@@ -68,13 +68,14 @@ end
 
 function testExistingAndFreshPredictionChoicesRemainSeparate(testCase)
 catalog = minimalCatalog(true);
-active = struct('available', true, 'canRunOnExistingInputs', true);
+active = struct('available', true, 'canRunOnExistingInputs', true, ...
+    'releaseId', 'latent-v54-parent-ensemble-v002');
 [labels, ids] = annotationInitializationModes(catalog, active);
 verifyTrue(testCase, any(strcmp(ids, 'prediction')));
 verifyTrue(testCase, any(strcmp(ids, 'run_prediction')));
 verifyTrue(testCase, any(contains(string(labels), 'Copy existing PRED')));
 verifyTrue(testCase, any(contains(string(labels), ...
-    'Apply active latent model to existing masks/tracks')));
+    'latent-v54-parent-ensemble-v002')));
 end
 
 function testRunChoiceAppearsWithoutExistingPrediction(testCase)

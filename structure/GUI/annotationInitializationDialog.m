@@ -266,17 +266,23 @@ try
     if ~isempty(value), reference = value; end
 catch
 end
+release = '';
+try, release = char(string(info.releaseId)); catch, end
+releaseLine = '';
+if ~isempty(strtrim(release))
+    releaseLine = sprintf('Release: %s\n', release);
+end
 inputs = {'Inputs: resolve automatically per ROI'};
 try
     if ~isempty(info.inputs), inputs = cellstr(string(info.inputs)); end
 catch
 end
-text = sprintf(['Active model: %s\nReference: %s\n%s\n' ...
+text = sprintf(['Active model: %s\n%sReference: %s\n%s\n' ...
     'Ground truth consumed by inference: NO\n' ...
     'Segmentation launched automatically: NO\n' ...
     'Operation: refine tracking and parentage from existing PRED masks/tracks\n' ...
     'Result: refined prediction copied into editable Draft GT'], ...
-    classifierId, reference, strjoin(inputs, ' | '));
+    classifierId, releaseLine, reference, strjoin(inputs, ' | '));
 try
     if ~info.inputsResolved && ~isempty(info.issues)
         text = sprintf('%s\nInput mapping required: %s', text, ...
@@ -289,6 +295,26 @@ end
 function text = initializationHelpText(catalog, activeModel)
 if activeModelAvailable(activeModel) && ...
         ~activeModelCanUseExistingInputs(activeModel)
+    hasMaskInputs = false;
+    try, hasMaskInputs = logical(activeModel.hasExistingMaskInputs); catch, end
+    if hasMaskInputs
+        reason = '';
+        try
+            if ~isempty(activeModel.issues)
+                reason = char(strjoin(string(activeModel.issues), ' | '));
+            end
+        catch
+        end
+        if isempty(strtrim(reason))
+            try, reason = char(string(activeModel.reason)); catch, end
+        end
+        if ~isempty(strtrim(reason))
+            text = sprintf(['The active latent model found compatible PRED ' ...
+                'masks/tracks, but inference is blocked by its runtime ' ...
+                'configuration: %s'], reason);
+            return;
+        end
+    end
     text = ['No compatible PRED mask/track provider is currently available ' ...
         'to the active latent model. Run CellposeSAM separately, click ' ...
         'Refresh, then reopen Initialize GT. CellposeSAM is never launched ' ...

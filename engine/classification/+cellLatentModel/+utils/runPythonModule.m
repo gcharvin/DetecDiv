@@ -6,8 +6,10 @@ runtime = cellLatentModel.utils.resolvePythonRuntime(ctx);
 pythonExe = char(string(runtime.pythonExecutable));
 repoRoot = char(string(runtime.repositoryRoot));
 lineageRepoRoot = char(string(runtime.lineageRepositoryRoot));
+pythonConfigPath = ...
+    cellLatentModel.utils.windowsLongPath(configPath);
 moduleArgs = sprintf('-u -m cell_latent_model %s --config %s', ...
-    char(string(command)),quoteArg(configPath));
+    char(string(command)),quoteArg(pythonConfigPath));
 sourceRoots = {};
 if ~isempty(repoRoot), sourceRoots{end+1} = fullfile(repoRoot,'src'); end
 if ~isempty(lineageRepoRoot)
@@ -38,7 +40,7 @@ else
     end
 end
 processArgs = {pythonExe,'-u','-m','cell_latent_model', ...
-    char(string(command)),'--config',char(string(configPath))};
+    char(string(command)),'--config',pythonConfigPath};
 [status,output] = runStreamingProcess( ...
     processArgs,sourceRoots,ctx,stdoutPath,'w');
 runtime.command = cmd;
