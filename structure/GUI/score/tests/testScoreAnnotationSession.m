@@ -108,6 +108,8 @@ verifyNotEmpty(testCase, app.ReviewFindingsButton.ButtonPushedFcn);
 verifyTrue(testCase, isvalid(app.CensorSelectedTrackButton));
 verifyTrue(testCase, isvalid(app.CensorStatusLabel));
 verifyNotEmpty(testCase, app.CensorSelectedTrackButton.ButtonPushedFcn);
+verifyTrue(testCase, isvalid(app.LineageTreeButton));
+verifyNotEmpty(testCase, app.LineageTreeButton.ButtonPushedFcn);
 
 callback = app.CreateFromPredictionButton.ButtonPushedFcn;
 callback(app.CreateFromPredictionButton, []);

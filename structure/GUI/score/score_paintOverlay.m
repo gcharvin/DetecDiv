@@ -2076,9 +2076,7 @@ end
 
 function col = label2color(id)
 % map ID entier >0 -> couleur palette 16, stable et déterministe
-pal = getPalette(16);
-idx = 1 + mod(max(1,round(id))-1, size(pal,1));
-col = pal(idx,:);
+col = score_trackColor(id);
 end
 
 function col = selectedIdentityColor(app, maskLabel)

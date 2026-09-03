@@ -135,6 +135,7 @@ classdef score < matlab.apps.AppBase
         MovieoutputTab                  matlab.ui.container.Tab
         MoviePanel                      matlab.ui.container.Panel
         CensorStatusLabel                matlab.ui.control.Label
+        LineageTreeButton                matlab.ui.control.Button
         CensorSelectedTrackButton        matlab.ui.control.Button
         ReviewFindingsButton             matlab.ui.control.Button
         MarkThroughCurrentButton         matlab.ui.control.Button
@@ -2057,6 +2058,17 @@ end
             catch ME
                 warning('score:AnnotationChangeTracking', ...
                     'Could not update annotation review state: %s', ME.message);
+            end
+            if any(strcmpi(char(string(source)), ...
+                    {'parentage','lineage','tracking','track','track_identity'})) && ...
+                    ~isempty(findall(groot, 'Type', 'figure', ...
+                    'Tag', 'ScoreAsymmetricLineageTree'))
+                try
+                    app.showLineageTree();
+                catch ME
+                    warning('score:LineageTreeRefresh', ...
+                        'Could not refresh the open lineage tree: %s', ME.message);
+                end
             end
         end
 
@@ -4955,6 +4967,14 @@ end
             end
         end
 
+        function LineageTreeButtonPushed(app, event) %#ok<INUSD>
+            try
+                app.showLineageTree();
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, 'Lineage tree');
+            end
+        end
+
         function showAnnotationFrame(app, frame)
             roi = app.getSelectedROI();
             if isempty(roi), return; end
@@ -5106,6 +5126,70 @@ end
                 app.CellModelStatusLabel.Tooltip = message;
             catch
             end
+        end
+
+        function showLineageTree(app)
+            roi = app.getSelectedROI();
+            if isempty(roi)
+                error('score:NoSelectedROI', 'No ROI is selected.');
+            end
+            [selectedRoi, channelName] = score_selectedObjectChannel(app);
+            if isempty(selectedRoi) || isempty(channelName) || ...
+                    string(selectedRoi.id) ~= string(roi.id)
+                error('score:NoSelectedObjectChannel', ...
+                    'Select a tracked-object annotation channel first.');
+            end
+            [model, modelStatus] = score_getCellModel(roi);
+            if ~strcmp(modelStatus, 'ok')
+                error('score:MissingCellModel', ...
+                    'No valid cellular object model is loaded.');
+            end
+            cfg = score_getObjectDisplayConfig(roi, channelName);
+            [familyIndex, familyId, familyName] = ...
+                score_resolveCellModelFamily(model, cfg, channelName);
+            if isempty(familyIndex)
+                error('score:MissingObjectFamily', ...
+                    'No object family is associated with the selected channel.');
+            end
+            [model, ~] = cellModel.canonicalizeParentageEvents(model);
+            selected = double(app.SelectedTrackIDCell);
+            score_lineageTreeDialog(model, familyId, ...
+                'SelectedTrackId', selected, ...
+                'Title', sprintf('Lineage tree — %s / %s', ...
+                    char(string(roi.id)), familyName), ...
+                'OnTrackSelected', @(trackId) app.focusLineageTreeTrack( ...
+                    string(roi.id), familyId, trackId), ...
+                'OnRefresh', @() app.showLineageTree());
+        end
+
+        function focusLineageTreeTrack(app, roiId, familyId, trackId)
+            roi = app.getSelectedROI();
+            if isempty(roi) || string(roi.id) ~= string(roiId)
+                error('score:LineageTreeRoiChanged', ...
+                    ['This tree belongs to ROI "%s". Select that ROI and ' ...
+                     'press Refresh from GT before navigating.'], roiId);
+            end
+            [model, modelStatus] = score_getCellModel(roi);
+            if ~strcmp(modelStatus, 'ok')
+                error('score:MissingCellModel', ...
+                    'No valid cellular object model is loaded.');
+            end
+            rows = model.instances.family_id == uint32(familyId) & ...
+                model.instances.track_id == uint64(trackId);
+            if ~any(rows)
+                error('score:TrackNotFound', ...
+                    'Track %u no longer exists in the displayed family.', ...
+                    uint64(trackId));
+            end
+            firstFrame = min(model.instances.frame(rows));
+            issue = annotationManager.newValidationIssue( ...
+                'code', 'lineage_tree_lookup', 'severity', 'warning', ...
+                'component', 'Tracking', ...
+                'summary', sprintf('Track %u', uint64(trackId)), ...
+                'family_id', uint32(familyId), ...
+                'event_frame', firstFrame, 'focus_frame', firstFrame, ...
+                'focus_track_id', uint64(trackId));
+            app.focusAnnotationValidationIssue(issue);
         end
 
         function report = repairAnnotationFindings(app, issues)
@@ -5447,6 +5531,9 @@ end
             app.SelectedTrackIDEditField.Tooltip = ...
                 ['Enter a Track ID and press Enter to select it at its ' ...
                  'first frame. This field does not edit Track IDs.'];
+            app.LineageTreeButton.Tooltip = [ ...
+                'Open a persistent asymmetric genealogy. Click a TrackID ' ...
+                'to show its birth frame and select it in Score.'];
             app.CreateFromPredictionButton.Tooltip = ...
                 ['Initialize editable GT from the model prediction, an existing ' ...
                  'object family, a segmentation mask, or blank content.'];
@@ -8524,11 +8611,16 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             % Create CensorStatusLabel
             app.CensorStatusLabel = uilabel(app.ObjectspanelPanel);
             app.CensorStatusLabel.Visible = 'off';
-            app.CensorStatusLabel.Position = [15 5 330 22];
+            app.CensorStatusLabel.Position = [15 5 230 22];
             app.CensorStatusLabel.Text = 'Censoring: select a tracked cell';
             app.CensorStatusLabel.Tooltip = ['Boundary contact alone ' ...
                 'does not censor a cell; censor only visibly truncated ' ...
                 'or genuinely ambiguous observations.'];
+            % Create LineageTreeButton
+            app.LineageTreeButton = uibutton(app.ObjectspanelPanel, 'push');
+            app.LineageTreeButton.ButtonPushedFcn = createCallbackFcn(app, @LineageTreeButtonPushed, true);
+            app.LineageTreeButton.Position = [255 5 90 28];
+            app.LineageTreeButton.Text = 'Lineage tree';
             % Create NewAnnotationButton
             app.NewAnnotationButton = uibutton(app.AnnotationPanel, 'push');
             app.NewAnnotationButton.ButtonPushedFcn = createCallbackFcn(app, @NewAnnotationButtonPushed, true);

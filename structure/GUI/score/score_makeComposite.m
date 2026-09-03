@@ -984,9 +984,7 @@ end
 
 
 function col = label2color(id)
-pal = getPalette(16);
-idx = 1 + mod(max(1,round(id))-1, size(pal,1));
-col = pal(idx,:);
+col = score_trackColor(id);
 end
 
 function rgb = mask2rgb_stable(L)
