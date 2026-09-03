@@ -203,7 +203,11 @@ for i = 1:numel(roiobj)
     end
     disp(['[DEBUG] classifyData: ROI ' num2str(i) '/' num2str(numel(roiobj)) ' id=' roiIdStr]);
     hadImageInMemory = ~isempty(roiobj(i).image);
-    hadDataInMemory = ~isempty(roiobj(i).data);
+    % roi.data historically defaults to a scalar, empty dataseries handle.
+    % Treat that placeholder as an empty cache; otherwise cachePolicy=auto
+    % mistakes it for caller-owned data and retains every image loaded by
+    % this loop.
+    hadDataInMemory = hasMaterializedRoiDataLocal(roiobj(i).data);
     ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
     if para
         hadImageByIdx(i) = hadImageInMemory;
@@ -875,16 +879,16 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
             roiobj.save;   % sauvegarde tout
         end
         flushAfterSave = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal);
+        [keepImage, keepData] = resolveRoiCacheRetentionLocal( ...
+            cachePolicyLocal, hadImageBefore, hadDataBefore, flushAfterSave);
+        applyRoiCacheRetentionLocal(roiobj, imageCache, dataCache, keepImage, keepData);
         if flushAfterSave
-            roiobj.clear;
             disp('[DEBUG] ROIManagement: roi.save done, classifier output cache flushed for HDF5 reload.');
-        elseif shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-            roiobj.image = imageCache;
-            roiobj.data = dataCache;
-            disp('[DEBUG] ROIManagement: roi.save done, ROI kept in memory.');
+        elseif keepImage || keepData
+            disp(sprintf('[DEBUG] ROIManagement: roi.save done, cache retained (image=%d, data=%d).', ...
+                keepImage, keepData));
         else
-            roiobj.clear;
-            disp('[DEBUG] ROIManagement: roi.save done (image+data), roi.clear called.');
+            disp('[DEBUG] ROIManagement: roi.save done, transient cache released.');
         end
     else
         try
@@ -893,12 +897,12 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
             disp('[DEBUG] ROIManagement: calling roi.save(''data'') (id unavailable)');
         end
         roiobj.save('data');  % seulement les metadonnees
-        if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-            roiobj.data = dataCache;
-            disp('[DEBUG] ROIManagement: roi.save(''data'') done, data kept in memory.');
-        else
-            disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
-        end
+        flushAfterSave = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal);
+        [keepImage, keepData] = resolveRoiCacheRetentionLocal( ...
+            cachePolicyLocal, hadImageBefore, hadDataBefore, flushAfterSave);
+        applyRoiCacheRetentionLocal(roiobj, imageCache, dataCache, keepImage, keepData);
+        disp(sprintf('[DEBUG] ROIManagement: roi.save(''data'') done, cache retained (image=%d, data=%d).', ...
+            keepImage, keepData));
     end
 end
 
@@ -963,27 +967,9 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, classiob
     end
 
     flushAfterSave = shouldFlushRoiCacheAfterClassifierOutput(classiobj, cachePolicyLocal);
-    if flushAfterSave
-        roiobj.clear;
-    elseif shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-        if isempty(roiobj.image) && ~isempty(imageCache)
-            roiobj.image = imageCache;
-        end
-    else
-        roiobj.clear;
-    end
-
-    if ~flushAfterSave && shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-        if hasDataPatch
-            % roi.save('data') clears data; keep the patched data in memory
-            % when the caller had already loaded ROI data.
-            try
-                roiobj.load('data','Silent');
-            catch
-                roiobj.data = dataCacheAfter;
-            end
-        end
-    end
+    [keepImage, keepData] = resolveRoiCacheRetentionLocal( ...
+        cachePolicyLocal, hadImageBefore, hadDataBefore, flushAfterSave);
+    applyRoiCacheRetentionLocal(roiobj, imageCache, dataCacheAfter, keepImage, keepData);
 end
 
 function changed = maybeApplyPostClassifierLineageLocal(roiobj, classiobj, outputName, ctx)
@@ -1310,14 +1296,68 @@ catch
 end
 end
 
-function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
+function [keepImage, keepData] = resolveRoiCacheRetentionLocal(policy, hadImageBefore, hadDataBefore, forceFlush)
+    if nargin < 4, forceFlush = false; end
+    if forceFlush
+        keepImage = false;
+        keepData = false;
+        return;
+    end
+
     switch lower(char(string(policy)))
         case 'memory'
-            tf = true;
+            keepImage = true;
+            keepData = true;
         case 'auto'
-            tf = logical(hadImageBefore || hadDataBefore);
+            % Image and dataseries caches are independent. In particular,
+            % preloaded dataseries must never retain an image that was loaded
+            % only for the current ROI classification.
+            keepImage = logical(hadImageBefore);
+            keepData = logical(hadDataBefore);
         otherwise
-            tf = false;
+            keepImage = false;
+            keepData = false;
+    end
+end
+
+function applyRoiCacheRetentionLocal(roiobj, imageCache, dataCache, keepImage, keepData)
+    if keepImage
+        roiobj.image = imageCache;
+    else
+        roiobj.image = [];
+    end
+
+    if keepData
+        roiobj.data = dataCache;
+    else
+        roiobj.data = dataseries.empty;
+    end
+end
+
+function tf = hasMaterializedRoiDataLocal(dataCache)
+    tf = false;
+    if isempty(dataCache)
+        return;
+    end
+    if ~isa(dataCache, 'dataseries')
+        tf = true;
+        return;
+    end
+
+    try
+        dataCache = dataCache(isvalid(dataCache));
+    catch
+    end
+    for iData = 1:numel(dataCache)
+        try
+            hasGroup = ~isempty(dataCache(iData).groupid);
+            hasTable = istable(dataCache(iData).data) && width(dataCache(iData).data) > 0;
+            if hasGroup || hasTable
+                tf = true;
+                return;
+            end
+        catch
+        end
     end
 end
 

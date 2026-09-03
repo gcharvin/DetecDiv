@@ -127,7 +127,9 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     end
 
     hadImageInMemory = ~isempty(roiobj(i).image);
-    hadDataInMemory = ~isempty(roiobj(i).data);
+    % A scalar dataseries placeholder is the historical empty state of a
+    % ROI, not a caller-owned in-memory cache.
+    hadDataInMemory = hasSavableDataseries(roiobj(i).data);
     ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase);
     if para
         hadImageByIdx(i) = hadImageInMemory;
@@ -328,10 +330,14 @@ end
             return;
         end
 
-        imageCache = image;
-        dataCache = data;
-        roiobj.data=data;
+        imageCache = roiobj.image;
+        dataCache = roiobj.data;
+        if hasSavableDataseries(data)
+            dataCache = data;
+        end
+        roiobj.data=dataCache;
         if numel(image)
+            imageCache = image;
             roiobj.image=image;
         end
         if shouldDeferSaveLocal(saveModeLocal)
@@ -345,12 +351,10 @@ end
             else
                 roiobj.save; % before we used to save the data only ('data')
             end
-            if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-                roiobj.image = imageCache;
-                roiobj.data = dataCache;
-            else
-                roiobj.clear,
-            end
+            [keepImage, keepData] = resolveRoiCacheRetentionLocal( ...
+                cachePolicyLocal, hadImageBefore, hadDataBefore);
+            applyRoiCacheRetentionLocal( ...
+                roiobj, imageCache, dataCache, keepImage, keepData);
         else
             didSaveData = roiobj.save('data');
             if ~didSaveData
@@ -362,9 +366,10 @@ end
                 warning('processData:NoDataSaved', ...
                     'Processor returned no savable data for ROI "%s".', roiId);
             end
-            if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
-                roiobj.data = dataCache;
-            end
+            [keepImage, keepData] = resolveRoiCacheRetentionLocal( ...
+                cachePolicyLocal, hadImageBefore, hadDataBefore);
+            applyRoiCacheRetentionLocal( ...
+                roiobj, imageCache, dataCache, keepImage, keepData);
         end
         %disp('You must save the shallow project to save these classified data !');
     end
@@ -426,14 +431,30 @@ end
         end
     end
 
-    function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
+    function [keepImage, keepData] = resolveRoiCacheRetentionLocal(policy, hadImageBefore, hadDataBefore)
         switch lower(char(string(policy)))
             case 'memory'
-                tf = true;
+                keepImage = true;
+                keepData = true;
             case 'auto'
-                tf = logical(hadImageBefore || hadDataBefore);
+                keepImage = logical(hadImageBefore);
+                keepData = logical(hadDataBefore);
             otherwise
-                tf = false;
+                keepImage = false;
+                keepData = false;
+        end
+    end
+
+    function applyRoiCacheRetentionLocal(roiobjLocal, imageCache, dataCache, keepImage, keepData)
+        if keepImage
+            roiobjLocal.image = imageCache;
+        else
+            roiobjLocal.image = [];
+        end
+        if keepData
+            roiobjLocal.data = dataCache;
+        else
+            roiobjLocal.data = dataseries.empty;
         end
     end
 

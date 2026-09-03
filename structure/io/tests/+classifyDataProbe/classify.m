@@ -29,5 +29,19 @@ setappdata(0, 'DetecDivClassifyDataProbe', struct( ...
     'values', {values}, ...
     'imageSize', size(roiObj.image)));
 
-out = struct('status', "OK", 'patch', []);
+groupId = 'probe';
+try
+    if isfield(ctx, 'names') && isfield(ctx.names, 'outputName') && ...
+            ~isempty(ctx.names.outputName)
+        groupId = char(string(ctx.names.outputName));
+    end
+catch
+end
+probeData = dataseries(table((1:size(roiObj.image, 4)).', ...
+    'VariableNames', {'probe_value'}));
+probeData.groupid = groupId;
+probeData.parentid = roiObj.id;
+out = struct('status', "OK", 'patch', struct('roi', struct( ...
+    'dataseries', struct('upsert', {{struct( ...
+        'groupid', groupId, 'dataseries', probeData, 'mode', 'replace')}}))));
 end

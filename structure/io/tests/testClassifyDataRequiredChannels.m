@@ -101,6 +101,41 @@ verifyEqual(testCase, captured.selectedChannels, ...
 verifyNotEmpty(testCase, captured.indices{1});
 end
 
+function testAutoCacheReleasesTransientImageDespiteDataseriesPlaceholder(testCase)
+root = tempname;
+mkdir(root);
+addTeardown(testCase, @() removeFolder(root));
+
+writer = writerRoi(root, 'transient_image');
+verifyTrue(testCase, writer.save([], false));
+
+candidate = roi('transient_image', [1 1 4 3]);
+candidate.path = root;
+verifyEmpty(testCase, candidate.image);
+verifyNotEmpty(testCase, candidate.data, ...
+    'The legacy scalar dataseries placeholder is required for this regression test.');
+
+classifier = probeClassifier(root, candidate);
+required = {'Channel1_z2'};
+ctx = struct('io', struct('requiredChannels', {required}, ...
+    'strictRequiredChannels', true, 'cachePolicy', 'auto'));
+classifier.runProfiles.classify = struct('io', ctx.io);
+
+classifier.classifyData(candidate, 'Frames', -1, ...
+    'Channel', {required}, 'Ctx', ctx, 'OutputName', 'probe');
+
+verifyEmpty(testCase, candidate.image, ...
+    ['cachePolicy=auto must release an image loaded by classifyData, even ' ...
+     'when roi.data started as the legacy scalar dataseries placeholder.']);
+verifyEmpty(testCase, candidate.data, ...
+    'A placeholder must not be treated as a caller-owned data cache.');
+verifyTrue(testCase, isfile(fullfile(root, 'data_transient_image.mat')));
+
+candidate.load('data', 'Silent');
+verifyTrue(testCase, any(arrayfun(@(ds) strcmp(ds.groupid, 'probe'), candidate.data)), ...
+    'The released dataseries must still have been persisted to disk.');
+end
+
 function classifier = probeClassifier(root, roiObj)
 classifier = classi(root, 'required_channel_probe', 1);
 classifier.classifierPkg = 'classifyDataProbe';
