@@ -41,7 +41,7 @@ function cat = inferProcessCategory(pkgName)
     switch lower(pkgName)
         case 'combinemultiplechannels'
             cat = 'Image';
-        case {'basicobjecttracking','trackmotherlineageviterbi'}
+        case {'basicobjecttracking','trackmotherlineageviterbi','selectcavitytrajectory'}
             cat = 'Tracking';
         case {'computemetrics','computerls','computelineage','formatindataseries','singlecelloscillations'}
             cat = 'Processing';
