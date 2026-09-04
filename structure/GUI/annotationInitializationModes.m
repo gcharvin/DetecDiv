@@ -9,12 +9,21 @@ if catalog.prediction.available
     ids{end+1} = 'prediction'; %#ok<AGROW>
 end
 if activeModelCanUseExistingInputs(activeModel)
-    releaseId = fieldText(activeModel, 'releaseId');
-    if isempty(releaseId)
-        label = 'Apply active latent model to existing masks/tracks';
+    package = fieldText(activeModel, 'package');
+    if strcmpi(package, 'cellposesam')
+        if contains(lower(fieldText(activeModel, 'modelLabel')), 'default')
+            label = 'Run default CellposeSAM model and initialize Draft GT';
+        else
+            label = 'Run active CellposeSAM model and initialize Draft GT';
+        end
     else
-        label = sprintf('Apply latent model %s to existing masks/tracks', ...
-            releaseId);
+        releaseId = fieldText(activeModel, 'releaseId');
+        if isempty(releaseId)
+            label = 'Apply active latent model to existing masks/tracks';
+        else
+            label = sprintf('Apply latent model %s to existing masks/tracks', ...
+                releaseId);
+        end
     end
     labels{end+1} = label; %#ok<AGROW>
     ids{end+1} = 'run_prediction'; %#ok<AGROW>

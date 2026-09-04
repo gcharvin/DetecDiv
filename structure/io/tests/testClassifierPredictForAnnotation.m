@@ -421,6 +421,59 @@ verifyEqual(testCase, normal.modelPath, captured.alternateModel);
     end
 end
 
+function testCellposeSAMPlanUsesActiveModelThenDefaultFallback(testCase)
+[c, ~, modelFile] = cellposeFixture(testCase);
+
+plan = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+
+verifyTrue(testCase, plan.available, strjoin(plan.issues, ' '));
+verifyTrue(testCase, plan.canRun);
+verifyFalse(testCase, plan.usesGroundTruth);
+verifyEqual(testCase, plan.model.package, 'cellposesam');
+verifyEqual(testCase, plan.model.modelSource, 'trained');
+verifyEqual(testCase, plan.model.modelPath, modelFile);
+verifyEqual(testCase, plan.items.inputs.inputChannelName, 'Channel0');
+verifyEqual(testCase, plan.items.inputs.requiredChannels, {'Channel0'});
+verifyEqual(testCase, plan.items.params.outputName, 'pred_cellposesam');
+
+delete(modelFile);
+fallback = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+verifyTrue(testCase, fallback.available, strjoin(fallback.issues, ' '));
+verifyEqual(testCase, fallback.model.modelSource, 'builtin');
+verifyEmpty(testCase, fallback.model.modelPath);
+verifyTrue(testCase, contains(lower(fallback.model.modelLabel), 'default'));
+end
+
+function testCellposeSAMPredictionInitializesSeparateDraftGt(testCase)
+[c, r] = cellposeFixture(testCase);
+
+report = classifierPredictForAnnotation(c, 1, ...
+    'InitializeGT', true, 'Save', false, ...
+    'Executor', @fakeCellposeExecutor);
+
+verifyEqual(testCase, report.status, 'ok');
+verifyEqual(testCase, report.items.status, 'draft_initialized');
+verifyEqual(testCase, report.items.recipe.mode, 'prediction');
+verifyEqual(testCase, report.items.predictionChannel, '');
+pred = r.findChannelID('results_pred_cellposesam_cell');
+spec = annotationManager.specForClassifier(c);
+gtName = spec.components(1).groundTruth.channel;
+gt = r.findChannelID(gtName);
+verifyNotEmpty(testCase, pred);
+verifyNotEmpty(testCase, gt);
+verifyEqual(testCase, r.image(:,:,gt,:), r.image(:,:,pred,:));
+verifyEqual(testCase, ...
+    report.items.initializationReport.entry.source_run_id, report.runId);
+verifyEqual(testCase, ...
+    report.items.initializationReport.entry.status, 'draft');
+verifyEmpty(testCase, r.cellModel.families.family_id, ...
+    'CellposeSAM annotation inference must not create object families.');
+verifyEmpty(testCase, r.cellModel.instances.object_id, ...
+    'CellposeSAM annotation inference must not create cell instances.');
+verifyEmpty(testCase, r.cellModel.relations.relation_id, ...
+    'CellposeSAM annotation inference must not create lineage relations.');
+end
+
 function [c, r] = fixture(testCase)
 root = tempname;
 mkdir(root);
@@ -481,6 +534,53 @@ r.addChannel(instances, 'results_cellposeSAM_cell', [1 1 1], [0 0 0]);
 r.addChannel(zeros(size(instances), 'uint16'), ...
     'gt_latent_model_1_stable_tracks', [1 1 1], [0 0 0]);
 c.roi = r;
+end
+
+function [c, r, modelFile] = cellposeFixture(testCase)
+root = tempname;
+mkdir(root);
+addTeardown(testCase, @() removeFolder(root));
+c = classi(root, 'cellpose', 4);
+c.classifierPkg = 'cellposesam';
+c.classifyFun = 'cellposesam.classify';
+c.trainingFun = 'cellposesam.train';
+c.category = {'Pixel'};
+c.classes = {'cell'};
+c.channelName = 'Channel0';
+c.outputType = 'segmentation';
+c.executionParam = struct('outputName', 'pred_cellposesam');
+
+modelDir = fullfile(c.path, 'models');
+mkdir(modelDir);
+modelFile = fullfile(modelDir, c.strid);
+touch(modelFile);
+
+r = roi('Pos0_1_1', [1 1 4 4]);
+r.path = c.path;
+r.image = uint16(reshape(1:48, 4,4,1,3));
+r.channelid = 1;
+r.display.channel = {'Channel0'};
+r.display.intensity = [1 1 1];
+r.display.rgb = [1 1 1];
+r.display.selectedchannel = true;
+r.display.indexed = false;
+r.display.alpha = 1;
+r.display.contour = false;
+r.display.width = 1;
+c.roi = r;
+end
+
+function fakeCellposeExecutor(~, roiObj, item, ~, ~)
+sourceIndex = roiObj.findChannelID(item.inputs.inputChannelName);
+source = roiObj.image(:,:,sourceIndex,:);
+mask = uint16(source > median(source(:)));
+name = ['results_' char(string(item.params.outputName)) '_cell'];
+existing = roiObj.findChannelID(name);
+if isempty(existing)
+    roiObj.addChannel(mask, name, [1 1 1], [0 0 0]);
+else
+    roiObj.image(:,:,existing,:) = mask;
+end
 end
 
 function [c, r] = predictionClassiProbeFixture(testCase)

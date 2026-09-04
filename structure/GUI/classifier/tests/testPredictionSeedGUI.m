@@ -66,6 +66,53 @@ verifyTrue(testCase, any(contains(string(info.inputs), ...
 verifyTrue(testCase, any(contains(string(info.inputs), 'Channel1_z2')));
 end
 
+function testCellposeSAMExposesDirectSegmentationChoice(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'cellpose_seed', 1);
+c.classifierPkg = 'cellposesam';
+c.classifyFun = 'cellposesam.classify';
+c.category = {'Pixel'};
+c.classes = {'cell'};
+c.channelName = 'Channel0';
+modelFolder = fullfile(c.path, 'models');
+mkdir(modelFolder);
+modelFile = fullfile(modelFolder, c.strid);
+writeText(modelFile, 'fixture');
+r = roi('Pos0_1_1', [1 1 4 4]);
+r.path = c.path;
+r.image = uint16(ones(4,4,1,2));
+r.channelid = 1;
+r.display.channel = {'Channel0'};
+r.display.intensity = [1 1 1];
+r.display.rgb = [1 1 1];
+r.display.selectedchannel = true;
+r.display.indexed = false;
+r.display.alpha = 1;
+r.display.contour = false;
+r.display.width = 1;
+c.roi = r;
+
+plan = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+info = annotationActiveModelInfo(c, 1, plan);
+[labels, ids] = annotationInitializationModes(minimalCatalog(false), info);
+
+verifyTrue(testCase, info.available);
+verifyTrue(testCase, info.canRunOnExistingInputs);
+verifyEqual(testCase, info.modelReference, modelFile);
+verifyTrue(testCase, any(strcmp(ids, 'run_prediction')));
+verifyTrue(testCase, any(contains(string(labels), ...
+    'Run active CellposeSAM model')));
+
+delete(modelFile);
+fallbackPlan = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+fallbackInfo = annotationActiveModelInfo(c, 1, fallbackPlan);
+[fallbackLabels, fallbackIds] = annotationInitializationModes( ...
+    minimalCatalog(false), fallbackInfo);
+verifyTrue(testCase, any(strcmp(fallbackIds, 'run_prediction')));
+verifyTrue(testCase, any(contains(string(fallbackLabels), ...
+    'Run default CellposeSAM model')));
+end
+
 function testExistingAndFreshPredictionChoicesRemainSeparate(testCase)
 catalog = minimalCatalog(true);
 active = struct('available', true, 'canRunOnExistingInputs', true, ...
@@ -194,7 +241,7 @@ verifyEqual(testCase, recipe.mode, 'mask');
 verifyEqual(testCase, recipe.channel, 'results_cellposeSAM_cell');
 end
 
-function testRuntimeCallbacksUseLatentOnlyOnExistingPredictionInputs(testCase)
+function testRuntimeCallbacksUsePackageAwarePredictionInitialization(testCase)
 root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 classifierSource = fileread(fullfile(root, 'classifier', 'private', ...
     'classifierGUI_runtime_code.m'));
@@ -208,7 +255,7 @@ for source = {classifierSource, scoreSource}
     verifyTrue(testCase, contains(source{1}, '''OverwriteGT'', overwrite'));
     verifyTrue(testCase, contains(source{1}, '''ActiveModel'', activeModel'));
     verifyTrue(testCase, contains(source{1}, ...
-        'Applying latent model to existing masks/tracks'));
+        'annotationPredictionUiText'));
     verifyTrue(testCase, contains(source{1}, ...
         'annotationInitializationDefaultRecipe'));
     verifyTrue(testCase, contains(source{1}, ...
@@ -228,7 +275,12 @@ resolverSource = fileread(fullfile(root, ...
 verifyFalse(testCase, contains(resolverSource, ...
     'annotationCellposeSAMPreparationDialog('));
 verifyTrue(testCase, contains(resolverSource, ...
-    'Run CellposeSAM separately'));
+    'Run CellposeSAM from Initialize GT'));
+uiTextSource = fileread(fullfile(root, 'annotationPredictionUiText.m'));
+verifyTrue(testCase, contains(uiTextSource, ...
+    'Segmenting selected ROI image(s) with CellposeSAM'));
+verifyTrue(testCase, contains(uiTextSource, ...
+    'Applying latent model to existing masks/tracks'));
 end
 
 function testPackedAppsExcludeImplicitCellposePreparation(testCase)
@@ -249,7 +301,7 @@ for i = 1:numel(paths)
             sprintf('%s still contains legacy token %s.', paths{i}, legacy{j}));
     end
     verifyTrue(testCase, contains(source, ...
-        'Applying latent model to existing masks/tracks'));
+        'annotationPredictionUiText'));
     verifyTrue(testCase, contains(source, ...
         'annotationInitializationDefaultRecipe'));
     verifyTrue(testCase, contains(source, ...

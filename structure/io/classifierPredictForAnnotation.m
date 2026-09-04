@@ -26,10 +26,10 @@ function report = classifierPredictForAnnotation(classif, roiIndices, varargin)
 %                    folder remains managed by classi.runStart.
 %   Executor         Test/integration injection. The default invokes
 %                    classi.classifyData directly.
-% The cellLatentModel planner never selects a GT channel as an inference
-% input.  It also never runs a segmenter: an eligible non-GT instance-mask
-% channel must already exist on every selected ROI.  Segmentation remains
-% an explicit, separate pipeline/classifier operation.
+% Every planner rejects GT channels as inference inputs.  The
+% cellLatentModel path refines existing non-GT masks/tracks, whereas the
+% CellposeSAM path segments the selected ROI image with the active local
+% model (or the built-in SAM model when no local model exists).
 
 
 opts = parseOptions(varargin{:});
@@ -41,10 +41,11 @@ if isempty(indices)
 end
 
 package = classifierPackage(classif);
-if ~strcmpi(package, 'cellLatentModel')
+if ~any(strcmpi(package, {'cellLatentModel','cellposesam'}))
     error('classifierPredictForAnnotation:UnsupportedClassifier', ...
         ['Direct prediction-assisted GT initialization is currently ' ...
-         'implemented for cellLatentModel classifiers, not "%s".'], package);
+         'implemented for cellLatentModel and CellposeSAM classifiers, ' ...
+         'not "%s".'], package);
 end
 
 spec = annotationManager.specForClassifier(classif);
@@ -53,7 +54,7 @@ items = repmat(emptyItem(), numel(indices), 1);
 issues = strings(0,1);
 for i = 1:numel(indices)
     override = overrideForItem(opts.InputOverrides, i, numel(indices));
-    items(i) = planItem(classif, indices(i), spec, baseParams, override);
+    items(i) = planItem(classif, indices(i), spec, baseParams, override, package);
     if ~items(i).canRun
         issues = [issues; "ROI " + string(items(i).roiId) + ": " + ...
             string(items(i).issues(:))]; %#ok<AGROW>
@@ -271,7 +272,11 @@ if ~isempty(package), return; end
 try
     fun = char(string(classif.classifyFun));
     dot = strfind(fun, '.');
-    if ~isempty(dot), package = fun(1:dot(1)-1); end
+    if ~isempty(dot)
+        package = fun(1:dot(1)-1);
+    elseif strcmpi(fun, 'classifyCPSAMFun')
+        package = 'cellposesam';
+    end
 catch
 end
 end
@@ -287,6 +292,12 @@ catch
 end
 params = classifierApplyTrainingExecutionDefaults( ...
     params, classif, execution, 'annotation');
+if strcmpi(package, 'cellposesam')
+    [source, modelPath, label] = cellposeModelReference(classif);
+    params.modelSource = source;
+    params.modelPath = modelPath;
+    params.modelLabel = label;
+end
 status = artifactStatus(params, classif);
 % Pin canonical absolute artifact paths now.  Every ROI in this operation
 % receives this same resolved deployment view; no execution callback needs
@@ -298,7 +309,7 @@ for i = 1:numel(artifactKeys)
         params.(key) = status.(key).path;
     end
 end
-[available, issues] = modelAvailability(params, status);
+[available, issues] = modelAvailability(params, status, package);
 model = struct( ...
     'classifierId', char(string(classif.strid)), ...
     'package', package, ...
@@ -311,6 +322,7 @@ model = struct( ...
         'resolvedModelReleaseManifestPath'), ...
     'releaseChannelPath', textField(params, 'modelReleaseChannelPath'), ...
     'modelPath', status.modelPath.path, ...
+    'modelLabel', textField(params, 'modelLabel'), ...
     'compositeManifestPath', status.compositeManifestPath.path, ...
     'trackingCheckpointDir', status.trackingCheckpointDir.path, ...
     'stateUpdateMode', textField(params, 'stateUpdateMode'), ...
@@ -321,8 +333,14 @@ model = struct( ...
     'issues', {issues});
 end
 
-function [available, issues] = modelAvailability(params, status)
+function [available, issues] = modelAvailability(params, status, package)
 issues = {};
+if strcmpi(package, 'cellposesam')
+    % CellposeSAM always has an explicit runnable model choice: the active
+    % local checkpoint when present, otherwise the built-in SAM weights.
+    available = true;
+    return;
+end
 backend = lower(textField(params, 'backend'));
 modelSource = lower(textField(params, 'modelSource'));
 switch backend
@@ -349,6 +367,27 @@ end
 available = isempty(issues);
 end
 
+function [source, modelPath, label] = cellposeModelReference(classif)
+source = 'builtin';
+modelPath = '';
+label = 'CellposeSAM default SAM model';
+root = '';
+id = '';
+try, root = char(string(classif.path)); catch, end
+try, id = char(string(classif.strid)); catch, end
+if isempty(root) || isempty(id), return; end
+candidates = {fullfile(root, 'models', id), ...
+    fullfile(root, 'models', [id '.pth'])};
+for i = 1:numel(candidates)
+    if isfile(candidates{i})
+        source = 'trained';
+        modelPath = candidates{i};
+        label = 'active local CellposeSAM model';
+        return;
+    end
+end
+end
+
 function issues = requireArtifact(issues, status, key, message)
 entry = status.(key);
 if isempty(entry.path) || ~entry.exists
@@ -371,7 +410,11 @@ for name = {'modelPath','compositeManifestPath','trackingCheckpointDir', ...
 end
 end
 
-function item = planItem(classif, index, spec, baseParams, override)
+function item = planItem(classif, index, spec, baseParams, override, package)
+if strcmpi(package, 'cellposesam')
+    item = planCellposeItem(classif, index, spec, baseParams, override);
+    return;
+end
 roiObj = classif.roi(index);
 channels = annotationManager.availableChannels(roiObj);
 forbidden = globalGroundTruthChannels(roiObj, spec, channels);
@@ -488,6 +531,114 @@ item.issues = cellstr(unique(issues, 'stable'));
 item.inputs = inputs;
 item.params = params;
 item.status = 'planned';
+end
+
+function item = planCellposeItem(classif, index, spec, baseParams, override)
+roiObj = classif.roi(index);
+channels = annotationManager.availableChannels(roiObj);
+forbidden = globalGroundTruthChannels(roiObj, spec, channels);
+rejectGroundTruthOverrides(override, forbidden);
+
+candidates = cellposeImageCandidates(roiObj, channels, forbidden);
+requested = selectorOverride(override, 'inputChannelName');
+if isempty(requested)
+    requested = selectorOverride(override, 'channelName');
+end
+configured = configuredCellposeInput(classif);
+selected = '';
+strategy = '';
+ambiguous = false;
+if ~isempty(requested)
+    selected = availableName(candidates, requested);
+    strategy = 'user_override';
+elseif ~isempty(configured) && ~isempty(availableName(candidates, configured))
+    selected = availableName(candidates, configured);
+    strategy = 'configured_input';
+elseif numel(candidates) == 1
+    selected = candidates{1};
+    strategy = 'single_image_candidate';
+elseif numel(candidates) > 1
+    ambiguous = true;
+    strategy = 'ambiguous';
+end
+
+resolution = resolutionRecord(selected, strategy, candidates, ambiguous);
+resolution.required = true;
+required = nonempty({selected});
+usesGroundTruth = anyGroundTruthResource(required, forbidden);
+inputs = struct( ...
+    'inputChannelName', selected, ...
+    'requiredChannels', {required}, ...
+    'forbiddenGroundTruthChannels', {forbidden}, ...
+    'usesGroundTruth', usesGroundTruth, ...
+    'resolution', struct('inputChannelName', resolution));
+
+issues = strings(0,1);
+if usesGroundTruth
+    issues(end+1) = "The resolved microscopy-image input is a ground-truth resource."; %#ok<AGROW>
+end
+if isempty(selected)
+    if isempty(candidates)
+        issues(end+1) = "No compatible non-GT microscopy-image channel is available."; %#ok<AGROW>
+    elseif ambiguous
+        issues(end+1) = "Several microscopy-image inputs are available; select one."; %#ok<AGROW>
+    else
+        issues(end+1) = "The requested microscopy-image channel is unavailable."; %#ok<AGROW>
+    end
+end
+
+params = baseParams;
+params.inputChannelName = selected;
+item = emptyItem();
+item.roiIndex = index;
+item.roiId = char(string(roiObj.id));
+item.available = ~usesGroundTruth && ~isempty(selected) && isempty(issues);
+item.canPrepare = false;
+item.canRun = item.available;
+item.requiresPreparation = false;
+item.issues = cellstr(unique(issues, 'stable'));
+item.inputs = inputs;
+item.params = params;
+item.status = 'planned';
+end
+
+function candidates = cellposeImageCandidates(roiObj, channels, forbidden)
+candidates = {};
+indexed = false(size(channels));
+try
+    displayChannels = cellstr(string(roiObj.display.channel));
+    flags = logical(roiObj.display.indexed);
+    for i = 1:numel(channels)
+        hit = find(strcmpi(displayChannels, channels{i}), 1);
+        if ~isempty(hit) && hit <= numel(flags), indexed(i) = flags(hit); end
+    end
+catch
+end
+for i = 1:numel(channels)
+    name = char(string(channels{i}));
+    token = lower(regexprep(name, '[^a-z0-9]+', '_'));
+    derived = startsWith(token, 'results_') || startsWith(token, 'gt_') || ...
+        contains(token, 'mask') || contains(token, 'segment') || ...
+        contains(token, 'track') || contains(token, 'probability') || ...
+        any(strcmp(token, {'combinedchannel','combined_channel'}));
+    if ~derived && ~indexed(i) && ~any(strcmpi(forbidden, name))
+        candidates{end+1} = name; %#ok<AGROW>
+    end
+end
+candidates = unique(candidates, 'stable');
+end
+
+function value = configuredCellposeInput(classif)
+value = '';
+try
+    raw = classif.channelName;
+    if ischar(raw) || (isstring(raw) && isscalar(raw))
+        value = strtrim(char(string(raw)));
+    elseif iscell(raw) && numel(raw) == 1
+        value = strtrim(char(string(raw{1})));
+    end
+catch
+end
 end
 
 function [selected, resolution] = resolveInstanceChannel(roiObj, channels, forbidden, override, configured, outputTrackNames, observationChannelNames)
@@ -902,15 +1053,26 @@ if ~isempty(opts.Executor)
     feval(opts.Executor, classif, roiObj, item, ctx, opts);
     return;
 end
-% classifyData accepts a cell array per ROI.  Wrap this ROI's multi-channel
-% list in an outer cell so it is not mistaken for several one-channel ROIs.
+% classifyData accepts a cell array per ROI.  Wrap this ROI's channel list
+% in an outer cell so it is not mistaken for several one-channel ROIs.
+outputName = char(string(classif.strid));
+if strcmpi(classifierPackage(classif), 'cellposesam')
+    outputName = textField(item.params, 'outputName');
+    if isempty(outputName), outputName = 'pred_cellposesam'; end
+end
 args = {'Frames', -1, 'Channel', {item.inputs.requiredChannels}, ...
-    'OutputName', char(string(classif.strid)), 'Ctx', ctx};
+    'OutputName', outputName, 'Ctx', ctx};
 if ~isempty(opts.Progress), args = [args {'Progress', opts.Progress}]; end
 classif.classifyData(roiObj, args{:});
 end
 
 function stampPredictionProvenance(roiObj, report, item, saveOutput)
+if strcmpi(textField(report.model, 'package'), 'cellposesam')
+    % CellposeSAM is segmentation-only and must not create a cell-model
+    % family merely to store provenance.  The run manifest and the Draft
+    % annotation entry both retain the run/model identity.
+    return;
+end
 try
     model = [];
     try, model = roiObj.cellModel; catch, end

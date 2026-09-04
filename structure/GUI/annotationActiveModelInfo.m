@@ -10,6 +10,7 @@ info = struct( ...
     'available', false, ...
     'supported', false, ...
     'classifierId', '', ...
+    'package', '', ...
     'releaseId', '', ...
     'modelReference', '', ...
     'modelLabel', '', ...
@@ -21,14 +22,43 @@ info = struct( ...
     'hasExistingMaskInputs', false, ...
     'canRunOnExistingInputs', false, ...
     'issues', {{}}, ...
-    'reason', 'Only a trained cellLatentModel classifier can run this workflow.');
+    'reason', ['Only cellLatentModel and CellposeSAM classifiers support ' ...
+        'direct prediction-assisted GT initialization.']);
 
 if isempty(classif), return; end
 try, info.classifierId = char(string(classif.strid)); catch, end
 package = '';
 try, package = char(string(classif.classifierPkg)); catch, end
-if ~strcmpi(strtrim(package), 'cellLatentModel'), return; end
+if isempty(package)
+    try
+        fun = char(string(classif.classifyFun));
+        if any(strcmpi(fun, {'classifyCPSAMFun','cellposesam.classify'}))
+            package = 'cellposesam';
+        end
+    catch
+    end
+end
+info.package = package;
+if ~any(strcmpi(strtrim(package), {'cellLatentModel','cellposesam'})), return; end
 info.supported = true;
+
+if strcmpi(package, 'cellposesam')
+    if ~isempty(plan)
+        info = applyPlan(info, plan);
+        return;
+    end
+    [reference, label] = cellposeModelReference(classif);
+    info.available = true;
+    info.modelReference = reference;
+    info.modelLabel = label;
+    try
+        channel = char(string(classif.channelName));
+        if ~isempty(channel), info.inputs = {['Microscopy image: ' channel]}; end
+    catch
+    end
+    info.reason = '';
+    return;
+end
 
 parameters = struct();
 try
@@ -91,8 +121,14 @@ try
 catch
 end
 try
-    trained = strcmpi(fieldText(plan.model, 'modelSource'), 'trained');
-    info.available = trained && logical(plan.model.available);
+    package = fieldText(plan.model, 'package');
+    info.package = package;
+    modelUsable = logical(plan.model.available);
+    if strcmpi(package, 'cellLatentModel')
+        modelUsable = modelUsable && ...
+            strcmpi(fieldText(plan.model, 'modelSource'), 'trained');
+    end
+    info.available = modelUsable;
 catch
     info.available = false;
 end
@@ -111,6 +147,10 @@ try
             break;
         end
     end
+    if isempty(info.modelReference)
+        info.modelReference = fieldText(model, 'modelLabel');
+    end
+    info.modelLabel = fieldText(model, 'modelLabel');
 catch
 end
 try
@@ -118,7 +158,7 @@ try
 catch
     info.inputMappingRequired = false;
 end
-info.hasExistingMaskInputs = planHasExistingMaskInputs(plan);
+info.hasExistingMaskInputs = planHasRequiredInputs(plan);
 info.canRunOnExistingInputs = info.available && ...
     info.hasExistingMaskInputs && ...
     (info.inputsResolved || info.inputMappingRequired);
@@ -147,21 +187,30 @@ catch
 end
 end
 
-function tf = planHasExistingMaskInputs(plan)
+function tf = planHasRequiredInputs(plan)
 tf = false;
 try
     items = plan.items;
     if isempty(items), return; end
     tf = true;
     for i = 1:numel(items)
-        resolution = items(i).inputs.resolution.instanceChannelName;
-        selected = fieldText(resolution, 'selected');
-        candidates = {};
-        try, candidates = cellstr(string(resolution.candidates)); catch, end
-        candidates = candidates(strlength(string(candidates)) > 0);
-        if isempty(selected) && isempty(candidates)
-            tf = false;
-            return;
+        resolution = items(i).inputs.resolution;
+        roles = fieldnames(resolution);
+        for j = 1:numel(roles)
+            entry = resolution.(roles{j});
+            required = false;
+            try, required = logical(entry.required); catch, end
+            required = required || any(strcmp(roles{j}, ...
+                {'instanceChannelName','inputChannelName'}));
+            if ~required, continue; end
+            selected = fieldText(entry, 'selected');
+            candidates = {};
+            try, candidates = cellstr(string(entry.candidates)); catch, end
+            candidates = candidates(strlength(string(candidates)) > 0);
+            if isempty(selected) && isempty(candidates)
+                tf = false;
+                return;
+            end
         end
     end
 catch
@@ -171,11 +220,31 @@ end
 
 function label = inputRoleLabel(role)
 switch char(string(role))
+    case 'inputChannelName', label = 'Microscopy image';
     case 'instanceChannelName', label = 'Instance masks';
     case 'brightfieldChannelName', label = 'Brightfield';
     case 'nucleusChannelName', label = 'Division/nucleus';
     case 'budneckChannelName', label = 'Bud-neck';
     otherwise, label = char(string(role));
+end
+end
+
+function [reference, label] = cellposeModelReference(classif)
+reference = 'CellposeSAM default SAM model';
+label = 'built-in default model';
+root = '';
+id = '';
+try, root = char(string(classif.path)); catch, end
+try, id = char(string(classif.strid)); catch, end
+if isempty(root) || isempty(id), return; end
+candidates = {fullfile(root, 'models', id), ...
+    fullfile(root, 'models', [id '.pth'])};
+for i = 1:numel(candidates)
+    if isfile(candidates{i})
+        reference = candidates{i};
+        label = 'active local model';
+        return;
+    end
 end
 end
 

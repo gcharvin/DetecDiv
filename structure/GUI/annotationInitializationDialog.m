@@ -251,7 +251,7 @@ end
 
 function text = activeModelPreview(info)
 if ~activeModelAvailable(info)
-    text = 'No trained active model is available for this classifier.';
+    text = 'No runnable active or default model is available for this classifier.';
     return;
 end
 classifierId = '<classifier>';
@@ -277,12 +277,21 @@ try
     if ~isempty(info.inputs), inputs = cellstr(string(info.inputs)); end
 catch
 end
-text = sprintf(['Active model: %s\n%sReference: %s\n%s\n' ...
-    'Ground truth consumed by inference: NO\n' ...
-    'Segmentation launched automatically: NO\n' ...
-    'Operation: refine tracking and parentage from existing PRED masks/tracks\n' ...
-    'Result: refined prediction copied into editable Draft GT'], ...
-    classifierId, releaseLine, reference, strjoin(inputs, ' | '));
+if strcmpi(activeModelPackage(info), 'cellposesam')
+    text = sprintf(['Active model: %s\nReference: %s\n%s\n' ...
+        'Ground truth consumed by inference: NO\n' ...
+        'Segmentation launched automatically: YES\n' ...
+        'Operation: segment the selected ROI microscopy image\n' ...
+        'Result: CellposeSAM PRED copied into editable Draft GT'], ...
+        classifierId, reference, strjoin(inputs, ' | '));
+else
+    text = sprintf(['Active model: %s\n%sReference: %s\n%s\n' ...
+        'Ground truth consumed by inference: NO\n' ...
+        'Segmentation launched automatically: NO\n' ...
+        'Operation: refine tracking and parentage from existing PRED masks/tracks\n' ...
+        'Result: refined prediction copied into editable Draft GT'], ...
+        classifierId, releaseLine, reference, strjoin(inputs, ' | '));
+end
 try
     if ~info.inputsResolved && ~isempty(info.issues)
         text = sprintf('%s\nInput mapping required: %s', text, ...
@@ -293,6 +302,27 @@ end
 end
 
 function text = initializationHelpText(catalog, activeModel)
+if strcmpi(activeModelPackage(activeModel), 'cellposesam')
+    if activeModelCanUseExistingInputs(activeModel)
+        text = ['CellposeSAM will segment the selected ROI image into a ' ...
+            'separate PRED channel, then copy that immutable result into ' ...
+            'editable Draft GT. Existing GT is replaced only after an ' ...
+            'explicit confirmation.'];
+    else
+        reason = '';
+        try
+            if ~isempty(activeModel.issues)
+                reason = char(strjoin(string(activeModel.issues), ' | '));
+            end
+        catch
+        end
+        if isempty(reason)
+            reason = 'No compatible microscopy-image input is available.';
+        end
+        text = sprintf('CellposeSAM inference is not ready: %s', reason);
+    end
+    return;
+end
 if activeModelAvailable(activeModel) && ...
         ~activeModelCanUseExistingInputs(activeModel)
     hasMaskInputs = false;
@@ -321,6 +351,7 @@ if activeModelAvailable(activeModel) && ...
         'from this dialog.'];
     return;
 end
+
 if activeModelCanUseExistingInputs(activeModel)
     text = ['The active latent model uses only the PRED masks/tracks already ' ...
         'present in the ROI; it does not run segmentation. An object family ' ...
@@ -334,6 +365,11 @@ if catalog.prediction.available || any([catalog.families.usable]) || ...
 else
     text = annotationInitializationUnavailableMessage();
 end
+end
+
+function value = activeModelPackage(info)
+value = '';
+try, value = char(string(info.package)); catch, end
 end
 
 function text = familyPreview(prefix, source, copyParentage)

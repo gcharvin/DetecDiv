@@ -179,9 +179,10 @@ annotation button:
 
 1. `GenerateDraftButton`, text **Initialize GT...**. Its callback opens the
    shared initialization dialog once, then applies the selected recipe to every
-   selected ROI with `session.initialize(recipe)`. If no compatible PRED source
-   exists, it stops before opening the recipe dialog and explains that
-   CellposeSAM must be run separately followed by **Refresh**.
+   selected ROI with `session.initialize(recipe)`. A CellposeSAM classifier may
+   also run its active local model directly (falling back to the built-in SAM
+   model when no local checkpoint exists), materialize a separate PRED channel,
+   and initialize Draft GT from that immutable prediction.
 2. Keep `StartBlankGTButton` as an internal compatibility component, but hide
    it. Blank initialization is not offered by **Initialize GT...**.
 3. `RefreshAnnotationStatusButton`, text **Refresh status**. Its callback calls
@@ -206,9 +207,16 @@ The initialization dialog offers only coherent starting points:
   Draft GT. The preview names the active artifact and effective inputs and
   states explicitly that inference consumes no GT and launches no segmentation.
   Input mapping is requested only when existing non-GT inputs are ambiguous.
-  If no compatible mask/provider exists, the action is not offered: the UI
-  tells the user to run CellposeSAM separately, click **Refresh**, and reopen
-  **Initialize GT...**.
+  If no compatible mask/provider exists, the action is not offered. A separate
+  CellposeSAM classifier can generate the required PRED masks through its own
+  **Initialize GT...** workflow.
+- **Run active CellposeSAM model and initialize Draft GT** segments only the
+  explicitly selected classifier ROI(s). It uses `models/<classifierId>` (or
+  its `.pth` variant) when present and otherwise uses the built-in SAM model.
+  Inference reads only the selected microscopy-image channel, writes
+  `results_<outputName>_cell` as PRED, then copies that result into editable
+  Draft GT. Existing GT replacement requires an explicit destructive-action
+  confirmation.
 - **Copy existing tracked objects as Draft GT** selects one object family. Its `mask_provider`
   supplies segmentation, its instances supply tracks, and its relations may be
   copied or deliberately replaced by blank parentage.

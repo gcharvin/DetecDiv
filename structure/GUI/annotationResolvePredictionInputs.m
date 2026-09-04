@@ -1,8 +1,8 @@
 function [plan, overrides, accepted] = annotationResolvePredictionInputs( ...
         parent, classif, roiIndices, plan)
-%ANNOTATIONRESOLVEPREDICTIONINPUTS Resolve only inputs already present in ROIs.
-%   This helper never launches segmentation.  In particular, CellposeSAM
-%   remains an explicit, separate classifier/pipeline action.
+%ANNOTATIONRESOLVEPREDICTIONINPUTS Resolve safe per-ROI inference inputs.
+%   CellLatentModel consumes existing non-GT masks/tracks. CellposeSAM
+%   consumes a microscopy image and performs segmentation explicitly.
 
 if nargin < 4, plan = []; end
 overrides = struct();
@@ -63,8 +63,14 @@ text = sprintf('%s\n\n%s', text, separateSegmentationGuidance(plan));
 end
 
 function text = separateSegmentationGuidance(plan) %#ok<INUSD>
-text = ['The active latent model only uses compatible PRED masks/tracks ' ...
-    'that already exist in the ROI. Run CellposeSAM separately, then ' ...
-    'click Refresh and reopen Initialize GT. No segmentation is launched ' ...
-    'automatically from Initialize GT.'];
+package = '';
+try, package = char(string(plan.model.package)); catch, end
+if strcmpi(package, 'cellposesam')
+    text = ['CellposeSAM requires one non-GT microscopy-image channel for ' ...
+        'each selected ROI. Select the intended image input and retry.'];
+else
+    text = ['The active latent model only uses compatible PRED masks/tracks ' ...
+        'that already exist in the ROI. Run CellposeSAM from Initialize GT ' ...
+        'on the segmentation classifier first, then reuse that PRED here.'];
+end
 end

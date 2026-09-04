@@ -197,9 +197,48 @@ for ii = 1:length(rois)
     % 1) CHANNEL ADJUSTMENTS (selection + mapping)
     % ============================================================
 
+    % ----- Keep only selected source channels before any rename -----
+    % roiImporterGUI expresses its complete selection in ioMap, including
+    % rows whose Import checkbox is false.  Treat that map as authoritative:
+    % otherwise a later rename can hide the original source name from
+    % adjustChannel and accidentally preserve every physical source channel.
+    [mappedSelection, mapSpecifiesSelection] = importedChannelsFromMap(ioMap);
+    if mapSpecifiesSelection
+        selectedSourceChannels = mappedSelection;
+    else
+        selectedSourceChannels = adjustChannel;
+    end
+    if mapSpecifiesSelection || ~isempty(selectedSourceChannels)
+        currentChannels = classif.roi(cc+1).display.channel;
+        if ischar(currentChannels), currentChannels = {currentChannels}; end
+        if isstring(currentChannels), currentChannels = cellstr(currentChannels); end
+        if ~iscell(currentChannels), currentChannels = {}; end
+
+        if ischar(selectedSourceChannels)
+            selectedSourceChannels = {selectedSourceChannels};
+        end
+        if isstring(selectedSourceChannels)
+            selectedSourceChannels = cellstr(selectedSourceChannels);
+        end
+
+        channelsToKeep   = intersect(currentChannels, selectedSourceChannels, 'stable');
+        if isempty(channelsToKeep)
+            error('classi:addROI:NoSelectedChannelsAvailable', ...
+                ['None of the selected import channels is available in ROI "%s". ' ...
+                 'Selected: %s. Available: %s.'], ...
+                roitocopy.id, strjoin(selectedSourceChannels, ', '), ...
+                strjoin(currentChannels, ', '));
+        end
+        channelsToRemove = setdiff(currentChannels, channelsToKeep, 'stable');
+
+        for k = 1:numel(channelsToRemove)
+            classif.roi(cc+1).removeChannel(channelsToRemove{k});
+        end
+    end
+
     % ----- Legacy adjustName mapping (kept for backward compatibility) -----
-    % adjustName is assumed to contain *source names* to be renamed into classif.channelName{k}.
-    % (This is older behavior and may be inconsistent with roiImporterGUI, but we keep it.)
+    % Selection must happen first because these are source names. Renaming
+    % before pruning made the selected input disappear from adjustChannel.
     if ~isempty(adjustName)
         targetChannel = classif.channelName;
         for k = 1:numel(adjustName)
@@ -212,24 +251,6 @@ for ii = 1:length(rois)
             if ~isempty(idx) && k <= numel(targetChannel)
                 classif.roi(cc+1).display.channel{idx(1)} = targetChannel{k};
             end
-        end
-    end
-
-    % ----- Keep only selected channels (adjustChannel) -----
-    if ~isempty(adjustChannel)
-        currentChannels = classif.roi(cc+1).display.channel;
-        if ischar(currentChannels), currentChannels = {currentChannels}; end
-        if isstring(currentChannels), currentChannels = cellstr(currentChannels); end
-        if ~iscell(currentChannels), currentChannels = {}; end
-
-        if ischar(adjustChannel), adjustChannel = {adjustChannel}; end
-        if isstring(adjustChannel), adjustChannel = cellstr(adjustChannel); end
-
-        channelsToKeep   = intersect(currentChannels, adjustChannel, 'stable');
-        channelsToRemove = setdiff(currentChannels, channelsToKeep, 'stable');
-
-        for k = 1:numel(channelsToRemove)
-            classif.roi(cc+1).removeChannel(channelsToRemove{k});
         end
     end
 
@@ -425,7 +446,7 @@ for ii = 1:length(rois)
     % ============================================================
     % 8) FINALIZE ROI
     % ============================================================
-    classif.roi(cc+1).save;
+    saveImportedRoiExact(classif.roi(cc+1));
     classif.roi(cc+1).clear;
 
     cc = cc + 1;
@@ -434,6 +455,60 @@ end
 % ------------------------------------------------------------
 % LOCAL HELPERS
 % ------------------------------------------------------------
+
+    function [selected, specified] = importedChannelsFromMap(map)
+        selected = {};
+        specified = isstruct(map) && ~isempty(map) && ...
+            isfield(map, 'sourceName') && isfield(map, 'import');
+        if ~specified, return; end
+
+        for mapIndex = 1:numel(map)
+            flag = map(mapIndex).import;
+            enabled = (islogical(flag) || isnumeric(flag)) && ...
+                isscalar(flag) && logical(flag);
+            if ~enabled, continue; end
+            sourceName = strtrim(char(string(map(mapIndex).sourceName)));
+            if ~isempty(sourceName)
+                selected{end+1} = sourceName; %#ok<AGROW>
+            end
+        end
+        selected = unique(selected, 'stable');
+    end
+
+    function saveImportedRoiExact(roiObj)
+        % A removed classifier ROI can leave an orphan HDF5 file behind.
+        % roi.save normally preserves datasets absent from a partial cache;
+        % for an import that would resurrect channels explicitly unchecked
+        % in roiImporterGUI. Temporarily move the stale destination aside so
+        % save performs a clean full write, restoring it if anything fails.
+        target = fullfile(roiObj.path, ['im_' roiObj.id '.h5']);
+        backup = '';
+        if isfile(target)
+            backup = [target '.preimport.' char(java.util.UUID.randomUUID) '.bak'];
+            [moved, message] = movefile(target, backup, 'f');
+            if ~moved
+                error('classi:addROI:StageExistingDestinationFailed', ...
+                    'Could not stage existing ROI file "%s": %s', target, message);
+            end
+        end
+
+        try
+            didSave = roiObj.save;
+            if ~didSave || ~isfile(target)
+                error('classi:addROI:ImportedRoiSaveFailed', ...
+                    'The imported ROI file was not written: %s', target);
+            end
+        catch ME
+            if ~isempty(backup) && isfile(backup)
+                if isfile(target), delete(target); end
+                movefile(backup, target, 'f');
+            end
+            rethrow(ME);
+        end
+        if ~isempty(backup) && isfile(backup)
+            delete(backup);
+        end
+    end
 
     function ensureTrainingDataseriesExists(roiObj, classifObj)
         % Ensure there is a dataseries with groupid==classif.strid and that it has

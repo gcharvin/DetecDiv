@@ -47,6 +47,7 @@ end
 
 function label = roleLabel(role)
 switch char(string(role))
+    case 'inputChannelName', label = 'Microscopy image';
     case 'instanceChannelName', label = 'Frame-local instance masks';
     case 'brightfieldChannelName', label = 'Brightfield image';
     case 'nucleusChannelName', label = 'Division/nucleus image';
