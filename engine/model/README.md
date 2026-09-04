@@ -44,3 +44,33 @@ forbids one track from mapping to several mask labels in the same frame.
 legacy lineage sources and indexed mask channels. Add
 `'PersistMigration',true` to write the sidecar. Migration is explicit; merely
 opening an old ROI does not change it.
+
+## Object-centric quantification
+
+`cellMetrics` is the late-binding layer between mask-centric processor output
+and cellular identities. `computeMetrics` remains the default generic
+quantifier and keeps its vector-valued dataseries. New outputs record absolute
+`source_frames` and explicit mask bindings in `userData`; no fluorescence
+meaning (mitochondria, redox, transcription factor, and so on) is imposed by
+the container.
+
+```matlab
+[measurements, joinReport] = cellMetrics.link( ...
+    roiObj, 'latent cells', 'channel_quantification');
+measurements = cellMetrics.deriveGrowth(measurements, ...
+    'SizeVariable', 'Area_Cell', 'FrameIntervalMinutes', 3);
+```
+
+The join uses `(frame, mask_label)` from the family's `mask_provider` and then
+adds `ObjectId`, `TrackId`, and `ParentTrackId`. `deriveGrowth` provides robust
+per-track size slopes plus mother size, mother-bud pair size, bud fraction,
+pair growth, and bud growth allocation when parentage exists.
+
+Downstream algorithms that need pixels call `cellMetrics.readRaw`. It returns
+a fixed crop, raw channel stack, frames, object IDs, and primary/parent masks
+for a track or mother-bud pair. Raw pixels remain in the ROI HDF5 and are never
+duplicated in `objects_<roi-id>.h5`.
+
+The `objectMetrics` pipeline processor exposes the same operations as a
+first-class DetecDiv module. Its default output is the `object_metrics`
+dataseries; it retains the join report and provenance in `userData`.

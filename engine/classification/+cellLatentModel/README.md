@@ -99,3 +99,38 @@ train components separately.
 Python and repository locations are runtime environment details. Classifier
 artifacts are referenced by the classifier-owned bundle and are not copied into
 pipeline static parameters.
+
+## Custom fluorescence heads
+
+`cellLatentModel.signal` defines optional user-owned fluorescence heads inside
+the latent-model package while keeping their training independent from the
+promoted tracker and mother/NULL linker. A head may use one or more arbitrary
+raw channels, temporal context, and one of three target contracts:
+
+- classification with a user-provided class list or class count;
+- scalar regression with an optional accepted value range;
+- multiclass subcellular semantic segmentation.
+
+```matlab
+def = cellLatentModel.signal.definition( ...
+    'TF localization', 'classification', ...
+    'Channels', 'GFP', 'Family', 'latent cells', 'Classes', 3);
+uiContract = cellLatentModel.signal.annotationSpec(def);
+cellLatentModel.signal.createGroundTruth(roiObj, def);
+cellLatentModel.signal.setGroundTruth(roiObj, def, ...
+    'ObjectIds', objectIds, 'Values', labels);
+report = cellLatentModel.signal.validateGroundTruth(roiObj, def);
+```
+
+Classification and regression GT are long tables keyed by immutable
+`ObjectId`, with frame, track, and mask references retained for audit.
+Segmentation GT is a semantic channel plus an explicit reviewed-frame table,
+so an empty reviewed frame is distinguishable from an unannotated frame. The
+UI-neutral annotation specification exposes palette, numeric, or paint-editor
+controls to Score or another annotation client.
+
+Every definition freezes tracking and parentage during independent head
+training and declares that the custom head cannot change parentage. A future
+promoted composite may consume such evidence only through a new calibrated,
+versioned training contract. Pixel-level processors can obtain aligned raw
+sequences through `cellMetrics.readRaw`, including a mother-bud-pair scope.

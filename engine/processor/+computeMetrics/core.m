@@ -288,6 +288,8 @@ dataout(cc).userData.mask_label = maskLabel;
 dataout(cc).userData.mask_background_label = backgroundLabel;
 dataout(cc).userData.mask_score_label = scoreLabel;
 dataout(cc).userData.mask_index_variable = varNames{1};
+dataout(cc).userData.source_frames = uint32(frames(:));
+dataout(cc).userData.schema_version = uint16(2);
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
@@ -408,11 +410,35 @@ if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
 dataout(cc).userData.background = backgroundOpt;
+dataout(cc).userData.source_frames = uint32(frames(:));
+dataout(cc).userData.schema_version = uint16(2);
+dataout(cc).userData.mask_bindings = quantificationMaskBindings(roiobj, paramout);
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per foreground mask index listed in the corresponding MaskIdx_* cell.';
 dataout(cc).userData.composite_mask_semantics = ['For *_AND_* and *_NOT_* variables, each table cell contains one value per ' ...
     'selected foreground mask index listed in the corresponding MaskIdx_* composite variable. Foreground excludes each mask background label ' ...
     '(auto, 0, or 1), and mask*_scoreLabel can restrict the measured label. AND/NOT composites are computed only when every mask in the pair has a numeric score label.'];
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
+end
+
+function bindings = quantificationMaskBindings(roiobj, paramout)
+% Persist the semantic join key used by downstream object-centric tools.
+% Variable names alone are insufficient because users are free to assign
+% arbitrary meanings to the one or two fluorescence channels they measure.
+bindings = struct('index_variable', {}, 'mask_channel', {}, ...
+    'mask_label', {}, 'background_label', {}, 'score_label', {});
+for m = 1:paramout.maskChannelCount
+    maskName = paramout.(sprintf('mask%d_name', m));
+    if strcmp(maskName, 'N/A') || isempty(roiobj.findChannelID(maskName))
+        continue;
+    end
+    label = paramout.(sprintf('mask%d_label', m));
+    bindings(end+1) = struct( ... %#ok<AGROW>
+        'index_variable', ['MaskIdx_' makeSafeVariableName(label)], ...
+        'mask_channel', char(string(maskName)), ...
+        'mask_label', char(string(label)), ...
+        'background_label', paramout.(sprintf('mask%d_backgroundLabel', m)), ...
+        'score_label', paramout.(sprintf('mask%d_scoreLabel', m)));
+end
 end
 
 function maskSpecs = validQuantificationMasks(roiobj, paramout)
