@@ -170,6 +170,16 @@ if strcmp(seltype,'normal') && visibleSelectionRectangle(app)
     end
 end
 
+% Scalar custom-signal annotation uses the mask only to select immutable
+% ObjectIds. It must never alter the tracking/parentage provider pixels.
+if score_isLatentSignalObjectSession(app)
+    if strcmp(seltype,'normal') && currentMask(yinit,xinit)~=0
+        displaySelectedObject(app,roi,channelIdx,pix,frm, ...
+            axOverlay,xinit,yinit);
+    end
+    return;
+end
+
 %% --- Peinture (left / middle / right, shift+left erases) ---
 if ~(strcmp(seltype,'normal') || strcmp(seltype,'extend') || strcmp(seltype,'alt'))
     return;

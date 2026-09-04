@@ -1,6 +1,15 @@
 function score_updateSelectedCellState(app)
 %SCORE_UPDATESELECTEDCELLSTATE Persist the selected object's semantic state.
 
+if score_isLatentSignalObjectSession(app)
+    try
+        score_setSelectedSignalGroundTruth(app);
+    catch ME
+        try uialert(app.ScoreAppUIFigure,ME.message,'Signal ground truth'); catch, end
+    end
+    return;
+end
+
 [roiobj, channelName] = score_selectedObjectChannel(app);
 [model, status] = score_getCellModel(roiobj);
 if ~strcmp(status, 'ok')

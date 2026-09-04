@@ -66,7 +66,20 @@ if isempty(idx) || ~ismember(asset.valueField, ...
     error('Ground-truth label field is missing.');
 end
 if isempty(frames), frames = double(roiObj.display.frame); end
-values = roiObj.data(idx).data.(asset.valueField);
+tbl = roiObj.data(idx).data;
+values = tbl.(asset.valueField);
+if any(strcmp(component.kind,{'object_classification','object_regression'}))
+    selected=ismember(double(tbl.Frame),frames);
+    if strcmp(component.kind,'object_regression')
+        undefined=~isfinite(double(values));
+    else
+        undefined=undefinedValues(values);
+    end
+    if any(undefined(selected))
+        error('Edited frame still contains an undefined object target.');
+    end
+    return;
+end
 frames = frames(frames <= numel(values));
 if any(undefinedValues(values(frames)))
     error('Edited frame still contains an undefined label.');

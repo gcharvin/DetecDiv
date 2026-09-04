@@ -2203,6 +2203,11 @@ end
 
             gtChannels = cellstr(string(preset.editableChannels));
             predictionChannels = cellstr(string(preset.predictionChannels));
+            selectionChannels = {};
+            if isfield(preset,'selectionChannels')
+                selectionChannels=cellstr(string(preset.selectionChannels));
+                selectionChannels=selectionChannels(~cellfun(@isempty,selectionChannels));
+            end
             backgroundChannels = {};
             if isfield(preset, 'backgroundChannels')
                 backgroundChannels = cellstr(string( ...
@@ -2222,6 +2227,14 @@ end
                     % A missing optional observation must not prevent GT
                     % review; the generic intensity fallback below remains
                     % available for legacy classifiers and incomplete ROIs.
+                end
+            end
+            if ~isempty(selectionChannels)
+                try
+                    score_loadChannelsForDisplay(roi,selectionChannels);
+                catch ME
+                    warning('score:SignalSelectionChannel', ...
+                        'Could not load the signal selection mask: %s',ME.message);
                 end
             end
             for i = 1:numel(gtChannels)
@@ -2245,6 +2258,23 @@ end
                     updates.lineageMode = 'genealogy';
                 end
                 score_setObjectDisplayConfig(roi, gtChannels{i}, updates);
+            end
+            for i=1:numel(selectionChannels)
+                idx=find(strcmp(roi.display.channel,selectionChannels{i}),1,'first');
+                if isempty(idx), continue; end
+                roi.display.indexed(idx)=true;
+                roi.display.selectedchannel(idx)=true;
+                roi.display.alpha(idx)=0.35;
+                roi.display.contour(idx)=true;
+                roi.display.width(idx)=max(1.5,roi.display.width(idx));
+                updates=struct('mode','edit','criterion','Track');
+                if ~isempty(preset.objectFamilies)
+                    updates.objectFamily=char(string(preset.objectFamilies{1}));
+                end
+                if ~isempty(preset.maskProviders)
+                    updates.maskProvider=char(string(preset.maskProviders{1}));
+                end
+                score_setObjectDisplayConfig(roi,selectionChannels{i},updates);
             end
             showPrediction = logical(app.ShowPredictionCheckBox.Value);
             for i = 1:numel(predictionChannels)
@@ -2297,15 +2327,16 @@ end
             % row mapping. Materialize the managed target row explicitly so
             % the editor can never remain attached to the prediction row.
             tableData = app.UIAnnotationTable.Data;
-            for i = 1:numel(gtChannels)
+            targetChannels=unique([gtChannels selectionChannels],'stable');
+            for i = 1:numel(targetChannels)
                 existsInTable = false;
                 for row = 1:size(tableData, 1)
                     existsInTable = existsInTable || ...
-                        strcmp(app.annotationTableChannelName(row), gtChannels{i});
+                        strcmp(app.annotationTableChannelName(row), targetChannels{i});
                 end
-                idx = find(strcmp(roi.display.channel, gtChannels{i}), 1, 'first');
+                idx = find(strcmp(roi.display.channel, targetChannels{i}), 1, 'first');
                 if ~existsInTable && ~isempty(idx)
-                    tableData(end+1,:) = {true, gtChannels{i}, '', ...
+                    tableData(end+1,:) = {true, targetChannels{i}, '', ...
                         roi.display.alpha(idx), roi.display.contour(idx), ...
                         roi.display.width(idx)}; %#ok<AGROW>
                     app.UIAnnotationTable.Data = tableData;
@@ -2314,7 +2345,7 @@ end
             targetRow = [];
             for row = 1:size(app.UIAnnotationTable.Data, 1)
                 name = app.annotationTableChannelName(row);
-                if any(strcmp(gtChannels, name))
+                if any(strcmp(targetChannels, name))
                     targetRow = row;
                     break;
                 end
@@ -2368,6 +2399,7 @@ end
                 score_display(app, 'refresh');
             end
             app.setManagedAnnotationLayout(true);
+            score_configureLatentSignalControls(app);
         end
 
         function setManagedAnnotationLayout(app, active)
@@ -2437,6 +2469,7 @@ end
                 app.CensorSelectedTrackButton.Visible = 'off';
                 app.CensorStatusLabel.Visible = 'off';
             end
+            if active, score_configureLatentSignalControls(app); end
         end
 
         function ids = annotationComponentIdsForSource(app, source)
@@ -6655,6 +6688,15 @@ end
 
         % Value changed function: MasklabelEditField
         function MasklabelEditFieldValueChanged(app, event)
+            if score_isLatentSignalObjectSession(app)
+                try
+                    score_setSelectedSignalGroundTruth(app);
+                catch ME
+                    score_updateSelectedSignalFields(app);
+                    uialert(app.ScoreAppUIFigure,ME.message,'Signal ground truth');
+                end
+                return;
+            end
             newVal = app.MasklabelEditField.Value;
 
             % Récupérer la nouvelle valeur saisie (en chaîne) et la convertir en nombre

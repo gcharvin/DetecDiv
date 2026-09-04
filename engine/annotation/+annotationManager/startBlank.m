@@ -87,6 +87,13 @@ roiObj.addChannel(blank, target, [1 1 1], [0 0 0]);
 end
 
 function targetName = createBlankFields(roiObj, component, overwrite)
+if any(strcmp(component.kind,{'object_classification','object_regression'}))
+    definition=component.groundTruth.signalDefinition;
+    report=cellLatentModel.signal.createGroundTruth(roiObj,definition, ...
+        'Overwrite',overwrite,'Save',false);
+    targetName=report.target;
+    return;
+end
 ensureData(roiObj);
 asset = component.groundTruth;
 targetName = [char(string(asset.groupId)) '.' char(string(asset.valueField))];

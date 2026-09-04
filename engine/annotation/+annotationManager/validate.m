@@ -120,10 +120,16 @@ switch char(string(component.storage))
         asset = component.groundTruth;
         idx = find(arrayfun(@(x) strcmp(char(string(x.groupid)), ...
             char(string(asset.groupId))), roiObj.data), 1);
-        values = roiObj.data(idx).data.(asset.valueField);
+        tableValue = roiObj.data(idx).data;
+        values = tableValue.(asset.valueField);
         if isempty(values), error('GT label field is empty.'); end
         reviewIdx = find(strcmp(string({entry.review.component_id}), ...
             string(component.id)), 1, 'first');
+        if any(strcmp(component.kind,{'object_classification','object_regression'}))
+            validateObjectSignalTable(roiObj,component,tableValue, ...
+                reviewFrames,entry,reviewIdx);
+            return;
+        end
         if ~isempty(reviewIdx) && strcmp(entry.review(reviewIdx).unit, 'frame')
             reviewed = find(entry.review(reviewIdx).frames);
             reviewed = intersect(reviewed,reviewFrames,'stable');
@@ -159,6 +165,57 @@ switch char(string(component.storage))
                     model.families.name{idx},reviewFrames);
             end
         end
+end
+end
+
+function validateObjectSignalTable(roiObj,component,tbl,reviewFrames,entry,reviewIdx)
+required={'ObjectId','FamilyId','TrackId','Frame','MaskLabel', ...
+    component.groundTruth.valueField};
+if ~all(ismember(required,tbl.Properties.VariableNames))
+    error('Object signal GT is missing identity columns.');
+end
+objectIds=uint64(tbl.ObjectId(:));
+if numel(unique(objectIds))~=numel(objectIds)||any(objectIds==0)
+    error('Object signal GT must contain unique positive ObjectId values.');
+end
+[model,~]=roiObj.loadCellModel('MigrateLegacy',true);
+[familyIndex,familyId]=cellModel.familyIndex(model,component.groundTruth.family);
+if isempty(familyIndex), error('Object signal target family is missing.'); end
+modelRows=find(model.instances.family_id==familyId);
+expectedObjectIds=model.instances.object_id(modelRows);
+if numel(objectIds)~=numel(expectedObjectIds)|| ...
+        any(~ismember(expectedObjectIds,objectIds))
+    error('Object signal GT must contain every object in its target family exactly once.');
+end
+[found,rows]=ismember(objectIds,model.instances.object_id(modelRows));
+if any(~found), error('Object signal GT references objects outside its target family.'); end
+resolved=modelRows(rows);
+if any(uint32(tbl.FamilyId)~=familyId)|| ...
+        any(uint64(tbl.TrackId)~=model.instances.track_id(resolved))|| ...
+        any(uint32(tbl.Frame)~=model.instances.frame(resolved))|| ...
+        any(uint32(tbl.MaskLabel)~=model.instances.mask_label(resolved))
+    error('Object signal identity columns disagree with the cell model.');
+end
+expectedProvider=char(string(component.groundTruth.maskProvider));
+actualProvider=char(string(model.families.mask_provider{familyIndex}));
+if ~isempty(expectedProvider)&&~strcmp(expectedProvider,actualProvider)
+    error('Object signal selection mask "%s" disagrees with family provider "%s".', ...
+        expectedProvider,actualProvider);
+end
+reviewedFrames=[];
+if ~isempty(reviewIdx)
+    reviewed=find(entry.review(reviewIdx).frames);
+    reviewedFrames=intersect(reviewed,reviewFrames,'stable');
+end
+rowsToCheck=ismember(double(tbl.Frame),reviewedFrames);
+values=tbl.(component.groundTruth.valueField);
+if strcmp(component.kind,'object_regression')
+    undefined=~isfinite(double(values));
+else
+    undefined=undefinedValues(values);
+end
+if any(undefined(rowsToCheck))
+    error('At least one object on a reviewed frame has no signal target.');
 end
 end
 

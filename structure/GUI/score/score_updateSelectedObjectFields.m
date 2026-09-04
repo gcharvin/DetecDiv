@@ -1,6 +1,11 @@
 function score_updateSelectedObjectFields(app)
 %SCORE_UPDATESELECTEDOBJECTFIELDS Show the selected model object and track.
 
+if score_isLatentSignalObjectSession(app)
+    score_updateSelectedSignalFields(app);
+    return;
+end
+
 label = NaN;
 try
     if ~isempty(app.SelectedObjectLabelCell)

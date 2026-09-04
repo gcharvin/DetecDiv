@@ -595,6 +595,8 @@ switch char(string(spec.defaultEditor))
         option = 'dataAnnotation';
     case {'semantic_mask','instance_mask','tracking','lineage','mask'}
         option = 'pixelAnnotation';
+    case {'object_classification','object_regression'}
+        option = 'pixelAnnotation';
     otherwise
         option = '';
 end

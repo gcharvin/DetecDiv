@@ -9,6 +9,7 @@ gtChannels = {};
 predictionChannels = {};
 families = {};
 maskProviders = {};
+selectionChannels = {};
 for i = 1:numel(spec.components)
     component = spec.components(i);
     if strcmp(component.storage, 'channel')
@@ -21,6 +22,15 @@ for i = 1:numel(spec.components)
         provider = char(string(component.groundTruth.maskProvider));
         if ~isempty(family), families{end+1} = family; end %#ok<AGROW>
         if ~isempty(provider), maskProviders{end+1} = provider; end %#ok<AGROW>
+    elseif strcmp(component.storage,'dataseries') && ...
+            any(strcmp(component.kind,{'object_classification','object_regression'}))
+        family=char(string(component.groundTruth.family));
+        provider=char(string(component.groundTruth.maskProvider));
+        if ~isempty(family), families{end+1}=family; end %#ok<AGROW>
+        if ~isempty(provider)
+            maskProviders{end+1}=provider; %#ok<AGROW>
+            selectionChannels{end+1}=provider; %#ok<AGROW>
+        end
     end
 end
 
@@ -36,6 +46,7 @@ end
 preset = struct( ...
     'editableChannels', {unique(gtChannels, 'stable')}, ...
     'predictionChannels', {unique(predictionChannels, 'stable')}, ...
+    'selectionChannels', {unique(selectionChannels,'stable')}, ...
     'backgroundChannels', {configuredBackgroundChannels( ...
         roiObj, classifier)}, ...
     'objectFamilies', {unique(families, 'stable')}, ...
@@ -71,6 +82,14 @@ for i = 1:numel(containers)
     if ~isempty(value) && ~any(strcmpi(value, {'<none>','<auto>'}))
         candidates{end+1} = value; %#ok<AGROW>
     end
+end
+
+try
+    if strcmpi(char(string(classifier.classifierPkg)),'cellLatentSignal')
+        definition=cellLatentSignal.definitionForClassifier(classifier);
+        candidates=[candidates definition.channels]; %#ok<AGROW>
+    end
+catch
 end
 
 available = annotationManager.availableChannels(roiObj);
