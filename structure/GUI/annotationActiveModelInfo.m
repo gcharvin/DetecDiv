@@ -15,6 +15,8 @@ info = struct( ...
     'modelReference', '', ...
     'modelLabel', '', ...
     'inputs', {{}}, ...
+    'inputChannelCandidates', {{}}, ...
+    'inputChannelName', '', ...
     'roiIndices', double(roiIndices(:)'), ...
     'usesGroundTruth', false, ...
     'inputsResolved', true, ...
@@ -53,7 +55,11 @@ if strcmpi(package, 'cellposesam')
     info.modelLabel = label;
     try
         channel = char(string(classif.channelName));
-        if ~isempty(channel), info.inputs = {['Microscopy image: ' channel]}; end
+        if ~isempty(channel)
+            info.inputs = {['Microscopy image: ' channel]};
+            info.inputChannelCandidates = {channel};
+            info.inputChannelName = channel;
+        end
     catch
     end
     info.reason = '';
@@ -185,6 +191,44 @@ try
     if ~isempty(descriptions), info.inputs = descriptions; end
 catch
 end
+if strcmpi(info.package, 'cellposesam')
+    [info.inputChannelCandidates, info.inputChannelName] = ...
+        commonCellposeInputChannels(plan);
+end
+end
+
+function [candidates, selected] = commonCellposeInputChannels(plan)
+candidates = {};
+selected = '';
+try, items = plan.items; catch, items = []; end
+selectedPerItem = cell(1, numel(items));
+for i = 1:numel(items)
+    try, resolution = items(i).inputs.resolution.inputChannelName; catch, return; end
+    itemCandidates = fieldCell(resolution, 'candidates');
+    itemSelected = fieldText(resolution, 'selected');
+    if ~isempty(itemSelected)
+        itemCandidates = unique([{itemSelected} itemCandidates], 'stable');
+    end
+    if i == 1
+        candidates = itemCandidates;
+    else
+        keep = false(size(candidates));
+        for j = 1:numel(candidates)
+            keep(j) = any(strcmpi(itemCandidates, candidates{j}));
+        end
+        candidates = candidates(keep);
+    end
+    selectedPerItem{i} = itemSelected;
+end
+if isempty(candidates), return; end
+nonempty = selectedPerItem(~cellfun('isempty', selectedPerItem));
+if numel(nonempty) == numel(items) && ...
+        all(strcmpi(nonempty, nonempty{1})) && ...
+        any(strcmpi(candidates, nonempty{1}))
+    selected = candidates{find(strcmpi(candidates, nonempty{1}), 1)};
+else
+    selected = candidates{1};
+end
 end
 
 function tf = planHasRequiredInputs(plan)
@@ -289,6 +333,15 @@ try
     if isfield(parameters, name)
         value = strtrim(char(string(parameters.(name))));
     end
+catch
+end
+end
+
+function value = fieldCell(parameters, name)
+value = {};
+try
+    value = cellstr(string(parameters.(name)));
+    value = value(strlength(string(value)) > 0);
 catch
 end
 end

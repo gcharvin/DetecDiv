@@ -113,6 +113,47 @@ verifyTrue(testCase, any(contains(string(fallbackLabels), ...
     'Run default CellposeSAM model')));
 end
 
+function testCellposeSAMInitializationExposesImageChannelChoice(testCase)
+folder = freshFolder(testCase);
+c = classi(folder, 'cellpose_channel_choice', 1);
+c.classifierPkg = 'cellposesam';
+c.classifyFun = 'cellposesam.classify';
+c.category = {'Pixel'};
+c.classes = {'cell'};
+c.channelName = 'Channel0'; % unavailable legacy binding
+r = roi('Pos0_1_choice', [1 1 4 4]);
+r.path = c.path;
+r.image = uint16(ones(4,4,3,2));
+r.channelid = 1:3;
+r.display.channel = {'0 TL _z1','0 TL _z2','0 TL _z3'};
+r.display.intensity = ones(3,3);
+r.display.rgb = ones(3,3);
+r.display.selectedchannel = true(1,3);
+r.display.indexed = false(1,3);
+r.display.alpha = ones(1,3);
+r.display.contour = false(1,3);
+r.display.width = ones(1,3);
+c.roi = r;
+
+plan = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+info = annotationActiveModelInfo(c, 1, plan);
+[recipe, available] = annotationInitializationDefaultRecipe( ...
+    minimalCatalog(false), info);
+
+verifyTrue(testCase, available);
+verifyEqual(testCase, info.inputChannelCandidates, ...
+    {'0 TL _z1','0 TL _z2','0 TL _z3'});
+verifyEqual(testCase, info.inputChannelName, '0 TL _z1');
+verifyEqual(testCase, recipe.mode, 'run_prediction');
+verifyEqual(testCase, recipe.inputChannelName, '0 TL _z1');
+
+chosen = classifierPredictForAnnotation(c, 1, 'PlanOnly', true, ...
+    'InputOverrides', struct('inputChannelName', '0 TL _z2'));
+verifyTrue(testCase, chosen.canRun);
+verifyEqual(testCase, ...
+    chosen.items.inputs.resolution.inputChannelName.selected, '0 TL _z2');
+end
+
 function testExistingAndFreshPredictionChoicesRemainSeparate(testCase)
 catalog = minimalCatalog(true);
 active = struct('available', true, 'canRunOnExistingInputs', true, ...
@@ -257,6 +298,10 @@ for source = {classifierSource, scoreSource}
     verifyTrue(testCase, contains(source{1}, ...
         'annotationPredictionUiText'));
     verifyTrue(testCase, contains(source{1}, ...
+        'recipe.inputChannelName'));
+    verifyTrue(testCase, contains(source{1}, ...
+        '''inputChannelName'', selectedInput'));
+    verifyTrue(testCase, contains(source{1}, ...
         'annotationInitializationDefaultRecipe'));
     verifyTrue(testCase, contains(source{1}, ...
         'annotationInitializationUnavailableMessage'));
@@ -266,6 +311,9 @@ for source = {classifierSource, scoreSource}
         '''PrepareMissingInstanceMasks'', true'));
     verifyFalse(testCase, contains(source{1}, '''CellposeSAMParams'''));
 end
+dialogSource = fileread(fullfile(root, 'annotationInitializationDialog.m'));
+verifyTrue(testCase, contains(dialogSource, '''CellposeSAM input:'''));
+verifyTrue(testCase, contains(dialogSource, 'cellposeInputDropDown'));
 verifyTrue(testCase, contains(classifierSource, ...
     'annotationCommonInitializationCatalog'));
 modeSource = fileread(fullfile(root, 'annotationInitializationModes.m'));

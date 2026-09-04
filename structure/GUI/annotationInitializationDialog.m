@@ -19,14 +19,16 @@ if ~hasInitializationSource
     return;
 end
 families = catalog.families([catalog.families.usable]);
+isCellpose = strcmpi(activeModelPackage(activeModel), 'cellposesam');
+cellposeInputs = activeModelInputChannels(activeModel);
 
 fig = uifigure('Name', char(string(p.Results.Title)), ...
-    'Position', [100 100 720 455], 'Resize', 'off', ...
+    'Position', [100 100 720 500], 'Resize', 'off', ...
     'WindowStyle', 'modal', 'CloseRequestFcn', @cancelDialog);
 positionNearParent(fig, parent);
-grid = uigridlayout(fig, [8 2]);
+grid = uigridlayout(fig, [9 2]);
 grid.ColumnWidth = {145, '1x'};
-grid.RowHeight = {34, 34, 34, 34, 105, 45, '1x', 38};
+grid.RowHeight = {34, 34, 34, 34, 34, 105, 45, '1x', 38};
 grid.Padding = [18 15 18 15];
 grid.RowSpacing = 8;
 
@@ -38,6 +40,19 @@ intro.Layout.Column = [1 2];
 uilabel(grid, 'Text', 'Starting point:');
 modeDropDown = uidropdown(grid, 'Items', modeLabels, 'ItemsData', modeIds, ...
     'ValueChangedFcn', @updateUi);
+
+cellposeInputLabel = uilabel(grid, 'Text', 'CellposeSAM input:');
+if isempty(cellposeInputs)
+    cellposeInputDropDown = uidropdown(grid, ...
+        'Items', {'<no common image channel>'}, 'ItemsData', {''}, ...
+        'ValueChangedFcn', @updateUi);
+else
+    cellposeInputDropDown = uidropdown(grid, ...
+        'Items', cellposeInputs, 'ItemsData', cellposeInputs, ...
+        'ValueChangedFcn', @updateUi);
+end
+cellposeInputLabel.Visible = onOff(isCellpose);
+cellposeInputDropDown.Visible = onOff(isCellpose);
 
 uilabel(grid, 'Text', 'Object family:');
 familyDropDown = uidropdown(grid, 'ValueChangedFcn', @updateUi);
@@ -66,12 +81,12 @@ parentageDropDown = uidropdown(grid, ...
 
 preview = uilabel(grid, 'Text', '', 'WordWrap', 'on', ...
     'BackgroundColor', [0.95 0.96 0.97]);
-preview.Layout.Row = 5;
+preview.Layout.Row = 6;
 preview.Layout.Column = [1 2];
 
 warningLabel = uilabel(grid, 'WordWrap', 'on', ...
     'FontColor', [0.75 0.18 0.10]);
-warningLabel.Layout.Row = 6;
+warningLabel.Layout.Row = 7;
 warningLabel.Layout.Column = [1 2];
 if p.Results.HasExistingGT
     warningLabel.Text = ['This will replace existing draft or ready GT ' ...
@@ -82,11 +97,11 @@ end
 
 helpLabel = uilabel(grid, 'WordWrap', 'on', 'FontColor', [0.35 0.35 0.35], ...
     'Text', initializationHelpText(catalog, activeModel));
-helpLabel.Layout.Row = 7;
+helpLabel.Layout.Row = 8;
 helpLabel.Layout.Column = [1 2];
 
 buttonGrid = uigridlayout(grid, [1 3]);
-buttonGrid.Layout.Row = 8;
+buttonGrid.Layout.Row = 9;
 buttonGrid.Layout.Column = [1 2];
 buttonGrid.ColumnWidth = {'1x', 100, 125};
 buttonGrid.Padding = [0 0 0 0];
@@ -124,10 +139,16 @@ if isvalid(fig), delete(fig); end
         else
             parentageDropDown.Value = 'blank';
         end
+        if isCellpose && ~isempty(recipe.inputChannelName) && ...
+                any(strcmpi(cellposeInputs, recipe.inputChannelName))
+            idx = find(strcmpi(cellposeInputs, recipe.inputChannelName), 1);
+            cellposeInputDropDown.Value = cellposeInputs{idx};
+        end
     end
 
     function updateUi(varargin) %#ok<INUSD>
         mode = char(string(modeDropDown.Value));
+        cellposeInputDropDown.Enable = 'off';
         switch mode
             case 'prediction'
                 familyDropDown.Enable = 'off';
@@ -156,6 +177,13 @@ if isvalid(fig), delete(fig); end
                 parentageDropDown.Enable = 'off';
                 valid = activeModelCanUseExistingInputs(activeModel);
                 preview.Text = activeModelPreview(activeModel);
+                if isCellpose
+                    cellposeInputDropDown.Enable = 'on';
+                    selectedInput = char(string(cellposeInputDropDown.Value));
+                    valid = valid && ~isempty(selectedInput);
+                    preview.Text = sprintf('%s\nSelected microscopy input: %s', ...
+                        preview.Text, selectedInput);
+                end
             case 'family'
                 familyDropDown.Enable = 'on';
                 maskDropDown.Enable = 'off';
@@ -207,12 +235,18 @@ if isvalid(fig), delete(fig); end
     function acceptDialog(~, ~)
         mode = char(string(modeDropDown.Value));
         recipe = struct('mode', mode, 'family', '', 'channel', '', ...
+            'inputChannelName', '', ...
             'copyParentage', strcmp(parentageDropDown.Value, 'copy'));
         switch mode
             case 'prediction'
                 recipe.family = catalog.prediction.family;
                 recipe.channel = catalog.prediction.maskProvider;
             case 'run_prediction'
+                if isCellpose
+                    recipe.inputChannelName = char(string( ...
+                        cellposeInputDropDown.Value));
+                    if isempty(recipe.inputChannelName), return; end
+                end
                 recipe.copyParentage = true;
             case 'family'
                 source = selectedFamily();
@@ -370,6 +404,13 @@ end
 function value = activeModelPackage(info)
 value = '';
 try, value = char(string(info.package)); catch, end
+end
+
+function values = activeModelInputChannels(info)
+values = {};
+try, values = cellstr(string(info.inputChannelCandidates)); catch, end
+values = values(strlength(string(values)) > 0);
+values = unique(values, 'stable');
 end
 
 function text = familyPreview(prefix, source, copyParentage)

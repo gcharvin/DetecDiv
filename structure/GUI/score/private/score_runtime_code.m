@@ -4764,10 +4764,28 @@ end
                 return;
             end
             if strcmp(recipe.mode, 'run_prediction')
+                selectedInput = '';
+                try, selectedInput = char(string(recipe.inputChannelName)); catch, end
+                if ~isempty(selectedInput)
+                    selectedOverride = struct( ...
+                        'inputChannelName', selectedInput);
+                    try
+                        predictionPlan = classifierPredictForAnnotation( ...
+                            classif, roiIndex, 'PlanOnly', true, ...
+                            'InputOverrides', selectedOverride);
+                    catch ME
+                        uialert(app.ScoreAppUIFigure, ME.message, ...
+                            'Cannot prepare CellposeSAM input', 'Icon', 'error');
+                        return;
+                    end
+                end
                 [predictionPlan, inputOverrides, ready] = ...
                     annotationResolvePredictionInputs( ...
                     app.ScoreAppUIFigure, classif, roiIndex, predictionPlan);
                 if ~ready, return; end
+                if ~isempty(selectedInput)
+                    inputOverrides.inputChannelName = selectedInput;
+                end
                 uiText = annotationPredictionUiText(activeModel, overwrite);
                 if overwrite || hasExistingPrediction
                     choice = uiconfirm(app.ScoreAppUIFigure, ...

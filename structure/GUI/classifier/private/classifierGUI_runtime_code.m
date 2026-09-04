@@ -4264,11 +4264,29 @@ disp('unable to display folder with this OS');
                 return;
             end
             if strcmp(recipe.mode, 'run_prediction')
+                selectedInput = '';
+                try, selectedInput = char(string(recipe.inputChannelName)); catch, end
+                if ~isempty(selectedInput)
+                    selectedOverride = struct( ...
+                        'inputChannelName', selectedInput);
+                    try
+                        predictionPlan = classifierPredictForAnnotation( ...
+                            app.Data.classiObj, indices, 'PlanOnly', true, ...
+                            'InputOverrides', selectedOverride);
+                    catch ME
+                        uialert(app.ClassifierUIFigure, ME.message, ...
+                            'Cannot prepare CellposeSAM input', 'Icon', 'error');
+                        return;
+                    end
+                end
                 [predictionPlan, inputOverrides, ready] = ...
                     annotationResolvePredictionInputs( ...
                     app.ClassifierUIFigure, app.Data.classiObj, indices, ...
                     predictionPlan);
                 if ~ready, return; end
+                if ~isempty(selectedInput)
+                    inputOverrides.inputChannelName = selectedInput;
+                end
                 uiText = annotationPredictionUiText(activeModel, overwrite);
                 if overwrite || hasExistingPrediction
                     choice = uiconfirm(app.ClassifierUIFigure, ...

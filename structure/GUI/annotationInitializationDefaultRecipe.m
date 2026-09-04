@@ -4,7 +4,7 @@ function [recipe, available] = annotationInitializationDefaultRecipe(catalog, ac
 if nargin < 2, activeModel = struct(); end
 [~, ids] = annotationInitializationModes(catalog, activeModel);
 recipe = struct('mode', '', 'family', '', 'channel', '', ...
-    'copyParentage', false);
+    'inputChannelName', '', 'copyParentage', false);
 available = ~isempty(ids);
 if ~available, return; end
 
@@ -28,6 +28,7 @@ switch recipe.mode
         recipe.channel = char(string(catalog.prediction.maskProvider));
         recipe.copyParentage = true;
     case 'run_prediction'
+        try, recipe.inputChannelName = activeModel.inputChannelName; catch, end
         recipe.copyParentage = true;
     case 'family'
         families = catalog.families([catalog.families.usable]);
@@ -81,7 +82,7 @@ end
 
 function recipe = normalizeRecipe(value)
 recipe = struct('mode', '', 'family', '', 'channel', '', ...
-    'copyParentage', false);
+    'inputChannelName', '', 'copyParentage', false);
 fields = fieldnames(recipe);
 for i = 1:numel(fields)
     if isfield(value, fields{i}), recipe.(fields{i}) = value.(fields{i}); end
@@ -89,5 +90,6 @@ end
 recipe.mode = char(string(recipe.mode));
 recipe.family = char(string(recipe.family));
 recipe.channel = char(string(recipe.channel));
+recipe.inputChannelName = char(string(recipe.inputChannelName));
 recipe.copyParentage = logical(recipe.copyParentage);
 end

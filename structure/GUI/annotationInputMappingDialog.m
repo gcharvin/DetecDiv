@@ -4,7 +4,8 @@ function [overrides, accepted] = annotationInputMappingDialog(parent, plan)
 requests = annotationInputMappingRequests(plan);
 itemCount = 1;
 try, itemCount = max(1, numel(plan.items)); catch, end
-template = struct('instanceChannelName', '', 'brightfieldChannelName', '', ...
+template = struct('inputChannelName', '', 'instanceChannelName', '', ...
+    'brightfieldChannelName', '', ...
     'nucleusChannelName', '', 'budneckChannelName', '');
 overrides = repmat(template, 1, itemCount);
 accepted = false;

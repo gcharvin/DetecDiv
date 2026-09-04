@@ -12,6 +12,7 @@ classdef roiImporterGUI < matlab.apps.AppBase
         ClassesinthedestinationROIEditFieldLabel  matlab.ui.control.Label
         Preserveannotations             matlab.ui.control.CheckBox
         ImportedROIschannelnameselectionandmappingPanel  matlab.ui.container.Panel
+        ApplymappingtoallFOVsCheckBox   matlab.ui.control.CheckBox
         ChannelMappingTable             matlab.ui.control.Table
         DeselectallButton               matlab.ui.control.Button
         SelectallButton                 matlab.ui.control.Button
@@ -24,6 +25,10 @@ classdef roiImporterGUI < matlab.apps.AppBase
     properties (Access = private)
         Data % Description
         channelMap = {}
+        channelMapEdited = false(1,0)
+        lastEditedChannelMapIndex = 0
+        displayedChannelMapIndex = 0
+        globalChannelMap = []
     end
 
     methods (Access = private)
@@ -410,9 +415,12 @@ classdef roiImporterGUI < matlab.apps.AppBase
             % Remplit la table de mapping pour la ligne sélectionnée dans app.UITable,
             % en utilisant l'union des channels sur TOUTES les ROIs du target.
 
+            persistVisibleChannelMapping(app);
+
             selection = app.UITable.Selection;
             if isempty(selection)
                 app.ChannelMappingTable.Data = {};
+                app.displayedChannelMapIndex = 0;
                 return;
             end
 
@@ -422,6 +430,7 @@ classdef roiImporterGUI < matlab.apps.AppBase
             target = app.Data.target{pixtable};
             if isempty(target) || ~isprop(target,'roi') || isempty(target.roi)
                 app.ChannelMappingTable.Data = {};
+                app.displayedChannelMapIndex = 0;
                 return;
             end
 
@@ -497,7 +506,13 @@ classdef roiImporterGUI < matlab.apps.AppBase
 
             % ---------- 4) Rechargement du mapping existant (par nom) ----------
             oldMap = [];
-            if numel(app.channelMap) >= pixtable && ~isempty(app.channelMap{pixtable})
+            if app.ApplymappingtoallFOVsCheckBox.Value && ...
+                    ~isempty(app.globalChannelMap)
+                oldMap = roiImporterProjectChannelMap( ...
+                    app.globalChannelMap, chNames);
+                app.channelMap{pixtable} = oldMap;
+            elseif numel(app.channelMap) >= pixtable && ...
+                    ~isempty(app.channelMap{pixtable})
                 oldMap = app.channelMap{pixtable};
             end
 
@@ -557,6 +572,29 @@ classdef roiImporterGUI < matlab.apps.AppBase
             % look configured while buildMappingForImport still received no
             % explicit selection and therefore imported every channel.
             app.channelMap{pixtable} = channelMapFromTableData(app, data);
+            app.displayedChannelMapIndex = pixtable;
+        end
+
+
+        function persistVisibleChannelMapping(app)
+            row = app.displayedChannelMapIndex;
+            data = app.ChannelMappingTable.Data;
+            if row < 1 || isempty(data)
+                return;
+            end
+            visibleMap = channelMapFromTableData(app, data);
+            app.channelMap{row} = visibleMap;
+            if app.ApplymappingtoallFOVsCheckBox.Value
+                app.globalChannelMap = visibleMap;
+            end
+        end
+
+
+        function rows = selectedImportRows(app)
+            rows = find(cellfun(@(x) isequal(x, true) || ...
+                (isnumeric(x) && isscalar(x) && x ~= 0), ...
+                app.UITable.Data(:,1)));
+            rows = double(rows(:).');
         end
 
 
@@ -571,6 +609,58 @@ classdef roiImporterGUI < matlab.apps.AppBase
                 map(i).type = char(string(data{i,3}));
                 map(i).destName = char(string(data{i,4}));
                 map(i).ioChannel = char(string(data{i,5}));
+            end
+        end
+
+
+        function propagateEditedMappingToSelectedSources(app, selectedRows)
+            selectedRows = double(selectedRows(:).');
+            applyToAll = logical(app.ApplymappingtoallFOVsCheckBox.Value);
+            editedRows = [];
+            for row = selectedRows
+                if row <= numel(app.channelMapEdited) && ...
+                        app.channelMapEdited(row)
+                    editedRows(end+1) = row; %#ok<AGROW>
+                end
+            end
+            sourceRow = app.lastEditedChannelMapIndex;
+            if applyToAll && ~isempty(app.globalChannelMap)
+                sourceMap = app.globalChannelMap;
+                sourceRow = 0;
+            elseif applyToAll
+                if sourceRow < 1 || sourceRow > numel(app.channelMapEdited) || ...
+                        ~app.channelMapEdited(sourceRow)
+                    return;
+                end
+                sourceMap = app.channelMap{sourceRow};
+            else
+                if isempty(editedRows), return; end
+                if ~any(editedRows == sourceRow), sourceRow = editedRows(end); end
+                if sourceRow < 1 || sourceRow > numel(app.channelMap) || ...
+                        isempty(app.channelMap{sourceRow})
+                    return;
+                end
+                sourceMap = app.channelMap{sourceRow};
+            end
+
+            targetRows = selectedRows;
+            if applyToAll
+                targetRows = 1:numel(app.Data.channelsToImport);
+            end
+
+            for targetRow = targetRows
+                if targetRow == sourceRow
+                    continue;
+                end
+                if ~applyToAll && ...
+                        targetRow <= numel(app.channelMapEdited) && ...
+                        app.channelMapEdited(targetRow)
+                    continue;
+                end
+                available = roiImporterChannelNames( ...
+                    app.Data.channelsToImport{targetRow});
+                app.channelMap{targetRow} = ...
+                    roiImporterProjectChannelMap(sourceMap, available);
             end
         end
 
@@ -649,6 +739,11 @@ end
             app.UIFigure.Name=['Import ROIs to ' mainApp.Data.classiObj.strid];
             app.Data.convert={};
             app.Data.preserve={};
+            app.channelMap = {};
+            app.channelMapEdited = false(1,0);
+            app.lastEditedChannelMapIndex = 0;
+            app.displayedChannelMapIndex = 0;
+            app.globalChannelMap = [];
 
             app.Data.targetChannel={} ; %cell(1,numel(mainApp.Data.classiObj.channelName));
             app.Data.target={};
@@ -701,6 +796,7 @@ end
                 errordlg('You must select at least one item !','Error');
                 return;
             end
+            propagateEditedMappingToSelectedSources(app, pix);
 
             d = uiprogressdlg(app.UIFigure,'Title','Please Wait...',...
                 'Message','Importing ROIs...');
@@ -921,11 +1017,8 @@ end
 
         % Selection changed function: ChannelMappingTable
         function ChannelMappingTableSelectionChanged(app, event)
-            %selection = app.ChannelMappingTable.Selection;
-            displayAnnotations(app)
-
-            %            displayChannels(app)
-            updateChannelMappingTable(app);
+            % Selecting a cell must not rebuild the table. Rebuilding here
+            % could restore defaults before the user's edit was persisted.
         end
 
         % Cell edit callback: ChannelMappingTable
@@ -936,7 +1029,10 @@ end
                 return;
             end
 
-            pixtable = selection(1,1);
+            pixtable = app.displayedChannelMapIndex;
+            if pixtable < 1
+                pixtable = selection(1,1);
+            end
             try
                 indices = event.Indices;
                 if numel(indices) == 2
@@ -946,6 +1042,26 @@ end
             catch
             end
             app.channelMap{pixtable} = channelMapFromTableData(app, data);
+            app.channelMapEdited(pixtable) = true;
+            app.lastEditedChannelMapIndex = pixtable;
+            if app.ApplymappingtoallFOVsCheckBox.Value
+                app.globalChannelMap = app.channelMap{pixtable};
+            end
+            propagateEditedMappingToSelectedSources(app, selectedImportRows(app));
+
+        end
+
+        % Value changed function: ApplymappingtoallFOVsCheckBox
+        function ApplymappingtoallFOVsCheckBoxValueChanged(app, event)
+            persistVisibleChannelMapping(app);
+            if app.ApplymappingtoallFOVsCheckBox.Value && ...
+                    isempty(app.globalChannelMap) && ...
+                    app.displayedChannelMapIndex >= 1
+                app.globalChannelMap = ...
+                    app.channelMap{app.displayedChannelMapIndex};
+            end
+            propagateEditedMappingToSelectedSources(app, selectedImportRows(app));
+            updateChannelMappingTable(app);
 
         end
     end
@@ -1006,7 +1122,14 @@ end
             app.ChannelMappingTable.ColumnEditable = [true false false true true];
             app.ChannelMappingTable.CellEditCallback = createCallbackFcn(app, @ChannelMappingTableCellEdit, true);
             app.ChannelMappingTable.SelectionChangedFcn = createCallbackFcn(app, @ChannelMappingTableSelectionChanged, true);
-            app.ChannelMappingTable.Position = [10 11 583 233];
+            app.ChannelMappingTable.Position = [10 11 583 207];
+
+            % Create ApplymappingtoallFOVsCheckBox
+            app.ApplymappingtoallFOVsCheckBox = uicheckbox(app.ImportedROIschannelnameselectionandmappingPanel);
+            app.ApplymappingtoallFOVsCheckBox.ValueChangedFcn = createCallbackFcn(app, @ApplymappingtoallFOVsCheckBoxValueChanged, true);
+            app.ApplymappingtoallFOVsCheckBox.Text = 'Apply channel mapping to all FOVs';
+            app.ApplymappingtoallFOVsCheckBox.Tooltip = {'Unchecked: apply the edited mapping only to FOVs selected for import.'; 'Checked: apply it to every FOV listed above.'};
+            app.ApplymappingtoallFOVsCheckBox.Position = [10 224 258 22];
 
             % Create ImportedROIsclassesmappingPanel
             app.ImportedROIsclassesmappingPanel = uipanel(app.UIFigure);

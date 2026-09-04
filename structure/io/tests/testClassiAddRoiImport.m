@@ -156,11 +156,46 @@ verifyTrue(testCase, contains(source, ...
     'adjustName{k} = src;'));
 verifyTrue(testCase, contains(source, ...
     'roiImporterChannelNames('));
+verifyTrue(testCase, contains(source, ...
+    'propagateEditedMappingToSelectedSources(app, pix)'));
+verifyTrue(testCase, contains(source, ...
+    'ApplymappingtoallFOVsCheckBox.Value'));
+verifyTrue(testCase, contains(source, ...
+    'targetRows = 1:numel(app.Data.channelsToImport)'));
+verifyTrue(testCase, contains(source, ...
+    'propagateEditedMappingToSelectedSources(app, selectedImportRows(app))'));
+verifyTrue(testCase, contains(source, ...
+    'persistVisibleChannelMapping(app);'));
+verifyTrue(testCase, contains(source, ...
+    'app.globalChannelMap = visibleMap;'));
+verifyTrue(testCase, contains(source, ...
+    'oldMap = roiImporterProjectChannelMap('), ...
+    'Every displayed FOV must read directly from the active global map.');
+
+selectionCallbackStart = strfind(source, ...
+    'function ChannelMappingTableSelectionChanged(app, event)');
+cellEditCallbackStart = strfind(source, ...
+    'function ChannelMappingTableCellEdit(app, event)');
+selectionCallback = source(selectionCallbackStart(1):cellEditCallbackStart(1)-1);
+verifyFalse(testCase, contains(selectionCallback, ...
+    'updateChannelMappingTable(app)'), ...
+    'Selecting a channel-mapping cell must not rebuild and reset the table.');
 
 reader = appdesigner.internal.serialization.FileReader(mlappPath);
 embedded = reader.readMATLABCodeText();
 verifyTrue(testCase, contains(embedded, needle), ...
     'The deployed roiImporterGUI.mlapp must contain the channel-selection fix.');
+verifyTrue(testCase, contains(embedded, ...
+    'propagateEditedMappingToSelectedSources(app, pix)'), ...
+    'The deployed importer must propagate one edited map to selected FOVs.');
+verifyTrue(testCase, contains(embedded, ...
+    'Apply channel mapping to all FOVs'), ...
+    'The deployed importer must expose the mapping scope explicitly.');
+verifyTrue(testCase, contains(embedded, ...
+    'ApplymappingtoallFOVsCheckBoxValueChanged'), ...
+    'Changing mapping scope must immediately refresh the visible FOV.');
+verifyTrue(testCase, contains(embedded, 'globalChannelMap'), ...
+    'The packed importer must keep one navigation-independent global map.');
 end
 
 function testImporterNormalizesRowAndColumnChannelCatalogs(testCase)
@@ -170,6 +205,105 @@ verifyEqual(testCase, roiImporterChannelNames(["A";"B"]), ...
     {'A','B'});
 verifyEqual(testCase, roiImporterChannelNames('A'), {'A'});
 verifySize(testCase, roiImporterChannelNames({'A';'B'}), [1 2]);
+end
+
+function testEditedMappingProjectsToEverySelectedFov(testCase)
+available = {'0 TL _z1','SB GFP10_z1','RoGFPlow10_z1', ...
+    '0 TL _z2','SB GFP10_z2','RoGFPlow10_z2', ...
+    '0 TL _z3','SB GFP10_z3','RoGFPlow10_z3'};
+sourceMap = repmat(importMap(false, '', '-'), 1, numel(available));
+for i = 1:numel(available)
+    sourceMap(i) = importMap(startsWith(available{i}, '0 TL '), ...
+        available{i}, '-');
+end
+
+projected = roiImporterProjectChannelMap(sourceMap, available(:));
+selected = {projected([projected.import]).sourceName};
+verifyEqual(testCase, selected, {'0 TL _z1','0 TL _z2','0 TL _z3'});
+verifySize(testCase, projected, [1 9]);
+end
+
+function testGlobalMappingSurvivesFovNavigation(testCase)
+testRoot = tempname;
+mkdir(testRoot);
+testCase.addTeardown(@() removeTestFolder(testRoot));
+
+destination = classi(testRoot, 'navigation_destination', 1, ...
+    'InitTraining', false);
+destination.channelName = {'Channel0'};
+
+firstRoi = navigationTestRoi('navigation_roi_a');
+secondRoi = navigationTestRoi('navigation_roi_b');
+firstFov = fov();
+firstFov.id = 'navigation_FOV_A';
+firstFov.roi = firstRoi;
+secondFov = fov();
+secondFov.id = 'navigation_FOV_B';
+secondFov.roi = secondRoi;
+project = shallow();
+project.fov(1) = firstFov;
+project.fov(2) = secondFov;
+
+[~, projectVariable] = fileparts(tempname);
+projectVariable = matlab.lang.makeValidName( ...
+    ['roiImporterNavigation_' projectVariable]);
+assignin('base', projectVariable, project);
+testCase.addTeardown(@() evalin('base', ['clear ' projectVariable]));
+
+hostFigure = uifigure('Visible', 'off');
+testCase.addTeardown(@() deleteValidHandle(hostFigure));
+mainApp = struct('Data', struct('classiObj', destination), ...
+    'ClassifierUIFigure', hostFigure);
+app = roiImporterGUI(mainApp);
+testCase.addTeardown(@() deleteValidHandle(app));
+app.UIFigure.Visible = 'off';
+
+rowA = find(strcmp(app.UITable.Data(:,3), 'navigation_FOV_A'), 1);
+rowB = find(strcmp(app.UITable.Data(:,3), 'navigation_FOV_B'), 1);
+verifyNotEmpty(testCase, rowA);
+verifyNotEmpty(testCase, rowB);
+app.UITable.Data{rowA,1} = true;
+app.UITable.Data{rowB,1} = true;
+
+selectFovRow(app, rowA);
+app.ApplymappingtoallFOVsCheckBox.Value = true;
+app.ApplymappingtoallFOVsCheckBox.ValueChangedFcn( ...
+    app.ApplymappingtoallFOVsCheckBox, struct());
+app.ChannelMappingTable.CellEditCallback( ...
+    app.ChannelMappingTable, ...
+    struct('Indices', [2 1], 'NewData', false));
+beforeNavigation = cell2mat(app.ChannelMappingTable.Data(:,1)).';
+
+selectFovRow(app, rowB);
+afterNavigation = cell2mat(app.ChannelMappingTable.Data(:,1)).';
+verifyEqual(testCase, beforeNavigation, [true false true]);
+verifyEqual(testCase, afterNavigation, beforeNavigation);
+end
+
+function object = navigationTestRoi(id)
+object = roi(id, []);
+object.display.channel = {'A','B','C'};
+object.channelid = 1:3;
+end
+
+function selectFovRow(app, row)
+app.UITable.Selection = [row 1];
+app.UITable.SelectionChangedFcn(app.UITable, struct());
+end
+
+function deleteValidHandle(object)
+try
+    if isvalid(object)
+        delete(object);
+    end
+catch
+end
+end
+
+function removeTestFolder(folder)
+if isfolder(folder)
+    rmdir(folder, 's');
+end
 end
 
 function map = importMap(enabled, sourceName, ioChannel)
