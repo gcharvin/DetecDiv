@@ -805,6 +805,9 @@ try
     handled = true;
     if strcmpi(criterion, 'Track')
         for i = 1:numel(labels)
+            % Newly initialized/painted masks may not yet have an instance
+            % record. Keep them distinguishable until tracking is assigned.
+            colors(i,:) = label2color(labels(i));
             hit = find(frameLabels == double(labels(i)), 1, 'first');
             if isempty(hit), continue; end
             trackId = model.instances.track_id(rows(hit));

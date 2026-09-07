@@ -118,11 +118,17 @@ verifyNotEmpty(testCase, r.findChannelID(gtName));
 verifyEqual(testCase, session.summary().status, 'draft');
 verifyTrue(testCase, contains(app.AnnotationStatusLabel.Text, 'DRAFT'));
 verifyTrue(testCase, contains(app.AnnotationCoverageLabel.Text, 'Segmentation'));
-verifyEqual(testCase, app.ChannelModeButtonGroup.SelectedObject, app.EditButton);
+verifyEqual(testCase, app.ChannelModeButtonGroup.SelectedObject, ...
+    app.MulticolorButton, ...
+    'Managed instance GT must open with distinguishable object colors.');
 verifyEqual(testCase, char(app.ChannelModeButtonGroup.Enable), 'off');
 verifyEqual(testCase, char(app.MasklabelEditField.Visible), 'off');
 verifyEqual(testCase, char(app.SelectedObjectIDEditField.Visible), 'off');
 verifyEqual(testCase, app.DisplayCriterionDropDown.Value, 'Track');
+verifyTrue(testCase, score_isEditMode(app), ...
+    'Multicolor managed GT must remain editable.');
+verifyNotEmpty(testCase, app.ImageFigure.WindowButtonDownFcn, ...
+    'Multicolor managed GT must retain its paint/selection callback.');
 rawIdx = r.findChannelID('raw', 'exact');
 gtIdx = r.findChannelID(gtName, 'exact');
 verifyTrue(testCase, logical(r.display.selectedchannel(rawIdx)), ...
@@ -135,6 +141,12 @@ model.families.name = {'reviewed tracks'};
 model.families.mask_provider = {gtName};
 model.families.lineage_source = {''};
 model.families.color_rgb = uint8([255 0 0]);
+r.saveCellModel(model);
+score_display(app, 'fast');
+[~, ~, unassignedOverlay] = score_makeComposite(r, 1, app.layoutOptions);
+verifyEqual(testCase, reshape(unassignedOverlay(2,2,:), 1, 3), ...
+    score_trackColor(1), 'AbsTol', 1e-12, ...
+    'An unassigned GT mask must retain its label color.');
 for frame = 1:3
     [model, ~] = cellModel.syncFrame(model, 1, frame, ...
         r.image(:,:,gtIdx,frame), 'TrackPolicy', 'preserve_or_label');

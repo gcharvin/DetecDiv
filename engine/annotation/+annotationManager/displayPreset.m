@@ -40,7 +40,10 @@ if any(strcmp({spec.components.kind}, 'semantic_mask'))
     mode = 'Semantic';
 elseif any(ismember({spec.components.kind}, ...
         {'instance_mask','tracked_instances','lineage'}))
-    mode = 'Edit';
+    % Managed instance annotation remains editable independently from the
+    % visual radio mode. Multicolor is the useful review default: every
+    % mask/track stays distinguishable while the paint callback is active.
+    mode = 'Multicolor';
     colorBy = 'Track';
 end
 preset = struct( ...

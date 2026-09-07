@@ -2220,6 +2220,8 @@ function clearAnnotationSessionAfterRoiRemoval(app, classiObj)
             end
             if sameSession || sameClassifier
                 scoreApp.setAnnotationSession([]);
+                % Discard stale ROI handles so Score cannot save deleted GT.
+                delete(scoreApp);
             end
         end
     catch
@@ -3142,11 +3144,6 @@ end
 
     classiObj = app.Data.classiObj;
     nRoi = numel(classiObj.roi);
-    oldRois = classiObj.roi;
-    oldTraining = double(classiObj.trainingset(:).');
-    oldDataset = classiObj.dataset;
-    oldChannelName = classiObj.channelName;
-    oldScore = classiObj.score;
 
     % Nettoyage des indices hors bornes
     sel = unique(round(sel(:).'), 'stable');
@@ -3157,35 +3154,14 @@ end
 
     % ROIs à conserver = toutes sauf celles sélectionnées
     keep = setdiff(1:nRoi, sel, 'stable');
-    newDataset = remapClassifierDatasetAfterRoiRemoval( ...
-        app, oldDataset, oldTraining, keep, nRoi);
-    newTraining = newDataset.split.train;
-    if isempty(keep)
-        newRois = roi;
-    else
-        newRois = oldRois(keep);
-    end
-
-    % Commit the ROI array and its split together. If a future split update
-    % fails, restore the complete pre-click state rather than leaving an
-    % in-memory classifier with fewer ROIs and stale indices.
     try
-        classiObj.roi = newRois;
-        classiObj.trainingset = newTraining;
-        classiObj.dataset = newDataset;
-        classiObj.score = [];
-        if isempty(keep)
-            classiObj.channelName = {};
-        end
+        report = classiObj.removeROI(sel);
     catch ME
-        classiObj.roi = oldRois;
-        classiObj.trainingset = oldTraining;
-        classiObj.dataset = oldDataset;
-        classiObj.channelName = oldChannelName;
-        classiObj.score = oldScore;
-        app.Data.classiObj = classiObj;
-        rethrow(ME);
+        uialert(app.ClassifierUIFigure, ME.message, 'ROI removal failed');
+        return;
     end
+    app.removeselectedROIButton.Tooltip = ...
+        ['Last removal recovery folder: ' report.recoveryPath];
 
     clearAnnotationSessionAfterRoiRemoval(app, classiObj);
     app.UITableData.Selection = [];

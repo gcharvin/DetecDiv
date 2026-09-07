@@ -138,7 +138,7 @@ wantProbability = any(strcmpi(outputType, {'proba','both'}));
 pixresults = [];
 for i = 1:numel(classNames)
     chName = ['results_' outputName '_' classNames{i}];
-    pixresultstmp = findChannelID(roiobj, chName);
+    pixresultstmp = cellposesam.utils.loadExistingOutputChannel(roiobj, chName);
     if isempty(pixresultstmp)
         matrix = uint16(zeros(size(image,1), size(image,2), 1, size(image,4)));
         rgb = [1 1 1];
