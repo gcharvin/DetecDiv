@@ -36,6 +36,12 @@ elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'fr
     frames = ctx.params.frames;
 end
 
+% A partial frame-local GT must never turn unreviewed masks into training
+% labels.  An explicit pipeline/UI selection still takes precedence.
+if isempty(frames)
+    frames = annotationManager.reviewedFramesForClassifier(classif, rois);
+end
+
 output = formatPixelTrainingSetCPSAMInternal(foldername, classif, rois, [], 'Frames', frames);
 
 out.status = "OK";

@@ -32,6 +32,12 @@ elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'fr
     frames = ctx.params.frames;
 end
 
+% For a partial semantic GT, train only on frames explicitly reviewed in
+% Score.  Caller-provided frame selections remain authoritative.
+if isempty(frames)
+    frames = annotationManager.reviewedFramesForClassifier(classif, rois);
+end
+
 outputCount = formatPixelTrainingSet(foldername, classif, rois, 'Frames', frames);
 
 out.metrics.outputCount = outputCount;

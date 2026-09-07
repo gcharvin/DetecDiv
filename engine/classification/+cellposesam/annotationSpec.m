@@ -28,4 +28,9 @@ component = annotationManager.newComponent( ...
 spec.displayName = 'Cell instances';
 spec.components = component;
 spec.defaultEditor = 'instance_mask';
+% Frame-local instance masks have no temporal dependency.  Score may
+% therefore approve a non-empty reviewed subset; the formatter resolves
+% that subset from the annotation manifest instead of treating untouched
+% frames as negative examples.
+spec.allowPartialApproval = true;
 end

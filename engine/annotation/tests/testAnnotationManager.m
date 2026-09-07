@@ -105,6 +105,20 @@ verifyEqual(testCase, rows.validationStatus, 'not_run', ...
 verifyFalse(testCase, rows.staleApproval);
 end
 
+function testFrameLocalSegmentationUsesReviewedSubset(testCase)
+[~, c, ~] = maskFixture(testCase);
+session = c.annotationSession(1);
+session.bootstrap();
+session.markReviewed('Frames', 1:2);
+
+report = session.validate();
+verifyTrue(testCase, report.valid, strjoin(cellstr(report.errors), ' '));
+verifyTrue(testCase, any(contains(report.warnings, 'partially reviewed')));
+
+selection = annotationManager.reviewedFramesForClassifier(c, 1);
+verifyEqual(testCase, selection.roi1, [1 2]);
+end
+
 function testBootstrapDoesNotOverwriteReviewedMask(testCase)
 [~, c, r] = maskFixture(testCase);
 session = c.annotationSession(1);
