@@ -156,7 +156,11 @@ if strcmp(seltype,'open')
     %     end
     % end
     % Sinon on sélectionne l'objet sous le curseur
-    displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, xinit, yinit);
+    % A double-click is also the convenient legacy "close contour" action:
+    % fill only the connected component underneath the cursor, then select
+    % its (possibly track-associated) object as usual.
+    displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, ...
+        xinit, yinit, 'FillHoles', true, 'ChannelName', fullChannelName);
     return;
 end
 
@@ -536,7 +540,17 @@ catch
 end
 end
 
-function displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, xinit, yinit)
+function displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, xinit, yinit, varargin)
+%DISPLAYSELECTEDOBJECT Select the clicked component, optionally closing holes.
+% The fill is deliberately restricted to a double-click; an ordinary click
+% remains a non-mutating selection gesture.
+p = inputParser;
+p.addParameter('FillHoles', false, @(x) islogical(x) && isscalar(x));
+p.addParameter('ChannelName', '', @(x) ischar(x) || isstring(x));
+p.parse(varargin{:});
+fillHoles = p.Results.FillHoles;
+channelName = char(string(p.Results.ChannelName));
+
 currentMask = roi.image(:,:,pix,frm);
 
 [H,W] = size(currentMask);
@@ -546,6 +560,23 @@ end
 objLabel = currentMask(yinit,xinit);
 if objLabel==0
     app.MasklabelEditField.Value = 0; return;
+end
+
+if fillHoles
+    [filledComponent, changed] = clickedComponentFilledMask( ...
+        currentMask, objLabel, xinit, yinit);
+    if changed
+        % Preserve the historic behavior: an enclosed region becomes part
+        % of the clicked mask, including when it currently contains another
+        % label. This makes double-click useful for closing painted contours.
+        currentMask(filledComponent) = objLabel;
+        roi.image(:,:,pix,frm) = currentMask;
+        updateFilledComponentOverlay(app, filledComponent, objLabel);
+        if ~isempty(channelName)
+            score_syncCellModelFrame(roi, channelName, frm, 'Save', false);
+            app.notifyAnnotationChanged(channelName, frm, 'Save', false);
+        end
+    end
 end
 
 % Mémos sélection
@@ -591,6 +622,39 @@ app.ImageFigure.Name = ['ROI:' char(app.SelectedObjectRoiId) ...
 % Attacher le menu après le premier rendu.
 cm = buildDisplayContextMenu(app.ImageFigure, app, roi, channelIdx, pix, frm);
 app.SelectedObjectRectangle.UIContextMenu = cm;
+end
+
+function [filled, changed] = clickedComponentFilledMask(mask, objLabel, x, y)
+% Return the hole-filled connected component at the clicked pixel.
+filled = false(size(mask));
+changed = false;
+bw = (mask == objLabel);
+cc = bwconncomp(bw, 8);
+clickedPixel = sub2ind(size(bw), y, x);
+for k = 1:cc.NumObjects
+    component = false(size(bw));
+    component(cc.PixelIdxList{k}) = true;
+    if component(clickedPixel)
+        filled = imfill(component, 'holes');
+        changed = any(filled(:) & ~component(:));
+        return;
+    end
+end
+end
+
+function updateFilledComponentOverlay(app, filled, objLabel)
+% Apply immediate visual feedback; the normal display refresh is not needed.
+hOverlayImg = getOverlayImageHandle(app);
+if isempty(hOverlayImg) || ~isgraphics(hOverlayImg), return; end
+color = label2color(double(objLabel));
+for c = 1:3
+    plane = hOverlayImg.CData(:,:,c);
+    plane(filled) = color(c);
+    hOverlayImg.CData(:,:,c) = plane;
+end
+alpha = hOverlayImg.AlphaData;
+alpha(filled) = app.Transparency.Value;
+hOverlayImg.AlphaData = alpha;
 end
 
 function bb = clickedComponentBoundingBox(mask, objLabel, x, y)

@@ -233,6 +233,7 @@ classdef score < matlab.apps.AppBase
         AnnotationQuickValidationState char = 'idle'
         AnnotationQuickValidationMessage char = ''
         AnnotationReviewDirty logical = false
+        ModifiedRoiIds string = strings(0, 1)
     end
 
     properties (Access = private)
@@ -1981,6 +1982,7 @@ end
                 app.AnnotationQuickValidationState = 'idle';
                 app.AnnotationQuickValidationMessage = '';
                 app.AnnotationReviewDirty = false;
+                app.ModifiedRoiIds = strings(0, 1);
                 app.setManagedAnnotationLayout(false);
                 return;
             end
@@ -1995,6 +1997,7 @@ end
             app.AnnotationQuickValidationState = 'idle';
             app.AnnotationQuickValidationMessage = '';
             app.AnnotationReviewDirty = false;
+            app.ModifiedRoiIds = strings(0, 1);
             context = session.uiContext();
             app.AnnotationDisplayPreset = context.displayPreset;
 
@@ -2033,6 +2036,10 @@ end
         function notifyAnnotationChanged(app, source, frames, varargin)
             % Called by painting, lineage and keyboard editors after a write.
             if nargin < 3, frames = []; end
+            % This is also used outside managed annotation sessions. Keep a
+            % per-ROI dirty record so closing Score cannot silently lose a
+            % painted mask or an edited track.
+            app.markCurrentRoiDirty();
             if isempty(app.AnnotationSession) || ~isvalid(app.AnnotationSession)
                 return;
             end
@@ -2070,6 +2077,53 @@ end
                         'Could not refresh the open lineage tree: %s', ME.message);
                 end
             end
+        end
+
+        function markCurrentRoiDirty(app)
+            try
+                selected = find(cell2mat(app.UIROITable.Data(:,1)), 1);
+                if isempty(selected), return; end
+                roi = app.content.ROIList{selected};
+                roiId = string(roi.id);
+                if ~any(app.ModifiedRoiIds == roiId)
+                    app.ModifiedRoiIds(end+1,1) = roiId;
+                end
+                app.AnnotationReviewDirty = true;
+            catch
+                % Change tracking must never make painting unavailable.
+            end
+        end
+
+        function ok = saveModifiedRois(app)
+            % Save every ROI touched during this Score session.
+            ok = true;
+            modifiedIds = app.ModifiedRoiIds;
+            for i = 1:numel(modifiedIds)
+                hit = [];
+                for j = 1:numel(app.content.ROIList)
+                    if string(app.content.ROIList{j}.id) == modifiedIds(i)
+                        hit = j;
+                        break;
+                    end
+                end
+                if isempty(hit), continue; end
+                try
+                    roi = app.content.ROIList{hit};
+                    roi.save();
+                    if isstruct(roi.cellModel) && ...
+                            isfield(roi.cellModel, 'schema_version')
+                        roi.saveCellModel(roi.cellModel);
+                    end
+                catch ME
+                    ok = false;
+                    uialert(app.ScoreAppUIFigure, sprintf( ...
+                        'Could not save ROI %s:\n%s', modifiedIds(i), ME.message), ...
+                        'Save error');
+                    return;
+                end
+            end
+            app.ModifiedRoiIds = strings(0, 1);
+            app.AnnotationReviewDirty = false;
         end
 
         function key = syncLineageDisplayAfterEdit(app)
@@ -5986,45 +6040,11 @@ end
 
         % Key press function: ScoreAppUIFigure
         function ScoreAppUIFigureKeyPress(app, event)
-            % Gestion de la touche Suppr pour supprimer la ROI en cours
-
-            %profile on
+            % Delete now acts on the selected annotation contour, never on
+            % the Score application or its ROI list.
             if strcmp(event.Key, 'delete')
-
-                % Récupérer l'indice de la ROI actuellement sélectionnée
-                roiData = app.UIROITable.Data;
-                if isempty(roiData)
-                    return;
-                end
-                selectedIndex = find(cell2mat(roiData(:,1)), 1);
-                if ~isempty(selectedIndex)
-                    % Supprimer la ROI sélectionnée de la liste
-                    app.content.ROIList(selectedIndex) = [];
-
-                    % Mettre à jour le tableau des ROI
-                    app.displayROIs();
-
-                    % Sélectionner la ROI précédente si elle existe
-                    if selectedIndex > 1 && ~isempty(app.UIROITable.Data)
-                        newIndex = selectedIndex - 1;
-                        % Remettre toutes les cases à false
-                        tableData = app.UIROITable.Data;
-                        for i = 1:size(tableData,1)
-                            tableData{i,1} = false;
-                        end
-                        tableData{newIndex,1} = true;
-                        app.UIROITable.Data = tableData;
-                    end
-                end
-
-                % Si aucune ROI ne reste, fermer la fenêtre principale (et l'app)
-                if isempty(app.content.ROIList)
-                    delete(app.ScoreAppUIFigure);
-                else
-                    % Sinon, rafraîchir l'affichage
-                    score_display(app, 'refresh');
-                end
-                return;  % Ne pas traiter d'autres touches
+                score_deleteSelectedObject(app);
+                return;
             end
 
             specialkeys=app.specialkeys;
@@ -6583,7 +6603,24 @@ end
 
         % Close request function: ScoreAppUIFigure
         function ScoreAppUIFigureCloseRequest(app, event)
-            app.flushAnnotationReview();
+            hasUnsavedChanges = app.AnnotationReviewDirty || ...
+                ~isempty(app.ModifiedRoiIds);
+            if hasUnsavedChanges
+                choice = questdlg([ ...
+                    'One or more ROIs were modified in Score.\n\n' ...
+                    'Do you want to save the changes before closing?'], ...
+                    'Unsaved Score changes', 'Save', 'Don''t save', ...
+                    'Cancel', 'Save');
+                if isempty(choice) || strcmp(choice, 'Cancel')
+                    return;
+                end
+                if strcmp(choice, 'Save')
+                    app.flushAnnotationReview();
+                    if ~app.saveModifiedRois()
+                        return;
+                    end
+                end
+            end
             % Supprimer la figure annexe si elle existe et est valide
             if isprop(app, 'ImageFigure') && isvalid(app.ImageFigure)
 
