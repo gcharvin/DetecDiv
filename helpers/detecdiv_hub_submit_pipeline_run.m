@@ -1582,6 +1582,16 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.existing_data_policy = localText(localNested(ctx, {'io','existingPolicy'}, ''));
     runRequest.roi_cache_policy = localText(localNested(ctx, {'io','cachePolicy'}, 'auto'));
     runRequest.paths = localBuildRunPaths(ctx, ref, hub);
+    % Hub workers transparently catalogue raw input before MATLAB starts.
+    % This is deliberately enabled only for raw/dataloader runs; project-input
+    % runs must not create or relink a raw dataset merely by being submitted.
+    requestedRawIngest = localNested(ctx, {'run','ingestRawDataset'}, []);
+    if isempty(requestedRawIngest)
+        runRequest.ingest_raw_dataset = localIsRawInputSource(runRequest.input_source) && ...
+            ~isempty(localText(runRequest.paths.server_raw_data_path));
+    else
+        runRequest.ingest_raw_dataset = logical(requestedRawIngest);
+    end
     runRequest.selection = struct( ...
         'fovs', localNested(ctx, {'sel','fovs'}, []), ...
         'frames', localNested(ctx, {'sel','frames'}, []), ...
