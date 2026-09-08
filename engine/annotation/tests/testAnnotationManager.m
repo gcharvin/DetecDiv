@@ -119,6 +119,31 @@ selection = annotationManager.reviewedFramesForClassifier(c, 1);
 verifyEqual(testCase, selection.roi1, [1 2]);
 end
 
+function testPartialReadyStatusDoesNotFollowActiveRoi(testCase)
+[folder, c, r1] = maskFixture(testCase);
+r2 = roiWithRaw(folder, 'R2', 4, 4, 3);
+prediction = zeros(4,4,1,3, 'uint16');
+prediction(2:3,2:3,1,:) = 1;
+r2.addChannel(prediction, 'results_demo_pred_cell', [1 1 1], [0 0 0]);
+r2.save([], false);
+c.roi = [r1 r2];
+
+session1 = c.annotationSession(1);
+session1.bootstrap();
+session1.markReviewed('Frames', 1:2);
+verifyTrue(testCase, session1.validate().valid);
+
+session2 = c.annotationSession(2);
+session2.bootstrap();
+session2.markReviewed('Frames', 2);
+verifyTrue(testCase, session2.validate().valid);
+
+rows = annotationManager.summarizeClassifier(c, 1:2, 'Fast', true);
+verifyEqual(testCase, string({rows.status}), ["approved" "approved"]);
+verifyEqual(testCase, string({rows.validationStatus}), ["valid" "valid"]);
+verifyEqual(testCase, [rows.reviewed], [2 1]);
+end
+
 function testBootstrapDoesNotOverwriteReviewedMask(testCase)
 [~, c, r] = maskFixture(testCase);
 session = c.annotationSession(1);

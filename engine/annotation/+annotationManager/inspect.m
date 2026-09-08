@@ -3,9 +3,10 @@ function summary = inspect(roiObj, spec, varargin)
 % ReviewFrames is deliberately explicit: when omitted this low-level API
 % audits the complete stored ROI range. Classifier-bound UI and preflight
 % callers must pass trainingBounds-derived frames (Session.summary,
-% summarizeClassifier and assertGroundTruthReady already do so). A partial
-% approval can therefore be Ready in classifier scope while a deliberate
-% bare inspect remains Draft for the full ROI; callers must not mix scopes.
+% summarizeClassifier and assertGroundTruthReady already do so). Contracts
+% that explicitly allow partial approval remain Ready with any non-empty
+% reviewed coverage; strict contracts still require the selected scope in
+% full.
 
 p = inputParser;
 p.addParameter('VerifyHash', false, @(x) islogical(x) && isscalar(x));
@@ -28,7 +29,10 @@ reviewFrames = normalizeReviewFrames(p.Results.ReviewFrames, ...
 coverage = coverageFromEntry(entry, spec, reviewFrames);
 status = char(string(entry.status));
 if isempty(status), status = 'missing'; end
-if strcmp(status,'approved') && coverage.fraction < 1
+partialCoverageIsValid = spec.allowPartialApproval && ...
+    coverage.reviewed > 0 && coverage.total > 0;
+if strcmp(status,'approved') && coverage.fraction < 1 && ...
+        ~partialCoverageIsValid
     status = 'draft';
 end
 
