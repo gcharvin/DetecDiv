@@ -207,6 +207,8 @@ end
 reviewSuffix = score_annotationFrameReviewSuffix(app, selectedROI, ...
     selectedROI.display.frame);
 app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames) reviewSuffix str];
+score_updateAnnotationFrameReviewIndicator(app, selectedROI, ...
+    selectedROI.display.frame);
 
 
 % --- Overlay lineage (fille→mère)

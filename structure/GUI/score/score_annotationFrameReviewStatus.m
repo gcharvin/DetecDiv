@@ -11,22 +11,18 @@ try
         color = [1 1 1];
         return;
     end
-    summary = session.summary();
-    required = session.Spec.components([session.Spec.components.required]);
-    frameComponents = required(strcmp({required.coverageUnit}, 'frame'));
-    if isempty(frameComponents)
+    if string(roiObj.id) ~= app.AnnotationFrameReviewRoiId
+        label = '';
+        color = [1 1 1];
+        return;
+    end
+    if isempty(app.AnnotationFrameReviewMask)
         label = '[no frame review required]';
         color = [0.35 0.35 0.35];
         return;
     end
-    reviewed = true;
-    for i = 1:numel(frameComponents)
-        reviewIndex = find(strcmp(string({summary.entry.review.component_id}), ...
-            string(frameComponents(i).id)), 1, 'first');
-        reviewed = reviewed && ~isempty(reviewIndex) && frame >= 1 && ...
-            frame <= numel(summary.entry.review(reviewIndex).frames) && ...
-            logical(summary.entry.review(reviewIndex).frames(frame));
-    end
+    reviewed = frame >= 1 && frame <= numel(app.AnnotationFrameReviewMask) && ...
+        app.AnnotationFrameReviewMask(frame);
     if reviewed
         label = '[reviewed]';
         color = [0.10 0.55 0.20];

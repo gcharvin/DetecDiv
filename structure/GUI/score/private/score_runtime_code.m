@@ -233,6 +233,8 @@ classdef score < matlab.apps.AppBase
         AnnotationQuickValidationState char = 'idle'
         AnnotationQuickValidationMessage char = ''
         AnnotationReviewDirty logical = false
+        AnnotationFrameReviewMask logical = false(1,0)
+        AnnotationFrameReviewRoiId string = ""
         ModifiedRoiIds string = strings(0, 1)
     end
 
@@ -2140,6 +2142,7 @@ end
             try
                 context = app.AnnotationSession.uiContext();
                 summary = app.AnnotationSession.summary();
+                app.cacheAnnotationFrameReviewMask(summary);
             catch ME
                 app.AnnotationStatusLabel.Text = 'Status: unavailable';
                 app.AnnotationCoverageLabel.Text = ME.message;
@@ -2238,26 +2241,46 @@ end
 
         function [text, reviewed] = annotationFrameReviewState(app, summary)
             frame = round(double(app.AnnotationSession.Roi.display.frame));
-            reviewed = true;
             required = app.AnnotationSession.Spec.components( ...
                 [app.AnnotationSession.Spec.components.required]);
             frameComponents = required(strcmp({required.coverageUnit}, 'frame'));
             if isempty(frameComponents)
                 text = sprintf('Frame %d: no review required', frame);
+                reviewed = false;
                 return;
             end
-            for i = 1:numel(frameComponents)
-                reviewIndex = find(strcmp(string({summary.entry.review.component_id}), ...
-                    string(frameComponents(i).id)), 1, 'first');
-                reviewed = reviewed && ~isempty(reviewIndex) && frame >= 1 && ...
-                    frame <= numel(summary.entry.review(reviewIndex).frames) && ...
-                    logical(summary.entry.review(reviewIndex).frames(frame));
-            end
+            reviewed = frame >= 1 && frame <= numel(app.AnnotationFrameReviewMask) && ...
+                app.AnnotationFrameReviewMask(frame);
             if reviewed
                 text = sprintf('Frame %d: REVIEWED', frame);
             else
                 text = sprintf('Frame %d: NOT REVIEWED', frame);
             end
+        end
+
+        function cacheAnnotationFrameReviewMask(app, summary)
+            app.AnnotationFrameReviewRoiId = string(app.AnnotationSession.Roi.id);
+            required = app.AnnotationSession.Spec.components( ...
+                [app.AnnotationSession.Spec.components.required]);
+            frameComponents = required(strcmp({required.coverageUnit}, 'frame'));
+            if isempty(frameComponents)
+                app.AnnotationFrameReviewMask = false(1,0);
+                return;
+            end
+            frameCount = annotationManager.frameCount(app.AnnotationSession.Roi);
+            mask = true(1, frameCount);
+            for i = 1:numel(frameComponents)
+                reviewIndex = find(strcmp(string({summary.entry.review.component_id}), ...
+                    string(frameComponents(i).id)), 1, 'first');
+                reviewed = false(1, frameCount);
+                if ~isempty(reviewIndex)
+                    stored = logical(summary.entry.review(reviewIndex).frames);
+                    reviewed(1:min(frameCount, numel(stored))) = ...
+                        stored(1:min(frameCount, numel(stored)));
+                end
+                mask = mask & reviewed;
+            end
+            app.AnnotationFrameReviewMask = mask;
         end
 
         function status = annotationReadyStatus(app, storedStatus, ...
@@ -5110,7 +5133,6 @@ end
             app.FrameEditField.Value = frame;
             app.FrameEditField_2.Value = frame;
             score_display(app, 'refresh');
-            app.refreshAnnotationSessionUI();
         end
 
         function openPersistentAnnotationFindings(app, report)
@@ -5562,8 +5584,10 @@ end
                 progress = [];
                 rows = annotationManager.validationIssueRows(report);
                 if report.valid
+                    frameCountText = app.annotationValidatedFrameCountText(report);
                     if isempty(rows)
-                        message = 'GT validated and ready for training.';
+                        message = sprintf('GT validated and ready for training.%s', ...
+                            frameCountText);
                     else
                         partialText = '';
                         if app.AnnotationSession.Spec.allowPartialApproval && ...
@@ -5574,8 +5598,8 @@ end
                         message = sprintf([ ...
                             'GT validated and ready for training.\n\n' ...
                             '%d advisory finding(s) remain available from ' ...
-                            'Review findings; they do not block Ready status.%s'], ...
-                            numel(rows), partialText);
+                            'Review findings; they do not block Ready status.%s%s'], ...
+                            numel(rows), frameCountText, partialText);
                     end
                     % A successful validation must be visibly distinct from
                     % reviewing. Do not replace/reopen the findings window
@@ -5594,6 +5618,24 @@ end
                 app.AnnotationLastValidationValid = false;
                 app.refreshAnnotationSessionUI();
                 uialert(app.ScoreAppUIFigure, ME.message, 'Annotation validation');
+            end
+        end
+
+        function text = annotationValidatedFrameCountText(app, report)
+            text = '';
+            try
+                components = report.summary.coverage.components;
+                requiredIds = string({app.AnnotationSession.Spec.components( ...
+                    [app.AnnotationSession.Spec.components.required]).id});
+                frameCoverage = components(ismember(string({components.id}), ...
+                    requiredIds) & strcmp({components.unit}, 'frame'));
+                if isempty(frameCoverage), return; end
+                reviewed = min([frameCoverage.reviewed]);
+                total = max([frameCoverage.total]);
+                text = sprintf('\n\n%d/%d training frames reviewed.', ...
+                    reviewed, total);
+            catch
+                % The success message remains usable for legacy sessions.
             end
         end
 
@@ -5951,7 +5993,6 @@ end
 
             % Mettre à jour l'affichage (image et histogramme) en mode "refresh"
             score_display(app, 'refresh');
-            app.refreshAnnotationSessionUI();
 
         end
 
@@ -6076,7 +6117,6 @@ end
 
             % Rafraîchir l'affichage (image et histogramme)
             score_display(app, 'refresh');
-            app.refreshAnnotationSessionUI();
         end
 
         % Key press function: ScoreAppUIFigure
@@ -6145,7 +6185,6 @@ end
                 app.FrameSlider.Value = newFrame;
                 app.FrameEditField.Value = newFrame;
                 score_display(app, 'refresh'); % also refreshes the display of the data
-                app.refreshAnnotationSessionUI();
                 return;
             else % class allocation key
 
