@@ -93,13 +93,17 @@ switch lower(displayHandles.mode)
                         %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
                         graphicsHandles.imgHandles(tileIndex) = hImg;
 
-                        if frame==1 && layoutOptions.ROITitle
+                        if frame==1
                                 [reviewLabel, reviewColor] = ...
                                     score_annotationFrameReviewStatus(app, roiData, curframe);
-                                if isempty(reviewLabel), reviewColor = textColor; end
-                                title(ax, sprintf('%s  F%d %s', roiData.id, curframe, reviewLabel), ...
-                                    'Color',reviewColor,'Interpreter','none', ...
-                                    'FontSize', floor(sqrt(scalingFactor)*fontsize));
+                                if isempty(reviewLabel)
+                                    reviewColor = textColor;
+                                end
+                                if layoutOptions.ROITitle || ~isempty(reviewLabel)
+                                    title(ax, sprintf('%s  F%d %s', roiData.id, curframe, reviewLabel), ...
+                                        'Color',reviewColor,'Interpreter','none', ...
+                                        'FontSize', floor(sqrt(scalingFactor)*fontsize));
+                                end
                         end
                     end
                 else
