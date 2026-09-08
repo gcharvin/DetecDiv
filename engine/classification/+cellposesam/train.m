@@ -60,6 +60,7 @@ if ~isfield(trainingParam, 'n_epochs'),       trainingParam.n_epochs = 5; end
 if ~isfield(trainingParam, 'learning_rate'),  trainingParam.learning_rate = 1e-4; end
 if ~isfield(trainingParam, 'weight_decay'),   trainingParam.weight_decay = 1e-5; end
 if ~isfield(trainingParam, 'batch_size'),     trainingParam.batch_size = 1; end
+if ~isfield(trainingParam, 'checkpoint_every'), trainingParam.checkpoint_every = 5; end
 if ~isfield(trainingParam, 'MaxTrainImages'), trainingParam.MaxTrainImages = 50; end
 if ~isfield(trainingParam, 'Seed'),           trainingParam.Seed = 12345; end
 if ~isfield(trainingParam, 'NegDownsampleTrainRatio'), trainingParam.NegDownsampleTrainRatio = 0; end
@@ -115,6 +116,7 @@ cfg.weight_decay   = trainingParam.weight_decay;
 cfg.learning_rate  = trainingParam.learning_rate;
 cfg.n_epochs       = trainingParam.n_epochs;
 cfg.batch_size     = trainingParam.batch_size;
+cfg.checkpoint_every = max(1, round(double(trainingParam.checkpoint_every)));
 cfg.cancel_path    = cancelTokenFileFromCtx(ctx);
 cfg.log_path       = strrep(fullfile(classif.path, 'train_cellposesam_live.log'), '\\', '/');
 

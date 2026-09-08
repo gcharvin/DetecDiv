@@ -25,6 +25,7 @@ spec = {
     'learning_rate',       1e-4, 'Learning rate'
     'weight_decay',        1e-5, 'Weight decay (L2 regularization)'
     'batch_size',          1,   'Batch size'
+    'checkpoint_every',    5,   'Save a recoverable model checkpoint every N epochs'
     'min_train_masks',     0,   'Minimum number of masks per image (USED IN FORMAT)'
     'min_train_pixels',    0,   'Minimum number of foreground pixels per image (USED IN FORMAT)'
     'use_pretrained',      true, 'Use pretrained SAM model (true/false)'

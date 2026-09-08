@@ -186,6 +186,14 @@ def crop_framebank_padding(img, lab, original_size, pad_offset, idx):
     return img[rows, cols, ...], lab[rows, cols]
 
 
+def checkpoint_options(cfg):
+    """Build Cellpose options for distinct, recoverable periodic checkpoints."""
+    checkpoint_every = int(cfg.get("checkpoint_every", 5))
+    if checkpoint_every < 1:
+        raise ValueError("checkpoint_every must be at least 1")
+    return {"save_every": checkpoint_every, "save_each": True}
+
+
 def load_from_framebank(framebank_path, seed=None):
     # Load images/masks from framebank and use /split (0=test,1=train,2=val)
     if not os.path.exists(framebank_path):
@@ -336,6 +344,7 @@ def train_model():
     learning_rate = float(cfg.get("learning_rate", 1e-4))
     n_epochs = int(cfg.get("n_epochs", 50))
     batch_size = int(cfg.get("batch_size", 1))
+    checkpoint_kwargs = checkpoint_options(cfg)
     min_train_masks = int(cfg.get("min_train_masks", 0))
 
     setup_cellpose_logger(model_name, verbose)
@@ -354,6 +363,10 @@ def train_model():
 
     device = torch.device("cuda" if gpu and torch.cuda.is_available() else "cpu")
     print(f"[INFO] device: {device}")
+    print(
+        f"[INFO] saving a distinct recovery checkpoint every "
+        f"{checkpoint_kwargs['save_every']} epochs"
+    )
 
     pretrained_model = "sam" if use_pretrained else None
 
@@ -383,6 +396,7 @@ def train_model():
         save_path=save_path,
         batch_size=batch_size,
         min_train_masks=min_train_masks,
+        **checkpoint_kwargs,
     )
     print("[INFO] training finished, model saved to", model_path)
 

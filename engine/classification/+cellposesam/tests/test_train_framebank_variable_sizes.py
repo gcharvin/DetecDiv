@@ -16,6 +16,20 @@ SPEC.loader.exec_module(TRAIN_MODULE)
 
 
 class TestVariableSizeFramebank(unittest.TestCase):
+    def test_checkpoint_interval_defaults_to_five_and_uses_distinct_files(self):
+        self.assertEqual(
+            TRAIN_MODULE.checkpoint_options({}),
+            {"save_every": 5, "save_each": True},
+        )
+        self.assertEqual(
+            TRAIN_MODULE.checkpoint_options({"checkpoint_every": 3}),
+            {"save_every": 3, "save_each": True},
+        )
+
+    def test_checkpoint_interval_rejects_nonpositive_values(self):
+        with self.assertRaisesRegex(ValueError, "at least 1"):
+            TRAIN_MODULE.checkpoint_options({"checkpoint_every": 0})
+
     def test_loader_removes_centered_padding_for_each_roi(self):
         native_shapes = [(60, 59), (137, 66)]
         max_h = max(shape[0] for shape in native_shapes)

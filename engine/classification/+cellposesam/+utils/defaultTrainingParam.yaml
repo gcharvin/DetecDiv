@@ -23,6 +23,9 @@ params:
   - name: batch_size
     value: 1
     tip: Batch size
+  - name: checkpoint_every
+    value: 5
+    tip: Save a recoverable model checkpoint every N epochs
   - name: min_train_masks
     value: 0
     tip: Minimum number of masks per image (USED IN FORMAT)

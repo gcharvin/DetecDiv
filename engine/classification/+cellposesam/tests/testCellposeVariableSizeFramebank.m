@@ -75,6 +75,23 @@ for index = 1:2
 end
 end
 
+function testCheckpointDefaultAndParameterSpec(testCase)
+params = cellposesam.utils.defaultTrainingParam();
+verifyEqual(testCase, params.checkpoint_every, 5);
+
+spec = cellposesam.trainingParameterSpec([]);
+index = find(strcmp({spec.param}, 'checkpoint_every'), 1);
+verifyNotEmpty(testCase, index);
+verifyEqual(testCase, spec(index).group, 'Recovery');
+
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@() removeTestFolder(root));
+legacyClassifier = classi(root, 'legacy_checkpoint', 1, 'InitTraining', false);
+trainCPSAMFun(legacyClassifier, 1);
+verifyEqual(testCase, legacyClassifier.trainingParam.checkpoint_every, 5);
+end
+
 function mask = expectedMask(height, width, value)
 mask = zeros(height, width, 'uint16');
 mask(5:min(15,height), 4:min(12,width)) = uint16(value);
