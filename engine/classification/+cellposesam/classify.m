@@ -418,7 +418,10 @@ if wantProbability
     if isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'probabilityOutputName') && ~isempty(ctx.params.probabilityOutputName)
         chNameProba = char(string(ctx.params.probabilityOutputName));
     end
-    pixproba = findChannelID(roiobj, chNameProba);
+    % As for the mask channel, an existing probability channel may be
+    % present on disk while absent from the compact in-memory image cache.
+    % Reload it by logical identity before deciding to create a new one.
+    pixproba = cellposesam.utils.loadExistingOutputChannel(roiobj, chNameProba);
     if isempty(pixproba)
         matrix = zeros(size(image,1), size(image,2), 1, size(image,4), 'like', image);
         roiobj.addChannel(matrix, chNameProba, [1 1 1], [0 0 65535]);

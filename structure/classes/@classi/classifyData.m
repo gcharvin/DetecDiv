@@ -645,19 +645,33 @@ function ROIpreprocessing(roiobj, classif, outputName)
     % --- Detect instance segmentation types
     isCPSAM = false;
     isSAM31 = false;
+    cellposeOwnsOutputChannels = false;
 
     if isprop(classif,'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'cellposesam')
         isCPSAM = true;
+        cellposeOwnsOutputChannels = true;
     elseif isprop(classif,'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'sam31')
         isSAM31 = true;
     elseif isprop(classif,'classifyFun') && any(strcmpi(char(string(classif.classifyFun)), {'classifyCPSAMFun','cellposesam.classify'}))
         isCPSAM = true;
+        cellposeOwnsOutputChannels = strcmpi(char(string(classif.classifyFun)), 'cellposesam.classify');
     elseif isprop(classif,'classifyFun') && any(strcmpi(char(string(classif.classifyFun)), {'sam31.classify'}))
         isSAM31 = true;
     elseif isprop(classif,'description') && ~isempty(classif.description)
         desc = lower(string(classif.description));
         isCPSAM = any(contains(desc, 'cellpose'));
         isSAM31 = any(contains(desc, 'sam31')) || any(contains(desc, 'sam3'));
+    end
+
+    % CellposeSAM owns its output-channel lifecycle.  In particular, its
+    % backend reloads an existing HDF5 result channel before a partial or
+    % repeated run so that frames outside the current selection are kept.
+    % Pre-creating the channel here is unsafe with a compact image cache:
+    % findChannelID only sees loaded planes, while display.channel can still
+    % describe the on-disk result.  addChannel would then append a second
+    % logical channel with the same name and roi.save correctly rejects it.
+    if cellposeOwnsOutputChannels
+        return;
     end
 
     isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
