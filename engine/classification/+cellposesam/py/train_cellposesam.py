@@ -150,6 +150,42 @@ def write_status(status_path, payload):
         print("[WARN] could not save training status:", exc)
 
 
+def _frame_metadata(dataset, frame_count, name):
+    """Return MATLAB [2,N] frame metadata as a Python [N,2] array."""
+    values = np.asarray(dataset[:], dtype=np.int64)
+    if values.shape == (frame_count, 2):
+        return values
+    if values.shape == (2, frame_count):
+        return values.T
+    raise RuntimeError(
+        f"{name} has shape {values.shape}, expected ({frame_count}, 2) "
+        f"or (2, {frame_count})"
+    )
+
+
+def crop_framebank_padding(img, lab, original_size, pad_offset, idx):
+    """Remove framebank-only padding while preserving native ROI geometry."""
+    if original_size is None or pad_offset is None:
+        return img, lab
+
+    height, width = (int(v) for v in original_size[idx])
+    top, left = (int(v) for v in pad_offset[idx])
+    if height <= 0 or width <= 0 or top < 0 or left < 0:
+        raise RuntimeError(
+            f"Invalid padding metadata for frame {idx}: "
+            f"original_size=({height}, {width}), pad_offset=({top}, {left})"
+        )
+    if top + height > lab.shape[0] or left + width > lab.shape[1]:
+        raise RuntimeError(
+            f"Padding metadata for frame {idx} exceeds stored shape {lab.shape}: "
+            f"original_size=({height}, {width}), pad_offset=({top}, {left})"
+        )
+
+    rows = slice(top, top + height)
+    cols = slice(left, left + width)
+    return img[rows, cols, ...], lab[rows, cols]
+
+
 def load_from_framebank(framebank_path, seed=None):
     # Load images/masks from framebank and use /split (0=test,1=train,2=val)
     if not os.path.exists(framebank_path):
@@ -178,6 +214,20 @@ def load_from_framebank(framebank_path, seed=None):
                 f"Inconsistent N between images/masks/split: "
                 f"images={images.shape}, masks={masks.shape}, split_len={N_split}"
             )
+
+        has_size = "/original_size" in f
+        has_offset = "/pad_offset" in f
+        if has_size != has_offset:
+            raise RuntimeError(
+                "Framebank must contain both /original_size and /pad_offset, or neither."
+            )
+        if has_size:
+            original_size = _frame_metadata(f["/original_size"], N_img, "/original_size")
+            pad_offset = _frame_metadata(f["/pad_offset"], N_img, "/pad_offset")
+            print("[INFO] variable-size ROI metadata found; padding will be removed before training")
+        else:
+            original_size = None
+            pad_offset = None
 
         train_idx = np.where(split == 1)[0]
         val_idx = np.where(split == 2)[0]
@@ -216,7 +266,9 @@ def load_from_framebank(framebank_path, seed=None):
                 raise RuntimeError(
                     f"Loaded image with unexpected ndim={img.ndim}, shape={img.shape}"
                 )
-            return img, lab
+            return crop_framebank_padding(
+                img, lab, original_size, pad_offset, idx
+            )
 
         for idx in train_idx:
             img, lab = _process_one(idx)

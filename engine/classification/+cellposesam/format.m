@@ -55,8 +55,10 @@ function output = formatPixelTrainingSetCPSAMInternal(foldername, classif, train
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
 %
 % HDF5 structure (dans classif.path/<strid>_framebank*.h5) :
-%   /images      : uint8  [H W C N]   (C = 1 ou 3, N = nb de frames gardées)
-%   /masks       : uint16 [H W N]     (0 = background, 1..K = ID instances)
+%   /images      : uint8  [Hmax Wmax C N], padded copies (C = 1 ou 3)
+%   /masks       : uint16 [Hmax Wmax N], padded copies (0 = background)
+%   /original_size : int32 [2 N]      ([height; width] before padding)
+%   /pad_offset    : int32 [2 N]      ([top; left], zero based)
 %   /split       : uint8  [N 1]
 %                  0 = test (hold-out, jamais utilisé pour le training)
 %                  1 = train
@@ -188,6 +190,8 @@ W = [];
 C = 0;
 excludedCount = 0;
 hasMaskVec = false(0,1);   % logical vide
+idx_height = zeros(0,1,'int32');
+idx_width  = zeros(0,1,'int32');
 
 % -------------------------------------------------------------------------
 % 4) 1ère passe : H, W, C, frames gardées
@@ -212,14 +216,12 @@ for ii = 1:numel(all_rois)
     Hloc = size(im, 1);
     Wloc = size(im, 2);
 
+    % H/W describe only the padded export canvas; cltmp itself is untouched.
     if isempty(H)
         H = Hloc; W = Wloc;
     else
-        if Hloc ~= H || Wloc ~= W
-            error('formatPixelTrainingSetCPSAM:SizeMismatch', ...
-                'ROI %d has different size (%dx%d) than previous (%dx%d).', ...
-                roi_id, Hloc, Wloc, H, W);
-        end
+        H = max(H, Hloc);
+        W = max(W, Wloc);
     end
 
     splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = "train" (au sens global)
@@ -243,7 +245,7 @@ for ii = 1:numel(all_rois)
         'RoiId', roi_id, 'RoiPosition', ii);
 
     for jj = frameList
-        instMask    = zeros(H, W, 'uint16');
+        instMask    = zeros(Hloc, Wloc, 'uint16');
         instCounter = uint16(0);
 
         for kk = 1:numel(classif.classes)
@@ -282,6 +284,8 @@ for ii = 1:numel(all_rois)
             Cframe = 1;
         end
         C = max(C, Cframe);
+        idx_height(end+1,1) = int32(Hloc);
+        idx_width(end+1,1)  = int32(Wloc);
 
         idx_roi(end+1,1)    = int32(roi_id);    %#ok<AGROW>
         idx_frame(end+1,1)  = int32(jj);        %#ok<AGROW>
@@ -344,6 +348,8 @@ if NegDownsampleTrainRatio > 0
             idx_roi    = idx_roi(idxKeep);
             idx_frame  = idx_frame(idxKeep);
             idx_split  = idx_split(idxKeep);      % restera tout à 1
+            idx_height = idx_height(idxKeep);
+            idx_width  = idx_width(idxKeep);
             hasMaskVec = hasMaskVec(idxKeep);
 
             Ntotal = numel(idx_roi);
@@ -426,6 +432,8 @@ if MaxTrainImages > 0 && MaxTrainImages < Ntotal
     idx_roi    = idx_roi(idxKeep);
     idx_frame  = idx_frame(idxKeep);
     idx_split  = idx_split(idxKeep);      % tout = 1 (train)
+    idx_height = idx_height(idxKeep);
+    idx_width  = idx_width(idxKeep);
     hasMaskVec = hasMaskVec(idxKeep);
 
     N = numel(idx_roi);
@@ -533,6 +541,11 @@ output = N;
 fprintf('Final selection: %d frames -> %d train, %d val, %d test (H=%d, W=%d, C=%d).\n', ...
     N, nTrain, nVal, nTest, H, W, C);
 
+pad_top  = int32(floor((double(H) - double(idx_height)) / 2));
+pad_left = int32(floor((double(W) - double(idx_width)) / 2));
+original_size = [idx_height.'; idx_width.'];
+pad_offset    = [pad_top.'; pad_left.'];
+
 % -------------------------------------------------------------------------
 % 5) Choix robuste du chemin HDF5 + création des datasets
 % -------------------------------------------------------------------------
@@ -549,10 +562,14 @@ h5create(framebankPath, '/masks',     [H, W,    N], 'Datatype', 'uint16');
 h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
 h5create(framebankPath, '/roi_id',    [N, 1],       'Datatype', 'int32');
 h5create(framebankPath, '/frame_idx', [N, 1],       'Datatype', 'int32');
+h5create(framebankPath, '/original_size', [2, N],    'Datatype', 'int32');
+h5create(framebankPath, '/pad_offset',    [2, N],    'Datatype', 'int32');
 
 h5write(framebankPath, '/split',     idx_split, [1 1], [N 1]);
 h5write(framebankPath, '/roi_id',    idx_roi,   [1 1], [N 1]);
 h5write(framebankPath, '/frame_idx', idx_frame, [1 1], [N 1]);
+h5write(framebankPath, '/original_size', original_size, [1 1], [2 N]);
+h5write(framebankPath, '/pad_offset',    pad_offset,    [1 1], [2 N]);
 
 % -------------------------------------------------------------------------
 % 6) 2e passe : écriture images / masks
@@ -577,6 +594,8 @@ for ii = 1:numel(all_rois)
     end
 
     T = size(im, 4);
+    Hloc = size(im, 1);
+    Wloc = size(im, 2);
 
     % Ne garder que les frames sélectionnés pour CE ROI
     mask_roi       = (idx_roi == int32(roi_id));
@@ -591,7 +610,12 @@ for ii = 1:numel(all_rois)
 
     for jj = reshape(frames_for_roi, 1, [])
         % Ne traiter que les frames explicitement retenus à la 1ère passe
-        instMask    = zeros(H, W, 'uint16');
+        writeIndex = find(idx_roi == int32(roi_id) & idx_frame == int32(jj), 1, 'first');
+        if isempty(writeIndex)
+            error('formatPixelTrainingSetCPSAM:MissingFrameIndex', ...
+                'No framebank index for ROI %d frame %d.', roi_id, jj);
+        end
+        instMask    = zeros(Hloc, Wloc, 'uint16');
         instCounter = uint16(0);
 
         for kk = 1:numel(classif.classes)
@@ -640,25 +664,30 @@ for ii = 1:numel(all_rois)
             else
                 imgLoc = ch;
             end
-            imgLoc = reshape(imgLoc, H, W, 1);
+            imgLoc = reshape(imgLoc, Hloc, Wloc, 1);
         end
 
-        % ---- imgWrite EXACTEMENT [H W C] ----
+        % ---- padded training copy, exactly [H W C] ----
         imgWrite = zeros(H, W, C, 'uint8');
 
-        if size(imgLoc,1) ~= H || size(imgLoc,2) ~= W
+        if size(imgLoc,1) ~= Hloc || size(imgLoc,2) ~= Wloc
             error('Unexpected local image size [%d %d], expected [%d %d].', ...
-                size(imgLoc,1), size(imgLoc,2), H, W);
+                size(imgLoc,1), size(imgLoc,2), Hloc, Wloc);
         end
 
+        top  = floor((H - Hloc) / 2);
+        left = floor((W - Wloc) / 2);
+        rows = top + (1:Hloc);
+        cols = left + (1:Wloc);
+
         if size(imgLoc,3) == C
-            imgWrite = imgLoc;
+            imgWrite(rows,cols,:) = imgLoc;
         elseif C == 3 && size(imgLoc,3) == 1
-            imgWrite(:,:,1) = imgLoc(:,:,1);
-            imgWrite(:,:,2) = imgLoc(:,:,1);
-            imgWrite(:,:,3) = imgLoc(:,:,1);
+            imgWrite(rows,cols,1) = imgLoc(:,:,1);
+            imgWrite(rows,cols,2) = imgLoc(:,:,1);
+            imgWrite(rows,cols,3) = imgLoc(:,:,1);
         elseif C == 1 && size(imgLoc,3) == 3
-            imgWrite(:,:,1) = imgLoc(:,:,1); % on prend le 1er canal
+            imgWrite(rows,cols,1) = imgLoc(:,:,1); % on prend le 1er canal
         else
             error('Inconsistent channel configuration: imgLoc has %d channels, C=%d.', ...
                 size(imgLoc,3), C);
@@ -667,6 +696,8 @@ for ii = 1:numel(all_rois)
         if ~isa(instMask, 'uint16')
             instMask = uint16(instMask);
         end
+        maskWrite = zeros(H, W, 'uint16');
+        maskWrite(rows,cols) = instMask;
 
         k = k + 1;
         if k > N
@@ -680,9 +711,9 @@ for ii = 1:numel(all_rois)
         end
 
         % /images : [H W C N]
-        h5write(framebankPath, '/images', imgWrite, [1 1 1 k], [H W C 1]);
+        h5write(framebankPath, '/images', imgWrite, [1 1 1 writeIndex], [H W C 1]);
         % /masks : [H W N]
-        h5write(framebankPath, '/masks',  instMask, [1 1 k],   [H W 1]);
+        h5write(framebankPath, '/masks',  maskWrite, [1 1 writeIndex],  [H W 1]);
     end
 
     cltmp(roi_id).clear;
