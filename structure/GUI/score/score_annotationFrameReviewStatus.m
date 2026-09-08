@@ -34,4 +34,5 @@ try
 catch
     % Rendering must remain available if annotation metadata is incomplete.
 end
+
 end

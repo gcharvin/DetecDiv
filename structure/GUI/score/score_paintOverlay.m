@@ -434,7 +434,8 @@ if isprop(app,'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle
 end
 
 
-tmp=['ROI:' char(app.SelectedObjectRoiId) ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4))];
+reviewSuffix = score_annotationFrameReviewSuffix(app, roi, frm);
+tmp=['ROI:' char(app.SelectedObjectRoiId) ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) reviewSuffix];
 app.ImageFigure.Name = tmp;
 
 
@@ -616,8 +617,9 @@ try
     end
 catch
 end
+reviewSuffix = score_annotationFrameReviewSuffix(app, roi, frm);
 app.ImageFigure.Name = ['ROI:' char(app.SelectedObjectRoiId) ...
-    ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) str];
+    ' -  Frame: ' num2str(frm) '/' num2str(size(roi.image,4)) reviewSuffix str];
 
 % Attacher le menu après le premier rendu.
 cm = buildDisplayContextMenu(app.ImageFigure, app, roi, channelIdx, pix, frm);
