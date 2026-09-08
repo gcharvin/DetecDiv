@@ -94,7 +94,12 @@ switch lower(displayHandles.mode)
                         graphicsHandles.imgHandles(tileIndex) = hImg;
 
                         if frame==1 && layoutOptions.ROITitle
-                                title(ax,roiData.id,'Color',textColor,'Interpreter','none','FontSize', floor(sqrt(scalingFactor)*fontsize));
+                                [reviewLabel, reviewColor] = ...
+                                    score_annotationFrameReviewStatus(app, roiData, curframe);
+                                if isempty(reviewLabel), reviewColor = textColor; end
+                                title(ax, sprintf('%s  F%d %s', roiData.id, curframe, reviewLabel), ...
+                                    'Color',reviewColor,'Interpreter','none', ...
+                                    'FontSize', floor(sqrt(scalingFactor)*fontsize));
                         end
                     end
                 else

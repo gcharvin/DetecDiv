@@ -2162,6 +2162,14 @@ end
             app.AnnotationStatusLabel.Text = sprintf('Status: %s%s | Train: %s', ...
                 upper(statusText), quickSuffix, context.frameBoundsText);
             app.AnnotationStatusLabel.Tooltip = app.AnnotationQuickValidationMessage;
+            [frameReviewText, frameReviewed] = app.annotationFrameReviewState(summary);
+            app.AnnotationSessionPanel.Title = sprintf( ...
+                'Annotation Session — %s', frameReviewText);
+            if frameReviewed
+                app.AnnotationStatusLabel.FontColor = [0.10 0.55 0.20];
+            else
+                app.AnnotationStatusLabel.FontColor = [0.85 0.35 0.10];
+            end
             coverageText = app.annotationCoverageText(summary.coverage.components);
             sourceText = '';
             try, sourceText = char(string(summary.entry.source_id)); catch, end
@@ -2226,6 +2234,30 @@ end
             app.ApproveAnnotationButton.Visible = 'off';
             app.ShowPredictionCheckBox.Enable = app.onOff(hasPrediction);
             app.setManagedAnnotationLayout(true);
+        end
+
+        function [text, reviewed] = annotationFrameReviewState(app, summary)
+            frame = round(double(app.AnnotationSession.Roi.display.frame));
+            reviewed = true;
+            required = app.AnnotationSession.Spec.components( ...
+                [app.AnnotationSession.Spec.components.required]);
+            frameComponents = required(strcmp({required.coverageUnit}, 'frame'));
+            if isempty(frameComponents)
+                text = sprintf('Frame %d: no review required', frame);
+                return;
+            end
+            for i = 1:numel(frameComponents)
+                reviewIndex = find(strcmp(string({summary.entry.review.component_id}), ...
+                    string(frameComponents(i).id)), 1, 'first');
+                reviewed = reviewed && ~isempty(reviewIndex) && frame >= 1 && ...
+                    frame <= numel(summary.entry.review(reviewIndex).frames) && ...
+                    logical(summary.entry.review(reviewIndex).frames(frame));
+            end
+            if reviewed
+                text = sprintf('Frame %d: REVIEWED', frame);
+            else
+                text = sprintf('Frame %d: NOT REVIEWED', frame);
+            end
         end
 
         function status = annotationReadyStatus(app, storedStatus, ...
@@ -5078,6 +5110,7 @@ end
             app.FrameEditField.Value = frame;
             app.FrameEditField_2.Value = frame;
             score_display(app, 'refresh');
+            app.refreshAnnotationSessionUI();
         end
 
         function openPersistentAnnotationFindings(app, report)
@@ -5918,6 +5951,7 @@ end
 
             % Mettre à jour l'affichage (image et histogramme) en mode "refresh"
             score_display(app, 'refresh');
+            app.refreshAnnotationSessionUI();
 
         end
 
@@ -6042,6 +6076,7 @@ end
 
             % Rafraîchir l'affichage (image et histogramme)
             score_display(app, 'refresh');
+            app.refreshAnnotationSessionUI();
         end
 
         % Key press function: ScoreAppUIFigure
@@ -6110,6 +6145,7 @@ end
                 app.FrameSlider.Value = newFrame;
                 app.FrameEditField.Value = newFrame;
                 score_display(app, 'refresh'); % also refreshes the display of the data
+                app.refreshAnnotationSessionUI();
                 return;
             else % class allocation key
 
