@@ -261,6 +261,8 @@ spec = cellLatentModel.executionSpec();
 verifyEqual(testCase,resolved.adaptiveMarkerModelSource,'trained');
 verifyEqual(testCase,resolved.adaptiveMarkerModelPath,markerCheckpoint);
 verifyTrue(testCase,ismember('adaptiveMarkerModelPath',spec.artifactKeys));
+verifyTrue(testCase,ismember( ...
+    'annotationParentRerankerManifestPath',spec.artifactKeys));
 verifyFalse(testCase,ismember('adaptiveMarkerModelPath',spec.staticKeys));
 end
 

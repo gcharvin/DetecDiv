@@ -46,6 +46,7 @@ p.trackingSolverTimeLimitSeconds = 30;
 p.stateUpdateMode = 'none';
 p.stateRuntimeConfigPath = '';
 p.sceneParentRuntimeManifestPath = '';
+p.annotationParentRerankerManifestPath = '';
 p.runtimeCodeRoot = '';
 p.adaptiveMarkerModelSource = 'none';
 p.adaptiveMarkerModelPath = '';
