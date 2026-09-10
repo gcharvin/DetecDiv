@@ -123,6 +123,7 @@ for frame = 1:3
     [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
         'TrackPolicy', 'preserve_or_label');
 end
+
 verifyEqual(testCase, cellModel.nextTrackId(model, 1), uint64(3));
 [fastModel, fastReport] = cellModel.reassignTrack( ...
     model, 1, 2, 2, 9, 'to-last', 'Fast', true);
@@ -158,6 +159,30 @@ verifyEqual(testCase, parentReport.status, 'set');
 [model, parentReport] = cellModel.setParentTrack( ...
     model, 1, 2, 9, [], 'Fast', true);
 verifyEqual(testCase, parentReport.status, 'removed');
+verifyTrue(testCase, cellModel.validate(model).ok);
+end
+
+function testTrackReassignmentCanReplaceOnlyConflictingFrames(testCase)
+model = modelFixture();
+for frame = 1:3
+    mask = uint16([1 1 0; 1 0 2; 0 2 2]);
+    [model, ~] = cellModel.syncFrame(model, 1, frame, mask, ...
+        'TrackPolicy', 'preserve_or_label');
+end
+
+verifyError(testCase, @() cellModel.reassignTrack( ...
+    model, 1, 2, 1, 2, 'to-last'), 'cellModel:TrackFrameConflict');
+[model, report] = cellModel.reassignTrack( ...
+    model, 1, 2, 1, 2, 'to-last', 'ConflictPolicy', 'replace');
+
+verifyEqual(testCase, report.conflict_policy, 'replace');
+verifyEqual(testCase, report.conflict_frames, [2 3]);
+verifyEqual(testCase, report.conflicts_replaced, 2);
+verifyEqual(testCase, cellModel.findInstance(model, 1, 1, 2).track_id, uint64(2));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 2, 1).track_id, uint64(2));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 3, 1).track_id, uint64(2));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 2, 2).track_id, uint64(0));
+verifyEqual(testCase, cellModel.findInstance(model, 1, 3, 2).track_id, uint64(0));
 verifyTrue(testCase, cellModel.validate(model).ok);
 end
 

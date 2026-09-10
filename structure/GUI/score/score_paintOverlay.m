@@ -763,7 +763,7 @@ try
 catch ME
     closeTrackProgress(app, progress);
     if strcmp(ME.identifier, 'cellModel:TrackFrameConflict')
-        resolveTrackAssignmentConflict(app, newTrack, ME.message);
+        resolveTrackAssignmentConflict(app, newTrack, scope, ME.message);
     else
         errordlg(ME.message, 'Assign track');
     end
@@ -806,7 +806,7 @@ catch
 end
 end
 
-function resolveTrackAssignmentConflict(app, destinationTrack, conflictMessage)
+function resolveTrackAssignmentConflict(app, destinationTrack, scope, conflictMessage)
 currentTrack = NaN;
 try
     currentTrack = str2double(char(string(app.SelectedTrackIDEditField.Value)));
@@ -820,20 +820,31 @@ end
 message = sprintf([ ...
     '%s\n\nA track can contain only one object per frame. ' ...
     'You can exchange the two COMPLETE track identities (including lineage references), ' ...
-    'or cancel and first move the object currently occupying track %d to a free track.'], ...
+    'clear Track %d only on the listed conflict frames and retry the requested assignment, ' ...
+    'or cancel. Clearing keeps the conflicting contours but leaves them unassigned.'], ...
     conflictMessage, destinationTrack);
+swapChoice = sprintf('Swap %s <-> %d', currentText, destinationTrack);
+replaceChoice = sprintf('Clear Track %d on listed frames', destinationTrack);
 choice = questdlg(message, 'Track conflict', ...
-    sprintf('Swap %s <-> %d', currentText, destinationTrack), ...
-    'Cancel', 'Cancel');
+    swapChoice, replaceChoice, 'Cancel', 'Cancel');
 if isempty(choice) || strcmp(choice, 'Cancel')
     return;
 end
 try
-    report = score_swapSelectedTrackIds(app, destinationTrack);
-    flashStatus(app, sprintf('Tracks %u and %u swapped (%d frame(s))', ...
-        report.track_a, report.track_b, numel(report.frames)));
+    if strcmp(choice, replaceChoice)
+        report = score_assignSelectedTrack(app, destinationTrack, scope, ...
+            'ConflictPolicy', 'replace');
+        flashStatus(app, sprintf([ ...
+            'Track %u -> %u (%s); Track %u cleared on %d conflict frame(s) ' ...
+            '(unsaved)'], report.old_track_id, report.new_track_id, ...
+            report.scope, report.new_track_id, report.conflicts_replaced));
+    else
+        report = score_swapSelectedTrackIds(app, destinationTrack);
+        flashStatus(app, sprintf('Tracks %u and %u swapped (%d frame(s))', ...
+            report.track_a, report.track_b, numel(report.frames)));
+    end
 catch ME
-    errordlg(ME.message, 'Swap tracks');
+    errordlg(ME.message, 'Resolve track conflict');
 end
 end
 

@@ -1,4 +1,4 @@
-function report = score_assignSelectedTrack(app, newTrackId, scope)
+function report = score_assignSelectedTrack(app, newTrackId, scope, varargin)
 %SCORE_ASSIGNSELECTEDTRACK Reassign the selected model object to a track.
 
 if nargin < 3 || isempty(scope), scope = 'frame'; end
@@ -18,7 +18,7 @@ if isempty(familyId)
 end
 
 [model, report] = cellModel.reassignTrack(model, familyId, ...
-    roiobj.display.frame, label, newTrackId, scope, 'Fast', true);
+    roiobj.display.frame, label, newTrackId, scope, 'Fast', true, varargin{:});
 roiobj.cellModel = model;
 app.notifyAnnotationChanged('tracking', report.frames, 'Save', false);
 score_updateSelectedObjectFields(app);
