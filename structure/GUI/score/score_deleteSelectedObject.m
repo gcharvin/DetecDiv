@@ -55,6 +55,7 @@ else
 end
 if isempty(choice) || strcmp(choice, 'Cancel'), return; end
 
+relationsRemoved = 0;
 if strcmp(choice, 'This frame')
     mask(mask == maskLabel) = 0;
     roi.image(:,:,pix,frame) = mask;
@@ -64,6 +65,7 @@ if strcmp(choice, 'This frame')
         maskLabel, frame);
 else
     [model, report] = cellModel.removeTrack(model, familyId, trackId, 'Fast', true);
+    relationsRemoved = report.relations_removed;
     affectedFrames = unique(double(report.frames(:)))';
     for i = 1:numel(report.instance_frames)
         f = double(report.instance_frames(i));
@@ -79,6 +81,18 @@ else
 end
 
 app.notifyAnnotationChanged(channelName, affectedFrames, 'Save', false);
+if strcmp(choice, 'Entire track')
+    % A mask-channel notification updates tracking review state, but the
+    % open lineage tree only rebuilds for an explicit model-level event.
+    % Parentage is the most precise event when links were removed; a
+    % relation-free track still needs a tracking event so it disappears
+    % from the tree immediately.
+    if relationsRemoved > 0
+        app.notifyAnnotationChanged('parentage', affectedFrames, 'Save', false);
+    else
+        app.notifyAnnotationChanged('tracking', affectedFrames, 'Save', false);
+    end
+end
 try
     app.SelectedObjectLabelCell = NaN;
     app.SelectedTrackIDCell = NaN;

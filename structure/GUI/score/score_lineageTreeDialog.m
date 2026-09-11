@@ -9,7 +9,13 @@ addParameter(p, 'OnTrackSelected', [], @(x) isempty(x) || isa(x, 'function_handl
 addParameter(p, 'OnRefresh', [], @(x) isempty(x) || isa(x, 'function_handle'));
 addParameter(p, 'SelectedTrackId', NaN, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, 'Title', 'Lineage tree', @(x) ischar(x) || isstring(x));
+addParameter(p, 'ViewKey', '', @(x) ischar(x) || isstring(x));
+addParameter(p, 'Owner', [], @(x) true);
+addParameter(p, 'ReviewBounds', [], @(x) isempty(x) || ...
+    (isnumeric(x) && numel(x) == 2 && all(isfinite(x))));
 parse(p, varargin{:});
+
+reviewBounds = localNormalizeReviewBounds(p.Results.ReviewBounds);
 
 familyId = uint32(familyId);
 instanceRows = model.instances.family_id == familyId & model.instances.track_id > 0;
@@ -32,16 +38,23 @@ child = model.relations.child_track_id(relationRows);
 
 tag = 'ScoreAsymmetricLineageTree';
 existing = findall(groot, 'Type', 'figure', 'Tag', tag);
+previousView = struct('laneStart', [], 'yLim', []);
 if isempty(existing) || ~isvalid(existing(1))
     fig = uifigure('Name', char(string(p.Results.Title)), ...
         'Tag', tag, 'Position', [80 80 1250 780], ...
         'Color', [0.97 0.97 0.97]);
 else
     fig = existing(1);
+    if localHasSameView(fig, p.Results.ViewKey)
+        previousView = localCaptureView(fig);
+    end
     fig.Name = char(string(p.Results.Title));
     fig.Visible = 'on';
     delete(fig.Children);
 end
+fig.UserData = struct( ...
+    'owner', p.Results.Owner, ...
+    'viewKey', char(string(p.Results.ViewKey)));
 grid = uigridlayout(fig, [3 1]);
 grid.RowHeight = {42, '1x', 38};
 toolbar = uigridlayout(grid, [1 4]);
@@ -67,8 +80,13 @@ visibleLaneCount = min(52, maxLane);
 maxWindowStart = max(1, maxLane - visibleLaneCount + 1);
 initialWindowStart = localInitialWindowStart( ...
     nodes, p.Results.SelectedTrackId, visibleLaneCount, maxWindowStart);
+if ~isempty(previousView.laneStart) && isfinite(previousView.laneStart)
+    initialWindowStart = min(max(round(previousView.laneStart), 1), ...
+        maxWindowStart);
+end
 
 ax = uiaxes(grid);
+ax.Tag = 'ScoreLineageTreeAxes';
 hold(ax, 'on');
 ax.Color = [0.08 0.08 0.09];
 ax.XColor = [0.75 0.75 0.75];
@@ -87,6 +105,23 @@ for i = 1:numel(edges)
         [edges(i).event_frame edges(i).event_frame], ...
         'Color', color, 'LineWidth', 1.5, ...
         'HitTest', 'off', 'PickableParts', 'none');
+end
+if ~isempty(reviewBounds)
+    reviewStart = yline(ax, reviewBounds(1), '--', ...
+        sprintf(' Review start: %d', reviewBounds(1)), ...
+        'Color', [1 1 1], 'LineWidth', 1.25);
+    reviewStart.Tag = 'ScoreLineageReviewStart';
+    reviewStart.LabelHorizontalAlignment = 'left';
+    reviewStart.HitTest = 'off';
+    reviewStart.PickableParts = 'none';
+
+    reviewEnd = yline(ax, reviewBounds(2), '--', ...
+        sprintf(' Review end: %d', reviewBounds(2)), ...
+        'Color', [1 1 1], 'LineWidth', 1.25);
+    reviewEnd.Tag = 'ScoreLineageReviewEnd';
+    reviewEnd.LabelHorizontalAlignment = 'left';
+    reviewEnd.HitTest = 'off';
+    reviewEnd.PickableParts = 'none';
 end
 for i = 1:numel(nodes)
     id = nodes(i).track_id;
@@ -124,16 +159,25 @@ laneSlider = uislider(navigator, 'Limits', sliderLimits, ...
     'Enable', localOnOff(maxWindowStart > 1), ...
     'ValueChangingFcn', @(~,event) showWindow(event.Value), ...
     'ValueChangedFcn', @(~,event) showWindow(event.Value));
+laneSlider.Tag = 'ScoreLineageTreeLaneSlider';
 windowLabel = uilabel(navigator, 'HorizontalAlignment', 'center');
 uibutton(navigator, 'Text', 'Next >', ...
     'Enable', localOnOff(maxWindowStart > 1), ...
     'ButtonPushedFcn', @(~,~) shiftWindow(1));
 
 fitView();
+if numel(previousView.yLim) == 2 && all(isfinite(previousView.yLim)) && ...
+        previousView.yLim(1) < previousView.yLim(2)
+    ylim(ax, previousView.yLim);
+end
 
     function fitView()
         minY = min([nodes.first_frame]);
         maxY = max([nodes.last_frame]);
+        if ~isempty(reviewBounds)
+            minY = min(minY, reviewBounds(1));
+            maxY = max(maxY, reviewBounds(2));
+        end
         yPad = max(1, 0.025 * max(maxY - minY, 1));
         ylim(ax, [max(0.5, minY - yPad) maxY + yPad]);
         showWindow(initialWindowStart);
@@ -167,6 +211,46 @@ fitView();
         if isempty(p.Results.OnRefresh), return; end
         p.Results.OnRefresh();
     end
+end
+
+function bounds = localNormalizeReviewBounds(value)
+bounds = [];
+if isempty(value), return; end
+bounds = round(double(value(:).'));
+if bounds(1) < 1 || bounds(2) < bounds(1)
+    error('score:InvalidReviewBounds', ...
+        'ReviewBounds must be an inclusive increasing frame interval.');
+end
+end
+
+function tf = localHasSameView(fig, viewKey)
+tf = false;
+viewKey = char(string(viewKey));
+if isempty(viewKey), return; end
+try
+    metadata = fig.UserData;
+    tf = isstruct(metadata) && isfield(metadata, 'viewKey') && ...
+        strcmp(char(string(metadata.viewKey)), viewKey);
+catch
+end
+end
+
+function state = localCaptureView(fig)
+state = struct('laneStart', [], 'yLim', []);
+try
+    slider = findall(fig, 'Tag', 'ScoreLineageTreeLaneSlider');
+    if ~isempty(slider) && isvalid(slider(1))
+        state.laneStart = double(slider(1).Value);
+    end
+catch
+end
+try
+    ax = findall(fig, 'Tag', 'ScoreLineageTreeAxes');
+    if ~isempty(ax) && isvalid(ax(1))
+        state.yLim = double(ax(1).YLim);
+    end
+catch
+end
 end
 
 function value = localInitialWindowStart( ...

@@ -2076,6 +2076,10 @@ if ~isempty(affectedFrames) && ~isempty(selectedDisplayChannel)
 end
 if relationsRemoved > 0
     app.notifyAnnotationChanged('parentage', affectedFrames, 'Save', false);
+elseif useTrack
+    % Relation-free tracks are still visible nodes in the lineage tree.
+    % Publish a model-level event so an open tree drops the deleted node.
+    app.notifyAnnotationChanged('tracking', affectedFrames, 'Save', false);
 end
 
 % Clear selection + refresh

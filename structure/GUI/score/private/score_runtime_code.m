@@ -4070,6 +4070,15 @@ end
             if ~isempty(trainingFrames) && ~ismember(currentFrame,trainingFrames)
                 app.showAnnotationFrame(trainingFrames(1));
             end
+            if ~isempty(findall(groot, 'Type', 'figure', ...
+                    'Tag', 'ScoreAsymmetricLineageTree'))
+                try
+                    app.showLineageTree();
+                catch ME
+                    warning('score:LineageTreeReviewBounds', ...
+                        'Could not refresh lineage review bounds: %s', ME.message);
+                end
+            end
         end
 
         function loadBrushSettings(app)
@@ -5302,13 +5311,59 @@ end
             end
             [model, ~] = cellModel.canonicalizeParentageEvents(model);
             selected = double(app.SelectedTrackIDCell);
+            viewKey = sprintf('%s|%u', char(string(roi.id)), familyId);
+            reviewBounds = app.reviewBoundsForLineageTree(roi);
             score_lineageTreeDialog(model, familyId, ...
                 'SelectedTrackId', selected, ...
                 'Title', sprintf('Lineage tree — %s / %s', ...
                     char(string(roi.id)), familyName), ...
+                'ViewKey', viewKey, ...
+                'Owner', app, ...
+                'ReviewBounds', reviewBounds, ...
                 'OnTrackSelected', @(trackId) app.focusLineageTreeTrack( ...
                     string(roi.id), familyId, trackId), ...
                 'OnRefresh', @() app.showLineageTree());
+        end
+
+        function bounds = reviewBoundsForLineageTree(app, roi)
+            bounds = [];
+            try
+                if isempty(app.AnnotationSession) || ...
+                        ~isvalid(app.AnnotationSession)
+                    return;
+                end
+                context = app.AnnotationSession.uiContext();
+                if ~strcmp(char(string(roi.id)), context.roiId)
+                    return;
+                end
+                bounds = app.AnnotationSession.frameBounds();
+                if isempty(bounds)
+                    bounds = [1 annotationManager.frameCount( ...
+                        app.AnnotationSession.Roi)];
+                end
+                bounds = double(bounds(:).');
+            catch
+                bounds = [];
+            end
+        end
+
+        function closeLineageTree(app)
+            figures = findall(groot, 'Type', 'figure', ...
+                'Tag', 'ScoreAsymmetricLineageTree');
+            for i = 1:numel(figures)
+                try
+                    metadata = figures(i).UserData;
+                    ownedByApp = isstruct(metadata) && ...
+                        isfield(metadata, 'owner') && ...
+                        isequal(metadata.owner, app);
+                    if ownedByApp
+                        delete(figures(i));
+                    end
+                catch
+                    % App shutdown must continue even if an auxiliary
+                    % lineage window is already being destroyed.
+                end
+            end
         end
 
         function focusLineageTreeTrack(app, roiId, familyId, trackId)
@@ -9263,6 +9318,8 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
         function delete(app)
 
             app.flushAnnotationReview();
+
+            app.closeLineageTree();
 
             try
                 if ~isempty(app.PipelineRunEventListenerId) && exist('detecdiv_event', 'file') == 2

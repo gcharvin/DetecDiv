@@ -283,6 +283,21 @@ verifyEqual(testCase, summary.coverage.total, 3);
 % than calling Score's private display-binding method directly.
 verifyWarningFree(testCase, @() app.syncLineageDisplayAfterEdit());
 
+% The lineage tree must receive the inclusive review interval owned by the
+% managed annotation session.
+session.setFrameBounds([1 2]);
+lineageCallback = app.LineageTreeButton.ButtonPushedFcn;
+lineageCallback(app.LineageTreeButton, []);
+lineageFigure = findall(groot, 'Type', 'figure', ...
+    'Tag', 'ScoreAsymmetricLineageTree');
+verifyNumElements(testCase, lineageFigure, 1);
+reviewStart = findall(lineageFigure, 'Tag', 'ScoreLineageReviewStart');
+reviewEnd = findall(lineageFigure, 'Tag', 'ScoreLineageReviewEnd');
+verifyEqual(testCase, reviewStart.Value, 1);
+verifyEqual(testCase, reviewEnd.Value, 2);
+delete(lineageFigure);
+session.clearFrameBounds();
+
 % A visible ROI preset may be copied to a ROI with fewer/reordered channels.
 % RGB/intensity use channel rows, whereas displaylim uses channel columns.
 source = roi('presetSource', [1 1 4 4]);
@@ -331,6 +346,14 @@ verifyEqual(testCase, target.display.rgb(1,:), [1.0 0.9 0.8]);
 verifyEqual(testCase, target.display.displaylim(:,1), [0.04;0.94]);
 verifyEqual(testCase, target.display.displaylim(:,2), [0.01;0.91]);
 verifyEqual(testCase, target.display.displaylim(:,3), [0.2;0.8]);
+
+% A lineage window owned by Score must not survive programmatic app
+% deletion (the main-window close callback also ends through delete(app)).
+lineageFigure = uifigure('Visible', 'off', ...
+    'Tag', 'ScoreAsymmetricLineageTree');
+lineageFigure.UserData = struct('owner', app, 'viewKey', 'test|1');
+delete(app);
+verifyFalse(testCase, isvalid(lineageFigure));
 end
 
 function testConfiguredBrightfieldWinsWithPartialRoiCache(testCase)
