@@ -325,7 +325,8 @@ end
 function testBudneckHelperRequiresExplicitAnnotationOverride(testCase)
 [c, r] = fixture(testCase);
 marker = uint16(ones(4,4,1,3));
-r.addChannel(marker, 'CDC10_budneck', [1 1 1], [1 1 1]);
+r.addChannel(marker, 'ch2-yfp', [1 1 1], [1 1 1]);
+r.addChannel(marker, 'ch3-gfp', [1 1 1], [1 1 1]);
 manifest = fullfile(c.path, 'annotation_budneck.json');
 sceneManifest = fullfile(c.path, 'scene_parent.json');
 touch(manifest);
@@ -334,17 +335,21 @@ c.executionParam.annotationBudneckModelManifestPath = manifest;
 c.executionParam.sceneParentRuntimeManifestPath = sceneManifest;
 
 automatic = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
-verifyEqual(testCase, automatic.items.inputs.budneckChannelName, 'CDC10_budneck');
+verifyEmpty(testCase, automatic.items.inputs.budneckChannelName, ...
+    'A generic fluorophore name must never imply a biological marker role.');
+verifyEqual(testCase, ...
+    automatic.items.inputs.resolution.budneckChannelName.candidates, ...
+    {'ch2-yfp','ch3-gfp'});
 verifyFalse(testCase, automatic.items.params.annotationBudneckEnabled);
 
 explicit = classifierPredictForAnnotation(c, 1, 'PlanOnly', true, ...
-    'InputOverrides', struct('budneckChannelName', 'CDC10_budneck', ...
+    'InputOverrides', struct('budneckChannelName', 'ch2-yfp', ...
         'budneckMarkerIdentity', 'CDC10', ...
         'annotationBudneckEnabled', true));
 verifyTrue(testCase, explicit.canRun, strjoin(explicit.issues, ' '));
 verifyTrue(testCase, explicit.items.params.annotationBudneckEnabled);
 verifyEqual(testCase, explicit.items.params.budneckMarkerIdentity, 'CDC10');
-verifyEqual(testCase, explicit.items.inputs.budneckChannelName, 'CDC10_budneck');
+verifyEqual(testCase, explicit.items.inputs.budneckChannelName, 'ch2-yfp');
 
 disabled = classifierPredictForAnnotation(c, 1, 'PlanOnly', true, ...
     'InputOverrides', struct('budneckChannelName', '<none>', ...

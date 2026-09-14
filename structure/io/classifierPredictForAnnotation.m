@@ -486,6 +486,15 @@ observationChannelNames = observationChannelNames( ...
     channels, forbidden, instance, selectorOverride(override, 'budneckChannelName'), ...
     configuredSelector(classif, baseParams, 'budneckChannelName'), ...
     {'budneck','bud_neck','myo','cdc10','septin'});
+% The acquired fluorophore name (for example ch2-yfp) does not necessarily
+% encode the biological marker identity.  Keep semantic names preferred for
+% automatic resolution, but expose every safe raw fluorescence candidate to
+% the explicit GT-initialization selector.  The dialog records MYO1/CDC10
+% separately and leaves the helper disabled until the user opts in.
+budneckResolution.candidates = unique([ ...
+    budneckResolution.candidates, ...
+    optionalFluorescenceCandidates(roiObj, channels, forbidden, ...
+        instance, brightfield)], 'stable');
 
 directInstanceAvailable = ~isempty(instance) && ~instanceResolution.ambiguous;
 instanceResolution.required = true;
@@ -870,6 +879,62 @@ if ~isempty(selected) && (any(strcmpi(forbidden, selected)) || strcmpi(instance,
     strategy = 'unsafe_rejected';
 end
 resolution = resolutionRecord(selected, strategy, candidates, ambiguous);
+end
+
+function candidates = optionalFluorescenceCandidates(roiObj, channels, ...
+        forbidden, instance, brightfield)
+% Return safe raw image channels for an explicit biological-role mapping.
+% Display metadata is the primary raw/mask discriminator.  Name heuristics
+% retain fluorophore-labelled raw channels even when an old ROI carries a
+% stale indexed flag, while derived results and transmitted-light channels
+% are always excluded.
+candidates = {};
+displayChannels = {};
+indexed = false(1, 0);
+try
+    displayChannels = cellstr(string(roiObj.display.channel));
+    indexed = logical(roiObj.display.indexed);
+catch
+end
+for i = 1:numel(channels)
+    name = char(string(channels{i}));
+    if isempty(name) || any(strcmpi(forbidden, name)) || ...
+            strcmpi(instance, name) || strcmpi(brightfield, name)
+        continue;
+    end
+    token = normalizedChannelToken(name);
+    if startsWith(token, 'results_') || startsWith(token, 'gt_') || ...
+            isContinuousPredictionChannel(name) || isTransmittedLightChannel(token)
+        continue;
+    end
+    isIndexed = false;
+    hit = find(strcmpi(displayChannels, name), 1);
+    if ~isempty(hit) && hit <= numel(indexed), isIndexed = indexed(hit); end
+    if isIndexed && ~isFluorescenceChannel(token), continue; end
+    candidates{end+1} = name; %#ok<AGROW>
+end
+candidates = unique(candidates, 'stable');
+end
+
+function token = normalizedChannelToken(name)
+token = lower(regexprep(strtrim(char(string(name))), '[^a-z0-9]+', '_'));
+token = regexprep(token, '^_+|_+$', '');
+end
+
+function tf = isFluorescenceChannel(token)
+parts = regexp(token, '_', 'split');
+fluorescenceTokens = {'gfp','yfp','rfp','cfp','mcherry','fluorescence', ...
+    'fluorescent','fluo','myo1','myo','cdc10','septin','marker'};
+tf = any(ismember(parts, fluorescenceTokens));
+end
+
+function tf = isTransmittedLightChannel(token)
+parts = regexp(token, '_', 'split');
+transmittedTokens = {'brightfield','bf','phase','ph','dic','tl', ...
+    'transmittedlight'};
+tf = any(ismember(parts, transmittedTokens)) || ...
+    contains(token, 'bright_field') || contains(token, 'phase_contrast') || ...
+    contains(token, 'transmitted_light');
 end
 
 function record = resolutionRecord(selected, strategy, candidates, ambiguous)
