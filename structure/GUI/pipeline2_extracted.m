@@ -154,6 +154,8 @@ classdef pipeline2 < matlab.apps.AppBase
         MonitorLastProgressConsoleSignature char = ''
         MonitorLastHubConsoleText char = ''
         MonitorHasModuleProgress logical = false
+        MonitorRunStartTic = []
+        MonitorEtaSeconds double = NaN
     end
 
     methods (Access = private)
@@ -1199,6 +1201,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.MonitorLastProgressConsoleSignature = '';
             app.MonitorLastHubConsoleText = '';
             app.MonitorHasModuleProgress = false;
+            app.MonitorRunStartTic = [];
+            app.MonitorEtaSeconds = NaN;
         end
 
         function modules = defaultModuleLibrary(app)
@@ -19019,6 +19023,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.MonitorLastProgressConsoleSignature = '';
             app.MonitorLastHubConsoleText = '';
             app.MonitorHasModuleProgress = false;
+            app.MonitorRunStartTic = tic;
+            app.MonitorEtaSeconds = NaN;
             updateRunMonitorProgress(app, 0, char(string(message)));
         end
 
@@ -19048,9 +19054,12 @@ classdef pipeline2 < matlab.apps.AppBase
             scroll(app.ConsoleTextArea, 'bottom');
         end
 
-        function updateRunMonitorProgress(app, value, message)
+        function updateRunMonitorProgress(app, value, message, suppliedEta)
             if nargin < 2 || isempty(value) || ~isfinite(double(value))
                 value = app.MonitorLastProgress;
+            end
+            if nargin < 4
+                suppliedEta = '';
             end
             value = max(0, min(1, double(value)));
             app.MonitorLastProgress = value;
@@ -19060,13 +19069,68 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            etaText = monitorEtaText(app, value, suppliedEta);
             if nargin >= 3 && ~isempty(message)
-                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%  %s', ...
-                    100 * value, char(string(message)));
+                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%  |  ETA %s  |  %s', ...
+                    100 * value, etaText, char(string(message)));
             else
-                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%', 100 * value);
+                app.ProgressionStatusLabel.Text = sprintf('%3.0f%%  |  ETA %s', ...
+                    100 * value, etaText);
             end
             drawnow limitrate nocallbacks;
+        end
+
+        function etaText = monitorEtaText(app, value, suppliedEta)
+            suppliedEta = strtrim(char(string(suppliedEta)));
+            if ~isempty(suppliedEta)
+                etaText = suppliedEta;
+                return;
+            end
+            if value >= 1
+                app.MonitorEtaSeconds = 0;
+                etaText = '0 s';
+                return;
+            end
+            if value <= 0 || isempty(app.MonitorRunStartTic)
+                etaText = '--';
+                return;
+            end
+            try
+                elapsedSeconds = toc(app.MonitorRunStartTic);
+            catch
+                etaText = '--';
+                return;
+            end
+            if ~isfinite(elapsedSeconds) || elapsedSeconds < 2 || value < 0.005
+                etaText = '--';
+                return;
+            end
+            rawEtaSeconds = elapsedSeconds * (1 - value) / value;
+            if ~isfinite(app.MonitorEtaSeconds)
+                app.MonitorEtaSeconds = rawEtaSeconds;
+            else
+                % Smooth fluctuations caused by uneven node/frame durations.
+                app.MonitorEtaSeconds = 0.75 * app.MonitorEtaSeconds + ...
+                    0.25 * rawEtaSeconds;
+            end
+            etaText = formatMonitorDuration(app, app.MonitorEtaSeconds);
+        end
+
+        function textValue = formatMonitorDuration(~, secondsValue)
+            secondsValue = max(0, round(double(secondsValue)));
+            daysValue = floor(secondsValue / 86400);
+            hoursValue = floor(mod(secondsValue, 86400) / 3600);
+            minutesValue = floor(mod(secondsValue, 3600) / 60);
+            secondsValue = mod(secondsValue, 60);
+            if daysValue > 0
+                textValue = sprintf('%d j %02d h', daysValue, hoursValue);
+            elseif hoursValue > 0
+                textValue = sprintf('%d h %02d min', hoursValue, minutesValue);
+            elseif minutesValue > 0
+                textValue = sprintf('%d min %02d s', minutesValue, secondsValue);
+            else
+                textValue = sprintf('%d s', secondsValue);
+            end
         end
 
         function handleLocalRunMonitorEvent(app, payload)
@@ -19110,10 +19174,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         getField(app, data, 'status', 'Local worker running...')));
                     appendMonitorProgressEvent(app, data, message);
                     eta = getField(app, data, 'eta', '');
-                    if ~isempty(eta)
-                        message = sprintf('%s | ETA %s', char(string(message)), char(string(eta)));
-                    end
-                    updateRunMonitorProgress(app, value, message);
+                    updateRunMonitorProgress(app, value, message, eta);
             end
         end
 
