@@ -17,6 +17,11 @@ info = struct( ...
     'inputs', {{}}, ...
     'inputChannelCandidates', {{}}, ...
     'inputChannelName', '', ...
+    'budneckChannelCandidates', {{}}, ...
+    'budneckChannelName', '', ...
+    'budneckMarkerIdentity', 'MYO1', ...
+    'budneckHelperAvailable', false, ...
+    'budneckModelManifestPath', '', ...
     'roiIndices', double(roiIndices(:)'), ...
     'usesGroundTruth', false, ...
     'inputsResolved', true, ...
@@ -157,6 +162,9 @@ try
         info.modelReference = fieldText(model, 'modelLabel');
     end
     info.modelLabel = fieldText(model, 'modelLabel');
+    info.budneckModelManifestPath = fieldText( ...
+        model, 'annotationBudneckModelManifestPath');
+    info.budneckHelperAvailable = ~isempty(info.budneckModelManifestPath);
 catch
 end
 try
@@ -194,6 +202,17 @@ end
 if strcmpi(info.package, 'cellposesam')
     [info.inputChannelCandidates, info.inputChannelName] = ...
         commonCellposeInputChannels(plan);
+elseif strcmpi(info.package, 'cellLatentModel')
+    [info.budneckChannelCandidates, info.budneckChannelName] = ...
+        commonOptionalChannels(plan, 'budneckChannelName');
+    try
+        info.budneckMarkerIdentity = fieldText( ...
+            plan.items(1).params, 'budneckMarkerIdentity');
+    catch
+    end
+    if isempty(info.budneckMarkerIdentity)
+        info.budneckMarkerIdentity = 'MYO1';
+    end
 end
 end
 
@@ -220,6 +239,7 @@ for i = 1:numel(items)
     end
     selectedPerItem{i} = itemSelected;
 end
+
 if isempty(candidates), return; end
 nonempty = selectedPerItem(~cellfun('isempty', selectedPerItem));
 if numel(nonempty) == numel(items) && ...
@@ -228,6 +248,37 @@ if numel(nonempty) == numel(items) && ...
     selected = candidates{find(strcmpi(candidates, nonempty{1}), 1)};
 else
     selected = candidates{1};
+end
+end
+
+function [candidates, selected] = commonOptionalChannels(plan, role)
+candidates = {};
+selected = '';
+try, items = plan.items; catch, items = []; end
+selectedPerItem = cell(1, numel(items));
+for i = 1:numel(items)
+    try, resolution = items(i).inputs.resolution.(role); catch, return; end
+    itemCandidates = fieldCell(resolution, 'candidates');
+    itemSelected = fieldText(resolution, 'selected');
+    if ~isempty(itemSelected)
+        itemCandidates = unique([{itemSelected} itemCandidates], 'stable');
+    end
+    if i == 1
+        candidates = itemCandidates;
+    else
+        keep = false(size(candidates));
+        for j = 1:numel(candidates)
+            keep(j) = any(strcmpi(itemCandidates, candidates{j}));
+        end
+        candidates = candidates(keep);
+    end
+    selectedPerItem{i} = itemSelected;
+end
+nonempty = selectedPerItem(~cellfun('isempty', selectedPerItem));
+if ~isempty(candidates) && numel(nonempty) == numel(items) && ...
+        all(strcmpi(nonempty, nonempty{1})) && ...
+        any(strcmpi(candidates, nonempty{1}))
+    selected = candidates{find(strcmpi(candidates, nonempty{1}), 1)};
 end
 end
 

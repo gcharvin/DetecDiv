@@ -322,6 +322,37 @@ verifyFalse(testCase, any(strcmpi( ...
     'results_nucleus_mask')));
 end
 
+function testBudneckHelperRequiresExplicitAnnotationOverride(testCase)
+[c, r] = fixture(testCase);
+marker = uint16(ones(4,4,1,3));
+r.addChannel(marker, 'CDC10_budneck', [1 1 1], [1 1 1]);
+manifest = fullfile(c.path, 'annotation_budneck.json');
+sceneManifest = fullfile(c.path, 'scene_parent.json');
+touch(manifest);
+touch(sceneManifest);
+c.executionParam.annotationBudneckModelManifestPath = manifest;
+c.executionParam.sceneParentRuntimeManifestPath = sceneManifest;
+
+automatic = classifierPredictForAnnotation(c, 1, 'PlanOnly', true);
+verifyEqual(testCase, automatic.items.inputs.budneckChannelName, 'CDC10_budneck');
+verifyFalse(testCase, automatic.items.params.annotationBudneckEnabled);
+
+explicit = classifierPredictForAnnotation(c, 1, 'PlanOnly', true, ...
+    'InputOverrides', struct('budneckChannelName', 'CDC10_budneck', ...
+        'budneckMarkerIdentity', 'CDC10', ...
+        'annotationBudneckEnabled', true));
+verifyTrue(testCase, explicit.canRun, strjoin(explicit.issues, ' '));
+verifyTrue(testCase, explicit.items.params.annotationBudneckEnabled);
+verifyEqual(testCase, explicit.items.params.budneckMarkerIdentity, 'CDC10');
+verifyEqual(testCase, explicit.items.inputs.budneckChannelName, 'CDC10_budneck');
+
+disabled = classifierPredictForAnnotation(c, 1, 'PlanOnly', true, ...
+    'InputOverrides', struct('budneckChannelName', '<none>', ...
+        'annotationBudneckEnabled', false));
+verifyFalse(testCase, disabled.items.params.annotationBudneckEnabled);
+verifyEmpty(testCase, disabled.items.inputs.budneckChannelName);
+end
+
 function testHumanGtFamilyMetadataForbidsProviderAndOverride(testCase)
 [c, r] = fixture(testCase);
 r.removeChannel('results_cellposeSAM_cell');

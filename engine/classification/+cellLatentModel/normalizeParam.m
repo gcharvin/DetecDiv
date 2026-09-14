@@ -26,6 +26,7 @@ p.gfpChannelName = readChoice(p.gfpChannelName);
 p.brightfieldChannelName = readChoice(p.brightfieldChannelName);
 p.nucleusChannelName = readChoice(p.nucleusChannelName);
 p.budneckChannelName = readChoice(p.budneckChannelName);
+p.budneckMarkerIdentity = strtrim(readChoice(p.budneckMarkerIdentity));
 runtimeChannels = collectRuntimeChannels(param,ctx,classif);
 if strcmp(p.backend,'causal_composite')
     gtChannel=trainingGroundTruthChannel(classif);
@@ -65,6 +66,8 @@ p.sceneParentRuntimeManifestPath = strtrim(readChoice( ...
     p.sceneParentRuntimeManifestPath));
 p.annotationParentRerankerManifestPath = strtrim(readChoice( ...
     p.annotationParentRerankerManifestPath));
+p.annotationBudneckModelManifestPath = strtrim(readChoice( ...
+    p.annotationBudneckModelManifestPath));
 p.runtimeCodeRoot = strtrim(readChoice(p.runtimeCodeRoot));
 p.adaptiveMarkerModelSource = lower(readChoice( ...
     p.adaptiveMarkerModelSource));
@@ -81,6 +84,7 @@ if isempty(p.device), p.device = 'auto'; end
 if isempty(p.temporalVariant), p.temporalVariant = 'temporal_geometry'; end
 if isempty(p.primaryStateAxis), p.primaryStateAxis = 'budding'; end
 if isempty(p.stateUpdateMode), p.stateUpdateMode = 'none'; end
+if isempty(p.budneckMarkerIdentity), p.budneckMarkerIdentity = 'MYO1'; end
 if isempty(p.outputTrackChannelName)
     p.outputTrackChannelName = 'pred_latent_model_tracks';
 end
@@ -117,6 +121,7 @@ p.causalSolverFeedback = logical(p.causalSolverFeedback);
 p.materializeCellStates = logical(p.materializeCellStates);
 p.reviewGlobalReassignments = logical(p.reviewGlobalReassignments);
 p.overwriteOutputFamily = logical(p.overwriteOutputFamily);
+p.annotationBudneckEnabled = logical(p.annotationBudneckEnabled);
 p.debug = logical(p.debug);
 if ~any(strcmp(p.primaryStateAxis,{'none','budding'}))
     error('cellLatentModel:InvalidPrimaryStateAxis', ...
@@ -182,6 +187,8 @@ if strcmp(p.backend,'causal_composite')
         p.sceneParentRuntimeManifestPath,classif);
     p.annotationParentRerankerManifestPath = resolveArtifactPath( ...
         p.annotationParentRerankerManifestPath,classif);
+    p.annotationBudneckModelManifestPath = resolveArtifactPath( ...
+        p.annotationBudneckModelManifestPath,classif);
     p.runtimeCodeRoot = resolveArtifactPath(p.runtimeCodeRoot,classif);
     if isempty(p.compositeManifestPath) || ...
             ~isfile(p.compositeManifestPath)
@@ -231,6 +238,16 @@ if strcmp(p.backend,'causal_composite')
             isempty(p.sceneParentRuntimeManifestPath)
         error('cellLatentModel:AnnotationRerankerRequiresV54', ...
             'The annotation parent reranker requires the v54 parent runtime.');
+    end
+    if ~isempty(p.annotationBudneckModelManifestPath) && ...
+            ~isfile(p.annotationBudneckModelManifestPath)
+        error('cellLatentModel:MissingAnnotationBudneckModel', ...
+            'The annotation bud-neck model manifest was not found.');
+    end
+    if ~isempty(p.annotationBudneckModelManifestPath) && ...
+            isempty(p.sceneParentRuntimeManifestPath)
+        error('cellLatentModel:AnnotationBudneckRequiresV54', ...
+            'The annotation bud-neck helper requires the v54 parent runtime.');
     end
 elseif isMissingChoice(p.trackChannelName)
     error('cellLatentModel:MissingTrackChannel', ...

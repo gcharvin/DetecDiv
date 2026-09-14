@@ -20,15 +20,19 @@ if ~hasInitializationSource
 end
 families = catalog.families([catalog.families.usable]);
 isCellpose = strcmpi(activeModelPackage(activeModel), 'cellposesam');
+isLatent = strcmpi(activeModelPackage(activeModel), 'cellLatentModel');
+hasBudneckHelper = false;
+try, hasBudneckHelper = logical(activeModel.budneckHelperAvailable); catch, end
 cellposeInputs = activeModelInputChannels(activeModel);
+budneckInputs = activeModelBudneckChannels(activeModel);
 
 fig = uifigure('Name', char(string(p.Results.Title)), ...
-    'Position', [100 100 720 500], 'Resize', 'off', ...
+    'Position', [100 100 760 590], 'Resize', 'off', ...
     'WindowStyle', 'modal', 'CloseRequestFcn', @cancelDialog);
 positionNearParent(fig, parent);
-grid = uigridlayout(fig, [9 2]);
+grid = uigridlayout(fig, [11 2]);
 grid.ColumnWidth = {145, '1x'};
-grid.RowHeight = {34, 34, 34, 34, 34, 105, 45, '1x', 38};
+grid.RowHeight = {34, 34, 34, 34, 34, 34, 34, 105, 45, '1x', 38};
 grid.Padding = [18 15 18 15];
 grid.RowSpacing = 8;
 
@@ -53,6 +57,20 @@ else
 end
 cellposeInputLabel.Visible = onOff(isCellpose);
 cellposeInputDropDown.Visible = onOff(isCellpose);
+
+budneckInputLabel = uilabel(grid, 'Text', 'Bud-neck marker (optional):');
+budneckInputDropDown = uidropdown(grid, ...
+    'Items', [{'No marker (standard initialization)'} budneckInputs], ...
+    'ItemsData', [{'<none>'} budneckInputs], 'ValueChangedFcn', @updateUi);
+budneckIdentityLabel = uilabel(grid, 'Text', 'Marker identity:');
+budneckIdentityDropDown = uidropdown(grid, ...
+    'Items', {'MYO1','CDC10'}, 'ItemsData', {'MYO1','CDC10'}, ...
+    'ValueChangedFcn', @updateUi);
+showBudneck = isLatent && hasBudneckHelper;
+budneckInputLabel.Visible = onOff(showBudneck);
+budneckInputDropDown.Visible = onOff(showBudneck);
+budneckIdentityLabel.Visible = onOff(showBudneck);
+budneckIdentityDropDown.Visible = onOff(showBudneck);
 
 uilabel(grid, 'Text', 'Object family:');
 familyDropDown = uidropdown(grid, 'ValueChangedFcn', @updateUi);
@@ -81,12 +99,12 @@ parentageDropDown = uidropdown(grid, ...
 
 preview = uilabel(grid, 'Text', '', 'WordWrap', 'on', ...
     'BackgroundColor', [0.95 0.96 0.97]);
-preview.Layout.Row = 6;
+preview.Layout.Row = 8;
 preview.Layout.Column = [1 2];
 
 warningLabel = uilabel(grid, 'WordWrap', 'on', ...
     'FontColor', [0.75 0.18 0.10]);
-warningLabel.Layout.Row = 7;
+warningLabel.Layout.Row = 9;
 warningLabel.Layout.Column = [1 2];
 if p.Results.HasExistingGT
     warningLabel.Text = ['This will replace existing draft or ready GT ' ...
@@ -97,11 +115,11 @@ end
 
 helpLabel = uilabel(grid, 'WordWrap', 'on', 'FontColor', [0.35 0.35 0.35], ...
     'Text', initializationHelpText(catalog, activeModel));
-helpLabel.Layout.Row = 8;
+helpLabel.Layout.Row = 10;
 helpLabel.Layout.Column = [1 2];
 
 buttonGrid = uigridlayout(grid, [1 3]);
-buttonGrid.Layout.Row = 9;
+buttonGrid.Layout.Row = 11;
 buttonGrid.Layout.Column = [1 2];
 buttonGrid.ColumnWidth = {'1x', 100, 125};
 buttonGrid.Padding = [0 0 0 0];
@@ -144,11 +162,23 @@ if isvalid(fig), delete(fig); end
             idx = find(strcmpi(cellposeInputs, recipe.inputChannelName), 1);
             cellposeInputDropDown.Value = cellposeInputs{idx};
         end
+        if showBudneck && ~isempty(recipe.budneckChannelName) && ...
+                any(strcmpi(budneckInputDropDown.ItemsData, ...
+                recipe.budneckChannelName))
+            idx = find(strcmpi(budneckInputDropDown.ItemsData, ...
+                recipe.budneckChannelName), 1);
+            budneckInputDropDown.Value = budneckInputDropDown.ItemsData{idx};
+        end
+        if showBudneck && ~isempty(recipe.budneckMarkerIdentity)
+            budneckIdentityDropDown.Value = recipe.budneckMarkerIdentity;
+        end
     end
 
     function updateUi(varargin) %#ok<INUSD>
         mode = char(string(modeDropDown.Value));
         cellposeInputDropDown.Enable = 'off';
+        budneckInputDropDown.Enable = 'off';
+        budneckIdentityDropDown.Enable = 'off';
         switch mode
             case 'prediction'
                 familyDropDown.Enable = 'off';
@@ -183,6 +213,21 @@ if isvalid(fig), delete(fig); end
                     valid = valid && ~isempty(selectedInput);
                     preview.Text = sprintf('%s\nSelected microscopy input: %s', ...
                         preview.Text, selectedInput);
+                elseif showBudneck
+                    budneckInputDropDown.Enable = 'on';
+                    selectedBudneck = char(string(budneckInputDropDown.Value));
+                    if ~strcmpi(selectedBudneck, '<none>')
+                        budneckIdentityDropDown.Enable = 'on';
+                        identity = strtrim(char(string( ...
+                            budneckIdentityDropDown.Value)));
+                        valid = valid && ~isempty(identity);
+                        preview.Text = sprintf(['%s\nBud-neck helper: %s (%s)\n' ...
+                            'Marker suggestions remain subject to human review.'], ...
+                            preview.Text, selectedBudneck, identity);
+                    else
+                        preview.Text = sprintf('%s\nBud-neck helper: disabled', ...
+                            preview.Text);
+                    end
                 end
             case 'family'
                 familyDropDown.Enable = 'on';
@@ -236,6 +281,8 @@ if isvalid(fig), delete(fig); end
         mode = char(string(modeDropDown.Value));
         recipe = struct('mode', mode, 'family', '', 'channel', '', ...
             'inputChannelName', '', ...
+            'budneckChannelName', '<none>', ...
+            'budneckMarkerIdentity', 'MYO1', ...
             'copyParentage', strcmp(parentageDropDown.Value, 'copy'));
         switch mode
             case 'prediction'
@@ -246,6 +293,16 @@ if isvalid(fig), delete(fig); end
                     recipe.inputChannelName = char(string( ...
                         cellposeInputDropDown.Value));
                     if isempty(recipe.inputChannelName), return; end
+                end
+                if showBudneck && ~isCellpose
+                    recipe.budneckChannelName = char(string( ...
+                        budneckInputDropDown.Value));
+                    recipe.budneckMarkerIdentity = strtrim(char(string( ...
+                        budneckIdentityDropDown.Value)));
+                    if ~strcmpi(recipe.budneckChannelName, '<none>') && ...
+                            isempty(recipe.budneckMarkerIdentity)
+                        return;
+                    end
                 end
                 recipe.copyParentage = true;
             case 'family'
@@ -411,6 +468,15 @@ values = {};
 try, values = cellstr(string(info.inputChannelCandidates)); catch, end
 values = values(strlength(string(values)) > 0);
 values = unique(values, 'stable');
+values = values(:)';
+end
+
+function values = activeModelBudneckChannels(info)
+values = {};
+try, values = cellstr(string(info.budneckChannelCandidates)); catch, end
+values = values(strlength(string(values)) > 0);
+values = unique(values, 'stable');
+values = values(:)';
 end
 
 function text = familyPreview(prefix, source, copyParentage)

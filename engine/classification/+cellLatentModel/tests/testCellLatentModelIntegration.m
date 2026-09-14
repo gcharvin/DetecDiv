@@ -263,6 +263,9 @@ verifyEqual(testCase,resolved.adaptiveMarkerModelPath,markerCheckpoint);
 verifyTrue(testCase,ismember('adaptiveMarkerModelPath',spec.artifactKeys));
 verifyTrue(testCase,ismember( ...
     'annotationParentRerankerManifestPath',spec.artifactKeys));
+verifyTrue(testCase,ismember( ...
+    'annotationBudneckModelManifestPath',spec.artifactKeys));
+verifyFalse(testCase,param.annotationBudneckEnabled);
 verifyFalse(testCase,ismember('adaptiveMarkerModelPath',spec.staticKeys));
 end
 

@@ -4242,9 +4242,24 @@ disp('unable to display folder with this OS');
             if strcmp(recipe.mode, 'run_prediction')
                 selectedInput = '';
                 try, selectedInput = char(string(recipe.inputChannelName)); catch, end
+                selectedBudneck = '<none>';
+                markerIdentity = 'MYO1';
+                try, selectedBudneck = char(string(recipe.budneckChannelName)); catch, end
+                try, markerIdentity = char(string(recipe.budneckMarkerIdentity)); catch, end
+                selectedOverride = struct();
                 if ~isempty(selectedInput)
-                    selectedOverride = struct( ...
-                        'inputChannelName', selectedInput);
+                    selectedOverride.inputChannelName = selectedInput;
+                end
+                try
+                    if strcmpi(activeModel.package, 'cellLatentModel')
+                        selectedOverride.budneckChannelName = selectedBudneck;
+                        selectedOverride.budneckMarkerIdentity = markerIdentity;
+                        selectedOverride.annotationBudneckEnabled = ...
+                            ~strcmpi(selectedBudneck, '<none>');
+                    end
+                catch
+                end
+                if ~isempty(fieldnames(selectedOverride))
                     try
                         predictionPlan = classifierPredictForAnnotation( ...
                             app.Data.classiObj, indices, 'PlanOnly', true, ...
@@ -4262,6 +4277,15 @@ disp('unable to display folder with this OS');
                 if ~ready, return; end
                 if ~isempty(selectedInput)
                     inputOverrides.inputChannelName = selectedInput;
+                end
+                try
+                    if strcmpi(activeModel.package, 'cellLatentModel')
+                        inputOverrides.budneckChannelName = selectedBudneck;
+                        inputOverrides.budneckMarkerIdentity = markerIdentity;
+                        inputOverrides.annotationBudneckEnabled = ...
+                            ~strcmpi(selectedBudneck, '<none>');
+                    end
+                catch
                 end
                 uiText = annotationPredictionUiText(activeModel, overwrite);
                 if overwrite || hasExistingPrediction

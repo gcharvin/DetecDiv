@@ -260,6 +260,42 @@ verifyFalse(testCase, info.canRunOnExistingInputs);
 verifyFalse(testCase, any(strcmp(ids, 'run_prediction')));
 end
 
+function testLatentInitializationOffersOptionalBudneckWithoutAutoEnabling(testCase)
+folder = freshFolder(testCase);
+checkpoint = fullfile(folder, 'model.pt');
+budneckManifest = fullfile(folder, 'annotation_budneck.json');
+writeText(checkpoint, 'fixture');
+writeText(budneckManifest, '{}');
+c = classi(folder, 'latent_budneck_choice', 1);
+c.classifierPkg = 'cellLatentModel';
+c.executionParam = struct('modelSource', 'trained', 'modelPath', checkpoint);
+resolution = struct( ...
+    'instanceChannelName', resolutionRow('results_cells', ...
+        {'results_cells'}, false), ...
+    'budneckChannelName', resolutionRow('ch2-CDC10', ...
+        {'ch2-CDC10'}, false));
+inputs = struct('resolution', resolution, 'usesGroundTruth', false);
+item = struct('roiIndex', 1, 'roiId', 'new_domain', 'inputs', inputs, ...
+    'params', struct('budneckMarkerIdentity', 'CDC10'));
+plan = struct('available', true, 'canRun', true, 'issues', {{}}, ...
+    'model', struct('modelSource', 'trained', 'available', true, ...
+        'modelPath', checkpoint, 'package', 'cellLatentModel', ...
+        'annotationBudneckModelManifestPath', budneckManifest), ...
+    'items', item);
+
+info = annotationActiveModelInfo(c, 1, plan);
+[recipe, available] = annotationInitializationDefaultRecipe( ...
+    minimalCatalog(false), info);
+
+verifyTrue(testCase, available);
+verifyTrue(testCase, info.budneckHelperAvailable);
+verifyEqual(testCase, info.budneckChannelCandidates, {'ch2-CDC10'});
+verifyEqual(testCase, info.budneckMarkerIdentity, 'CDC10');
+verifyEqual(testCase, recipe.mode, 'run_prediction');
+verifyEqual(testCase, recipe.budneckChannelName, '<none>');
+verifyEqual(testCase, recipe.budneckMarkerIdentity, 'CDC10');
+end
+
 function testMultiRoiCatalogKeepsOnlySourcesSharedByEveryRoi(testCase)
 first = sourceCatalog(true, true, true);
 second = sourceCatalog(false, false, false);
@@ -300,7 +336,11 @@ for source = {classifierSource, scoreSource}
     verifyTrue(testCase, contains(source{1}, ...
         'recipe.inputChannelName'));
     verifyTrue(testCase, contains(source{1}, ...
-        '''inputChannelName'', selectedInput'));
+        'selectedOverride.inputChannelName = selectedInput'));
+    verifyTrue(testCase, contains(source{1}, ...
+        'recipe.budneckChannelName'));
+    verifyTrue(testCase, contains(source{1}, ...
+        'annotationBudneckEnabled'));
     verifyTrue(testCase, contains(source{1}, ...
         'annotationInitializationDefaultRecipe'));
     verifyTrue(testCase, contains(source{1}, ...
@@ -314,6 +354,9 @@ end
 dialogSource = fileread(fullfile(root, 'annotationInitializationDialog.m'));
 verifyTrue(testCase, contains(dialogSource, '''CellposeSAM input:'''));
 verifyTrue(testCase, contains(dialogSource, 'cellposeInputDropDown'));
+verifyTrue(testCase, contains(dialogSource, '''Bud-neck marker (optional):'''));
+verifyTrue(testCase, contains(dialogSource, 'budneckInputDropDown'));
+verifyTrue(testCase, contains(dialogSource, '''MYO1'',''CDC10'''));
 verifyTrue(testCase, contains(classifierSource, ...
     'annotationCommonInitializationCatalog'));
 modeSource = fileread(fullfile(root, 'annotationInitializationModes.m'));
