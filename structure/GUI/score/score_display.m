@@ -291,24 +291,7 @@ end
 function restorePaintCallbacksIfEditing(app)
 % A refresh is a safe interaction boundary. Reattach the edit callback and
 % discard transient drag callbacks that may have survived a lost mouse-up.
-try
-    if ~score_isEditMode(app) || isempty(app.ImageFigure) || ...
-            ~isgraphics(app.ImageFigure)
-        return;
-    end
-    fig = app.ImageFigure;
-    fig.WindowButtonMotionFcn = '';
-    fig.WindowButtonUpFcn = '';
-    fig.WindowButtonDownFcn = ...
-        @(src,event) score_paintOverlay(src,event,app);
-    fig.Pointer = 'arrow';
-    if exist('iptPointerManager','file')==2
-        iptPointerManager(fig,'enable');
-    end
-catch ME
-    warning('score:PaintCallbackRecovery', ...
-        'Could not restore annotation mouse callbacks: %s',ME.message);
-end
+score_restoreMaskInteraction(app);
 end
 
 function state = captureScoreFigureState(app)

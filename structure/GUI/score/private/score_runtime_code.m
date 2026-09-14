@@ -3661,6 +3661,15 @@ end
 
                 app.ImageFigure.KeyPressFcn = @(src, event) ImageFigureKeyPress(app, event);
 
+                % Self-heal after a MATLAB interaction mode (notably pan)
+                % has temporarily taken ownership of the mouse callbacks.
+                % The property is guarded for compatibility with older
+                % MATLAB figure implementations.
+                if isprop(app.ImageFigure, 'WindowFocusGainedFcn')
+                    app.ImageFigure.WindowFocusGainedFcn = ...
+                        @(src, event) score_restoreMaskInteraction(app); %#ok<NASGU>
+                end
+
                 % Créer les axes pour occuper toute la figure
                 % app.ImageAxes = axes('Parent', app.ImageFigure, 'Units', 'normalized', 'Position', [0 0 1 1], 'HitTest', 'off');
 
@@ -6030,6 +6039,7 @@ end
             if zoomFactor < 1.1
                 pan(app.ImageFigure, 'off');
                 app.PanButton.Value=0;
+                score_restoreMaskInteraction(app);
             else
                 pan(app.ImageFigure, 'on');
                 app.PanButton.Value=1;
@@ -6802,6 +6812,10 @@ end
                 pan(app.ImageFigure, 'on'); % pour activer
             else
                 pan(app.ImageFigure, 'off'); % pour désactiver
+                % pan('off') may restore the stale callback snapshot it
+                % captured on entry. Re-arm click and double-click mask
+                % selection immediately instead of waiting for a redraw.
+                score_restoreMaskInteraction(app);
             end
         end
 
@@ -6866,8 +6880,11 @@ end
 
             if value
                 if ishandle( app.ImageFigure)
-                    %           app.OverlayAxes.ButtonDownFcn = @(src, event) score_paintOverlay(src, event, app);
-                    app.ImageFigure.WindowButtonDownFcn = @(src, event) score_paintOverlay(src, event, app);
+                    % Editing and pan cannot own the same figure callbacks.
+                    % Always leave pan first, then install Score's handler.
+                    pan(app.ImageFigure, 'off');
+                    app.PanButton.Value = 0;
+                    score_restoreMaskInteraction(app);
                     app.MasklabelEditField.Enable="on";
 
                     paintRank = app.annotationTableChannelName(selectedRow(1));

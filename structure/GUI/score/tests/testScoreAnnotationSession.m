@@ -129,6 +129,20 @@ verifyTrue(testCase, score_isEditMode(app), ...
     'Multicolor managed GT must remain editable.');
 verifyNotEmpty(testCase, app.ImageFigure.WindowButtonDownFcn, ...
     'Multicolor managed GT must retain its paint/selection callback.');
+
+% MATLAB pan temporarily replaces figure mouse callbacks. Turning it off
+% must immediately restore mask selection, without requiring Score to be
+% closed or the image to be redrawn.
+app.PanButton.Value = true;
+panCallback = app.PanButton.ValueChangedFcn;
+panCallback(app.PanButton, struct('Value', true));
+app.ImageFigure.WindowButtonDownFcn = [];
+app.PanButton.Value = false;
+panCallback(app.PanButton, struct('Value', false));
+verifyNotEmpty(testCase, app.ImageFigure.WindowButtonDownFcn, ...
+    'Leaving pan mode must immediately restore mask selection.');
+verifyTrue(testCase, score_restoreMaskInteraction(app), ...
+    'Mask callback recovery must be repeatable and idempotent.');
 rawIdx = r.findChannelID('raw', 'exact');
 gtIdx = r.findChannelID(gtName, 'exact');
 verifyTrue(testCase, logical(r.display.selectedchannel(rawIdx)), ...
