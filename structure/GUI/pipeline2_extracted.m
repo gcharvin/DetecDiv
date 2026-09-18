@@ -11920,8 +11920,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 % In raw-parser mode, concrete source/ROI image names come
                 % exclusively from the parser inventory. Generic graph
                 % placeholders such as Channel1 must not masquerade as
-                % valid alternatives to the parsed channel names.
-                choices = runtimeChoices;
+                % valid alternatives to the parsed channel names.  Derived
+                % outputs are different: they are explicit graph resources,
+                % not guessed raw channels, and must remain selectable.
+                % Otherwise a parsed raw inventory hides a preceding
+                % combineMultipleChannels output from a CNN/LSTM binding.
+                choices = [runtimeChoices graphChoices]; %#ok<AGROW>
             else
                 choices = [upstreamChoices runtimeChoices graphChoices]; %#ok<AGROW>
             end
