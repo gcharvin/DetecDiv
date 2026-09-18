@@ -3604,7 +3604,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeRawDataEditField.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'rawDataPath', src.Value);
             app.RuntimeBrowseRawDataButton.ButtonPushedFcn = @(~,~)runtimeButtonPushed(app, 'rawDataPath');
 
-            try, app.RuntimeProjectTargetEditField.Placeholder = 'Project .mat used as input and/or output container'; catch, end
+            try, app.RuntimeProjectTargetEditField.Placeholder = 'Project .json (or legacy .mat) used as input and/or output container'; catch, end
             try, app.RuntimeRawDataEditField.Placeholder = 'Raw image/data folder parsed by dataloader'; catch, end
             try, app.RuntimeFovsEditField.Placeholder = 'all / 1,3,5 / 1:4'; catch, end
             try, app.RuntimeFramesEditField.Placeholder = 'all / 1:50 / 1,5,9'; catch, end
@@ -3918,7 +3918,7 @@ classdef pipeline2 < matlab.apps.AppBase
             field.Layout.Row = row;
             field.Layout.Column = 2;
             try
-                field.Placeholder = 'Project .mat used as input and/or output container';
+                field.Placeholder = 'Project .json (or legacy .mat) used as input and/or output container';
             catch
             end
             field.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'projectPath', src.Value);
@@ -3933,7 +3933,7 @@ classdef pipeline2 < matlab.apps.AppBase
             btn = uibutton(grid, 'push', 'Text', 'Browse existing...');
             btn.Layout.Row = row;
             btn.Layout.Column = 4;
-            btn.Tooltip = 'Load an existing shallow project .mat file.';
+            btn.Tooltip = 'Load an existing DetecDiv project JSON or legacy MAT file.';
             btn.ButtonPushedFcn = @(~,~)runtimeButtonPushed(app, 'projectPath');
 
             app.RuntimeFieldHandles.projectPath = field;
@@ -4583,7 +4583,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function chooseExistingProject(app)
-            [file, pth] = uigetfile({'*.mat','DetecDiv project (*.mat)'; '*.*','All files'}, ...
+            [file, pth] = uigetfile({'*.json;*.mat','DetecDiv project (*.json, *.mat)'; ...
+                '*.json','DetecDiv project manifest (*.json)'; '*.mat','Legacy shallow project (*.mat)'; ...
+                '*.*','All files'}, ...
                 'Select existing DetecDiv shallow project');
             if isequal(file, 0)
                 pth = uigetdir(pwd, 'Select existing DetecDiv project folder');
@@ -4598,13 +4600,13 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function createNewProjectFromDialog(app)
-            [file, pth] = uiputfile('*.mat', 'Create DetecDiv shallow project', fullfile(pwd, 'new_project.mat'));
+            [file, pth] = uiputfile('*.json', 'Create DetecDiv shallow project', fullfile(pwd, 'new_project.json'));
             if isequal(file, 0)
                 return;
             end
             [~, name, ext] = fileparts(file);
             if isempty(ext)
-                file = [file '.mat']; %#ok<NASGU>
+                file = [file '.json']; %#ok<NASGU>
             end
             projectFolder = fullfile(pth, name);
             existingJson = fullfile(pth, [name '.json']);
@@ -4638,21 +4640,21 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(inputPath)
                 return;
             end
-            matPath = resolveProjectMatPath(app, inputPath);
-            if isempty(matPath) || exist(matPath, 'file') ~= 2
+            projectFilePath = resolveProjectFilePath(app, inputPath);
+            if isempty(projectFilePath) || exist(projectFilePath, 'file') ~= 2
                 if showWarnings
-                    uialert(app.UIFigure, ['Project .mat not found: ' inputPath], 'Project', 'Icon', 'warning');
+                    uialert(app.UIFigure, ['Project JSON or legacy MAT not found: ' inputPath], 'Project', 'Icon', 'warning');
                 end
                 return;
             end
             d = openRuntimeProgress(app, 'Project', 'Loading DetecDiv project...');
             try
                 drawnow limitrate;
-                [shallowObj, msg] = shallowLoad(matPath);
+                [shallowObj, msg] = shallowLoad(projectFilePath);
                 if isempty(shallowObj)
                     error('pipeline2:ProjectLoadFailed', '%s', msg);
                 end
-                [~, name] = fileparts(matPath);
+                [~, name] = fileparts(projectFilePath);
                 varName = matlab.lang.makeValidName(name);
                 assignin('base', varName, shallowObj);
                 updateRuntimeProgress(app, d, 'Refreshing FOV, ROI, channel and dataseries inventory...');
@@ -4725,13 +4727,24 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function matPath = resolveProjectMatPath(app, inputPath) %#ok<INUSD>
-            matPath = '';
+        function projectFilePath = resolveProjectFilePath(app, inputPath) %#ok<INUSD>
+            projectFilePath = '';
             inputPath = char(string(inputPath));
             if exist(inputPath, 'file') == 2
                 [~, ~, ext] = fileparts(inputPath);
-                if strcmpi(ext, '.mat')
-                    matPath = inputPath;
+                if any(strcmpi(ext, {'.json','.mat'}))
+                    projectFilePath = inputPath;
+                end
+                return;
+            end
+            [inputFolder, inputName, inputExt] = fileparts(inputPath);
+            if any(strcmpi(inputExt, {'.json','.mat'}))
+                jsonSibling = fullfile(inputFolder, [inputName '.json']);
+                matSibling = fullfile(inputFolder, [inputName '.mat']);
+                if exist(jsonSibling, 'file') == 2
+                    projectFilePath = jsonSibling;
+                elseif exist(matSibling, 'file') == 2
+                    projectFilePath = matSibling;
                 end
                 return;
             end
@@ -4739,14 +4752,24 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             [parentPath, folderName] = fileparts(inputPath);
-            candidate = fullfile(parentPath, [folderName '.mat']);
-            if exist(candidate, 'file') == 2
-                matPath = candidate;
+            jsonCandidate = fullfile(parentPath, [folderName '.json']);
+            if exist(jsonCandidate, 'file') == 2
+                projectFilePath = jsonCandidate;
+                return;
+            end
+            matCandidate = fullfile(parentPath, [folderName '.mat']);
+            if exist(matCandidate, 'file') == 2
+                projectFilePath = matCandidate;
+                return;
+            end
+            d = dir(fullfile(inputPath, '*.json'));
+            if numel(d) == 1
+                projectFilePath = fullfile(d(1).folder, d(1).name);
                 return;
             end
             d = dir(fullfile(inputPath, '*.mat'));
             if numel(d) == 1
-                matPath = fullfile(d(1).folder, d(1).name);
+                projectFilePath = fullfile(d(1).folder, d(1).name);
             end
         end
 
@@ -4762,7 +4785,14 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeInventoryRefreshSuspended = true;
             cleanupObj = onCleanup(@()setRuntimeInventoryRefreshSuspended(app, false)); %#ok<NASGU>
             [pth, file] = shallowObj.getPath;
-            setRuntimeValuePreserveParse(app, 'projectPath', fullfile(pth, [file '.mat']));
+            projectFilePath = fullfile(pth, [file '.json']);
+            if exist(projectFilePath, 'file') ~= 2
+                legacyMatPath = fullfile(pth, [file '.mat']);
+                if exist(legacyMatPath, 'file') == 2
+                    projectFilePath = legacyMatPath;
+                end
+            end
+            setRuntimeValuePreserveParse(app, 'projectPath', projectFilePath);
             if runtimeStartsFromExistingProject(app)
                 refreshRuntimeFromProject(app);
             else
@@ -5766,7 +5796,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Informational only in project-input mode: raw source path inferred from saved project FOVs, when available.';
                     app.RuntimeFieldHandles.projectSource.Enable = 'on';
                     app.RuntimeButtonHandles.projectPath.Text = 'Browse existing...';
-                    app.RuntimeButtonHandles.projectPath.Tooltip = 'Load an existing shallow project .mat file.';
+                    app.RuntimeButtonHandles.projectPath.Tooltip = 'Load an existing DetecDiv project JSON or legacy MAT file.';
                 else
                     try, app.RuntimeProjectTargetLabel.Text = 'Project'; catch, end
                     try, app.RuntimeFieldHandles.projectPath.Visible = 'on'; catch, end
@@ -5818,7 +5848,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             elseif ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
                 if startsFromProject
-                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project JSON/legacy MAT file.');
                 else
                     markRuntimeField(app, 'projectPath', 'missing', 'Project target parent folder must exist or be creatable.');
                 end
@@ -12746,8 +12776,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 tf = any(strcmp(availableRole, roiScorableChannelRolesForUi(app)));
                 return;
             end
-            if any(strcmp(wantedRole, {'legacy_gfp_fluorescence', ...
-                    'division_nucleus_fluorescence','bud_neck_fluorescence'}))
+            if any(strcmp(wantedRole, {'brightfield_image', ...
+                    'legacy_gfp_fluorescence','division_nucleus_fluorescence', ...
+                    'bud_neck_fluorescence'}))
                 tf = any(strcmp(availableRole, roiScorableChannelRolesForUi(app)));
                 return;
             end
@@ -14804,7 +14835,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~startsFromClassifier && ~isempty(projectPath) && ~projectPathOk && ~loadedProjectOk
                 if startsFromProject
                     issues{end+1} = ['Project path does not exist: ' projectPath]; %#ok<AGROW>
-                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project JSON/legacy MAT file.');
                 else
                     issues{end+1} = ['Project target cannot be created: ' projectPath]; %#ok<AGROW>
                     markRuntimeField(app, 'projectPath', 'missing', 'Project target parent folder must exist or be creatable.');
@@ -14814,7 +14845,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if startsFromProject
                 if ~projectOk
                     issues{end+1} = 'Read-from-existing-project mode requires a loaded shallow project.'; %#ok<AGROW>
-                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
+                    markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project JSON/legacy MAT file.');
                 end
                 if loadedProjectOk
                     selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
@@ -16776,6 +16807,16 @@ classdef pipeline2 < matlab.apps.AppBase
                     if ~isempty(rawDataPath)
                         nodeParams.(key).path = rawDataPath;
                     end
+                    % A template can retain a channelFilter from an older
+                    % project (for example "Channel 1").  When this run
+                    % parses raw data, such a stale filter would both hide
+                    % the parsed inventory and become the symbolic source
+                    % exposed to roiExtract.  Clear it only when it matches
+                    % none of the channels just parsed; valid user filters
+                    % remain untouched.
+                    if dataLoaderFilterIsStaleForRawInventory(app, app.Data.nodes(i), nodeParams.(key))
+                        nodeParams.(key).channelFilter = {};
+                    end
                 end
             end
             for i = 1:numel(app.Data.nodes)
@@ -16793,6 +16834,50 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodeParams.(key) = struct();
                 end
                 nodeParams.(key) = mergeStructOverride(app, nodeParams.(key), patch);
+            end
+        end
+
+        function tf = dataLoaderFilterIsStaleForRawInventory(app, node, runtimeParams)
+            tf = false;
+            if runtimeStartsFromExistingProject(app) || runtimeStartsFromClassifier(app)
+                return;
+            end
+            available = runtimeSourceChannels(app);
+            if isempty(available)
+                return;
+            end
+
+            params = getField(app, node, 'params', struct());
+            if ~isstruct(params)
+                params = struct();
+            end
+            if isstruct(runtimeParams) && isfield(runtimeParams, 'channelFilter')
+                params.channelFilter = runtimeParams.channelFilter;
+            end
+            if ~isfield(params, 'channelFilter') || isempty(params.channelFilter)
+                return;
+            end
+
+            configured = normalizeChannelSelectionValue(app, params.channelFilter);
+            configured = configured(~cellfun(@(x)isempty(strtrim(char(string(x)))), configured));
+            configured = configured(~ismember(lower(string(configured)), ["all", "*", ":", "auto", "@source"]));
+            if isempty(configured)
+                return;
+            end
+
+            availableLower = lower(string(available));
+            for i = 1:numel(configured)
+                value = lower(strtrim(char(string(configured{i}))));
+                if any(availableLower == value)
+                    continue;
+                end
+                % Wildcard filters are legitimate parser selectors; their
+                % validity is resolved by the dataloader itself.
+                if contains(value, {'*', '$', '#'})
+                    continue;
+                end
+                tf = true;
+                return;
             end
         end
 

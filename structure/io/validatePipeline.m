@@ -1433,9 +1433,12 @@ function nodeReport = reconcileLegacyChannelReportWithResources(nodeReport, inpu
 end
 
 function outputs = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputs)
-    if ~strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract') || isempty(outputs)
+    if ~strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract')
         return;
     end
+    % roiExtract deliberately has no static resources.out declaration: its
+    % concrete ROI channels are the source channels selected for this run.
+    % Materialize them even when the declared output list is empty.
     channels = projectedRoiExtractChannels(node, nodeReport, state);
     channels = normalizeChannelList(channels);
     channels = channels(~isAllChannelSelectionCell(channels));
@@ -1814,12 +1817,29 @@ function channels = projectedRoiExtractChannels(node, nodeReport, state)
     channels = getField(nodeReport, 'configuredChannels', {});
     channels = normalizeChannelList(channels);
     channels = channels(~isAllChannelSelectionCell(channels));
+    channels = removeAbstractChannelCollectionNames(channels, getField(state, 'resources', struct([])));
     if ~isempty(channels)
         return;
     end
 
     channels = normalizeChannelList(getField(state, 'imageChannels', {}));
     channels = channels(~isAllChannelSelectionCell(channels));
+end
+
+function channels = removeAbstractChannelCollectionNames(channels, resources)
+    resources = normalizeResourceInventory(resources);
+    abstractNames = {};
+    for i = 1:numel(resources)
+        if ~strcmpi(resources(i).type, 'channel') || ~isempty(strtrim(resources(i).concreteName)) || ...
+                ~any(strcmpi(resources(i).sourceKind, {'sourceInventory','imagesToRoi'}))
+            continue;
+        end
+        abstractNames{end+1} = strtrim(resources(i).symbol); %#ok<AGROW>
+    end
+    if isempty(abstractNames)
+        return;
+    end
+    channels = channels(~ismember(lower(string(channels)), lower(string(abstractNames))));
 end
 
 function tf = validationStartsFromExistingProject(ctx)
@@ -3823,7 +3843,7 @@ function value = resolveResourceConfiguredValue(node, spec)
         return;
     end
     value = choiceToString(raw);
-    if any(strcmpi(value, {'none','n/a','N/A'}))
+    if any(strcmpi(value, {'none','n/a','N/A','<auto>','<unconfigured>'}))
         value = '';
     end
 end
@@ -4038,8 +4058,9 @@ function tf = resourceRolesCompatible(wantedRole, availableRole)
         tf = any(strcmp(availableRole, roiScorableChannelRoles()));
         return;
     end
-    if any(strcmp(wantedRole, {'legacy_gfp_fluorescence', ...
-            'division_nucleus_fluorescence','bud_neck_fluorescence'}))
+    if any(strcmp(wantedRole, {'brightfield_image', ...
+            'legacy_gfp_fluorescence','division_nucleus_fluorescence', ...
+            'bud_neck_fluorescence'}))
         tf = any(strcmp(availableRole, roiScorableChannelRoles()));
         return;
     end

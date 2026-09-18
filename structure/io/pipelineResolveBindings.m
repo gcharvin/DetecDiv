@@ -121,6 +121,10 @@ if iscell(v)
         return;
     end
 end
+txt=lower(strtrim(valueToCharLocal(v)));
+if any(strcmp(txt,{'<auto>','<unconfigured>','none','n/a'}))
+    return;
+end
 tf = true;
 end
 
