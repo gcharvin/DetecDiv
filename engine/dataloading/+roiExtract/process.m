@@ -140,6 +140,15 @@ function ctx = process(ctx)
             continue;
         end
         f = fovList(i);
+        [f, mappedSources] = normalizeMountedFovSources(f);
+        if mappedSources > 0
+            fprintf('[roiExtract] Mapped %d Windows source path(s) for FOV %s.\n', ...
+                mappedSources, fovLabelLocal(f, i));
+            fovList(i) = f;
+            if ~isempty(shallowObj)
+                shallowObj.fov(i) = f;
+            end
+        end
         if isempty(f.roi)
             continue;
         end
@@ -760,6 +769,44 @@ function preflightRoiExtractionForFov(shallowObj, fovList, fovIdx, roiSel, p, re
             'ROI extraction preflight failed for %s before launching extraction:%s- %s', ...
             fovLabel, newline, strjoin(issues, [newline '- ']));
     end
+end
+
+function [f, count] = normalizeMountedFovSources(f)
+% Make a lightweight project's client-side X:\ sources usable by a Linux
+% worker at the exact point where ROI extraction reads them.  Only map when
+% the resulting mounted directory is available, leaving unrelated paths
+% untouched.
+count = 0;
+if ~isunix || ~isprop(f, 'srcpath') || ~iscell(f.srcpath)
+    return;
+end
+for channelIndex = 1:numel(f.srcpath)
+    source = f.srcpath{channelIndex};
+    while iscell(source) && ~isempty(source)
+        source = source{min(channelIndex, numel(source))};
+    end
+    if ~(ischar(source) || (isstring(source) && isscalar(source)))
+        continue;
+    end
+    normalized = strrep(char(source), '\', '/');
+    if numel(normalized) < 3 || ~strcmpi(normalized(1:3), 'X:/')
+        continue;
+    end
+    mounted = ['/data/' normalized(4:end)];
+    if isfolder(mounted)
+        f.srcpath{channelIndex} = mounted;
+        if isprop(f, 'channel') && iscell(f.channel) && channelIndex <= numel(f.channel)
+            channelName = f.channel{channelIndex};
+            while iscell(channelName) && ~isempty(channelName)
+                channelName = channelName{min(channelIndex, numel(channelName))};
+            end
+            if ischar(channelName) || (isstring(channelName) && isscalar(channelName))
+                f.channel{channelIndex} = char(channelName);
+            end
+        end
+        count = count + 1;
+    end
+end
 end
 
 function done = getDoneForFov(prog, fovIdx)
