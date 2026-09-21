@@ -54,6 +54,15 @@ else
     end
 
     p0 = string(obj.srcpath{channel});
+    % Lightweight projects may retain client-side X:\ paths when they are
+    % opened directly by a Linux Hub worker. Resolve the standard mounted
+    % storage equivalent here, at the final source-read boundary. Only adopt
+    % the translation when that directory really exists.
+    pMounted = localMountedWindowsPath(p0);
+    if pMounted ~= p0 && isfolder(pMounted)
+        p0 = pMounted;
+        obj.srcpath{channel} = char(pMounted);
+    end
     if ~forceRebase && isfolder(p0)
         return;
     end
@@ -390,6 +399,18 @@ roots = roots(arrayfun(@localIsLikelyReachableRoot, roots));
 if numel(roots) > 24
     roots = roots(1:24);
 end
+end
+
+function pathOut = localMountedWindowsPath(pathIn)
+pathOut = string(pathIn);
+if ~isunix || ~isscalar(pathOut) || strlength(pathOut) == 0
+    return;
+end
+normalized = strrep(char(pathOut), '\', '/');
+if numel(normalized) < 3 || ~strcmpi(normalized(1:3), 'X:/')
+    return;
+end
+pathOut = string(['/data/' normalized(4:end)]);
 end
 
 function out = localRootStrings(value)

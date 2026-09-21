@@ -1251,7 +1251,7 @@ function pathOut = localApplyDefaultHubSourceMapping(pathIn)
     pathOut = char(string(pathIn));
     tokens = regexp(pathOut, '^X:(?<suffix>[\\/].*)$', 'names', 'once', 'ignorecase');
     if ~isempty(tokens)
-        pathOut = ['/data' strrep(tokens.suffix, '\\', '/')];
+        pathOut = ['/data' strrep(tokens.suffix, '\', '/')];
     end
 end
 
