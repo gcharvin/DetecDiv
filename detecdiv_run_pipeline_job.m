@@ -1200,11 +1200,30 @@ function shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload)
                 continue;
             end
             for channelIndex = 1:numel(fovObj.srcpath)
-                sourcePath = char(string(fovObj.srcpath{channelIndex}));
+                sourceValue = fovObj.srcpath{channelIndex};
+                sourcePath = localUnwrapPathText(sourceValue);
                 mappedPath = localApplyPathMappings(sourcePath, payload);
-                if ~isempty(mappedPath) && ~strcmp(mappedPath, sourcePath)
+                if strcmp(mappedPath, sourcePath)
+                    % Project source paths are loaded before run parameters
+                    % are attached to ctx.  Keep the standard Hub mapping
+                    % available at that point too, including project-only
+                    % runs where no dataloader node is selected.
+                    mappedPath = localApplyDefaultHubSourceMapping(sourcePath);
+                end
+                if ~isempty(mappedPath) && (~strcmp(mappedPath, sourcePath) || ~ischar(sourceValue))
                     fovObj.srcpath{channelIndex} = mappedPath;
                     changedCount = changedCount + 1;
+                end
+                % Lightweight JSON imports may preserve a single value as a
+                % nested cell.  Normalizing channel names is equally
+                % important because readImage uses it to rebuild srclist.
+                if isprop(fovObj, 'channel') && iscell(fovObj.channel) && ...
+                        channelIndex <= numel(fovObj.channel)
+                    channelValue = fovObj.channel{channelIndex};
+                    channelText = localUnwrapPathText(channelValue);
+                    if ~isempty(channelText) && ~ischar(channelValue)
+                        fovObj.channel{channelIndex} = channelText;
+                    end
                 end
             end
             shallowObj.fov(fovIndex) = fovObj;
@@ -1215,6 +1234,24 @@ function shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload)
     end
     if changedCount > 0
         fprintf('[pipeline-job] Applied Hub path mappings to %d project source entries.\n', changedCount);
+    end
+end
+
+function textValue = localUnwrapPathText(value)
+    while iscell(value) && numel(value) == 1
+        value = value{1};
+    end
+    if iscell(value)
+        value = value{1};
+    end
+    textValue = char(string(value));
+end
+
+function pathOut = localApplyDefaultHubSourceMapping(pathIn)
+    pathOut = char(string(pathIn));
+    tokens = regexp(pathOut, '^X:(?<suffix>[\\/].*)$', 'names', 'once', 'ignorecase');
+    if ~isempty(tokens)
+        pathOut = ['/data' strrep(tokens.suffix, '\\', '/')];
     end
 end
 
