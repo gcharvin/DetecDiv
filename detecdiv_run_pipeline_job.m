@@ -1161,6 +1161,11 @@ function [ok, msg] = localMaybeSaveProject(shallowObj, payload)
 end
 
 function shallowObj = localRelinkRawPaths(shallowObj, payload)
+    % A project-only run (for example ROI extraction resumed without its
+    % dataloader node) has no raw-root candidate.  Its stored FOV sources can
+    % still be Windows client paths, so apply the Hub payload mappings before
+    % trying filesystem-based relinking.
+    shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload);
     rawRoots = localRawRootCandidates(payload);
     if isempty(rawRoots)
         return;
@@ -1183,6 +1188,33 @@ function shallowObj = localRelinkRawPaths(shallowObj, payload)
         catch ME
             fprintf('[pipeline-job] Raw path relink skipped for %s: %s\n', rawRoot, ME.message);
         end
+    end
+end
+
+function shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload)
+    changedCount = 0;
+    try
+        for fovIndex = 1:numel(shallowObj.fov)
+            fovObj = shallowObj.fov(fovIndex);
+            if ~isprop(fovObj, 'srcpath') || ~iscell(fovObj.srcpath)
+                continue;
+            end
+            for channelIndex = 1:numel(fovObj.srcpath)
+                sourcePath = char(string(fovObj.srcpath{channelIndex}));
+                mappedPath = localApplyPathMappings(sourcePath, payload);
+                if ~isempty(mappedPath) && ~strcmp(mappedPath, sourcePath)
+                    fovObj.srcpath{channelIndex} = mappedPath;
+                    changedCount = changedCount + 1;
+                end
+            end
+            shallowObj.fov(fovIndex) = fovObj;
+        end
+    catch ME
+        fprintf('[pipeline-job] Project source path mapping skipped: %s\n', ME.message);
+        return;
+    end
+    if changedCount > 0
+        fprintf('[pipeline-job] Applied Hub path mappings to %d project source entries.\n', changedCount);
     end
 end
 

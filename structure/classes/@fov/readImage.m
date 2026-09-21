@@ -941,8 +941,19 @@ folder = char(string(obj.srcpath{channel}));
 if ~isfolder(folder)
     return;
 end
-files = localListImageFiles(folder);
+% A lightweight project deliberately does not serialize every srclist
+% entry.  Reconstructing it from a folder shared by all acquisition
+% channels must therefore select the files belonging to this logical
+% channel.  Using the unfiltered directory listing made every reconstructed
+% channel read the first TIFF (typically channel000 / z000).
+files = localListChannelImageFiles(folder, localChannelName(obj, channel));
 if isempty(files)
+    channelName = localChannelName(obj, channel);
+    if ~isempty(channelName)
+        warning('fov:ChannelSourceMappingMissing', ...
+            ['No source files matching logical channel "%s" were found in %s. ' ...
+             'Refusing to substitute another channel.'], channelName, folder);
+    end
     return;
 end
 if numel(obj.srclist) < channel
@@ -976,4 +987,50 @@ if isempty(files)
 end
 [~, idx] = sort(lower({files.name}));
 files = files(idx);
+end
+
+function files = localListChannelImageFiles(folder, channelName)
+% Restrict a fallback directory scan to files with the requested physical
+% (channel, z) identity.  Micro-Manager file-series inputs use names such
+% as img_channel000_position000_time000000000_z001.tif.
+files = localListImageFiles(folder);
+if isempty(files) || isempty(channelName)
+    return;
+end
+
+tokens = regexp(lower(char(string(channelName))), ...
+    '^channel(?<channel>\d+)_z(?<z>\d+)$', 'names', 'once');
+if isempty(tokens)
+    % Non Micro-Manager/legacy channel labels have no filename contract;
+    % retain the historic directory-list fallback for those datasets.
+    return;
+end
+
+expectedChannel = str2double(tokens.channel);
+expectedZ = str2double(tokens.z);
+keep = false(1, numel(files));
+for i = 1:numel(files)
+    source = lower(files(i).name);
+    sourceTokens = regexp(source, ...
+        '(?:^|_)channel(?<channel>\d+)(?:_|$).*_z(?<z>\d+)(?:\.|_)', ...
+        'names', 'once');
+    if isempty(sourceTokens)
+        continue;
+    end
+    keep(i) = str2double(sourceTokens.channel) == expectedChannel && ...
+        str2double(sourceTokens.z) == expectedZ;
+end
+files = files(keep);
+end
+
+function name = localChannelName(obj, channel)
+name = '';
+try
+    if isprop(obj, 'channel') && channel >= 1 && channel <= numel(obj.channel) && ...
+            ~isempty(obj.channel{channel})
+        name = char(string(obj.channel{channel}));
+    end
+catch
+    name = '';
+end
 end
