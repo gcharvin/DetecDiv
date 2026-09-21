@@ -114,6 +114,10 @@ classdef detecdiv < matlab.apps.AppBase
                 cmProject = uicontextmenu(app.DetecDivUIFigure);
                 m = uimenu(cmProject,'Text','Relink raw data...');
                 m.MenuSelectedFcn = {@contextMenuRelinkRawDataFcn,i,'Project'};
+                m = uimenu(cmProject,'Text','Run job on Hub...');
+                m.MenuSelectedFcn = {@contextMenuRunLegacyHubJobFcn,i,'Project'};
+                m = uimenu(cmProject,'Text','Create pipeline...');
+                m.MenuSelectedFcn = {@contextMenuCreatePipelineForProjectFcn,i,'Project'};
                 m = uimenu(cmProject,'Text','Refresh Hub lock information');
                 m.MenuSelectedFcn = {@contextMenuRefreshProjectHubLockFcn,i,'Project'};
                 m = uimenu(cmProject,'Text','Release Hub lock and edit here...');
@@ -1739,6 +1743,27 @@ end
                     msg = ['Project changed on hub/server, but automatic reload failed. ' ...
                         'Reload before local editing. ' ME.message];
                 end
+            end
+
+            function contextMenuRunLegacyHubJobFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'Project') || arg > numel(app.Data.Project)
+                    return;
+                end
+                shallowObj = evalin('base', app.Data.Project{arg});
+                try
+                    job = detecdiv_hub_submit_legacy_matlab_dialog(shallowObj);
+                    uialert(app.DetecDivUIFigure, sprintf('Hub job queued: %s', char(string(job.id))), ...
+                        'Run job on Hub', 'Icon', 'success');
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Hub job was not submitted', 'Icon', 'error');
+                end
+            end
+
+            function contextMenuCreatePipelineForProjectFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'Project') || arg > numel(app.Data.Project)
+                    return;
+                end
+                NewpipelinetemplateMenuSelected(app, []);
             end
 
             function projectMatPath = localProjectMatPath(projectObj)
