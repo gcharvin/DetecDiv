@@ -5,29 +5,37 @@ fig = uifigure('Name','DetecDiv Hub custom job','Position',[220 180 720 510]);
 tabs = uitabgroup(fig,'Position',[10 10 700 490]);
 connectionTab = uitab(tabs,'Title','Hub connection'); runTab = uitab(tabs,'Title','Run'); monitorTab = uitab(tabs,'Title','Monitor');
 
-cg = uigridlayout(connectionTab,[7 2]); cg.RowHeight = repmat({30},1,7); cg.ColumnWidth = {130,'1x'};
-addField(cg,'Hub URL',hub.baseUrl,'baseUrl'); addField(cg,'User key',hub.userKey,'userKey');
-uialabel(cg,'Text','Password'); password = uieditfield(cg,'password');
-connect = uibutton(cg,'Text','Connect','ButtonPushedFcn',@connectHub); connect.Layout.Row = 4; connect.Layout.Column = 2;
-uialabel(cg,'Text','Session'); session = uilabel(cg,'Text',shortToken(hub)); session.Layout.Row = 5; session.Layout.Column = 2;
-uialabel(cg,'Text','Remote root'); remoteRoot = uieditfield(cg,'text','Value',hub.defaultRemoteProjectRoot); remoteRoot.Layout.Row = 6; remoteRoot.Layout.Column = 2;
-uialabel(cg,'Text','Local root'); localRoot = uieditfield(cg,'text','Value',hub.defaultLocalProjectRoot); localRoot.Layout.Row = 7; localRoot.Layout.Column = 2;
+% Use explicit positions rather than GridLayout parents: this also works in
+% older MATLAB App Designer releases used by legacy DetecDiv installations.
+addField(connectionTab,'Hub URL',hub.baseUrl,'baseUrl',405);
+addField(connectionTab,'User key',hub.userKey,'userKey',365);
+addLabel(connectionTab,'Password',325); password = uieditfield(connectionTab,'password','Position',[135 325 385 24]);
+uibutton(connectionTab,'Text','Connect','Position',[535 325 110 24],'ButtonPushedFcn',@connectHub);
+addLabel(connectionTab,'Session',285); session = uilabel(connectionTab,'Text',shortToken(hub),'Position',[135 285 510 24]);
+addLabel(connectionTab,'Remote root',245); remoteRoot = uieditfield(connectionTab,'text','Value',hub.defaultRemoteProjectRoot,'Position',[135 245 510 24]);
+addLabel(connectionTab,'Local root',205); localRoot = uieditfield(connectionTab,'text','Value',hub.defaultLocalProjectRoot,'Position',[135 205 510 24]);
 
-rg = uigridlayout(runTab,[6 2]); rg.RowHeight = {28,28,28,90,28,'1x'}; rg.ColumnWidth = {130,'1x'};
-uialabel(rg,'Text','Loaded project'); uilabel(rg,'Text',projectName(shallowObj));
-uialabel(rg,'Text','Script path'); scriptPath = uieditfield(rg,'text','Value','X:\Alexander\code\gillestest\hub_legacy_smoke_test.m');
-uialabel(rg,'Text','Arguments JSON'); args = uitextarea(rg,'Value',{'[]'});
-submit = uibutton(rg,'Text','Run job on Hub','ButtonPushedFcn',@submitJob); submit.Layout.Row = 5; submit.Layout.Column = 2;
-runStatus = uilabel(rg,'Text','Save the project, then submit it to Hub.'); runStatus.Layout.Row = 6; runStatus.Layout.Column = [1 2];
+addLabel(runTab,'Loaded project',405); uilabel(runTab,'Text',projectName(shallowObj),'Position',[135 405 510 24]);
+addLabel(runTab,'Script path',365); scriptPath = uieditfield(runTab,'text','Value','X:\Alexander\code\gillestest\hub_legacy_smoke_test.m','Position',[135 365 510 24]);
+addLabel(runTab,'Arguments JSON',325); args = uitextarea(runTab,'Value',{'[]'},'Position',[135 205 510 144]);
+uibutton(runTab,'Text','Run job on Hub','Position',[425 165 220 28],'ButtonPushedFcn',@submitJob);
+runStatus = uilabel(runTab,'Text','Save the project, then submit it to Hub.','Position',[20 125 625 24]);
 
-mg = uigridlayout(monitorTab,[3 1]); mg.RowHeight = {28,28,'1x'};
-monitorStatus = uilabel(mg,'Text',initialMonitorText(jobId)); uibutton(mg,'Text','Refresh now','ButtonPushedFcn',@refreshJob);
-console = uitextarea(mg,'Editable','off','Value',{'Monitor ready.'});
+monitorStatus = uilabel(monitorTab,'Text',initialMonitorText(jobId),'Position',[20 405 460 24]);
+uibutton(monitorTab,'Text','Refresh now','Position',[520 405 125 24],'ButtonPushedFcn',@refreshJob);
+console = uitextarea(monitorTab,'Editable','off','Value',{'Monitor ready.'},'Position',[20 25 625 365]);
 timerObj = timer('ExecutionMode','fixedSpacing','Period',5,'TimerFcn',@(~,~)refreshJob()); start(timerObj);
 fig.CloseRequestFcn = @closeGui;
 
-    function addField(grid,label,value,fieldName)
-        uialabel(grid,'Text',label); control = uieditfield(grid,'text','Value',char(string(value))); control.Tag = fieldName;
+    function addField(parent,label,value,fieldName,y)
+        addLabel(parent,label,y);
+        control = uieditfield(parent,'text','Value',char(string(value)), ...
+            'Position',[135 y 510 24]);
+        control.Tag = fieldName;
+    end
+    function addLabel(parent,label,y)
+        uilabel(parent,'Text',label,'HorizontalAlignment','right', ...
+            'Position',[20 y 105 24]);
     end
     function connectHub(~,~)
         try
