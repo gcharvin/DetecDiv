@@ -1751,9 +1751,7 @@ end
                 end
                 shallowObj = evalin('base', app.Data.Project{arg});
                 try
-                    job = detecdiv_hub_submit_legacy_matlab_dialog(shallowObj);
-                    uialert(app.DetecDivUIFigure, sprintf('Hub job queued: %s', char(string(job.id))), ...
-                        'Run job on Hub', 'Icon', 'success');
+                    detecdiv_hub_legacy_job_gui(shallowObj);
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Hub job was not submitted', 'Icon', 'error');
                 end

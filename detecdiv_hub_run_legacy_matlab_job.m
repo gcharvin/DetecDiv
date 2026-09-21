@@ -3,12 +3,24 @@ function detecdiv_hub_run_legacy_matlab_job(jobJsonPath)
 payload = jsondecode(fileread(jobJsonPath));
 try
     addpath(fileparts(payload.routine_path));
+    % The Hub resolves this path from the attached DetecDiv project rather
+    % than trusting a client-supplied project location.
+    if ~isfield(payload, 'project_mat_path') || isempty(payload.project_mat_path)
+        error('detecdiv_hub_run_legacy_matlab_job:MissingProject', ...
+            'The Hub job is not attached to a DetecDiv project.');
+    end
+    [shallowObj, msg] = shallowLoad(char(string(payload.project_mat_path)));
+    if isempty(shallowObj)
+        error('detecdiv_hub_run_legacy_matlab_job:ProjectLoadFailed', '%s', msg);
+    end
     args = {};
     if isfield(payload, 'arguments') && ~isempty(payload.arguments)
         args = payload.arguments;
         if ~iscell(args), args = {args}; end
     end
-    result = feval(payload.function_name, args{:});
+    % Historical routines conventionally accept the loaded project as their
+    % first argument, followed by optional JSON parameters from the UI.
+    result = feval(payload.function_name, shallowObj, args{:});
     if isempty(result), result = struct(); end
     if ~isstruct(result), result = struct('value', result); end
     result.status = 'done';
