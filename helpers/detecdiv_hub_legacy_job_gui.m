@@ -16,9 +16,13 @@ addLabel(connectionTab,'Password',325);
 password = uihtml(connectionTab, 'HTMLSource', fullfile(fileparts(mfilename('fullpath')), ...
     'detecdiv_hub_password_input.html'), 'Position',[135 325 385 24]);
 uibutton(connectionTab,'Text','Connect','Position',[535 325 110 24],'ButtonPushedFcn',@connectHub);
-addLabel(connectionTab,'Session',285); session = uilabel(connectionTab,'Text',shortToken(hub),'Position',[135 285 510 24]);
+addLabel(connectionTab,'Session token',285);
+sessionToken = uieditfield(connectionTab,'text','Value',hubSessionToken(hub), ...
+    'Position',[135 285 510 24],'ValueChangedFcn',@sessionTokenChanged);
 addLabel(connectionTab,'Remote root',245); remoteRoot = uieditfield(connectionTab,'text','Value',hub.defaultRemoteProjectRoot,'Position',[135 245 510 24]);
 addLabel(connectionTab,'Local root',205); localRoot = uieditfield(connectionTab,'text','Value',hub.defaultLocalProjectRoot,'Position',[135 205 510 24]);
+connectionStatus = uilabel(connectionTab,'Text',connectionMessage(hub), ...
+    'Position',[135 165 510 24]);
 
 addLabel(runTab,'Loaded project',405); uilabel(runTab,'Text',projectName(shallowObj),'Position',[135 405 510 24]);
 addLabel(runTab,'Script path',365); scriptPath = uieditfield(runTab,'text','Value','X:\Alexander\code\gillestest\hub_legacy_smoke_test.m','Position',[135 365 510 24]);
@@ -47,13 +51,24 @@ fig.CloseRequestFcn = @closeGui;
             hub.baseUrl = findobj(connectionTab,'Tag','baseUrl').Value; hub.userKey = findobj(connectionTab,'Tag','userKey').Value;
             hub.defaultRemoteProjectRoot = remoteRoot.Value; hub.defaultLocalProjectRoot = localRoot.Value;
             [~,hub] = detecdiv_hub_login(hub.userKey,char(string(password.Data)),hub);
-            detecdiv_hub_settings_set(hub); session.Text = shortToken(hub); password.Data = struct('clear',true);
+            detecdiv_hub_settings_set(hub); sessionToken.Value = hub.sessionToken;
+            connectionStatus.Text = 'Connected — session token saved.';
+            password.Data = struct('clear',true);
         catch ME
+            connectionStatus.Text = 'Connection failed.';
             uialert(fig,ME.message,'Hub connection failed');
         end
     end
+    function sessionTokenChanged(~,~)
+        hub.sessionToken = char(string(sessionToken.Value));
+        detecdiv_hub_settings_set(hub);
+        connectionStatus.Text = connectionMessage(hub);
+    end
     function submitJob(~,~)
         try
+            if isempty(strtrim(char(string(hub.sessionToken))) )
+                error('No Hub session token. Click Connect before submitting a job.');
+            end
             shallowSave(shallowObj); [~,ref] = detecdiv_hub_ensure_project(shallowObj,'Hub',hub);
             [serverPath,mapped] = detecdiv_paths_map_module_path(scriptPath.Value,struct('hub',hub),'server');
             if ~mapped || ~startsWith(string(serverPath),'/data/'), error('Script must be under a server-visible /data root.'); end
@@ -110,9 +125,18 @@ else
 end
 end
 
-function text = shortToken(hub)
-text = 'Not connected';
-if isfield(hub,'sessionToken') && ~isempty(hub.sessionToken), text = 'Connected'; end
+function text = connectionMessage(hub)
+text = 'Not connected — enter credentials and click Connect.';
+if ~isempty(strtrim(hubSessionToken(hub)))
+    text = 'Connected — saved session token.';
+end
+end
+
+function token = hubSessionToken(hub)
+token = '';
+if isfield(hub,'sessionToken')
+    token = char(string(hub.sessionToken));
+end
 end
 
 function text = projectName(project)
