@@ -3016,6 +3016,23 @@ end
 
                 okCount = sum([report.ok]);
                 changedCount = sum(~strcmp({report.before}, {report.after}));
+                failedCount = numel(report) - okCount;
+                if okCount == 0
+                    errors = string({report.error});
+                    errors = errors(strlength(errors) > 0);
+                    detail = '';
+                    if ~isempty(errors)
+                        detail = sprintf('\n\nCause: %s', char(errors(1)));
+                    end
+                    app.safeCloseProgressDialog(d);
+                    d = [];
+                    uialert(app.DetecDivUIFigure, sprintf( ...
+                        ['No raw-data path could be resolved for %s (0/%d).' ...
+                         '\nSelect the dataset folder containing Pos* folders, then retry.%s'], ...
+                        scopeText, numel(report), detail), ...
+                        'Relink raw data', 'Icon', 'warning');
+                    return;
+                end
                 assignin('base', projectVar, shallowObj);
 
                 app.safeCloseProgressDialog(d);
@@ -3024,10 +3041,17 @@ end
 
                 gatherVarsFromWorkspace(app);
                 displayNodes(app);
-                uialert(app.DetecDivUIFigure, sprintf( ...
-                    'Raw data relinked for %s.\n\nReady entries: %d/%d\nChanged entries: %d', ...
-                    scopeText, okCount, numel(report), changedCount), ...
-                    'Relink raw data', 'Icon', 'success');
+                if failedCount > 0
+                    uialert(app.DetecDivUIFigure, sprintf( ...
+                        'Raw data partially relinked for %s.\n\nReady entries: %d/%d\nChanged entries: %d', ...
+                        scopeText, okCount, numel(report), changedCount), ...
+                        'Relink raw data', 'Icon', 'warning');
+                else
+                    uialert(app.DetecDivUIFigure, sprintf( ...
+                        'Raw data relinked for %s.\n\nReady entries: %d/%d\nChanged entries: %d', ...
+                        scopeText, okCount, numel(report), changedCount), ...
+                        'Relink raw data', 'Icon', 'success');
+                end
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'Relink raw data failed', 'Icon', 'error');
             end

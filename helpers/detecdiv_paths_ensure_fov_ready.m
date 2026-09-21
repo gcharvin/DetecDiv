@@ -362,11 +362,11 @@ end
 p = userprefs.paths;
 
 if isfield(p,'scanRoots') && ~isempty(p.scanRoots)
-    roots = [roots; string(p.scanRoots(:))];
+    roots = [roots; localRootStrings(p.scanRoots)];
 end
 
 if isfield(p,'rootCandidates') && ~isempty(p.rootCandidates)
-    roots = [roots; string(p.rootCandidates(:))];
+    roots = [roots; localRootStrings(p.rootCandidates)];
 end
 
 if isfield(p,'rootMap') && isstruct(p.rootMap) && ~isempty(fieldnames(p.rootMap))
@@ -380,7 +380,7 @@ if isfield(p,'rootMap') && isstruct(p.rootMap) && ~isempty(fieldnames(p.rootMap)
 end
 
 if isfield(p,'rawPathHistory') && ~isempty(p.rawPathHistory)
-    roots = [roots; string(p.rawPathHistory(:))];
+    roots = [roots; localRootStrings(p.rawPathHistory)];
 end
 
 roots = strip(roots);
@@ -390,6 +390,22 @@ roots = roots(arrayfun(@localIsLikelyReachableRoot, roots));
 if numel(roots) > 24
     roots = roots(1:24);
 end
+end
+
+function out = localRootStrings(value)
+% Preferences written by older versions may contain nested cells.  Ignore
+% malformed values rather than preventing every FOV from being relinked.
+out = strings(0,1);
+if ischar(value)
+    out = string(value);
+elseif isstring(value)
+    out = value(:);
+elseif iscell(value)
+    for i = 1:numel(value)
+        out = [out; localRootStrings(value{i})]; %#ok<AGROW>
+    end
+end
+out = out(:);
 end
 
 function tf = localIsLikelyReachableRoot(p)
