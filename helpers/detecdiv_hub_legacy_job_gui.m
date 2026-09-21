@@ -9,9 +9,12 @@ connectionTab = uitab(tabs,'Title','Hub connection'); runTab = uitab(tabs,'Title
 % older MATLAB App Designer releases used by legacy DetecDiv installations.
 addField(connectionTab,'Hub URL',hub.baseUrl,'baseUrl',405);
 addField(connectionTab,'User key',hub.userKey,'userKey',365);
-% R2024a supports text/numeric edit fields only; keep the password local
-% to this dialog and clear it immediately after a successful login.
-addLabel(connectionTab,'Password',325); password = uieditfield(connectionTab,'text','Position',[135 325 385 24]);
+% uihtml is available since R2019b and provides a real masked password
+% input on R2024a. The HTML component only returns its current value in
+% memory; it is cleared immediately after a successful login.
+addLabel(connectionTab,'Password',325);
+password = uihtml(connectionTab, 'HTMLSource', fullfile(fileparts(mfilename('fullpath')), ...
+    'detecdiv_hub_password_input.html'), 'Position',[135 325 385 24]);
 uibutton(connectionTab,'Text','Connect','Position',[535 325 110 24],'ButtonPushedFcn',@connectHub);
 addLabel(connectionTab,'Session',285); session = uilabel(connectionTab,'Text',shortToken(hub),'Position',[135 285 510 24]);
 addLabel(connectionTab,'Remote root',245); remoteRoot = uieditfield(connectionTab,'text','Value',hub.defaultRemoteProjectRoot,'Position',[135 245 510 24]);
@@ -43,7 +46,8 @@ fig.CloseRequestFcn = @closeGui;
         try
             hub.baseUrl = findobj(connectionTab,'Tag','baseUrl').Value; hub.userKey = findobj(connectionTab,'Tag','userKey').Value;
             hub.defaultRemoteProjectRoot = remoteRoot.Value; hub.defaultLocalProjectRoot = localRoot.Value;
-            [~,hub] = detecdiv_hub_login(hub.userKey,password.Value,hub); detecdiv_hub_settings_set(hub); session.Text = shortToken(hub); password.Value = '';
+            [~,hub] = detecdiv_hub_login(hub.userKey,char(string(password.Data)),hub);
+            detecdiv_hub_settings_set(hub); session.Text = shortToken(hub); password.Data = struct('clear',true);
         catch ME
             uialert(fig,ME.message,'Hub connection failed');
         end
