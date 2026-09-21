@@ -9,7 +9,9 @@ connectionTab = uitab(tabs,'Title','Hub connection'); runTab = uitab(tabs,'Title
 % older MATLAB App Designer releases used by legacy DetecDiv installations.
 addField(connectionTab,'Hub URL',hub.baseUrl,'baseUrl',405);
 addField(connectionTab,'User key',hub.userKey,'userKey',365);
-addLabel(connectionTab,'Password',325); password = uieditfield(connectionTab,'password','Position',[135 325 385 24]);
+% R2024a supports text/numeric edit fields only; keep the password local
+% to this dialog and clear it immediately after a successful login.
+addLabel(connectionTab,'Password',325); password = uieditfield(connectionTab,'text','Position',[135 325 385 24]);
 uibutton(connectionTab,'Text','Connect','Position',[535 325 110 24],'ButtonPushedFcn',@connectHub);
 addLabel(connectionTab,'Session',285); session = uilabel(connectionTab,'Text',shortToken(hub),'Position',[135 285 510 24]);
 addLabel(connectionTab,'Remote root',245); remoteRoot = uieditfield(connectionTab,'text','Value',hub.defaultRemoteProjectRoot,'Position',[135 245 510 24]);
