@@ -1646,6 +1646,17 @@ end
                         catch
                         end
                     end
+                    % Refresh the tree from the workspace even when the project is
+                    % lightweight and has no local MAT file to reload. The run
+                    % status has already been persisted by pipelineRunSave above.
+                    try
+                        gatherVarsFromWorkspace(app);
+                        displayNodes(app);
+                    catch refreshME
+                        warning('detecdiv:HubRunTreeRefreshFailed', ...
+                            'Hub status was refreshed, but the project tree could not be rebuilt: %s', ...
+                            refreshME.message);
+                    end
                     if showDialog
                         msg = sprintf('Hub job: %s\nStatus: %s', char(string(job.id)), char(string(job.status)));
                         if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
@@ -1727,11 +1738,6 @@ end
                     assignin('base', projVar, reloadedObj);
                     try
                         app.autoLoadPipelinesForProjectRuns(reloadedObj);
-                    catch
-                    end
-                    try
-                        gatherVarsFromWorkspace(app);
-                        displayNodes(app);
                     catch
                     end
                     ok = true;
@@ -2639,14 +2645,13 @@ end
                 return;
             end
 
-            hasRuns = false;
+            existingRuns = pipelineRun.empty;
             try
-                hasRuns = isfield(shallowObj.processing, 'pipelineRun') && ~isempty(shallowObj.processing.pipelineRun);
+                if isfield(shallowObj.processing, 'pipelineRun') && ~isempty(shallowObj.processing.pipelineRun)
+                    existingRuns = shallowObj.processing.pipelineRun;
+                end
             catch
-                hasRuns = false;
-            end
-            if hasRuns
-                return;
+                existingRuns = pipelineRun.empty;
             end
 
             projectRoot = '';
@@ -2684,6 +2689,7 @@ end
             listpipe = listpipe(ix);
 
             pipeList = pipelineRun.empty;
+            diskRunsLoaded = false;
             for j = 1:numel(listpipe)
                 runPath = fullfile(pipelineRoot, listpipe(j).name);
                 try
@@ -2699,19 +2705,65 @@ end
                         continue;
                     end
                     pipeList(end+1) = runObj; %#ok<AGROW>
+                    diskRunsLoaded = true;
                 catch ME
                     warning('detecdiv:PipelineRunLoadError', 'pipelineRunLoad error for %s: %s', runPath, ME.message);
                 end
             end
 
             if isempty(pipeList)
-                return;
+                pipeList = pipelineRun.empty;
             end
-            if ~isfield(shallowObj.processing, 'pipelineRun')
-                shallowObj.processing.pipelineRun = pipelineRun.empty;
+
+            % Keep in-memory runs that have not been persisted yet, but use
+            % the saved run.json as the source of truth for runs already on disk.
+            for k = 1:numel(existingRuns)
+                existingRun = existingRuns(k);
+                existingPath = '';
+                existingRunId = '';
+                try
+                    if isprop(existingRun, 'path') && ~isempty(existingRun.path)
+                        existingPath = app.normalizeFsPath(existingRun.path);
+                    end
+                catch
+                end
+                try
+                    existingRunId = char(string(existingRun.runId));
+                catch
+                end
+
+                isOnDisk = false;
+                for j = 1:numel(pipeList)
+                    diskPath = '';
+                    diskRunId = '';
+                    try
+                        if isprop(pipeList(j), 'path') && ~isempty(pipeList(j).path)
+                            diskPath = app.normalizeFsPath(pipeList(j).path);
+                        end
+                    catch
+                    end
+                    try
+                        diskRunId = char(string(pipeList(j).runId));
+                    catch
+                    end
+                    samePath = ~isempty(existingPath) && ~isempty(diskPath) && ...
+                        strcmpi(existingPath, diskPath);
+                    sameRunId = ~isempty(existingRunId) && ~isempty(diskRunId) && ...
+                        strcmpi(existingRunId, diskRunId);
+                    if samePath || sameRunId
+                        isOnDisk = true;
+                        break;
+                    end
+                end
+                if ~isOnDisk
+                    pipeList(end+1) = existingRun; %#ok<AGROW>
+                end
             end
-            shallowObj.processing.pipelineRun = pipeList;
-            loaded = true;
+
+            if ~isempty(pipeList)
+                shallowObj.processing.pipelineRun = pipeList;
+            end
+            loaded = diskRunsLoaded;
         end
 
         function tf = isInternalPipelineGuiAlias(app, pipeObj, varName) %#ok<INUSD>
