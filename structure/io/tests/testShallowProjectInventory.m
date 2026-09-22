@@ -34,6 +34,8 @@ verifyEqual(testCase, manifest.schemaVersion, 3);
 verifyEqual(testCase, manifest.fovs.roiCount, 2);
 verifyFalse(testCase, isfield(manifest.fovs, 'rois'));
 verifyFalse(testCase, isfield(manifest, 'runProfiles'));
+verifyEqual(testCase, manifest.fovs.metadataPath, 'project_metadata/fov_00001.json');
+verifyEqual(testCase, manifest.runProfilesPath, 'project_metadata/run_profiles.json');
 verifyTrue(testCase, isfile(fullfile(projectDir, manifest.fovs.metadataPath)));
 verifyTrue(testCase, isfile(fullfile(projectDir, manifest.runProfilesPath)));
 repairAudit = shallowRepairRoiManifestPaths(jsonPath);
@@ -56,4 +58,35 @@ verifyEqual(testCase, repair.changedCount, 1);
 verifyTrue(testCase, isfile(repair.backupPath));
 metadata = jsondecode(fileread(fullfile(projectDir, manifest.fovs.metadataPath)));
 verifyEqual(testCase, metadata.rois(1).path, field.id);
+end
+
+function testImportAcceptsWindowsSeparatorsInExistingManifest(testCase)
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@() rmdir(root, 's')); %#ok<NASGU>
+
+name = 'windows_manifest_project';
+projectDir = fullfile(root, name);
+mkdir(projectDir);
+projectObj = shallow();
+projectObj.io.path = root;
+projectObj.io.file = name;
+field = fov();
+field.id = 'Pos1_1';
+field.roi = roi.empty;
+projectObj.fov = field;
+
+jsonPath = fullfile(root, [name '.json']);
+shallowProjectExportLight(projectObj, jsonPath);
+manifest = jsondecode(fileread(jsonPath));
+manifest.runProfilesPath = strrep(manifest.runProfilesPath, '/', '\');
+manifest.fovs(1).metadataPath = strrep(manifest.fovs(1).metadataPath, '/', '\');
+fid = fopen(jsonPath, 'w');
+verifyGreaterThan(testCase, fid, 0);
+fprintf(fid, '%s\n', jsonencode(manifest));
+fclose(fid);
+
+loaded = shallowProjectImportLight(jsonPath);
+verifyEqual(testCase, numel(loaded.fov), 1);
+verifyEqual(testCase, loaded.fov(1).id, 'Pos1_1');
 end

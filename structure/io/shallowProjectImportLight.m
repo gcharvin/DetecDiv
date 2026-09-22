@@ -390,6 +390,13 @@ pathOut = char(string(pathText));
 if isempty(pathOut)
     return;
 end
+% Relative paths in manifests may have been written on Windows. On Linux,
+% backslashes are ordinary filename characters, so normalize both forms
+% before joining them to the project directory.
+if ~localIsAbsolute(pathOut)
+    pathOut = strrep(pathOut, '\', filesep);
+    pathOut = strrep(pathOut, '/', filesep);
+end
 if isfolder(pathOut) || isfile(pathOut) || localIsAbsolute(pathOut)
     return;
 end
