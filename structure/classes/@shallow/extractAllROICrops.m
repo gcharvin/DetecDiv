@@ -926,6 +926,11 @@ for kF = 1:numel(FOVIndex)
             r.display.write_abs_start = write0;
             r.display.write_frame_ids = frameBatch(:)';   % absolute frame ids for this block
             r.display.write_local_ids = (loc0 : (loc0 + Tblock - 1)); % local indices in framesToDo
+            % The first block is installed atomically by roi.save. Later
+            % blocks can update their HDF5 hyperslabs in place; otherwise
+            % every block copies the complete growing file to local scratch
+            % and back to the NAS, producing quadratic I/O.
+            r.display.write_streaming_inplace = true;
 
             % --- Do the write, or keep the full requested extraction in memory ---
             if MemoryOnly
@@ -965,6 +970,7 @@ for kF = 1:numel(FOVIndex)
             r.display.write_abs_start = [];
             if isfield(r.display,'write_frame_ids'),  r.display = rmfield(r.display,'write_frame_ids');  end
             if isfield(r.display,'write_local_ids'),  r.display = rmfield(r.display,'write_local_ids');  end
+            if isfield(r.display,'write_streaming_inplace'), r.display = rmfield(r.display,'write_streaming_inplace'); end
 
 
            % didSave = r.save(chanSelNames, false);

@@ -18,6 +18,9 @@ function param = setparam(ctx)
     param.scale = 1;
     param.binning = [];
     param.cropDrift = 1.0;
+    % Number of independent FOV tasks.  One remains the safe local default;
+    % Hub workers may override it when enough memory/cores are available.
+    param.parallelFovWorkers = 1;
 
     if nargin < 1 || isempty(ctx)
         return;
