@@ -96,6 +96,18 @@ Alternatively, the specialized `cellLatentTracker` and lineage-only backends
 remain supported for old saved classifiers and experiments that intentionally
 train components separately.
 
+## Runtime export
+
+The `Export runtime...` button in `classifierGUI` creates an inference-only classifier snapshot
+and immutable bundle under `runtime_bundles/<classifier-id>/<release-id>`.
+It never copies the source classifier folder, ROIs, datasets, project state,
+or complete experiment directories. Export is enabled only when the promoted
+release declares a complete `detecdiv.cell_latent_model.runtime_package.v1`
+file allowlist; older releases without that declaration are reported as
+blocked rather than guessed or partially packaged. See
+[`docs/MODEL_RUNTIME_CONTRACT_V1.md`](../../../docs/MODEL_RUNTIME_CONTRACT_V1.md)
+for the fixed folder and manifest contract.
+
 Python and repository locations are runtime environment details. Classifier
 artifacts are referenced by the classifier-owned bundle and are not copied into
 pipeline static parameters.

@@ -296,3 +296,31 @@ Preferred logical output families:
 - Output naming must remain explicit for processors and classifiers.
 - Existing data policy must be controllable (`replace`, `append`, `skip`, `error`, `upsert`).
 - GUI completion of missing params is acceptable, but backend execution must remain callable without GUI.
+
+## 10. Latent-model runtime packaging — fixed v1 contract
+
+Before changing or packaging `cell_latent_model`, read
+[`docs/MODEL_RUNTIME_CONTRACT_V1.md`](docs/MODEL_RUNTIME_CONTRACT_V1.md).
+That document freezes the purposes of the existing model-data roots and the
+contents of an inference runtime bundle. The current legacy development and
+training folders are preserved in place: never move, rename, clean, or copy a
+whole classifier/project/dataset/experiment tree as part of runtime export.
+
+Only `cellLatentModel.exportRuntime` may create a `runtime_bundles/<classifier-id>/<release-id>`
+bundle. It must require a checksum-verified promoted release with an explicit
+`detecdiv.cell_latent_model.runtime_package.v1` allowlist. If the declaration
+is absent or incomplete, stop with actionable diagnostics; do not guess
+dependencies by scanning or copying folders. The schema is
+[`docs/schemas/cell-latent-runtime-package-v1.schema.json`](docs/schemas/cell-latent-runtime-package-v1.schema.json).
+The exported bundle is validated against
+[`docs/schemas/cell-latent-runtime-manifest-v1.schema.json`](docs/schemas/cell-latent-runtime-manifest-v1.schema.json).
+
+The legacy multi-domain source catalog, when created or updated, must match
+[`docs/schemas/cell-latent-source-catalog-v1.schema.json`](docs/schemas/cell-latent-source-catalog-v1.schema.json).
+Its three approved source IDs are fixed there; exact legacy paths must be
+confirmed rather than guessed.
+
+Do not add new top-level roots, version suffix conventions, or source-domain
+classifier copies without first updating the v1 contract. Existing domain
+classifier objects remain separate historical sources; their stable IDs and
+roles must be catalogued, not inferred from folder order or screenshots.

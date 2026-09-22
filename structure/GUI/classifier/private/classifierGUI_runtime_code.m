@@ -2550,6 +2550,31 @@ end
 
     app.ClassifierUIFigure.Name = [classiObj.strid];
     app.Data.classiObj = classiObj;
+    try
+        isLatent = strcmpi(char(string(classiObj.classifierPkg)), ...
+            'cellLatentModel');
+        runtimeButton = [];
+        if isfield(app.Data,'runtimeExportButton') && ...
+                isvalid(app.Data.runtimeExportButton)
+            runtimeButton = app.Data.runtimeExportButton;
+        end
+        if isempty(runtimeButton) && isLatent
+            runtimeButton = uibutton(app.ClassifierUIFigure,'push');
+            runtimeButton.Position = [786 2 300 31];
+            runtimeButton.ButtonPushedFcn = createCallbackFcn( ...
+                app,@ExportRuntimeButtonPushed,true);
+            runtimeButton.Text = 'Export runtime...';
+            app.Data.runtimeExportButton = runtimeButton;
+        end
+        if ~isempty(runtimeButton)
+            if isLatent
+                runtimeButton.Visible = 'on';
+            else
+                runtimeButton.Visible = 'off';
+            end
+        end
+    catch
+    end
     app.SetboundsselectionrulesButton.Text = 'Set training frames...';
     app.SetboundsselectionrulesButton.Tooltip = [ ...
         'Apply all frames or one shared range to several ROIs, or switch ' ...
@@ -3539,6 +3564,67 @@ end
             extraArgs = {'frameIntervalMinutes', interval};
             try refreshTypedTrainingBindingChoices(app); catch, end
             checkStatus(app, false);
+        end
+
+        % Button pushed function: ExportRuntimeButton
+        function ExportRuntimeButtonPushed(app, event)
+            classiObj = app.Data.classiObj;
+            try
+                plan = cellLatentModel.planRuntimeExport(classiObj);
+            catch ME
+                uialert(app.ClassifierUIFigure,ME.message, ...
+                    'Runtime export preflight failed','Icon','error');
+                return;
+            end
+            if ~plan.canExport
+                details = strjoin(plan.blockers,[newline '- ']);
+                uialert(app.ClassifierUIFigure, ...
+                    ['This legacy release is not exportable as a runtime yet.' ...
+                    newline newline '- ' details newline newline ...
+                    'No source folder was changed. Add the explicit runtime ' ...
+                    'file allowlist to a promoted release, then retry.'], ...
+                    'Runtime export blocked','Icon','warning');
+                return;
+            end
+
+            defaultRoot = '';
+            try
+                defaultRoot = fullfile(fileparts(fileparts( ...
+                    char(string(classiObj.path)))),'runtime_bundles');
+            catch
+            end
+            if isempty(defaultRoot) || ~isfolder(defaultRoot)
+                startAt = pwd;
+                if ~isempty(defaultRoot) && isfolder(fileparts(defaultRoot))
+                    startAt = fileparts(defaultRoot);
+                end
+                selected = uigetdir(startAt, ...
+                    'Select an existing runtime_bundles directory');
+            else
+                selected = uigetdir(defaultRoot, ...
+                    'Select an existing runtime_bundles directory');
+            end
+            if isequal(selected,0),return;end
+            message = sprintf(['Create immutable runtime bundle?\n\n' ...
+                'Classifier: %s\nRelease: %s\nFiles: %d\nSize: %.1f MB\n\n' ...
+                'Training ROIs, datasets, projects and unlisted experiment ' ...
+                'files are excluded.'], ...
+                plan.classifierId,plan.releaseId,numel(plan.files), ...
+                plan.totalBytes/1024^2);
+            answer = uiconfirm(app.ClassifierUIFigure,message, ...
+                'Confirm runtime export','Options',{'Export','Cancel'}, ...
+                'DefaultOption',2,'CancelOption',2);
+            if ~strcmp(answer,'Export'),return;end
+            try
+                result = cellLatentModel.exportRuntime(classiObj,selected);
+                uialert(app.ClassifierUIFigure, ...
+                    sprintf('Runtime bundle created and validated:\n%s', ...
+                    char(result.bundleRoot)), ...
+                    'Runtime export complete','Icon','success');
+            catch ME
+                uialert(app.ClassifierUIFigure,ME.message, ...
+                    'Runtime export failed','Icon','error');
+            end
         end
 
         % Menu selected function: TrainClassifierMenu

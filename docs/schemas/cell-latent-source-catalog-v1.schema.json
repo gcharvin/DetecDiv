@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://detecdiv.local/schemas/cell-latent-source-catalog-v1.schema.json",
+  "title": "DetecDiv legacy cell-latent source catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "format", "legacyPolicy", "sources"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "format": { "const": "detecdiv.cell_latent_model.source_catalog.v1" },
+    "legacyPolicy": { "const": "preserve_paths_no_move_or_copy" },
+    "sources": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/source" },
+      "allOf": [
+        { "contains": { "properties": { "classifierId": { "const": "latent_model_1_indep" } }, "required": ["classifierId"] } },
+        { "contains": { "properties": { "classifierId": { "const": "latent_project47_gt_1_indep" } }, "required": ["classifierId"] } },
+        { "contains": { "properties": { "classifierId": { "const": "moma01_44_managed_gt_1_indep" } }, "required": ["classifierId"] } }
+      ]
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classifierId", "domainRole", "legacyModulePath"],
+      "properties": {
+        "classifierId": {
+          "enum": [
+            "latent_model_1_indep",
+            "latent_project47_gt_1_indep",
+            "moma01_44_managed_gt_1_indep"
+          ]
+        },
+        "domainRole": {
+          "enum": ["latent_independent", "project47_gt", "moma01_managed_gt"]
+        },
+        "legacyModulePath": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(classifier|detecdiv_projects)/[^\\\\]+$",
+          "not": { "pattern": "(^|/)\\.\\.?(/|$)" }
+        }
+      },
+      "oneOf": [
+        { "properties": { "classifierId": { "const": "latent_model_1_indep" }, "domainRole": { "const": "latent_independent" } } },
+        { "properties": { "classifierId": { "const": "latent_project47_gt_1_indep" }, "domainRole": { "const": "project47_gt" } } },
+        { "properties": { "classifierId": { "const": "moma01_44_managed_gt_1_indep" }, "domainRole": { "const": "moma01_managed_gt" } } }
+      ]
+    }
+  }
+}

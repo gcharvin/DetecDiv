@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://detecdiv.local/schemas/cell-latent-runtime-package-v1.schema.json",
+  "title": "DetecDiv cell latent model runtime package declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "format", "profile", "files", "artifactTargets"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "format": { "const": "detecdiv.cell_latent_model.runtime_package.v1" },
+    "profile": { "enum": ["pipeline"] },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/file" },
+      "minItems": 1
+    },
+    "artifactTargets": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "rewrite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonPointer", "targetPath"],
+      "properties": {
+        "jsonPointer": { "type": "string", "pattern": "^/" },
+        "targetPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePath", "targetPath", "sha256", "bytes"],
+      "properties": {
+        "sourcePath": { "type": "string", "minLength": 1 },
+        "targetPath": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "rewrites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rewrite" },
+          "default": []
+        },
+        "removeJsonPointers": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^/" },
+          "default": []
+        }
+      }
+    }
+  }
+}
