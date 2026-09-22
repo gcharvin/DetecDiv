@@ -286,6 +286,22 @@ function ctx = process(ctx)
     end
 
 function workerCount = resolveParallelFovWorkers(p, ctx)
+% An explicit node setting must take precedence over the Hub capacity.
+% Older saved pipelines lack executionMode; retain their historical Hub
+% behaviour by treating a missing or invalid value as "parallel".
+mode = 'parallel';
+try
+    requestedMode = lower(strtrim(char(string(p.executionMode))));
+    if any(strcmp(requestedMode, {'parallel', 'sequential'}))
+        mode = requestedMode;
+    end
+catch
+end
+if strcmp(mode, 'sequential')
+    workerCount = 1;
+    return;
+end
+
 workerCount = 1;
 candidates = {};
 try, candidates{end+1} = p.parallelFovWorkers; catch, end %#ok<CTCH>
