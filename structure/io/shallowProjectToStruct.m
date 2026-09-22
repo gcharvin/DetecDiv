@@ -1,6 +1,7 @@
-function project = shallowProjectToStruct(shallowObj)
+function [project, details] = shallowProjectToStruct(shallowObj)
 %SHALLOWPROJECTTOSTRUCT Build a lightweight JSON-safe project manifest.
-%   The manifest is a reconstruction description, not a MATLAB object dump.
+%   The root manifest inventories FOVs and runs. Details are returned
+%   separately for storage under project_metadata/.
 
 if nargin < 1 || isempty(shallowObj) || ~isa(shallowObj, 'shallow')
     error('shallowProjectToStruct:InvalidProject', 'A shallow project object is required.');
@@ -11,7 +12,7 @@ projectPath = char(string(projectPath));
 projectFile = char(string(projectFile));
 
 project = struct();
-project.schemaVersion = 2;
+project.schemaVersion = 3;
 project.projectId = localEnsureProjectId(shallowObj);
 project.projectName = projectFile;
 project.tag = localText(localGetProp(shallowObj, 'tag', ''));
@@ -23,12 +24,22 @@ project.paths = struct( ...
     'projectDir', fullfile(projectPath, projectFile), ...
     'legacyMat', fullfile(projectPath, [projectFile '.mat']));
 project.rawSources = localCollectRawSources(shallowObj);
-project.fovs = localFovsToStruct(shallowObj, project.paths.projectDir);
+details = struct();
+details.fovs = localFovsToStruct(shallowObj, project.paths.projectDir);
+details.runProfiles = localSanitizeValue(localGetProp(shallowObj, 'runProfiles', struct()));
+project.fovs = repmat(struct('index', [], 'id', '', 'metadataPath', '', 'roiCount', 0), 0, 1);
+for i = 1:numel(details.fovs)
+    project.fovs(end + 1) = struct( ...
+        'index', details.fovs(i).index, ...
+        'id', details.fovs(i).id, ...
+        'metadataPath', fullfile('project_metadata', sprintf('fov_%05d.json', i)), ...
+        'roiCount', numel(details.fovs(i).rois)); %#ok<AGROW>
+end
 project.pipelines = localPipelineRefs(shallowObj, project.paths.projectDir);
 project.pipelineRuns = localPipelineRunRefs(shallowObj, project.paths.projectDir);
 project.classifiers = localChildRefs(fullfile(project.paths.projectDir, 'classification'), project.paths.projectDir, 'classification');
 project.processors = localChildRefs(fullfile(project.paths.projectDir, 'processor'), project.paths.projectDir, 'processor');
-project.runProfiles = localSanitizeValue(localGetProp(shallowObj, 'runProfiles', struct()));
+project.runProfilesPath = fullfile('project_metadata', 'run_profiles.json');
 project.compat = struct( ...
     'legacyClass', 'shallow', ...
     'legacyMatVariable', 'shallowObj', ...

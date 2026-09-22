@@ -1,5 +1,5 @@
 function [jsonPath, project] = shallowProjectExportLight(shallowObj, jsonPath)
-%SHALLOWPROJECTEXPORTLIGHT Save a lightweight DetecDiv project manifest.
+%SHALLOWPROJECTEXPORTLIGHT Save the project inventory and FOV metadata files.
 
 if nargin < 1 || isempty(shallowObj) || ~isa(shallowObj, 'shallow')
     error('shallowProjectExportLight:InvalidProject', 'A shallow project object is required.');
@@ -11,17 +11,37 @@ if nargin < 2 || isempty(jsonPath)
 end
 jsonPath = char(string(jsonPath));
 
-project = shallowProjectToStruct(shallowObj);
+[project, details] = shallowProjectToStruct(shallowObj);
 localAssertSafeManifestOverwrite(jsonPath, project);
 
-jsonText = jsonencode(project, 'PrettyPrint', true);
 targetDir = fileparts(jsonPath);
 if ~isempty(targetDir) && ~isfolder(targetDir)
     mkdir(targetDir);
 end
+projectDir = fullfile(targetDir, project.projectName);
+metadataDir = fullfile(projectDir, 'project_metadata');
+if ~isfolder(metadataDir)
+    mkdir(metadataDir);
+end
 
+for i = 1:numel(project.fovs)
+    detailPath = fullfile(projectDir, project.fovs(i).metadataPath);
+    localWriteJson(detailPath, details.fovs(i), false);
+end
+localWriteJson(fullfile(projectDir, project.runProfilesPath), details.runProfiles, false);
+localWriteJson(jsonPath, project, true);
+
+fprintf('Light project manifest saved: %s\n', jsonPath);
+end
+
+function localWriteJson(pathText, value, pretty)
+if pretty
+    jsonText = jsonencode(value, 'PrettyPrint', true);
+else
+    jsonText = jsonencode(value);
+end
 tmpUuid = char(java.util.UUID.randomUUID);
-tmpPath = [jsonPath '.tmp.' tmpUuid];
+tmpPath = [pathText '.tmp.' tmpUuid];
 fid = fopen(tmpPath, 'w', 'n', 'UTF-8');
 if fid < 0
     error('shallowProjectExportLight:OpenFailed', 'Could not open temp JSON file: %s', tmpPath);
@@ -31,10 +51,8 @@ fprintf(fid, '%s\n', jsonText);
 fclose(fid);
 
 localVerifyJson(tmpPath);
-movefile(tmpPath, jsonPath, 'f');
+movefile(tmpPath, pathText, 'f');
 delete(cleanup);
-
-fprintf('Light project manifest saved: %s\n', jsonPath);
 end
 
 function localAssertSafeManifestOverwrite(jsonPath, incoming)
