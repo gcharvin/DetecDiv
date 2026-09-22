@@ -155,7 +155,10 @@ for i = 1:2:numel(varargin)
         case "driftdebugevery"
             DriftDebugEvery = varargin{i+1};
 
-        case "roi"
+        % Pipeline jobs pass ROISelect, while the interactive callers use ROI.
+        % Keep both spellings so a runtime ROI selection is never silently
+        % discarded and replaced by the default (all ROIs).
+        case {"roi", "roiselect", "rois"}
             ROISelect = varargin{i+1};
 
             % scale + cropdrift + progress handle
