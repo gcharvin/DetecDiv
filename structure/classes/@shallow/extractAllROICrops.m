@@ -30,6 +30,7 @@ MemoryOnly        = false;   % keep extracted ROI images in memory; do not touch
 CancelTokenFile   = '';      % cooperative cancellation token written by Hub / pipeline runner
 ProgressFOVIndex  = [];
 ProgressFOVTotal  = [];
+ProgressCallback  = [];
 
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
@@ -174,6 +175,8 @@ for i = 1:2:numel(varargin)
             ProgressFOVIndex = varargin{i+1};
         case {"progressfovtotal","displayfovtotal"}
             ProgressFOVTotal = varargin{i+1};
+        case "progresscallback"
+            ProgressCallback = varargin{i+1};
     end
 end
 checkExtractionCancellation(CancelTokenFile, hprogressbar, 'startup');
@@ -588,6 +591,12 @@ for kF = 1:numel(FOVIndex)
         double(perBlockBudget)/1e9, double(maxBlockBudget)/1e9);
     fprintf('   RAM avail ~ %.1f GB → Tblock=%d (H=%d,W=%d,Csel=%d,class=%s)\n', ...
         double(availBytes)/1e9, Tblock_auto, H, W, Csel, sampleClass);
+    emitExtractionProgress(ProgressCallback, struct( ...
+        'value', 0, 'status', 'running', 'phase', 'starting', ...
+        'fovIndex', displayFOVIndex, 'fovTotal', displayFOVTotal, ...
+        'blockIndex', 0, 'blockTotal', nBlocks, ...
+        'message', sprintf('FOV %d/%d started (%d blocks).', ...
+            displayFOVIndex, displayFOVTotal, nBlocks)));
 
     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', displayFOVIndex, displayFOVTotal), nBlocks, 'Indent',2);
 
@@ -1009,10 +1018,22 @@ for kF = 1:numel(FOVIndex)
 
         fprintf('\n');
         pbBlk.update(ib, sprintf('bloc %d/%d terminé', ib, nBlocks));
+        emitExtractionProgress(ProgressCallback, struct( ...
+            'value', ib / max(1, nBlocks), 'status', 'running', ...
+            'phase', 'block', 'fovIndex', displayFOVIndex, ...
+            'fovTotal', displayFOVTotal, 'blockIndex', ib, ...
+            'blockTotal', nBlocks, 'message', sprintf( ...
+                'FOV %d/%d: block %d/%d saved.', ...
+                displayFOVIndex, displayFOVTotal, ib, nBlocks)));
     end
 
     pbBlk.close();
     pbFOV.update(kF, sprintf('FOV %d/%d terminé', displayFOVIndex, displayFOVTotal));
+    emitExtractionProgress(ProgressCallback, struct( ...
+        'value', 1, 'status', 'running', 'phase', 'fov_done', ...
+        'fovIndex', displayFOVIndex, 'fovTotal', displayFOVTotal, ...
+        'blockIndex', nBlocks, 'blockTotal', nBlocks, 'message', ...
+        sprintf('FOV %d/%d completed.', displayFOVIndex, displayFOVTotal)));
 end
 pbFOV.close();
 
@@ -1149,6 +1170,16 @@ if ~isempty(pbFrm)
     end
 end
 checkExtractionCancellation(cancelTokenFile, hprogressbar, msg);
+end
+
+function emitExtractionProgress(callback, progress)
+if isempty(callback) || ~isa(callback, 'function_handle') || ~isstruct(progress)
+    return;
+end
+try
+    callback(progress);
+catch
+end
 end
 
 function checkExtractionCancellation(cancelTokenFile, hprogressbar, where)

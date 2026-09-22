@@ -209,6 +209,7 @@ The active priorities at the end of this thread are:
 - Preserve legacy compatibility unless the user explicitly approves a breaking migration.
 - Log or expose enough runtime information to debug Python-backed tools and pipeline runs.
 - Assume ROI extracted image data lives in `.h5`, not `.mat`.
+- After every successful push of DetecDiv changes to GitHub or GitLab, deploy the pushed commit to the canonical checkout `/home/charvin-admin/repos/DetecDiv` on `detecdiv-server` and verify that checkout; before any required worker restart, check for active Hub jobs and never interrupt one without explicit approval.
 
 ### Don't
 - Do not make pipelines physical children of `@shallow` again.

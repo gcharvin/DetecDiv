@@ -301,9 +301,9 @@ for i = 1:numel(candidates)
     catch
     end
 end
-% A larger pool generally only overloads the shared storage.  Keep this
-% module-level fan-out bounded; Hub-level scheduling remains independent.
-workerCount = min(workerCount, 3);
+% Hub jobs can use up to ten independent FOV writers. The actual pool is
+% capped again by the number of eligible FOVs below.
+workerCount = min(workerCount, 10);
 if workerCount > 1 && (exist('parpool', 'file') ~= 2 || ...
         ~license('test', 'Distrib_Computing_Toolbox'))
     warning('roiExtract:ParallelUnavailable', ...
@@ -372,11 +372,12 @@ if exist('parpool', 'file') ~= 2 || ~license('test', 'Distrib_Computing_Toolbox'
         'parallelFovWorkers=%d was requested but Parallel Computing Toolbox is unavailable.', requestedWorkers);
 end
 
+workerCount = min(requestedWorkers, numel(tasks));
 pool = gcp('nocreate');
 if isempty(pool)
-    pool = parpool('Processes', requestedWorkers);
+    pool = parpool('Processes', workerCount);
 end
-workerCount = min(requestedWorkers, pool.NumWorkers);
+workerCount = min(workerCount, pool.NumWorkers);
 if workerCount < 2
     error('roiExtract:ParallelUnavailable', ...
         'The active parallel pool has only %d worker(s).', workerCount);
@@ -390,13 +391,19 @@ if ~persistOutputs
     argsBase = [argsBase {'MemoryOnly'} {true}]; %#ok<AGROW>
 end
 threadsPerFov = resolveParallelFovThreads(ctx, workerCount);
+progressState = zeros(1, numel(tasks));
+progressQueue = parallel.pool.DataQueue;
+afterEach(progressQueue, @receiveParallelFovProgress);
 futures(1, numel(tasks)) = parallel.FevalFuture;
 for taskIndex = 1:numel(tasks)
     args = [argsBase {'ROISelect'} {tasks(taskIndex).roiSelect} ...
         {'ProgressFOVIndex'} {tasks(taskIndex).fovPosition} ...
         {'ProgressFOVTotal'} {numel(fovIdx)}];
+    taskInfo = struct('taskIndex', taskIndex, 'fovIndex', tasks(taskIndex).fovIndex, ...
+        'fovPosition', tasks(taskIndex).fovPosition, 'fovTotal', numel(fovIdx));
     futures(taskIndex) = parfeval(pool, @roiExtract.extractFovTask, 1, ...
-        tasks(taskIndex).fov, shallowObj.io, shallowObj.projectId, args, threadsPerFov);
+        tasks(taskIndex).fov, shallowObj.io, shallowObj.projectId, args, ...
+        threadsPerFov, progressQueue, taskInfo);
 end
 
 for completedCount = 1:numel(tasks)
@@ -404,6 +411,11 @@ for completedCount = 1:numel(tasks)
         completedCount, numel(tasks)));
     [taskIndex, fovOut] = fetchNext(futures);
     task = tasks(taskIndex);
+    progressState(taskIndex) = 1;
+    emitParallelFovProgress(taskIndex, struct( ...
+        'value', 1, 'status', 'running', 'phase', 'fov_done', ...
+        'message', sprintf('FOV %d/%d completed.', ...
+            task.fovPosition, numel(fovIdx))));
     i = task.fovIndex;
     shallowObj.fov(i) = fovOut;
     try
@@ -419,6 +431,74 @@ for completedCount = 1:numel(tasks)
     if persistOutputs && saveProgress
         try, shallowSave(shallowObj); catch, end
     end
+end
+
+    function receiveParallelFovProgress(event)
+        if ~isstruct(event)
+            return;
+        end
+        progressTaskIndex = numericStructField(event, 'taskIndex', []);
+        if isempty(progressTaskIndex) || progressTaskIndex < 1 || progressTaskIndex > numel(tasks)
+            return;
+        end
+        value = numericStructField(event, 'value', 0);
+        progressState(progressTaskIndex) = max(progressState(progressTaskIndex), max(0, min(1, value)));
+        emitParallelFovProgress(progressTaskIndex, event);
+    end
+
+    function emitParallelFovProgress(taskIndex, event)
+        completed = sum(progressState >= 1);
+        overall = mean(progressState);
+        task = tasks(taskIndex);
+        blockIndex = numericStructField(event, 'blockIndex', []);
+        blockTotal = numericStructField(event, 'blockTotal', []);
+        if ~isempty(blockIndex) && ~isempty(blockTotal) && blockTotal > 0
+            detail = sprintf('block %d/%d', blockIndex, blockTotal);
+        else
+            detail = char(string(structTextField(event, 'phase', 'working')));
+        end
+        stateText = cell(1, numel(tasks));
+        for stateIndex = 1:numel(tasks)
+            stateText{stateIndex} = sprintf('FOV %d: %d%%', ...
+                tasks(stateIndex).fovPosition, round(100 * progressState(stateIndex)));
+        end
+        message = sprintf('ROI extraction %d/%d complete | %s | update FOV %d: %s', ...
+            completed, numel(tasks), strjoin(stateText, ', '), ...
+            task.fovPosition, detail);
+        try
+            if ~isfield(ctx, 'progress') || ~isstruct(ctx.progress)
+                ctx.progress = struct();
+            end
+            ctx.progress.parallelFovProgress = progressState;
+            ctx.progress.parallelFovCount = numel(tasks);
+            ctx.progress.parallelFovCompleted = completed;
+            if exist('detecdiv_progress', 'file') == 2
+                detecdiv_progress(ctx, overall, message, 'Scope', 'parallel_fov', ...
+                    'Current', completed, 'Total', numel(tasks));
+            end
+        catch
+        end
+    end
+end
+
+function value = numericStructField(source, fieldName, fallback)
+value = fallback;
+try
+    candidate = double(source.(fieldName));
+    if isscalar(candidate) && isfinite(candidate)
+        value = candidate;
+    end
+catch
+end
+end
+
+function value = structTextField(source, fieldName, fallback)
+value = fallback;
+try
+    if isfield(source, fieldName) && ~isempty(source.(fieldName))
+        value = char(string(source.(fieldName)));
+    end
+catch
 end
 end
 

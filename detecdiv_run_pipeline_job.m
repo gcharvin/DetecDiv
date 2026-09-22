@@ -936,10 +936,10 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         % Hub runs can split roiExtract by FOV.  Each pool process owns a
         % different output folder; only the main MATLAB process saves the
         % project, so the Hub project lease remains the single writer.
-        % The default is deliberately conservative because ROI extraction
-        % is also limited by shared-storage bandwidth.
-        ctx.parallelFovWorkers = min(3, localGetPositiveInteger( ...
-            localGetField(payload.execution, 'roi_extract_parallel_fov_workers', 2), 2));
+        % Use as much FOV-level parallelism as the job contains, up to ten
+        % workers. Each worker owns a separate output folder.
+        ctx.parallelFovWorkers = min(10, localGetPositiveInteger( ...
+            localGetField(payload.execution, 'roi_extract_parallel_fov_workers', 10), 10));
         parallelThreads = localGetPositiveInteger( ...
             localGetField(payload.execution, 'roi_extract_parallel_fov_threads', []), []);
         if ~isempty(parallelThreads)
