@@ -347,6 +347,11 @@ for i = 1:numel(files)
         break;
     end
 end
+if ~found
+    error('cellLatentModel:InvalidRuntimePackage', ...
+        'Manifest-listed runtime file is absent from allowlist: %s',source);
+end
+end
 
 function found = isListedFile(files,source,target)
 source = lower(normalizePath(source));
@@ -381,11 +386,6 @@ end
 if any(diff(indices) >= 0)
     error('cellLatentModel:InvalidRuntimePackage', ...
         'generated_files array removals must be unique and descending.');
-end
-end
-if ~found
-    error('cellLatentModel:InvalidRuntimePackage', ...
-        'Manifest-listed runtime file is absent from allowlist: %s',source);
 end
 end
 

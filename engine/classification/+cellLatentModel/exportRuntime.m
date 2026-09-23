@@ -231,9 +231,12 @@ defaults.resolvedModelReleaseManifestPath = '';
 end
 
 function rewriteJsonFile(path,sourceRel,rewrites,removePointers,files)
-payload = jsondecode(fileread(path));
+sourceText = fileread(path);
+[safeText,originalKeys,safeKeys] = makeJsonObjectKeysMatlabSafe(sourceText);
+payload = jsondecode(safeText);
 for i = 1:numel(removePointers)
-    payload = applyJsonPointer(payload,removePointers{i},[],true);
+    pointer = mapJsonPointerKeys(removePointers{i},originalKeys,safeKeys);
+    payload = applyJsonPointer(payload,pointer,[],true);
 end
 for i = 1:numel(rewrites)
     pointer = textField(rewrites(i),'jsonPointer');
@@ -245,10 +248,81 @@ for i = 1:numel(rewrites)
             targetRel);
     end
     reference = relativeBundlePath(sourceRel,targetRel);
+    pointer = mapJsonPointerKeys(pointer,originalKeys,safeKeys);
     payload = applyJsonPointer(payload,pointer,reference,false);
 end
 assertNoAbsoluteJsonPaths(payload,path);
-writeJson(path,payload);
+writeJson(path,payload,originalKeys,safeKeys);
+end
+
+function [safeText,originalKeys,safeKeys] = makeJsonObjectKeysMatlabSafe(text)
+originalKeys = {};
+safeKeys = {};
+starts = zeros(0,1);
+ends = zeros(0,1);
+replacementTokens = {};
+cursor = 1;
+while cursor <= numel(text)
+    if text(cursor) ~= '"'
+        cursor = cursor + 1;
+        continue;
+    end
+    tokenStart = cursor;
+    cursor = cursor + 1;
+    while cursor <= numel(text)
+        if text(cursor) == '\'
+            cursor = cursor + 2;
+        elseif text(cursor) == '"'
+            break;
+        else
+            cursor = cursor + 1;
+        end
+    end
+    if cursor > numel(text)
+        error('cellLatentModel:InvalidRuntimePackage', ...
+            'Runtime JSON contains an unterminated string.');
+    end
+    tokenEnd = cursor;
+    next = cursor + 1;
+    while next <= numel(text) && isspace(text(next)),next = next + 1;end
+    if next <= numel(text) && text(next) == ':'
+        original = char(string(jsondecode(text(tokenStart:tokenEnd))));
+        if ~isvarname(original) || iskeyword(original)
+            at = find(strcmp(originalKeys,original),1,'first');
+            if isempty(at)
+                at = numel(originalKeys) + 1;
+                candidate = sprintf('CodexJsonKey%04d',at);
+                while contains(text,candidate) || any(strcmp(safeKeys,candidate))
+                    candidate = [candidate 'X'];
+                end
+                originalKeys{at,1} = original;
+                safeKeys{at,1} = candidate;
+            end
+            starts(end+1,1) = tokenStart; %#ok<AGROW>
+            ends(end+1,1) = tokenEnd; %#ok<AGROW>
+            replacementTokens{end+1,1} = jsonencode(safeKeys{at}); %#ok<AGROW>
+        end
+    end
+    cursor = tokenEnd + 1;
+end
+safeText = text;
+for i = numel(starts):-1:1
+    safeText = [safeText(1:starts(i)-1),replacementTokens{i}, ...
+        safeText(ends(i)+1:end)]; %#ok<AGROW>
+end
+end
+
+function pointer = mapJsonPointerKeys(pointer,originalKeys,safeKeys)
+parts = strsplit(char(string(pointer)),'/');
+for i = 2:numel(parts)
+    key = strrep(strrep(parts{i},'~1','/'),'~0','~');
+    if isempty(regexp(key,'^\d+$','once'))
+        at = find(strcmp(originalKeys,key),1,'first');
+        if ~isempty(at),key = safeKeys{at};end
+    end
+    parts{i} = strrep(strrep(key,'~','~0'),'/','~1');
+end
+pointer = strjoin(parts,'/');
 end
 
 function tf = isAllowlistedDirectory(files,target)
@@ -284,14 +358,17 @@ for i = 1:numel(hashes)
 end
 if ~isempty(hashes)
     source = bundlePath(stageRoot,files(index).targetPath);
-    payload = jsondecode(fileread(source));
+    sourceText = fileread(source);
+    [safeText,originalKeys,safeKeys] = makeJsonObjectKeysMatlabSafe(sourceText);
+    payload = jsondecode(safeText);
     for i = 1:numel(hashes)
-        pointer = textField(hashes(i),'jsonPointer');
+        pointer = mapJsonPointerKeys( ...
+            textField(hashes(i),'jsonPointer'),originalKeys,safeKeys);
         target = bundlePath(stageRoot, ...
             strrep(textField(hashes(i),'targetPath'),'\','/'));
         payload = applyJsonPointer(payload,pointer,sha256File(target),false);
     end
-    writeJson(source,payload);
+    writeJson(source,payload,originalKeys,safeKeys);
 end
 state(index) = 2;
 end
@@ -406,8 +483,14 @@ relative = strjoin(parts,'/');
 if isempty(relative),relative='.';end
 end
 
-function writeJson(path,value)
+function writeJson(path,value,originalKeys,safeKeys)
 text = jsonencode(value,'PrettyPrint',true);
+if nargin >= 4
+    for i = 1:numel(originalKeys)
+        text = strrep(text,jsonencode(safeKeys{i}), ...
+            jsonencode(originalKeys{i}));
+    end
+end
 fid = fopen(path,'w');
 if fid < 0
     error('cellLatentModel:RuntimeExportWriteFailed', ...
