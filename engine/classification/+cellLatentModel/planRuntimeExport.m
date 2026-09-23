@@ -55,7 +55,8 @@ try
             double(declaration.schemaVersion) ~= 1
         addBlocker('runtimePackage.schemaVersion must be 1.');
     end
-    if ~isfield(declaration,'files') || ~isstruct(declaration.files) || ...
+    if ~isfield(declaration,'files') || ...
+            ~(isstruct(declaration.files) || iscell(declaration.files)) || ...
             isempty(declaration.files)
         addBlocker('runtimePackage.files must list every runtime file.');
     end
@@ -72,7 +73,15 @@ try
     targetKeys = strings(0,1);
     planned = repmat(emptyFile(),0,1);
     for i = 1:numel(files)
-        entry = files(i);
+        if iscell(files)
+            entry = files{i};
+            if ~isstruct(entry) || ~isscalar(entry)
+                addBlocker('runtimePackage.files{%d} must be one object.',i);
+                continue;
+            end
+        else
+            entry = files(i);
+        end
         sourceRel = textField(entry,'sourcePath');
         targetRel = textField(entry,'targetPath');
         expected = lower(textField(entry,'sha256'));

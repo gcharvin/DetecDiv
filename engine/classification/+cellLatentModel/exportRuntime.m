@@ -171,7 +171,7 @@ keys = {'modelPath','compositeManifestPath','trackingCheckpointDir', ...
 for i = 1:numel(keys),runtimeClassi.executionParam.(keys{i})='';end
 runtimeClassi.roi = roi('',[]);
 runtimeClassi.trainingset = [];
-runtimeClassi.trainingParam = struct();
+runtimeClassi.trainingParam = [];
 runtimeClassi.trainingFun = '';
 runtimeClassi.channelName = '';
 runtimeClassi.channelName2 = '';
