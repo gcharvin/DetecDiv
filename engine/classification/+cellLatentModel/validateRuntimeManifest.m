@@ -32,7 +32,7 @@ for i = 1:numel(files)
     path = fullfile(bundleRoot,strrep(rel,'/',filesep));
     assertInsideRoot(bundleRoot,path);
     if ~isfile(path),invalid('Bundle file is missing: %s',rel);end
-    assertRuntimeFilePath(rel,classifierId);
+    assertRuntimeFilePath(rel,classifierId,releaseId);
     expectedBytes = numericField(files(i),'bytes',-1);
     expectedHash = lower(textField(files(i),'sha256'));
     info = dir(path);
@@ -65,6 +65,7 @@ release = readJson(releasePath);
 if ~strcmp(textField(release,'releaseId'),releaseId)
     invalid('Release manifest and runtime manifest IDs differ.');
 end
+assertNoAbsolutePaths(release,releasePath);
 verifyReleaseArtifacts(release,fileparts(releasePath),bundleRoot);
 
 classifierSnapshot = fullfile(bundleRoot,'classifier',classifierId, ...
@@ -87,7 +88,7 @@ report = struct('valid',true,'bundleRoot',string(bundleRoot), ...
     'fileCount',numel(files),'totalBytes',totalBytes);
 end
 
-function assertRuntimeFilePath(rel,classifierId)
+function assertRuntimeFilePath(rel,classifierId,releaseId)
 parts = lower(string(strsplit(strrep(rel,'\','/'),'/')));
 forbidden = ["trainingdataset","training_data","training-data","datasets", ...
     "detecdiv_projects","annotations","roi","rois","ground_truth"];
@@ -95,13 +96,24 @@ if any(ismember(parts,forbidden))
     invalid('Training or annotation payload is forbidden in runtime bundle: %s',rel);
 end
 [~,~,ext] = fileparts(rel);
+normalized = lower(strrep(normalizePath(rel),'\','/'));
+parts = strsplit(normalized,'/');
+isReleaseArtifact = numel(parts) >= 4 && ...
+    strcmp(parts{1},'releases') && strcmpi(parts{2},releaseId) && ...
+    strcmp(parts{3},'artifacts');
 if strcmpi(ext,'.mat')
     expected = ['classifier/' classifierId '/' classifierId '_classification.mat'];
-    if ~strcmpi(normalizePath(rel),normalizePath(expected))
-        invalid('Only the reduced classifier snapshot may be a MAT file: %s',rel);
+    if ~strcmpi(normalizePath(rel),normalizePath(expected)) && ...
+            ~isReleaseArtifact
+        invalid(['MAT files are allowed only for the reduced classifier ' ...
+            'snapshot or an explicit release artifact: %s'],rel);
+    end
+elseif strcmpi(ext,'.npz')
+    if ~isReleaseArtifact
+        invalid('NPZ files are allowed only as explicit release artifacts: %s',rel);
     end
 elseif ~any(strcmpi(ext,{'.json','.py','.pt','.pth','.pkl','.pickle', ...
-        '.yaml','.yml','.toml','.ini','.txt','.md','.cfg'}))
+        '.yaml','.yml','.toml','.ini','.txt','.md','.cfg','.joblib'}))
     invalid('Unsupported file type in runtime bundle: %s',rel);
 end
 end
@@ -238,6 +250,28 @@ end
 prefix = [canonicalRoot filesep];
 if ~startsWith(lower(canonicalPath),lower(prefix))
     invalid('Bundle path escapes its root: %s',path);
+end
+end
+
+function assertNoAbsolutePaths(value,label)
+if isstruct(value)
+    for i = 1:numel(value)
+        keys = fieldnames(value(i));
+        for j = 1:numel(keys)
+            assertNoAbsolutePaths(value(i).(keys{j}),label);
+        end
+    end
+elseif iscell(value)
+    for i = 1:numel(value)
+        assertNoAbsolutePaths(value{i},label);
+    end
+elseif ischar(value) || (isstring(value) && isscalar(value))
+    text = char(string(value));
+    if ~isempty(regexp(text,'(^|[\s=:])([A-Za-z]:[\\/]|\\\\|/(?!/))', ...
+            'once'))
+        invalid('Absolute host path remains in runtime release %s: %s', ...
+            label,text);
+    end
 end
 end
 

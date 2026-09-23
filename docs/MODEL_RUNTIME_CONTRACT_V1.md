@@ -35,13 +35,19 @@ and any JSON path rewrite/removal is declared. Directory globs, recursive
 copy rules, and implicit “copy the classifier folder” rules are forbidden.
 Artifact targets must be under `releases/<release-id>/artifacts/`; every
 manifest path rewrite names a JSON Pointer and another allowlisted target.
+Directory-valued references may target an allowlisted directory containing
+declared files. Nested checksum fields may use `hashes` references to exact
+allowlisted files; the exporter recalculates them after rewriting child JSON
+files and rejects checksum cycles.
 An absolute provenance/training path is omitted with an explicit JSON Pointer
 removal, never by broad search-and-replace.
 
 The exporter checks the existing release checksums first, then checks every
 allowlisted source file and target path. It rejects image/ROI/training-data
-extensions, unsafe paths, undeclared artifacts, missing files, duplicate
-targets, and unhandled references. Only after preflight succeeds does it
+payloads, unsafe paths, undeclared artifacts, missing files, duplicate
+targets, and unhandled references. Explicit `.mat` and `.npz` files are
+permitted only as declared release artifacts; the only other `.mat` remains
+the reduced classifier snapshot. Only after preflight succeeds does it
 write to a fresh staging directory and atomically publish the immutable
 bundle. The bundle contains a reduced `*_classification.mat` snapshot with
 ROIs, training selection, dataset splits, and training profiles removed.
@@ -53,8 +59,10 @@ The runtime bundle has one classifier module at
 runtime file must live under
 `releases/<release-id>/artifacts/`; the exported release points to that
 folder using paths relative to its own directory. Paths inside those
-manifests are bundle-relative. No training ROI, source project, full
-experiment, or mutable development repository is included.
+manifests are bundle-relative. Workstation-only source metadata, code
+provenance, and supersession links are omitted from the exported release
+manifest. No training ROI, source project, full experiment, or mutable
+development repository is included.
 
 ## Legacy sources and multi-domain training
 

@@ -46,11 +46,17 @@ for i = 1:numel(plan.files)
             'Could not copy %s: %s',entry.sourcePath,msg);
     end
     [~,~,ext] = fileparts(target);
-    if strcmpi(ext,'.json')
+    hasJsonOperations = ~isempty(entry.rewrites) || ...
+        ~isempty(entry.hashes) || ~isempty(entry.removeJsonPointers);
+    if strcmpi(ext,'.json') && hasJsonOperations
         rewriteJsonFile(target,entry.targetPath,entry.rewrites, ...
             entry.removeJsonPointers,plan.files);
     end
-    runtimeFiles(end+1,1) = fileRecord(stageRoot,entry.targetPath); %#ok<AGROW>
+end
+applyHashReferences(stageRoot,plan.files);
+for i = 1:numel(plan.files)
+    runtimeFiles(end+1,1) = fileRecord(stageRoot, ...
+        plan.files(i).targetPath); %#ok<AGROW>
 end
 
 release = jsondecode(fileread(plan.releasePath));
@@ -60,6 +66,9 @@ release.artifacts = relocateArtifacts(release,plan.artifactTargets, ...
 if isfield(release,'runtimePackage'),release = rmfield(release,'runtimePackage');end
 if isfield(release,'sourcePaths'),release = rmfield(release,'sourcePaths');end
 if isfield(release,'code'),release = rmfield(release,'code');end
+% Supersession links point back to workstation release manifests. They are
+% useful in the authoring channel, but are not part of an inference bundle.
+if isfield(release,'supersedes'),release = rmfield(release,'supersedes');end
 releaseRel = fullfile('releases',plan.releaseId,'release.json');
 releasePath = bundlePath(stageRoot,releaseRel);
 ensureParent(releasePath);
@@ -230,15 +239,61 @@ for i = 1:numel(rewrites)
     pointer = textField(rewrites(i),'jsonPointer');
     targetRel = strrep(textField(rewrites(i),'targetPath'),'\','/');
     idx = find(strcmpi({files.targetPath},targetRel),1,'first');
-    if isempty(idx)
+    if isempty(idx) && ~isAllowlistedDirectory(files,targetRel)
         error('cellLatentModel:InvalidRuntimePackage', ...
-            'JSON rewrite target is not in the runtime allowlist: %s',targetRel);
+            'JSON rewrite target is not an allowlisted file or directory: %s', ...
+            targetRel);
     end
     reference = relativeBundlePath(sourceRel,targetRel);
     payload = applyJsonPointer(payload,pointer,reference,false);
 end
 assertNoAbsoluteJsonPaths(payload,path);
 writeJson(path,payload);
+end
+
+function tf = isAllowlistedDirectory(files,target)
+target = lower(strrep(char(string(target)),'\','/'));
+prefix = [target '/'];
+known = lower(strrep({files.targetPath},'\','/'));
+tf = any(startsWith(known,prefix));
+end
+
+function applyHashReferences(stageRoot,files)
+state = zeros(numel(files),1);
+for i = 1:numel(files)
+    state = applyHashReferencesForFile(i,stageRoot,files,state);
+end
+end
+
+function state = applyHashReferencesForFile(index,stageRoot,files,state)
+if state(index) == 2,return;end
+if state(index) == 1
+    error('cellLatentModel:InvalidRuntimePackage', ...
+        'Runtime JSON hash references contain a cycle.');
+end
+state(index) = 1;
+hashes = files(index).hashes;
+for i = 1:numel(hashes)
+    targetRel = strrep(textField(hashes(i),'targetPath'),'\','/');
+    targetIndex = find(strcmpi({files.targetPath},targetRel),1,'first');
+    if isempty(targetIndex)
+        error('cellLatentModel:InvalidRuntimePackage', ...
+            'JSON hash target is not in the runtime allowlist: %s',targetRel);
+    end
+    state = applyHashReferencesForFile(targetIndex,stageRoot,files,state);
+end
+if ~isempty(hashes)
+    source = bundlePath(stageRoot,files(index).targetPath);
+    payload = jsondecode(fileread(source));
+    for i = 1:numel(hashes)
+        pointer = textField(hashes(i),'jsonPointer');
+        target = bundlePath(stageRoot, ...
+            strrep(textField(hashes(i),'targetPath'),'\','/'));
+        payload = applyJsonPointer(payload,pointer,sha256File(target),false);
+    end
+    writeJson(source,payload);
+end
+state(index) = 2;
 end
 
 function payload = applyJsonPointer(payload,pointer,value,removeValue)

@@ -29,6 +29,15 @@
         "targetPath": { "type": "string", "minLength": 1 }
       }
     },
+    "hashReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jsonPointer", "targetPath"],
+      "properties": {
+        "jsonPointer": { "type": "string", "pattern": "^/" },
+        "targetPath": { "type": "string", "minLength": 1 }
+      }
+    },
     "file": {
       "type": "object",
       "additionalProperties": false,
@@ -41,6 +50,11 @@
         "rewrites": {
           "type": "array",
           "items": { "$ref": "#/$defs/rewrite" },
+          "default": []
+        },
+        "hashes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hashReference" },
           "default": []
         },
         "removeJsonPointers": {

@@ -132,6 +132,7 @@ try
         item.sha256 = expected;
         item.bytes = observedBytes;
         item.rewrites = getStructArray(entry,'rewrites');
+        item.hashes = getStructArray(entry,'hashes');
         item.removeJsonPointers = getCellText(entry,'removeJsonPointers');
         validateJsonOperations(item);
         planned(end+1,1) = item; %#ok<AGROW>
@@ -233,12 +234,31 @@ for i = 1:numel(files)
     rewrites = files(i).rewrites;
     for j = 1:numel(rewrites)
         target = textField(rewrites(j),'targetPath');
-        if ~any(known == lower(string(normalizePath(target))))
+        if ~any(known == lower(string(normalizePath(target)))) && ...
+                ~isAllowlistedDirectory(files,target)
             error('cellLatentModel:InvalidRuntimePackage', ...
-                'JSON rewrite target is not in runtimePackage.files: %s',target);
+                'JSON rewrite target is not an allowlisted file or directory: %s', ...
+                target);
         end
     end
 end
+for i = 1:numel(files)
+    hashes = files(i).hashes;
+    for j = 1:numel(hashes)
+        target = textField(hashes(j),'targetPath');
+        if ~any(known == lower(string(normalizePath(target))))
+            error('cellLatentModel:InvalidRuntimePackage', ...
+                'JSON hash target is not an allowlisted file: %s',target);
+        end
+    end
+end
+end
+
+function tf = isAllowlistedDirectory(files,target)
+target = lower(strrep(normalizePath(target),'\','/'));
+prefix = string([target '/']);
+known = lower(string({files.targetPath}));
+tf = any(startsWith(known,prefix));
 end
 
 function validateDirectoryManifestCoverage(release,files,targets,releasePath)
@@ -326,10 +346,21 @@ end
 
 function validateJsonOperations(item)
 [~,~,ext] = fileparts(item.targetPath);
-if (~isempty(item.rewrites) || ~isempty(item.removeJsonPointers)) && ...
+if (~isempty(item.rewrites) || ~isempty(item.hashes) || ...
+        ~isempty(item.removeJsonPointers)) && ...
         ~strcmpi(ext,'.json')
     error('cellLatentModel:InvalidRuntimePackage', ...
         'JSON rewrites can only target JSON files: %s',item.targetPath);
+end
+
+for i = 1:numel(item.hashes)
+    hashPointer = textField(item.hashes(i),'jsonPointer');
+    target = textField(item.hashes(i),'targetPath');
+    if isempty(hashPointer) || hashPointer(1) ~= '/' || ...
+            ~safeRelativePath(target)
+        error('cellLatentModel:InvalidRuntimePackage', ...
+            'Invalid JSON hash reference in %s.',item.targetPath);
+    end
 end
 
 for i = 1:numel(item.rewrites)
@@ -352,7 +383,8 @@ end
 
 function item = emptyFile()
 item = struct('sourcePath','','sourceRelativePath','','targetPath','', ...
-    'sha256','','bytes',0,'rewrites',struct([]),'removeJsonPointers',{{}});
+    'sha256','','bytes',0,'rewrites',struct([]),'hashes',struct([]), ...
+    'removeJsonPointers',{{}});
 end
 
 function value = resolveSource(value,root)
@@ -382,7 +414,7 @@ end
 
 function tf = allowedRuntimeExtension(ext)
 allowed = {'.json','.py','.pt','.pth','.pkl','.pickle','.yaml','.yml', ...
-    '.toml','.ini','.txt','.md','.cfg'};
+    '.toml','.ini','.txt','.md','.cfg','.npz','.mat','.joblib'};
 tf = any(strcmpi(ext,allowed));
 end
 
