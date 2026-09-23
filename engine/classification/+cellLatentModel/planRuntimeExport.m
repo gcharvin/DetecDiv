@@ -295,11 +295,26 @@ for i = 1:numel(release.artifacts)
                 'runtimeCodeRoot manifest has no generated_files list.');
         end
         list = payload.generated_files;
+        manifestIndex = find(strcmpi({files.targetPath},targetManifest),1,'first');
+        removals = files(manifestIndex).removeJsonPointers;
+        removalIndices = validateGeneratedFileRemovals(removals,numel(list));
         for j = 1:numel(list)
             rel = textField(list(j),'path');
-            requireListedFile(files,fullfile(fileparts(manifestPath),rel), ...
-                fullfile(fileparts(targetManifest),rel), ...
-                textField(list(j),'sha256'));
+            sourceChild = fullfile(fileparts(manifestPath),rel);
+            targetChild = fullfile(fileparts(targetManifest),rel);
+            listed = isListedFile(files,sourceChild,targetChild);
+            removed = any(removalIndices == j-1);
+            if listed && removed
+                error('cellLatentModel:InvalidRuntimePackage', ...
+                    'A runtime code file cannot be both included and removed: %s',rel);
+            elseif listed
+                requireListedFile(files,sourceChild,targetChild, ...
+                    textField(list(j),'sha256'));
+            elseif ~removed
+                error('cellLatentModel:InvalidRuntimePackage', ...
+                    ['Runtime code manifest entry is neither allowlisted nor ' ...
+                    'explicitly removed: %s'],rel);
+            end
         end
     else
         [names,hashes] = readFlatHashMap(manifestPath,'files');
@@ -331,6 +346,42 @@ for i = 1:numel(files)
         found = true;
         break;
     end
+end
+
+function found = isListedFile(files,source,target)
+source = lower(normalizePath(source));
+target = lower(normalizePath(target));
+found = false;
+for i = 1:numel(files)
+    if strcmp(lower(normalizePath(files(i).sourcePath)),source) && ...
+            strcmp(lower(normalizePath(files(i).targetPath)),target)
+        found = true;
+        return;
+    end
+end
+end
+
+function indices = validateGeneratedFileRemovals(removals,count)
+indices = zeros(0,1);
+for i = 1:numel(removals)
+    pointer = char(string(removals{i}));
+    if ~startsWith(pointer,'/generated_files/'),continue;end
+    token = regexp(pointer,'^/generated_files/(\d+)$','tokens','once');
+    if isempty(token)
+        error('cellLatentModel:InvalidRuntimePackage', ...
+            'Invalid runtime-code manifest removal pointer: %s',pointer);
+    end
+    index = str2double(token{1});
+    if ~isfinite(index) || index < 0 || index >= count || index ~= floor(index)
+        error('cellLatentModel:InvalidRuntimePackage', ...
+            'Runtime-code manifest removal index is out of range: %s',pointer);
+    end
+    indices(end+1,1) = index; %#ok<AGROW>
+end
+if any(diff(indices) >= 0)
+    error('cellLatentModel:InvalidRuntimePackage', ...
+        'generated_files array removals must be unique and descending.');
+end
 end
 if ~found
     error('cellLatentModel:InvalidRuntimePackage', ...

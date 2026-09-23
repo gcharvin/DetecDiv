@@ -324,11 +324,7 @@ if isstruct(node) && isscalar(node)
 elseif isstruct(node) && numel(node)>1
     at = pointerIndex(key,numel(node),pointer);
     if last
-        if removeValue
-            error('cellLatentModel:InvalidRuntimePackage', ...
-                'Removing an array element is unsupported: %s',pointer);
-        end
-        node(at)=value;
+        if removeValue,node(at)=[];else,node(at)=value;end
     else
         node(at)=applyAt(node(at),parts,index+1,value,removeValue,pointer);
     end
