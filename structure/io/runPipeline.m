@@ -241,7 +241,7 @@ end
 try
     info = select_and_load_conda_env(args{:});
 catch ME
-    if contains(ME.message, 'Unknown option "mode"')
+    if cfg.usePreferences && contains(ME.message, 'Unknown option "mode"')
         info = select_and_load_conda_env('debug', true, 'backend', cfg.backend);
     else
         rethrow(ME);

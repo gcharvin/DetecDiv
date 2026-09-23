@@ -946,6 +946,15 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.parallelFovThreads = parallelThreads;
         end
     end
+    % Hub jobs carry their Python choice in run_request. Worker processes
+    % share one MATLAB prefdir, so never load or update its GUI preferences.
+    if ~isfield(ctx, 'exec') || ~isstruct(ctx.exec)
+        ctx.exec = struct();
+    end
+    if ~isfield(ctx.exec, 'python') || ~isstruct(ctx.exec.python)
+        ctx.exec.python = struct();
+    end
+    ctx.exec.python.usePreferences = false;
 end
 
 function intent = localNormalizeRunIntent(value)
