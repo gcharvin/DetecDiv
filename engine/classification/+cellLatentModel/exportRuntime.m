@@ -161,7 +161,10 @@ runtimeClassi.executionParam = cellLatentModel.utils.defaultExecutionParam();
 runtimeClassi.executionParam = overlay(runtimeClassi.executionParam,release.executionDefaults);
 runtimeClassi.executionParam.modelSource = 'trained';
 runtimeClassi.executionParam.modelUpdatePolicy = 'follow_promoted';
-runtimeClassi.executionParam.modelReleaseChannelPath = '';
+% Keep the runtime snapshot relocatable across Windows/Linux workers. The
+% classifier loader resolves this relative to its rebased classifier path.
+runtimeClassi.executionParam.modelReleaseChannelPath = ...
+    '../../releases/detecdiv_stable.json';
 runtimeClassi.executionParam.resolvedModelReleaseId = '';
 runtimeClassi.executionParam.resolvedModelReleaseManifestPath = '';
 keys = {'modelPath','compositeManifestPath','trackingCheckpointDir', ...

@@ -74,6 +74,21 @@ if ~isfile(classifierSnapshot)
     invalid('Reduced runtime classifier snapshot is missing.');
 end
 verifyReducedClassifierSnapshot(classifierSnapshot);
+loadedClassifier = load(classifierSnapshot,'classiObj');
+% Resolve from the bundle root being validated. During export this may be the
+% staging directory, while the embedded classifier path already names the
+% final destination that will receive the staged bundle.
+loadedClassifier.classiObj.path = fullfile(bundleRoot,'classifier',classifierId);
+try
+    resolvedClassifier = cellLatentModel.resolvePromotedRelease( ...
+        loadedClassifier.classiObj,loadedClassifier.classiObj.executionParam);
+catch ME
+    invalid('Runtime classifier cannot resolve its packaged release: %s', ...
+        ME.message);
+end
+if ~strcmp(textField(resolvedClassifier,'resolvedModelReleaseId'),releaseId)
+    invalid('Runtime classifier resolves a different promoted release.');
+end
 required = {'releases/detecdiv_stable.json', ...
     ['releases/' strrep(relativeRelease,'\','/')], ...
     ['classifier/' classifierId '/' classifierId '_classification.mat']};
@@ -332,5 +347,5 @@ value = regexprep(value,'/+', '/');
 end
 
 function invalid(varargin)
-error('cellLatentModel:InvalidRuntimeBundle',sprintf(varargin{:}));
+error('cellLatentModel:InvalidRuntimeBundle',varargin{:});
 end
