@@ -21,6 +21,8 @@ classdef roiExtractGUI < matlab.apps.AppBase
         ScaleEditField                  matlab.ui.control.NumericEditField
         CropDriftEditFieldLabel         matlab.ui.control.Label
         CropDriftEditField              matlab.ui.control.NumericEditField
+        ExecutionModeDropDownLabel      matlab.ui.control.Label
+        ExecutionModeDropDown           matlab.ui.control.DropDown
         ExtendCheckBox                  matlab.ui.control.CheckBox
         ForceChannelNamesCheckBox       matlab.ui.control.CheckBox
         FovTable                        matlab.ui.control.Table
@@ -84,6 +86,8 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.DriftMaxShiftEditField.Value = defaultNumeric(app, params.driftMaxShift, 20);
             app.ScaleEditField.Value = defaultNumeric(app, params.scale, 1);
             app.CropDriftEditField.Value = defaultNumeric(app, params.cropDrift, 1);
+            app.ExecutionModeDropDown.Value = validateChoice(app, ...
+                char(string(params.executionMode)), app.ExecutionModeDropDown.Items, 'parallel');
             app.ExtendCheckBox.Value = logical(defaultLogical(app, params.extend, false));
             app.ForceChannelNamesCheckBox.Value = logical(defaultLogical(app, params.forceChannelNames, true));
             populateFovTable(app, params);
@@ -287,6 +291,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             params.driftMaxShift = app.DriftMaxShiftEditField.Value;
             params.scale = app.ScaleEditField.Value;
             params.cropDrift = app.CropDriftEditField.Value;
+            params.executionMode = char(string(app.ExecutionModeDropDown.Value));
             params.extend = logical(app.ExtendCheckBox.Value);
             params.forceChannelNames = logical(app.ForceChannelNamesCheckBox.Value);
 
@@ -341,7 +346,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
 
             app.MainLayout = uigridlayout(app.UIFigure);
             app.MainLayout.ColumnWidth = {170, '1x'};
-            app.MainLayout.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 170, 30, 80, 44};
+            app.MainLayout.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 170, 30, 80, 44};
             app.MainLayout.Padding = [12 12 12 12];
             app.MainLayout.RowSpacing = 8;
             app.MainLayout.ColumnSpacing = 12;
@@ -433,14 +438,26 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.CropDriftEditField.Layout.Row = 10;
             app.CropDriftEditField.Layout.Column = 2;
 
+            app.ExecutionModeDropDownLabel = uilabel(app.MainLayout);
+            app.ExecutionModeDropDownLabel.Text = 'Execution mode';
+            app.ExecutionModeDropDownLabel.Layout.Row = 11;
+            app.ExecutionModeDropDownLabel.Layout.Column = 1;
+
+            app.ExecutionModeDropDown = uidropdown(app.MainLayout);
+            app.ExecutionModeDropDown.Items = {'parallel', 'sequential'};
+            app.ExecutionModeDropDown.Tooltip = ...
+                'Parallel uses independent MATLAB processes for selected FOVs when the run target provides capacity.';
+            app.ExecutionModeDropDown.Layout.Row = 11;
+            app.ExecutionModeDropDown.Layout.Column = 2;
+
             app.ExtendCheckBox = uicheckbox(app.MainLayout);
             app.ExtendCheckBox.Text = 'Extend existing ROI data';
-            app.ExtendCheckBox.Layout.Row = 11;
+            app.ExtendCheckBox.Layout.Row = 12;
             app.ExtendCheckBox.Layout.Column = 1;
 
             app.ForceChannelNamesCheckBox = uicheckbox(app.MainLayout);
             app.ForceChannelNamesCheckBox.Text = 'Force channel names';
-            app.ForceChannelNamesCheckBox.Layout.Row = 11;
+            app.ForceChannelNamesCheckBox.Layout.Row = 12;
             app.ForceChannelNamesCheckBox.Layout.Column = 2;
 
             app.FovTable = uitable(app.MainLayout);
@@ -449,7 +466,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.FovTable.RowName = {};
             app.FovTable.ColumnWidth = {70, '1x', 80, 90};
             app.FovTable.CellEditCallback = createCallbackFcn(app, @FovTableCellEdit, true);
-            app.FovTable.Layout.Row = 12;
+            app.FovTable.Layout.Row = 13;
             app.FovTable.Layout.Column = [1 2];
 
             app.FovButtonsLayout = uigridlayout(app.MainLayout);
@@ -457,7 +474,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.FovButtonsLayout.RowHeight = {24};
             app.FovButtonsLayout.Padding = [0 0 0 0];
             app.FovButtonsLayout.ColumnSpacing = 8;
-            app.FovButtonsLayout.Layout.Row = 13;
+            app.FovButtonsLayout.Layout.Row = 14;
             app.FovButtonsLayout.Layout.Column = [1 2];
 
             app.SelectAllButton = uibutton(app.FovButtonsLayout, 'push');
@@ -479,7 +496,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
                 'Channels: blank or all = all channels; otherwise comma-separated names or numeric expression.', ...
                 'Select exactly which FOVs will be extracted in the table.', ...
                 'Drift channel: leave blank to use package default.'};
-            app.DescriptionTextArea.Layout.Row = 14;
+            app.DescriptionTextArea.Layout.Row = 15;
             app.DescriptionTextArea.Layout.Column = [1 2];
 
             app.ButtonLayout = uigridlayout(app.MainLayout);
@@ -487,7 +504,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.ButtonLayout.RowHeight = {30};
             app.ButtonLayout.Padding = [0 0 0 0];
             app.ButtonLayout.ColumnSpacing = 10;
-            app.ButtonLayout.Layout.Row = 15;
+            app.ButtonLayout.Layout.Row = 16;
             app.ButtonLayout.Layout.Column = [1 2];
 
             app.RunNowButton = uibutton(app.ButtonLayout, 'push');

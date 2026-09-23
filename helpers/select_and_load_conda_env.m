@@ -16,6 +16,7 @@ function info = select_and_load_conda_env(varargin)
 %   'envName' custom conda env name when mode='custom'
 %   'envPath' custom conda env path hint when mode='custom'
 %   'remember' (logical) persist the provided selection
+%   'usePreferences' (logical, default true) read/write per-user preferences
 %   'backend' ('local'|'windows'|'wsl', default 'local')
 %   'wslDistro' WSL distribution (default from canonical recipe)
 %   'wslEnvPath' Linux venv path (default ~/venvs/detecdiv_python)
@@ -24,6 +25,7 @@ function info = select_and_load_conda_env(varargin)
     % -------- Parse options --------
     opts = struct('debug', true, 'reset', false, ...
         'mode', "", 'envName', "", 'envPath', "", 'remember', [], ...
+        'usePreferences', true, ...
         'backend', "local", 'wslDistro', "", 'wslEnvPath', "");
     if nargin == 1 && (strcmpi(string(varargin{1}), "reset"))
         opts.reset = true;
@@ -41,6 +43,7 @@ function info = select_and_load_conda_env(varargin)
                 case "envname", opts.envName = string(val);
                 case "envpath", opts.envPath = string(val);
                 case "remember", opts.remember = logical(val);
+                case "usepreferences", opts.usePreferences = logical(val);
                 case "backend", opts.backend = string(val);
                 case "wsldistro", opts.wslDistro = string(val);
                 case "wslenvpath", opts.wslEnvPath = string(val);
@@ -64,21 +67,35 @@ function info = select_and_load_conda_env(varargin)
     end
 
     % -------- 0) Selection mode (default/custom) --------
-    userprefs = dd_loadUserPrefs();
+    persistPreferences = false;
+    if opts.usePreferences
+        [userprefs, preferencesReadable] = dd_loadUserPrefs();
+        persistPreferences = preferencesReadable || doReset;
+    else
+        userprefs = struct();
+    end
     if doReset
         userprefs = clearRememberedCondaSelection(userprefs);
-        dd_saveUserPrefs(userprefs);
+        if persistPreferences
+            dd_saveUserPrefs(userprefs);
+        end
         fprintf('[Detecdiv] Reset requested: remembered env choice cleared.\n');
     end
 
     forcedSelection = buildForcedSelection(opts);
     if isempty(forcedSelection)
-        [selection, userprefs] = resolveCondaSelection(userprefs, debug);
+        if ~opts.usePreferences
+            error('select_and_load_conda_env:ModeRequired', ...
+                'mode is required when usePreferences is false.');
+        end
+        [selection, userprefs] = resolveCondaSelection(userprefs, debug, persistPreferences);
     else
         selection = forcedSelection;
         userprefs = persistForcedSelection(userprefs, selection);
     end
-    dd_saveUserPrefs(userprefs);
+    if persistPreferences
+        dd_saveUserPrefs(userprefs);
+    end
     fprintf('[Detecdiv] Selected mode: %s', char(selection.mode));
     if selection.mode == "custom"
         fprintf(' | env=%s', char(selection.envName));
@@ -128,7 +145,7 @@ function info = select_and_load_conda_env(varargin)
     % -------- 2) Resolve conda command (prefs/path) --------
     fprintf('[Detecdiv] Step 1/5: Resolving conda...\n');
     try
-        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug);
+        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug, persistPreferences);
     catch ME
         if selection.mode == "custom"
             uiErrorAndThrow( ...
@@ -138,7 +155,9 @@ function info = select_and_load_conda_env(varargin)
             rethrow(ME);
         end
     end
-    dd_saveUserPrefs(userprefs);
+    if persistPreferences
+        dd_saveUserPrefs(userprefs);
+    end
     fprintf('[Detecdiv] Conda command: %s\n', char(condaCmd));
 
     if selection.mode == "custom"
@@ -751,7 +770,7 @@ userprefs.conda.selectionEnvName = "detecdiv_python";
 userprefs.conda.selectionEnvPath = "";
 end
 
-function [selection, userprefs] = resolveCondaSelection(userprefs, debug)
+function [selection, userprefs] = resolveCondaSelection(userprefs, debug, persistPreferences)
 selection = struct( ...
     'mode', "default", ...
     'envName', "detecdiv_python", ...
@@ -796,7 +815,7 @@ selection.remember = remember;
 
 if mode == "custom"
     try
-        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug);
+        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug, persistPreferences);
     catch ME
         uiErrorAndThrow( ...
             "Conda was not found. Cannot list conda environments.", ...
@@ -1116,17 +1135,26 @@ function [data, out, src] = getCondaEnvs(debug, condaCmd)
     end
 end
 
-function userprefs = dd_loadUserPrefs()
+function [userprefs, readable] = dd_loadUserPrefs()
     folder = fullfile(prefdir,'Detecdiv');
     fle = fullfile(folder,'userprefs.mat');
     if ~exist(folder,'dir'), mkdir(folder); end
 
+    readable = true;
     if exist(fle,'file')
-        S = load(fle);
+        try
+            S = load(fle);
+        catch ME
+            warning('select_and_load_conda_env:InvalidPreferences', ...
+                'Ignoring unreadable preferences file %s: %s', fle, ME.message);
+            S = struct();
+            readable = false;
+        end
         if isfield(S,'userprefs') && isstruct(S.userprefs)
             userprefs = S.userprefs;
         else
             userprefs = struct();
+            readable = false;
         end
     else
         userprefs = struct();
@@ -1159,10 +1187,22 @@ function dd_saveUserPrefs(userprefs)
     folder = fullfile(prefdir,'Detecdiv');
     fle = fullfile(folder,'userprefs.mat');
     if ~exist(folder,'dir'), mkdir(folder); end
-    save(fle,'userprefs');
+    tempFile = fullfile(folder, ['userprefs.' char(java.util.UUID.randomUUID) '.tmp.mat']);
+    try
+        save(tempFile,'userprefs');
+        [ok, message] = movefile(tempFile, fle, 'f');
+        if ~ok
+            error('select_and_load_conda_env:PreferencesSaveFailed', '%s', message);
+        end
+    catch ME
+        if exist(tempFile,'file') == 2
+            delete(tempFile);
+        end
+        rethrow(ME);
+    end
 end
 
-function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug)
+function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug, persistPreferences)
     % Build candidate list (prefs, env vars, PATH, common locations)
     candidates = strings(0,1);
 
@@ -1242,7 +1282,9 @@ function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug)
 
     % 6) fail with actionable guidance
     userprefs.conda.lastCheck = char(datetime('now'));
-    dd_saveUserPrefs(userprefs);
+    if persistPreferences
+        dd_saveUserPrefs(userprefs);
+    end
 
     if ispc
         osExamples = [

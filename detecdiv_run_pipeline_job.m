@@ -932,7 +932,29 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         if ~isempty(cancelTokenFile)
             ctx.cancel = struct('tokenFile', cancelTokenFile);
         end
+
+        % Hub runs can split roiExtract by FOV.  Each pool process owns a
+        % different output folder; only the main MATLAB process saves the
+        % project, so the Hub project lease remains the single writer.
+        % Use as much FOV-level parallelism as the job contains, up to ten
+        % workers. Each worker owns a separate output folder.
+        ctx.parallelFovWorkers = min(10, localGetPositiveInteger( ...
+            localGetField(payload.execution, 'roi_extract_parallel_fov_workers', 10), 10));
+        parallelThreads = localGetPositiveInteger( ...
+            localGetField(payload.execution, 'roi_extract_parallel_fov_threads', []), []);
+        if ~isempty(parallelThreads)
+            ctx.parallelFovThreads = parallelThreads;
+        end
     end
+    % Hub jobs carry their Python choice in run_request. Worker processes
+    % share one MATLAB prefdir, so never load or update its GUI preferences.
+    if ~isfield(ctx, 'exec') || ~isstruct(ctx.exec)
+        ctx.exec = struct();
+    end
+    if ~isfield(ctx.exec, 'python') || ~isstruct(ctx.exec.python)
+        ctx.exec.python = struct();
+    end
+    ctx.exec.python.usePreferences = false;
 end
 
 function intent = localNormalizeRunIntent(value)
@@ -1550,6 +1572,17 @@ function txt = localGetText(S, pathParts, defaultVal)
         txt = char(string(cur));
     catch
         txt = defaultVal;
+    end
+end
+
+function value = localGetPositiveInteger(candidate, defaultValue)
+    value = defaultValue;
+    try
+        candidate = double(candidate(1));
+        if isfinite(candidate) && candidate >= 1
+            value = floor(candidate);
+        end
+    catch
     end
 end
 

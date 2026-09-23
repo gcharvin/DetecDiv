@@ -1091,14 +1091,18 @@ end
 
 % map logical channel -> first sub-channel
 subIdx = find(selectedROI.channelid == chIndex, 1, 'first');
-if isempty(subIdx)
-    subIdx = chIndex; % fallback
-end
-
 dl = selectedROI.display.displaylim;
+% The table includes unloaded logical channels. Their logical ID is not
+% an image-plane index in the compact cache. Show provisional levels;
+% rendering refreshes them when the channel is actually loaded.
+lims = [0; 1];
+if ~isempty(subIdx) && subIdx <= size(selectedROI.image, 3) && ...
+        size(dl, 1) == 2 && subIdx <= size(dl, 2)
+    lims = dl(:, subIdx);
+end
 tableData{i, 4} = sprintf('%.0f %.0f', ...
-    round(65535 * dl(1, subIdx)), ...
-    round(65535 * dl(2, subIdx)));
+    round(65535 * lims(1)), ...
+    round(65535 * lims(2)));
 
 
              %   tableData{i, 3} = sprintf('%.0f %.0f', round(65535 * selectedROI.display.displaylim(1, chIndex)), round(65535 * selectedROI.display.displaylim(2, chIndex)));

@@ -153,18 +153,34 @@ while ~success && attempts < max_attempts
             end
         end
 
+        % roiExtract writes one temporal block at a time.  Its previous
+        % atomic-save path copied the complete, growing HDF5 file to local
+        % scratch and back to the destination for every block.  That makes
+        % extraction I/O quadratic in the number of blocks.  The extractor
+        % explicitly opts into an idempotent in-place hyperslab update once
+        % the first (atomically installed) block exists.  A retry writes the
+        % same temporal slab again, so interruption recovery stays safe.
+        directFrameUpsert = frameUpsertMode && exist(h5File,'file') == 2 && ...
+            localDisplayFlag(obj.display, 'write_streaming_inplace', false);
+
         %%% ATOMIC WRITE: on prépare un fichier de travail temporaire
         tmpUuid  = char(java.util.UUID.randomUUID);
         h5Tmp    = [h5File '.tmp.' tmpUuid];
-        localH5Tmp = fullfile(tempdir, ['detecdiv_roi_h5_' tmpUuid '.h5']);
-
-        if exist(localH5Tmp,'file'), delete(localH5Tmp); end
-        if exist(h5Tmp,'file'), delete(h5Tmp); end
+        if directFrameUpsert
+            localH5Tmp = h5File;
+        else
+            localH5Tmp = fullfile(tempdir, ['detecdiv_roi_h5_' tmpUuid '.h5']);
+            if exist(localH5Tmp,'file'), delete(localH5Tmp); end
+            if exist(h5Tmp,'file'), delete(h5Tmp); end
+        end
 
         % Stratégie:
         % - fullSave      : nouveau fichier propre -> on écrit tout dans h5Tmp
         % - partial save  : si h5File existe, on le copie vers h5Tmp pour préserver le reste
-        if fullSave
+        if directFrameUpsert
+            % Existing HDF5 is the work file; upsertH5Dataset_frames writes
+            % only the selected temporal hyperslab below.
+        elseif fullSave
             % rien à copier — création à l'écriture par upsert
         else
             if exist(h5File,'file')
@@ -301,54 +317,60 @@ while ~success && attempts < max_attempts
         % Vérification + bascule atomique
         if imageSaved
             if ~localVerifyH5(localH5Tmp)
-                if exist(localH5Tmp,'file'); delete(localH5Tmp); end
-                if exist(h5Tmp,'file'); delete(h5Tmp); end
+                if ~directFrameUpsert
+                    if exist(localH5Tmp,'file'); delete(localH5Tmp); end
+                    if exist(h5Tmp,'file'); delete(h5Tmp); end
+                end
                 error('roi:save:verifyH5','Temporary HDF5 verification failed.');
             end
-            localInfo = dir(localH5Tmp);
-            localBytes = localInfo.bytes;
+            if ~directFrameUpsert
+                localInfo = dir(localH5Tmp);
+                localBytes = localInfo.bytes;
 
-            copyfile(localH5Tmp, h5Tmp, 'f');
-            copied = false;
-            for kCopy = 1:5
-                if exist(h5Tmp,'file')
-                    remoteInfo = dir(h5Tmp);
-                    copied = ~isempty(remoteInfo) && remoteInfo.bytes == localBytes && remoteInfo.bytes > 0;
-                    if copied, break; end
+                copyfile(localH5Tmp, h5Tmp, 'f');
+                copied = false;
+                for kCopy = 1:5
+                    if exist(h5Tmp,'file')
+                        remoteInfo = dir(h5Tmp);
+                        copied = ~isempty(remoteInfo) && remoteInfo.bytes == localBytes && remoteInfo.bytes > 0;
+                        if copied, break; end
+                    end
+                    pause(0.2);
                 end
-                pause(0.2);
-            end
-            if ~copied
-                if exist(localH5Tmp,'file'); delete(localH5Tmp); end
-                if exist(h5Tmp,'file'); delete(h5Tmp); end
-                error('roi:save:verifyRemoteH5Copy', ...
-                    'Remote HDF5 temp copy failed or has unexpected size: %s', h5Tmp);
-            end
-            % backup ancien fichier
-            if exist(h5File,'file')
-                copyfile(h5File, h5BakFile, 'f'); %#ok<*NASGU>
-            end
-            % CIFS/SMB can transiently reject delete/rename with
-            % "device or resource busy"; install with retries and copy fallback.
-            localInstallStagedFile(h5Tmp, h5File, localBytes, 'HDF5');
-            finalOk = false;
-            for kMove = 1:5
+                if ~copied
+                    if exist(localH5Tmp,'file'); delete(localH5Tmp); end
+                    if exist(h5Tmp,'file'); delete(h5Tmp); end
+                    error('roi:save:verifyRemoteH5Copy', ...
+                        'Remote HDF5 temp copy failed or has unexpected size: %s', h5Tmp);
+                end
+                % backup ancien fichier
                 if exist(h5File,'file')
-                    finalInfo = dir(h5File);
-                    finalOk = ~isempty(finalInfo) && finalInfo.bytes == localBytes && finalInfo.bytes > 0;
-                    if finalOk, break; end
+                    copyfile(h5File, h5BakFile, 'f'); %#ok<*NASGU>
                 end
-                pause(0.2);
+                % CIFS/SMB can transiently reject delete/rename with
+                % "device or resource busy"; install with retries and copy fallback.
+                localInstallStagedFile(h5Tmp, h5File, localBytes, 'HDF5');
+                finalOk = false;
+                for kMove = 1:5
+                    if exist(h5File,'file')
+                        finalInfo = dir(h5File);
+                        finalOk = ~isempty(finalInfo) && finalInfo.bytes == localBytes && finalInfo.bytes > 0;
+                        if finalOk, break; end
+                    end
+                    pause(0.2);
+                end
+                if ~finalOk
+                    error('roi:save:verifyFinalH5Move', ...
+                        'Final HDF5 file was not replaced correctly: %s', h5File);
+                end
+                if exist(localH5Tmp,'file'), delete(localH5Tmp); end
             end
-            if ~finalOk
-                error('roi:save:verifyFinalH5Move', ...
-                    'Final HDF5 file was not replaced correctly: %s', h5File);
-            end
-            if exist(localH5Tmp,'file'), delete(localH5Tmp); end
         else
             % Rien écrit -> si un tmp vide a été créé par erreur, on le retire
-            if exist(localH5Tmp,'file'), delete(localH5Tmp); end
-            if exist(h5Tmp,'file'), delete(h5Tmp); end
+            if ~directFrameUpsert
+                if exist(localH5Tmp,'file'), delete(localH5Tmp); end
+                if exist(h5Tmp,'file'), delete(h5Tmp); end
+            end
         end
 
         % Après un FULL SAVE (tous les canaux), on allège l'objet
@@ -1217,4 +1239,16 @@ function val = to_h5_attr(val)
     elseif istable(val) || isstruct(val)
         val = char(jsonencode(val));
     end
+end
+
+function tf = localDisplayFlag(displayStruct, fieldName, defaultValue)
+tf = logical(defaultValue);
+try
+    if isstruct(displayStruct) && isfield(displayStruct, fieldName) && ...
+            ~isempty(displayStruct.(fieldName))
+        tf = logical(displayStruct.(fieldName)(1));
+    end
+catch
+    tf = logical(defaultValue);
+end
 end

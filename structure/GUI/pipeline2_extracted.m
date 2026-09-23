@@ -13598,6 +13598,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 case 'roiextract'
                     switch keyLower
+                        case 'executionmode'
+                            choices = {'parallel','sequential'};
                         case 'driftmethod'
                             choices = {'subpixel','circshift','register'};
                         case 'driftrefmode'
@@ -13846,7 +13848,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     case 'roimanual'
                         keys = {};
                     case 'roiextract'
-                        keys = {'correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
+                        keys = {'executionMode','correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
                     case 'processor'
                         keys = processorStaticKeys(app, pkg, node);
                     case 'classifier'
@@ -14311,7 +14313,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'roitracked'
                     keys = {'fovIndex','roiIndex','channel','extractChannels'};
                 case 'roiextract'
-                    keys = {'correctDrift','driftChannel','driftMethod','driftRefMode', ...
+                    keys = {'executionMode','correctDrift','driftChannel','driftMethod','driftRefMode', ...
                         'driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
                 case 'processor'
                     if strcmp(pkg, 'combinemultiplechannels')

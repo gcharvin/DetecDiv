@@ -210,6 +210,9 @@ switch mode
     otherwise
         args = {'mode','default'};
 end
+if isfield(pyCfg, 'usePreferences') && ~logical(pyCfg.usePreferences)
+    args = [args, {'usePreferences', false}]; %#ok<AGROW>
+end
 end
 
 try

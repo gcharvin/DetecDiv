@@ -1,5 +1,5 @@
 function [shallowObj, msg] = shallowProjectImportLight(jsonPath, varargin)
-%SHALLOWPROJECTIMPORTLIGHT Reconstruct a shallow object from a v2 JSON manifest.
+%SHALLOWPROJECTIMPORTLIGHT Reconstruct a shallow object from a v2/v3 JSON manifest.
 
 projectDirOverride = '';
 if ~isempty(varargin)
@@ -60,7 +60,16 @@ if isempty(projectDirOverride) && ~isfolder(projectDir) && ...
     end
 end
 
-shallowObj.fov = localBuildFovs(project, shallowObj, projectDir);
+if isfield(project, 'runProfilesPath') && ~isempty(project.runProfilesPath)
+    profilePath = localResolveProjectPath(project.runProfilesPath, projectDir);
+    if ~isfile(profilePath)
+        error('shallowProjectImportLight:MissingMetadata', ...
+            'Project run profiles file is missing: %s', profilePath);
+    end
+    shallowObj.runProfiles = jsondecode(fileread(profilePath));
+end
+
+shallowObj.fov = localBuildFovs(localResolveFovItems(project, projectDir), shallowObj, projectDir);
 shallowObj.processing = struct('roi', [], 'classification', [], ...
     'processor', process.empty, 'pipelineRun', pipelineRun.empty);
 
@@ -89,13 +98,32 @@ msg = ['Successfully loaded lightweight shallow project ' jsonPath '!'];
 disp(msg);
 end
 
-function fovs = localBuildFovs(project, shallowObj, projectDir)
-fovs = fov.empty;
+function items = localResolveFovItems(project, projectDir)
+items = [];
 if ~isfield(project, 'fovs') || isempty(project.fovs)
     return;
 end
-
 items = project.fovs;
+if ~isfield(items, 'metadataPath')
+    return; % Legacy v2 manifests contain full FOV metadata inline.
+end
+details = cell(numel(items), 1);
+for i = 1:numel(items)
+    detailPath = localResolveProjectPath(items(i).metadataPath, projectDir);
+    if ~isfile(detailPath)
+        error('shallowProjectImportLight:MissingMetadata', ...
+            'FOV metadata file is missing: %s', detailPath);
+    end
+    details{i} = jsondecode(fileread(detailPath));
+end
+items = vertcat(details{:});
+end
+
+function fovs = localBuildFovs(items, shallowObj, projectDir)
+fovs = fov.empty;
+if isempty(items)
+    return;
+end
 for i = 1:numel(items)
     item = items(i);
     f = fov();
@@ -361,6 +389,13 @@ function pathOut = localResolveProjectPath(pathText, baseDir)
 pathOut = char(string(pathText));
 if isempty(pathOut)
     return;
+end
+% Relative paths in manifests may have been written on Windows. On Linux,
+% backslashes are ordinary filename characters, so normalize both forms
+% before joining them to the project directory.
+if ~localIsAbsolute(pathOut)
+    pathOut = strrep(pathOut, '\', filesep);
+    pathOut = strrep(pathOut, '/', filesep);
 end
 if isfolder(pathOut) || isfile(pathOut) || localIsAbsolute(pathOut)
     return;

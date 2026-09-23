@@ -124,16 +124,20 @@ end
 function args = pythonSelectionArgs(ctx)
 args = {'mode','default'};
 try pyCfg = ctx.exec.python; catch, return; end
-if ~isstruct(pyCfg) || ~isfield(pyCfg,'mode') || ...
-        ~strcmpi(char(string(pyCfg.mode)),'custom')
+if ~isstruct(pyCfg)
     return;
 end
-args = {'mode','custom'};
-if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
-    args = [args {'envName',char(string(pyCfg.envName))}];
+if isfield(pyCfg,'mode') && strcmpi(char(string(pyCfg.mode)),'custom')
+    args = {'mode','custom'};
+    if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
+        args = [args {'envName',char(string(pyCfg.envName))}];
+    end
+    if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
+        args = [args {'envPath',char(string(pyCfg.envPath))}];
+    end
 end
-if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
-    args = [args {'envPath',char(string(pyCfg.envPath))}];
+if isfield(pyCfg,'usePreferences') && ~logical(pyCfg.usePreferences)
+    args = [args {'usePreferences',false}];
 end
 end
 

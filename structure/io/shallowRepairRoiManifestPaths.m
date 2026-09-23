@@ -1,9 +1,9 @@
 function report = shallowRepairRoiManifestPaths(jsonPath, varargin)
-%SHALLOWREPAIRROIMANIFESTPATHS Repair broken ROI paths in a light manifest.
+%SHALLOWREPAIRROIMANIFESTPATHS Repair broken ROI paths in v2/v3 metadata.
 %   report = shallowRepairRoiManifestPaths(jsonPath, 'Apply', true)
 % rewrites only ROI path/file references whose expected H5 exists in the
-% project FOV directory.  The original JSON is retained as a timestamped
-% backup and the replacement is atomic.
+% project FOV directory. The modified JSON files are backed up and replaced
+% atomically. In v3 the ROI metadata lives in per-FOV sidecars.
 
 ip = inputParser;
 ip.addParameter('Apply', false, @(x)islogical(x) || isnumeric(x));
@@ -21,42 +21,59 @@ physicalProjectDir = fullfile(jsonFolder, projectName);
 
 report = struct('jsonPath', jsonPath, 'projectDir', physicalProjectDir, ...
     'roiCount', 0, 'changedCount', 0, 'missingH5Count', 0, ...
-    'applied', false, 'backupPath', '');
+    'applied', false, 'backupPath', '', 'backupPaths', {{}});
 if ~isfield(project, 'fovs') || isempty(project.fovs)
     return;
 end
 
-for fi = 1:numel(project.fovs)
-    if ~isfield(project.fovs(fi), 'rois') || isempty(project.fovs(fi).rois)
+fovs = project.fovs;
+detailPaths = cell(numel(fovs), 1);
+changedFovs = false(numel(fovs), 1);
+if isfield(fovs, 'metadataPath')
+    detailFovs = cell(numel(fovs), 1);
+    for fi = 1:numel(fovs)
+        detailPaths{fi} = fullfile(physicalProjectDir, fovs(fi).metadataPath);
+        if ~isfile(detailPaths{fi})
+            error('shallowRepairRoiManifestPaths:MissingMetadata', ...
+                'FOV metadata file is missing: %s', detailPaths{fi});
+        end
+        detailFovs{fi} = jsondecode(fileread(detailPaths{fi}));
+    end
+    fovs = vertcat(detailFovs{:});
+end
+
+for fi = 1:numel(fovs)
+    if ~isfield(fovs(fi), 'rois') || isempty(fovs(fi).rois)
         continue;
     end
-    fovId = localFieldText(project.fovs(fi), 'id', sprintf('FOV_%d', fi));
-    for ri = 1:numel(project.fovs(fi).rois)
+    fovId = localFieldText(fovs(fi), 'id', sprintf('FOV_%d', fi));
+    for ri = 1:numel(fovs(fi).rois)
         report.roiCount = report.roiCount + 1;
-        roiId = localFieldText(project.fovs(fi).rois(ri), 'id', '');
+        roiId = localFieldText(fovs(fi).rois(ri), 'id', '');
         relDir = fovId;
         expectedH5 = fullfile(physicalProjectDir, relDir, ['im_' roiId '.h5']);
         if ~isfile(expectedH5)
             report.missingH5Count = report.missingH5Count + 1;
             continue;
         end
-        oldPath = localFieldText(project.fovs(fi).rois(ri), 'path', '');
+        oldPath = localFieldText(fovs(fi).rois(ri), 'path', '');
         imageRel = fullfile(relDir, ['im_' roiId '.h5']);
         dataRel = fullfile(relDir, ['data_' roiId '.mat']);
         oldImage = '';
         oldData = '';
-        if isfield(project.fovs(fi).rois(ri), 'files') && ...
-                isstruct(project.fovs(fi).rois(ri).files)
-            oldImage = localFieldText(project.fovs(fi).rois(ri).files, 'imageH5', '');
-            oldData = localFieldText(project.fovs(fi).rois(ri).files, 'dataMat', '');
+        if isfield(fovs(fi).rois(ri), 'files') && ...
+                isstruct(fovs(fi).rois(ri).files)
+            oldImage = localFieldText(fovs(fi).rois(ri).files, 'imageH5', '');
+            oldData = localFieldText(fovs(fi).rois(ri).files, 'dataMat', '');
         end
         if ~strcmp(localComparable(oldPath), localComparable(relDir)) || ...
                 ~strcmp(localComparable(oldImage), localComparable(imageRel)) || ...
                 ~strcmp(localComparable(oldData), localComparable(dataRel))
             report.changedCount = report.changedCount + 1;
+            changedFovs(fi) = true;
         end
-        project.fovs(fi).rois(ri).path = relDir;
-        project.fovs(fi).rois(ri).files = struct( ...
+        fovs(fi).rois(ri).path = relDir;
+        fovs(fi).rois(ri).files = struct( ...
             'imageH5', imageRel, 'dataMat', dataRel);
     end
 end
@@ -66,22 +83,40 @@ if ~doApply || report.changedCount == 0
 end
 
 stamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-backupPath = [jsonPath '.pre-roi-path-repair.' stamp '.bak'];
-copyfile(jsonPath, backupPath, 'f');
-tmpPath = [jsonPath '.tmp.' char(java.util.UUID.randomUUID)];
+if isempty(detailPaths{1})
+    project.fovs = fovs;
+    report.backupPath = localWriteRepairedJson(jsonPath, project, stamp, true);
+    report.backupPaths = {report.backupPath};
+else
+    for fi = find(changedFovs(:))'
+        report.backupPaths{end + 1} = localWriteRepairedJson( ...
+            detailPaths{fi}, fovs(fi), stamp, false); %#ok<AGROW>
+    end
+    report.backupPath = report.backupPaths{1};
+end
+report.applied = true;
+end
+
+function backupPath = localWriteRepairedJson(pathText, value, stamp, pretty)
+backupPath = [pathText '.pre-roi-path-repair.' stamp '.bak'];
+copyfile(pathText, backupPath, 'f');
+tmpPath = [pathText '.tmp.' char(java.util.UUID.randomUUID)];
 cleanup = onCleanup(@() localDeleteIfPresent(tmpPath));
 fid = fopen(tmpPath, 'w', 'n', 'UTF-8');
 if fid < 0
     error('shallowRepairRoiManifestPaths:OpenFailed', 'Could not write %s.', tmpPath);
 end
 closeFile = onCleanup(@() fclose(fid));
-fprintf(fid, '%s\n', jsonencode(project, 'PrettyPrint', true));
+if pretty
+    encoded = jsonencode(value, 'PrettyPrint', true);
+else
+    encoded = jsonencode(value);
+end
+fprintf(fid, '%s\n', encoded);
 delete(closeFile);
 jsondecode(fileread(tmpPath));
-movefile(tmpPath, jsonPath, 'f');
+movefile(tmpPath, pathText, 'f');
 delete(cleanup);
-report.applied = true;
-report.backupPath = backupPath;
 end
 
 function text = localFieldText(S, name, defaultValue)

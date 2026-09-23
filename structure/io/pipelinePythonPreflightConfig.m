@@ -5,7 +5,8 @@ function [cfg, args] = pipelinePythonPreflightConfig(ctx)
         ctx = struct();
     end
     cfg = struct('mode', 'default', 'envName', '', 'envPath', '', ...
-        'backend', 'local', 'wslDistro', '', 'wslEnvPath', '');
+        'backend', 'local', 'wslDistro', '', 'wslEnvPath', '', ...
+        'usePreferences', true);
     try
         if isfield(ctx,'exec') && isstruct(ctx.exec) && ...
                 isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
@@ -16,6 +17,9 @@ function [cfg, args] = pipelinePythonPreflightConfig(ctx)
             cfg.backend = lower(localText(py, 'backend', cfg.backend));
             cfg.wslDistro = localText(py, 'wslDistro', cfg.wslDistro);
             cfg.wslEnvPath = localText(py, 'wslEnvPath', cfg.wslEnvPath);
+            if isfield(py, 'usePreferences') && ~isempty(py.usePreferences)
+                cfg.usePreferences = logical(py.usePreferences);
+            end
         end
     catch
     end
@@ -41,6 +45,9 @@ function [cfg, args] = pipelinePythonPreflightConfig(ctx)
     end
 
     args = {'debug', true, 'mode', cfg.mode, 'backend', cfg.backend};
+    if ~cfg.usePreferences
+        args = [args {'usePreferences', false}]; %#ok<AGROW>
+    end
     if strcmp(cfg.mode, 'custom')
         args = [args {'envName', cfg.envName}]; %#ok<AGROW>
         if ~isempty(cfg.envPath)

@@ -132,8 +132,17 @@ function ctx = process(ctx)
         progressDlg = ctx.progressDlg;
     end
 
-    % loop per fov for ROI-granularity
-    for fovPos = 1:numel(fovIdx)
+    parallelFovWorkers = resolveParallelFovWorkers(p, ctx);
+    useParallelFovs = parallelFovWorkers > 1 && ~isempty(shallowObj) && ...
+        persistOutputs && isempty(progressDlg) && numel(fovIdx) > 1;
+
+    if useParallelFovs
+        [fovList, prog, ctx] = runParallelFovExtraction( ...
+            shallowObj, fovList, fovIdx, p, ctx, prog, resume, ...
+            saveProgress, persistOutputs, existingPolicy, parallelFovWorkers);
+    else
+        % loop per fov for ROI-granularity
+        for fovPos = 1:numel(fovIdx)
         i = fovIdx(fovPos);
         checkRoiExtractCancellation(ctx, sprintf('before FOV %d', i));
         if i > numel(fovList)
@@ -245,6 +254,7 @@ function ctx = process(ctx)
             rethrow(ME);
         end
     end
+    end
 
     if ~isempty(shallowObj)
         try
@@ -272,7 +282,256 @@ function ctx = process(ctx)
             shallowObj.runProfiles.dataloading.roiExtract = p;
         catch
         end
+        end
     end
+
+function workerCount = resolveParallelFovWorkers(p, ctx)
+% An explicit node setting must take precedence over the Hub capacity.
+% Older saved pipelines lack executionMode; retain their historical Hub
+% behaviour by treating a missing or invalid value as "parallel".
+mode = 'parallel';
+try
+    requestedMode = lower(strtrim(char(string(p.executionMode))));
+    if any(strcmp(requestedMode, {'parallel', 'sequential'}))
+        mode = requestedMode;
+    end
+catch
+end
+if strcmp(mode, 'sequential')
+    workerCount = 1;
+    return;
+end
+
+workerCount = 1;
+candidates = {};
+try, candidates{end+1} = p.parallelFovWorkers; catch, end %#ok<CTCH>
+try, candidates{end+1} = p.parallelWorkers; catch, end %#ok<CTCH>
+try, candidates{end+1} = ctx.parallelFovWorkers; catch, end %#ok<CTCH>
+try, candidates{end+1} = ctx.execution.roiExtractParallelFovWorkers; catch, end %#ok<CTCH>
+for i = 1:numel(candidates)
+    try
+        value = double(candidates{i}(1));
+        if isfinite(value) && value >= 1
+            workerCount = max(workerCount, floor(value));
+        end
+    catch
+    end
+end
+% Hub jobs can use up to ten independent FOV writers. The actual pool is
+% capped again by the number of eligible FOVs below.
+workerCount = min(workerCount, 10);
+if workerCount > 1 && (exist('parpool', 'file') ~= 2 || ...
+        ~license('test', 'Distrib_Computing_Toolbox'))
+    warning('roiExtract:ParallelUnavailable', ...
+        ['parallelFovWorkers was requested, but Parallel Computing Toolbox ' ...
+         'is unavailable. Continuing sequentially.']);
+    workerCount = 1;
+end
+end
+
+function [fovList, prog, ctx] = runParallelFovExtraction( ...
+        shallowObj, fovList, fovIdx, p, ctx, prog, resume, ...
+        saveProgress, persistOutputs, existingPolicy, requestedWorkers)
+% Run independent FOVs concurrently.  Only this client mutates/saves the
+% project object; pool workers own separate copies and disjoint FOV folders.
+
+tasks = struct('fovIndex', {}, 'fovPosition', {}, 'roiSelect', {}, 'fov', {});
+for fovPos = 1:numel(fovIdx)
+    i = fovIdx(fovPos);
+    checkRoiExtractCancellation(ctx, sprintf('before FOV %d', i));
+    if i < 1 || i > numel(fovList)
+        continue;
+    end
+    f = fovList(i);
+    [f, mappedSources] = normalizeMountedFovSources(f);
+    if mappedSources > 0
+        fprintf('[roiExtract] Mapped %d Windows source path(s) for FOV %s.\n', ...
+            mappedSources, fovLabelLocal(f, i));
+        fovList(i) = f;
+        shallowObj.fov(i) = f;
+    end
+    if isempty(f.roi) || (numel(f.roi) == 1 && isempty(f.roi(1).id))
+        continue;
+    end
+
+    n = numel(f.roi);
+    done = getDoneForFov(prog, i);
+    if resume
+        todo = setdiff(1:n, done);
+    else
+        todo = 1:n;
+    end
+    if isfield(p,'roiList') && ~isempty(p.roiList)
+        todo = intersect(todo, p.roiList, 'stable');
+    end
+    [todo, existingTodo] = filterTodoByExistingPolicy(f.roi, todo, existingPolicy);
+    if strcmp(existingPolicy, 'error') && ~isempty(existingTodo)
+        error('roiExtract:ExistingOutputs', ...
+            'ROI extraction outputs already exist for FOV %d, ROI(s) %s.', ...
+            i, mat2str(existingTodo));
+    end
+    if isempty(todo)
+        continue;
+    end
+
+    preflightRoiExtractionForFov(shallowObj, fovList, i, todo, p, persistOutputs);
+    tasks(end+1) = struct('fovIndex', i, 'fovPosition', fovPos, ...
+        'roiSelect', todo, 'fov', f); %#ok<AGROW>
+end
+
+if isempty(tasks)
+    return;
+end
+
+if exist('parpool', 'file') ~= 2 || ~license('test', 'Distrib_Computing_Toolbox')
+    error('roiExtract:ParallelUnavailable', ...
+        'parallelFovWorkers=%d was requested but Parallel Computing Toolbox is unavailable.', requestedWorkers);
+end
+
+workerCount = min(requestedWorkers, numel(tasks));
+pool = gcp('nocreate');
+if isempty(pool)
+    pool = parpool('Processes', workerCount);
+end
+workerCount = min(workerCount, pool.NumWorkers);
+if workerCount < 2
+    error('roiExtract:ParallelUnavailable', ...
+        'The active parallel pool has only %d worker(s).', workerCount);
+end
+
+fprintf('[roiExtract] Parallel FOV extraction: %d FOV(s) over %d process worker(s).\n', ...
+    numel(tasks), workerCount);
+
+argsBase = buildExtractArgs(p, [], ctx);
+if ~persistOutputs
+    argsBase = [argsBase {'MemoryOnly'} {true}]; %#ok<AGROW>
+end
+threadsPerFov = resolveParallelFovThreads(ctx, workerCount);
+progressState = zeros(1, numel(tasks));
+progressQueue = parallel.pool.DataQueue;
+afterEach(progressQueue, @receiveParallelFovProgress);
+futures(1, numel(tasks)) = parallel.FevalFuture;
+for taskIndex = 1:numel(tasks)
+    args = [argsBase {'ROISelect'} {tasks(taskIndex).roiSelect} ...
+        {'ProgressFOVIndex'} {tasks(taskIndex).fovPosition} ...
+        {'ProgressFOVTotal'} {numel(fovIdx)}];
+    taskInfo = struct('taskIndex', taskIndex, 'fovIndex', tasks(taskIndex).fovIndex, ...
+        'fovPosition', tasks(taskIndex).fovPosition, 'fovTotal', numel(fovIdx));
+    futures(taskIndex) = parfeval(pool, @roiExtract.extractFovTask, 1, ...
+        tasks(taskIndex).fov, shallowObj.io, shallowObj.projectId, args, ...
+        threadsPerFov, progressQueue, taskInfo);
+end
+
+for completedCount = 1:numel(tasks)
+    checkRoiExtractCancellation(ctx, sprintf('waiting for parallel FOV %d/%d', ...
+        completedCount, numel(tasks)));
+    [taskIndex, fovOut] = fetchNext(futures);
+    task = tasks(taskIndex);
+    progressState(taskIndex) = 1;
+    emitParallelFovProgress(taskIndex, struct( ...
+        'value', 1, 'status', 'running', 'phase', 'fov_done', ...
+        'message', sprintf('FOV %d/%d completed.', ...
+            task.fovPosition, numel(fovIdx))));
+    i = task.fovIndex;
+    shallowObj.fov(i) = fovOut;
+    try
+        for r = 1:numel(shallowObj.fov(i).roi)
+            shallowObj.fov(i).roi(r).parent = shallowObj.fov(i);
+        end
+    catch
+    end
+    fovList(i) = shallowObj.fov(i);
+    checkRoiExtractCancellation(ctx, sprintf('after FOV %d extraction', i));
+    validateExtractedRoisForFov(fovList, i, task.roiSelect, persistOutputs, p, shallowObj);
+    prog = progressMark(shallowObj, ctx, 'roiExtract', i, task.roiSelect);
+    if persistOutputs && saveProgress
+        try, shallowSave(shallowObj); catch, end
+    end
+end
+
+    function receiveParallelFovProgress(event)
+        if ~isstruct(event)
+            return;
+        end
+        progressTaskIndex = numericStructField(event, 'taskIndex', []);
+        if isempty(progressTaskIndex) || progressTaskIndex < 1 || progressTaskIndex > numel(tasks)
+            return;
+        end
+        value = numericStructField(event, 'value', 0);
+        progressState(progressTaskIndex) = max(progressState(progressTaskIndex), max(0, min(1, value)));
+        emitParallelFovProgress(progressTaskIndex, event);
+    end
+
+    function emitParallelFovProgress(taskIndex, event)
+        completed = sum(progressState >= 1);
+        overall = mean(progressState);
+        task = tasks(taskIndex);
+        blockIndex = numericStructField(event, 'blockIndex', []);
+        blockTotal = numericStructField(event, 'blockTotal', []);
+        if ~isempty(blockIndex) && ~isempty(blockTotal) && blockTotal > 0
+            detail = sprintf('block %d/%d', blockIndex, blockTotal);
+        else
+            detail = char(string(structTextField(event, 'phase', 'working')));
+        end
+        stateText = cell(1, numel(tasks));
+        for stateIndex = 1:numel(tasks)
+            stateText{stateIndex} = sprintf('FOV %d: %d%%', ...
+                tasks(stateIndex).fovPosition, round(100 * progressState(stateIndex)));
+        end
+        message = sprintf('ROI extraction %d/%d complete | %s | update FOV %d: %s', ...
+            completed, numel(tasks), strjoin(stateText, ', '), ...
+            task.fovPosition, detail);
+        try
+            if ~isfield(ctx, 'progress') || ~isstruct(ctx.progress)
+                ctx.progress = struct();
+            end
+            ctx.progress.parallelFovProgress = progressState;
+            ctx.progress.parallelFovCount = numel(tasks);
+            ctx.progress.parallelFovCompleted = completed;
+            if exist('detecdiv_progress', 'file') == 2
+                detecdiv_progress(ctx, overall, message, 'Scope', 'parallel_fov', ...
+                    'Current', completed, 'Total', numel(tasks));
+            end
+        catch
+        end
+    end
+end
+
+function value = numericStructField(source, fieldName, fallback)
+value = fallback;
+try
+    candidate = double(source.(fieldName));
+    if isscalar(candidate) && isfinite(candidate)
+        value = candidate;
+    end
+catch
+end
+end
+
+function value = structTextField(source, fieldName, fallback)
+value = fallback;
+try
+    if isfield(source, fieldName) && ~isempty(source.(fieldName))
+        value = char(string(source.(fieldName)));
+    end
+catch
+end
+end
+
+function threadsPerFov = resolveParallelFovThreads(ctx, workerCount)
+threadsPerFov = 1;
+try
+    if isfield(ctx, 'parallelFovThreads') && ~isempty(ctx.parallelFovThreads)
+        threadsPerFov = max(1, floor(double(ctx.parallelFovThreads(1))));
+        return;
+    end
+catch
+end
+try
+    totalThreads = maxNumCompThreads;
+    threadsPerFov = max(1, floor(double(totalThreads) / double(workerCount)));
+catch
+end
 end
 
 function checkRoiExtractCancellation(ctx, where)
