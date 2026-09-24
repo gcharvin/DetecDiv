@@ -13642,9 +13642,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         case 'executionmode'
                             choices = {'parallel','sequential'};
                         case 'driftmethod'
-                            choices = {'subpixel','circshift','register'};
+                            choices = {'robust','subpixel','circshift','register'};
                         case 'driftrefmode'
-                            choices = {'previous','first'};
+                            choices = {'fixed','previous'};
                         case 'driftchannel'
                             choices = runtimeChannelChoices(app, true);
                     end
