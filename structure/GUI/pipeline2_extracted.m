@@ -5875,13 +5875,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 markRuntimeField(app, 'rawDataPath', 'blocked', tip);
                 setRuntimeButtonEnabled(app, 'rawDataPath', true);
             elseif ~selectedRunHasNodeType(app, 'dataLoader')
-                markRuntimeField(app, 'rawDataPath', 'blocked', 'Raw-data mode requires a selected dataloader node.');
+                markRuntimeField(app, 'rawDataPath', 'warning', ...
+                    'Select a dataloader node in the run module list. The raw-data path can be set now.');
                 try
                     app.RuntimeButtonHandles.rawDataPath.Text = 'Browse...';
-                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Select a raw image/data folder. Available only for dataloader runs.';
+                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Select a raw image/data folder. Include a dataloader node in the run to parse it.';
                 catch
                 end
-                setRuntimeButtonEnabled(app, 'rawDataPath', false);
+                setRuntimeButtonEnabled(app, 'rawDataPath', true);
             elseif pipelineHasNodeType(app, 'dataLoader') && ~rawOk
                 markRuntimeField(app, 'rawDataPath', 'missing', 'Required when a dataloader run has no existing project input.');
                 try
@@ -14927,7 +14928,8 @@ classdef pipeline2 < matlab.apps.AppBase
             elseif ~selectedRunHasNodeType(app, 'dataLoader')
                 issues{end+1} = ['Input mode is "Parse raw images into project", but the selected run does not include a dataloader node. ' ...
                     'Switch Input mode to "Read from existing project", or include a dataloader in the selected pipeline run.']; %#ok<AGROW>
-                markRuntimeField(app, 'rawDataPath', 'blocked', 'Raw-data mode requires a selected dataloader node.');
+                markRuntimeField(app, 'rawDataPath', 'warning', ...
+                    'Select a dataloader node in the run module list. The raw-data path can be set now.');
             elseif selectedRunHasNodeType(app, 'dataLoader')
                 if isempty(rawDataPath)
                     issues{end+1} = 'Raw image folder is required when Input mode is Parse raw images into project.'; %#ok<AGROW>
