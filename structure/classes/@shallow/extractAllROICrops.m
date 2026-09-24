@@ -46,8 +46,8 @@ hprogressbar = [];           % ui handle (uiprogressdlg or compatible)
 % =========================================================
 
 CorrectDrift      = true;
-DriftMethod       = 'subpixel';
-DriftRefMode      = 'previous';
+DriftMethod       = 'robust';
+DriftRefMode      = 'fixed';
 DriftSubpixel     = true;
 
 DriftMaxShift     = 20;
@@ -185,8 +185,8 @@ end
 checkExtractionCancellation(CancelTokenFile, hprogressbar, 'startup');
 
 % ---- Drift fallbacks (avoid missing vars during refactor) ----
-if ~exist('DriftMethod','var')       || isempty(DriftMethod),       DriftMethod = 'subpixel'; end
-if ~exist('DriftRefMode','var')      || isempty(DriftRefMode),      DriftRefMode = 'previous'; end
+if ~exist('DriftMethod','var')       || isempty(DriftMethod),       DriftMethod = 'robust'; end
+if ~exist('DriftRefMode','var')      || isempty(DriftRefMode),      DriftRefMode = 'fixed'; end
 if ~exist('DriftSubpixel','var')     || isempty(DriftSubpixel),     DriftSubpixel = true; end
 if ~exist('DriftMaxShift','var')     || isempty(DriftMaxShift),     DriftMaxShift = 20; end
 if ~exist('DriftHipassSigma','var')  || isempty(DriftHipassSigma),  DriftHipassSigma = 3; end
@@ -603,7 +603,18 @@ for kF = 1:numel(FOVIndex)
 
     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', displayFOVIndex, displayFOVTotal), nBlocks, 'Indent',2);
 
-    
+    % A replacement extraction starts from raw images. Its drift metadata
+    % must therefore start empty as well; retaining a preceding trajectory
+    % would compound corrections across reruns.
+    if CorrectDrift && ~Extend
+        fovObj.drift = struct('frames', [], 'x', zeros(1,nFramesTotal), ...
+            'y', zeros(1,nFramesTotal), 'score', nan(1,nFramesTotal));
+    end
+
+    % Fixed-anchor methods reuse exactly the same raw reference in every
+    % memory block. It is populated from the first loaded block below.
+    driftReferenceImage = [];
+
     % --------- Boucle bloc par bloc ---------
     for ib = 1:nBlocks
         checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('before block %d/%d', ib, nBlocks));
@@ -698,6 +709,12 @@ for kF = 1:numel(FOVIndex)
             end
             driftLocal = max(1, min(Csel, round(driftLocal)));
 
+            useFixedAnchor = strcmpi(DriftMethod, 'robust') || ...
+                any(strcmpi(DriftRefMode, {'fixed','first','anchor'}));
+            if useFixedAnchor && isempty(driftReferenceImage)
+                driftReferenceImage = blockImg(:,:,driftLocal,1);
+            end
+
             % sanitize crop (computeDrift needs ]0,1])
             cropReal = CropDrift;
             if isempty(cropReal) || (islogical(cropReal) && ~cropReal), cropReal = 1; end
@@ -724,6 +741,11 @@ for kF = 1:numel(FOVIndex)
                 'debug',        DriftDebug, ...
                 'debugevery',   DriftDebugEvery ...
                 };
+
+            if useFixedAnchor
+                driftArgs = [driftArgs {'refimage'} {driftReferenceImage} ...
+                    {'refframeid'} {framesToDo(1)}]; %#ok<AGROW>
+            end
 
 
 

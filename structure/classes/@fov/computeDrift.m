@@ -1,23 +1,26 @@
 function [list, drift, score] = computeDrift(obj, varargin)
-% COMPUTEDRIFT  Simple + robust XY drift correction for a FOV (legacy + block mode)
-% + per-frame residual effectiveness metric.
+% COMPUTEDRIFT  XY drift correction for a FOV (legacy + block mode).
 %
 % Key points:
-%   - refMode='previous' estimates a *residual* step in a stabilized reference frame
-%     (current pre-aligned by the previous cumulative drift).
+%   - method='robust' estimates an absolute displacement against one fixed
+%     anchor. It combines phase-correlation estimates from overlapping tiles
+%     and rejects tiles that disagree with the spatial consensus.
+%   - refMode='previous' remains available for legacy runs. It estimates a
+%     residual step and integrates it over time.
 %   - Handles block processing: if obj.drift exists and framesid(1)>1, we seed the
 %     initial cumulative drift from the previous absolute frame, so blocks stitch.
 %   - Logs residual drift after correction at each frame:
 %       residual(row,col) and residualNorm (px)
 %
 % Methods:
+%   'robust'    : fixed-anchor tiled phase correlation with robust consensus
 %   'circshift' : normxcorr2 (integer px)
 %   'subpixel'  : phase correlation FFT + optional quadratic subpixel
 %   'register'  : imregtform translation (no score)
 
 % ---------- Defaults ----------
-method      = 'subpixel';
-refMode     = 'previous';
+method      = 'robust';
+refMode     = 'fixed';
 channel     = 1;
 images      = [];
 framesid    = [];
@@ -91,13 +94,24 @@ for i = 1:2:numel(varargin)
     end
 end
 
-% sanitize ref mode
+% sanitize method / reference mode
+method = lower(char(string(method)));
+if strcmpi(method, 'integer')
+    method = 'circshift';
+end
 if isempty(refMode)
-    if strcmpi(method,'subpixel'), refMode = 'previous';
-    else,                          refMode = 'first';
+    if strcmpi(method,'robust'), refMode = 'fixed';
+    else,                         refMode = 'previous';
     end
 end
 refMode = lower(string(refMode));
+if refMode == "anchor" || refMode == "first"
+    refMode = "fixed";
+end
+if strcmpi(method, 'robust')
+    refMode = "fixed";
+end
+absoluteMode = refMode == "fixed";
 
 % sanitize smoothing
 smoothMethod = lower(string(smoothMethod));
@@ -141,6 +155,8 @@ stepCol_hist = zeros(1,nT);
 cumRow_hist  = zeros(1,nT);
 cumCol_hist  = zeros(1,nT);
 score        = NaN(1,nT);
+consensusCount_hist = NaN(1,nT);
+consensusSpread_hist = NaN(1,nT);
 
 % residual effectiveness (after correction)
 resRow_hist  = NaN(1,nT);
@@ -185,6 +201,7 @@ if isempty(refimage)
         'Drift correction reference image is empty.');
 end
 refGray0 = toGray(refimage);
+fixedRefProc = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
 tPrepRef = toc(tPrepRef);
 
 % register config
@@ -223,8 +240,9 @@ if stitchFromObjDrift && ~legacyMode && refMode == "previous" && ~isempty(obj) .
     end
 end
 
-% prevProc in corrected reference space (for refMode='previous')
-prevProc = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
+% prevProc is only used by the legacy incremental mode. fixedRefProc is
+% immutable and is shared by every block of an anchored extraction.
+prevProc = fixedRefProc;
 
 cc = 1;
 for j = framesid
@@ -248,16 +266,16 @@ for j = framesid
             'Drift correction image is empty after grayscale conversion at frame index %d.', j);
     end
 
-    % -------- build estimation image in a stable reference frame --------
-    % Pre-align current raw frame by previous cumulative drift (global space).
-    if cc > 1 && refMode == "previous"
+    % -------- build estimation image --------
+    % Incremental mode pre-aligns against the previous cumulative estimate.
+    % Absolute mode always compares the untouched frame with fixedRefProc.
+    if cc > 1 && ~absoluteMode
         fv0 = median(imGray(:));
         imGrayEst = imtranslate(imGray, [-cumCol -cumRow], 'linear', 'FillValues', fv0);
     else
-        % IMPORTANT: for cc==1 in a stitched block, we still want imGrayEst to be in
-        % the global corrected space, otherwise the first corrected frame won't match
-        % previous block. So if cum != 0, apply it even at cc==1.
-        if (cc == 1) && (refMode == "previous") && (cumRow ~= 0 || cumCol ~= 0)
+        % At the first frame of an incremental stitched block, move the frame
+        % into the same stabilized space as the preceding block.
+        if (cc == 1) && ~absoluteMode && (cumRow ~= 0 || cumCol ~= 0)
             fv0 = median(imGray(:));
             imGrayEst = imtranslate(imGray, [-cumCol -cumRow], 'linear', 'FillValues', fv0);
         else
@@ -271,8 +289,8 @@ for j = framesid
     if doTiming, TT.prep = TT.prep + toc(tPrep); end
 
     % choose reference for estimation
-    if refMode == "first"
-        refEst = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
+    if absoluteMode
+        refEst = fixedRefProc;
     else
         if cc == 1
             refEst = imProc; % step forced to 0 below
@@ -284,10 +302,15 @@ for j = framesid
     % estimate residual step
     tEst = tic;
     sc = NaN;
-    if (cc == 1) && (refMode == "previous")
+    consensusCount = NaN;
+    consensusSpread = NaN;
+    if (cc == 1) && ~absoluteMode
         stepRow = 0; stepCol = 0; sc = 0;
     else
         switch lower(method)
+            case 'robust'
+                [stepRow, stepCol, sc, consensusCount, consensusSpread] = ...
+                    robustAnchorShift(refEst, imProc, subpixel, psrRadius, psrMin, maxshift);
             case 'circshift'
                 [stepRow, stepCol, sc] = xcorrShift(refEst, imProc);
             case 'subpixel'
@@ -305,8 +328,10 @@ for j = framesid
 
     rawRow = stepRow; rawCol = stepCol;
 
-    % -------- accept / clamp (simple) --------
+    % -------- accept / reject --------
     decisionParts = strings(1,0);
+    prevCumRow = cumRow;
+    prevCumCol = cumCol;
 
     % warmup
     if cc <= warmupFrames
@@ -320,32 +345,69 @@ for j = framesid
             stepRow = 0; stepCol = 0;
             decisionParts(end+1) = "psrReject|zero";
         else
-            stepRow = stepRow_hist(max(1,cc-1));
-            stepCol = stepCol_hist(max(1,cc-1));
+            % Holding a trajectory means applying no new incremental step.
+            % Repeating the preceding step would keep moving indefinitely.
+            if absoluteMode
+                stepRow = prevCumRow;
+                stepCol = prevCumCol;
+            else
+                stepRow = 0;
+                stepCol = 0;
+            end
             decisionParts(end+1) = "psrReject|hold";
         end
     end
 
-    % catastrophic clamp
-    if ~isempty(maxshift) && maxshift > 0
-        stepRow = max(min(stepRow, maxshift), -maxshift);
-        stepCol = max(min(stepCol, maxshift), -maxshift);
+    if absoluteMode
+        targetRow = stepRow;
+        targetCol = stepCol;
+
+        if ~isfinite(targetRow) || ~isfinite(targetCol)
+            targetRow = prevCumRow;
+            targetCol = prevCumCol;
+            decisionParts(end+1) = "invalid|hold";
+        end
+
+        % An absolute outlier must be rejected. Clamping it to the boundary
+        % would manufacture a plausible-looking but false correction.
+        if ~isempty(maxshift) && maxshift > 0 && ...
+                (abs(targetRow) > maxshift || abs(targetCol) > maxshift)
+            targetRow = prevCumRow;
+            targetCol = prevCumCol;
+            decisionParts(end+1) = "absShiftReject|hold";
+        end
+
+        if cc > 1 && ~isempty(maxStep) && maxStep > 0 && ...
+                hypot(targetRow-prevCumRow, targetCol-prevCumCol) > maxStep
+            targetRow = prevCumRow;
+            targetCol = prevCumCol;
+            decisionParts(end+1) = "jumpReject|hold";
+        end
+
+        cumRow = targetRow;
+        cumCol = targetCol;
+        stepRow = cumRow - prevCumRow;
+        stepCol = cumCol - prevCumCol;
+    else
+        % Legacy incremental mode: bound only the new residual step.
+        if ~isempty(maxshift) && maxshift > 0
+            stepRow = max(min(stepRow, maxshift), -maxshift);
+            stepCol = max(min(stepCol, maxshift), -maxshift);
+        end
+        if ~isempty(maxStep) && maxStep > 0
+            stepRow = max(min(stepRow, maxStep), -maxStep);
+            stepCol = max(min(stepCol, maxStep), -maxStep);
+        end
+        cumRow = cumRow + stepRow;
+        cumCol = cumCol + stepCol;
     end
 
-    % physical clamp
-    if ~isempty(maxStep) && maxStep > 0
-        stepRow = max(min(stepRow, maxStep), -maxStep);
-        stepCol = max(min(stepCol, maxStep), -maxStep);
-    end
-
-    % store step + score
+    % store accepted incremental step, absolute trajectory and diagnostics
     stepRow_hist(cc) = stepRow;
     stepCol_hist(cc) = stepCol;
     score(cc) = sc;
-
-    % integrate cumulative drift
-    cumRow = cumRow + stepRow;
-    cumCol = cumCol + stepCol;
+    consensusCount_hist(cc) = consensusCount;
+    consensusSpread_hist(cc) = consensusSpread;
     cumRow_hist(cc) = cumRow;
     cumCol_hist(cc) = cumCol;
 
@@ -358,7 +420,7 @@ for j = framesid
     if doTiming, TT.apply = TT.apply + toc(tApp); end
 
     % update prevProc reference (use corrected frame)
-    if refMode == "previous"
+    if ~absoluteMode
         prevCorr = toGray(list(:,:,min(channel,size(list,3)),cc));
         prevProc = preprocess(cropCenter(prevCorr, crop), hipasssigma, apodize, mask);
     end
@@ -466,13 +528,17 @@ drift.cumCol  = cumCol_hist;
 drift.residualRow  = resRow_hist;
 drift.residualCol  = resCol_hist;
 drift.residualNorm = resNorm_hist;
+drift.consensusCount = consensusCount_hist;
+drift.consensusSpread = consensusSpread_hist;
 
 % ---------- Write back drift (absolute frames) ----------
-% drift.x/y are "global correction" histories stored over absolute frames.
+% drift.x/y are the correction produced by this run for absolute frames.
+% Assign rather than add: extraction always starts from raw frames, so adding
+% an older trajectory compounds drift on every replacement run.
 for k = 1:nT
     jj = framesid(k);
-    drift.x(jj) = drift.x(jj) + (-cumRow_hist(k));
-    drift.y(jj) = drift.y(jj) + (-cumCol_hist(k));
+    drift.x(jj) = -cumRow_hist(k);
+    drift.y(jj) = -cumCol_hist(k);
 end
 
 % ---------- footer timing ----------
@@ -589,6 +655,116 @@ col = -dx;
 if subpixel
     row = row - subpixQuad(r, py, px, 1);
     col = col - subpixQuad(r, py, px, 2);
+end
+end
+
+function [row,col,score,nInliers,spread] = robustAnchorShift(ref, mov, subpixel, psrRadius, psrMin, maxshift)
+%ROBUSTANCHORSHIFT Absolute displacement from a fixed anchor.
+% The full-frame estimate is retained as a control. The accepted estimate is
+% the spatial consensus of overlapping tiles, which prevents one changing
+% biological region or one periodic correlation peak from moving the FOV.
+
+[fullRow, fullCol, fullScore] = phasecorrShift(ref, mov, subpixel, psrRadius);
+
+[H,W] = size(ref);
+tileH = min(H, max(64, round(H/3)));
+tileW = min(W, max(64, round(W/3)));
+rowStarts = unique(round(linspace(1, max(1,H-tileH+1), 4)));
+colStarts = unique(round(linspace(1, max(1,W-tileW+1), 4)));
+
+rows = zeros(1, numel(rowStarts)*numel(colStarts));
+cols = zeros(size(rows));
+scores = zeros(size(rows));
+n = 0;
+tilePsrMin = max(3, 0.5*max(0,psrMin));
+if isempty(maxshift) || ~isfinite(maxshift) || maxshift <= 0
+    shiftLimit = inf;
+else
+    shiftLimit = double(maxshift);
+end
+
+for ir = 1:numel(rowStarts)
+    rr = rowStarts(ir):(rowStarts(ir)+tileH-1);
+    for ic = 1:numel(colStarts)
+        cc = colStarts(ic):(colStarts(ic)+tileW-1);
+        refTile = localPhaseTile(ref(rr,cc));
+        movTile = localPhaseTile(mov(rr,cc));
+        if std(refTile(:)) < 0.05 || std(movTile(:)) < 0.05
+            continue;
+        end
+        [r,c,s] = phasecorrShift(refTile, movTile, subpixel, psrRadius);
+        if ~isfinite(r) || ~isfinite(c) || ~isfinite(s) || s < tilePsrMin || ...
+                abs(r) > shiftLimit || abs(c) > shiftLimit
+            continue;
+        end
+        n = n + 1;
+        rows(n) = r;
+        cols(n) = c;
+        scores(n) = s;
+    end
+end
+
+rows = rows(1:n);
+cols = cols(1:n);
+scores = scores(1:n);
+row = NaN;
+col = NaN;
+score = NaN;
+nInliers = 0;
+spread = NaN;
+
+if n >= 3
+    centerRow = median(rows);
+    centerCol = median(cols);
+    dist = hypot(rows-centerRow, cols-centerCol);
+    medDist = median(dist);
+    madDist = median(abs(dist-medDist));
+    tolerance = max(1.5, medDist + 3*1.4826*madDist);
+    keep = dist <= tolerance;
+
+    if nnz(keep) >= 3
+        rows = rows(keep);
+        cols = cols(keep);
+        scores = scores(keep);
+        row = median(rows);
+        col = median(cols);
+        spread = median(hypot(rows-row, cols-col));
+        nInliers = numel(rows);
+
+        fullIsPlausible = isfinite(fullRow) && isfinite(fullCol) && ...
+            abs(fullRow) <= shiftLimit && abs(fullCol) <= shiftLimit;
+        agreeTolerance = max(1.5, 3*spread + 0.5);
+        if fullIsPlausible && hypot(fullRow-row, fullCol-col) <= agreeTolerance
+            row = median([rows fullRow]);
+            col = median([cols fullCol]);
+            score = median([scores fullScore], 'omitnan');
+        else
+            score = median(scores, 'omitnan');
+        end
+        return;
+    end
+end
+
+% A full-frame fallback is used only when tiling cannot form a consensus.
+if isfinite(fullRow) && isfinite(fullCol) && ...
+        abs(fullRow) <= shiftLimit && abs(fullCol) <= shiftLimit && ...
+        (psrMin <= 0 || ~isfinite(fullScore) || fullScore >= psrMin)
+    row = fullRow;
+    col = fullCol;
+    score = fullScore;
+    nInliers = 1;
+    spread = 0;
+end
+end
+
+function tile = localPhaseTile(tile)
+tile = double(tile);
+[H,W] = size(tile);
+tile = tile .* (hann1d(H) * hann1d(W).');
+tile = tile - mean(tile(:));
+s = std(tile(:));
+if s > 0
+    tile = tile ./ s;
 end
 end
 

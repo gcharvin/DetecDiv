@@ -80,8 +80,8 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.ChannelsEditField.Value = formatChannelsField(app, params.channels);
             app.CorrectDriftCheckBox.Value = logical(defaultLogical(app, params.correctDrift, true));
             app.DriftChannelEditField.Value = formatNumericField(app, params.driftChannel);
-            app.DriftMethodDropDown.Value = validateChoice(app, char(string(params.driftMethod)), app.DriftMethodDropDown.Items, 'subpixel');
-            app.DriftRefModeDropDown.Value = validateChoice(app, char(string(params.driftRefMode)), app.DriftRefModeDropDown.Items, 'previous');
+            app.DriftMethodDropDown.Value = validateChoice(app, char(string(params.driftMethod)), app.DriftMethodDropDown.Items, 'robust');
+            app.DriftRefModeDropDown.Value = validateChoice(app, char(string(params.driftRefMode)), app.DriftRefModeDropDown.Items, 'fixed');
             app.DriftSubpixelCheckBox.Value = logical(defaultLogical(app, params.driftSubpixel, true));
             app.DriftMaxShiftEditField.Value = defaultNumeric(app, params.driftMaxShift, 20);
             app.ScaleEditField.Value = defaultNumeric(app, params.scale, 1);
@@ -389,7 +389,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.DriftMethodDropDownLabel.Layout.Column = 1;
 
             app.DriftMethodDropDown = uidropdown(app.MainLayout);
-            app.DriftMethodDropDown.Items = {'subpixel', 'integer'};
+            app.DriftMethodDropDown.Items = {'robust', 'subpixel', 'integer'};
             app.DriftMethodDropDown.Layout.Row = 5;
             app.DriftMethodDropDown.Layout.Column = 2;
 
@@ -399,7 +399,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.DriftRefModeDropDownLabel.Layout.Column = 1;
 
             app.DriftRefModeDropDown = uidropdown(app.MainLayout);
-            app.DriftRefModeDropDown.Items = {'previous', 'first'};
+            app.DriftRefModeDropDown.Items = {'fixed', 'previous'};
             app.DriftRefModeDropDown.Layout.Row = 6;
             app.DriftRefModeDropDown.Layout.Column = 2;
 
