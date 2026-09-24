@@ -130,6 +130,10 @@ end
 function value=conventionalChannel(classif)
 root=classifierPath(classif);
 % Classifiers normally live at <external-root>/classifier/<id>.
+% GUI loaders keep a trailing separator on classif.path. Strip it before
+% fileparts, otherwise two parent steps stop at classifier/ instead of the
+% bundle root.
+root=regexprep(root,'[\\/]+$','');
 if ~isempty(root),root=fileparts(fileparts(root));end
 if isempty(root)
     value='';

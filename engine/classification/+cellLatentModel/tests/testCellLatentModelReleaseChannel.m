@@ -40,6 +40,35 @@ resolved=cellLatentModel.resolvePromotedRelease(c,params);
 verifyEqual(testCase,resolved,params);
 end
 
+function testPipelineDefaultsResolveBundleWithTrailingClassifierPath(testCase)
+[c,params,~]=fixture(testCase);
+bundleRoot=fileparts(char(string(c.path)));
+classifierDir=fullfile(bundleRoot,'classifier',c.strid);
+mkdir(classifierDir);
+releasesDir=fullfile(bundleRoot,'releases');
+mkdir(releasesDir);
+channel=jsondecode(fileread(params.modelReleaseChannelPath));
+channel.releaseManifest='../release/release.json';
+channelPath=fullfile(releasesDir,'detecdiv_stable.json');
+writeText(channelPath,jsonencode(channel,'PrettyPrint',true));
+c.classifierPkg='cellLatentModel';
+c.setPath([classifierDir filesep],c.strid);
+c.executionParam.modelUpdatePolicy='follow_promoted';
+c.executionParam.modelReleaseChannelPath='../../releases/detecdiv_stable.json';
+snapshot=struct('classifierPackage','cellLatentModel', ...
+    'classifierId',c.strid,'executionDefaults',struct( ...
+    'modelUpdatePolicy','follow_promoted', ...
+    'modelReleaseChannelPath',''));
+writeText(fullfile(classifierDir,'training_execution_defaults.json'), ...
+    jsonencode(snapshot,'PrettyPrint',true));
+
+spec=cellLatentModel.executionSpec(c);
+resolved=classifierApplyTrainingExecutionDefaults( ...
+    spec.defaults,c,spec,'pipeline');
+verifyEqual(testCase,resolved.modelReleaseChannelPath,channelPath);
+verifyEqual(testCase,resolved.resolvedModelReleaseId,'latent-v5-stable');
+end
+
 function testChecksumMismatchFailsClosed(testCase)
 [c,params,expected]=fixture(testCase);
 writeText(expected.modelPath,'tampered');
