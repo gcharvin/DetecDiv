@@ -8024,7 +8024,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
-            [file, pth] = uigetfile({'*classification*.mat','Classifier object (*classification*.mat)'; '*.mat','MAT files'}, ...
+            % When a runtime module is already linked, start at its bundle
+            % root so runtime_manifest.json is immediately visible.
+            try
+                if exist(startPath, 'dir') == 7 && ...
+                        exist(fullfile(startPath, 'runtime_manifest.json'), 'file') ~= 2
+                    bundleRoot = fileparts(fileparts(startPath));
+                    if exist(fullfile(bundleRoot, 'runtime_manifest.json'), 'file') == 2
+                        startPath = bundleRoot;
+                    end
+                end
+            catch
+            end
+            [file, pth] = uigetfile({ ...
+                'runtime_manifest.json','Latent-model runtime bundle manifest'; ...
+                '*classification*.mat','Classifier object (*classification*.mat)'; ...
+                '*.json','JSON manifests'; '*.mat','MAT files'}, ...
                 'Link existing classifier object', startPath);
             if isequal(file, 0)
                 return;
@@ -8032,15 +8047,40 @@ classdef pipeline2 < matlab.apps.AppBase
             filePath = fullfile(pth, file);
             try
                 [~, baseName, extName] = fileparts(filePath);
-                if ~strcmpi(extName, '.mat') || isempty(regexp(baseName, '_classification$', 'once')) || ...
+                if strcmpi(extName, '.json')
+                    if ~strcmpi(baseName, 'runtime_manifest')
+                        error('pipeline2:UnsupportedClassifierManifest', ...
+                            'Select the runtime_manifest.json at the root of a latent-model runtime bundle.');
+                    end
+                    if ~strcmpi(char(string(getField(app, app.Data.nodes(idx), 'pkg', ''))), ...
+                            'cellLatentModel')
+                        error('pipeline2:ClassifierPackageMismatch', ...
+                            'A latent-model runtime manifest can only be linked to a cellLatentModel node.');
+                    end
+                    bundleReport = cellLatentModel.validateRuntimeManifest(pth);
+                    manifestClassiId = char(string(bundleReport.classifierId));
+                    filePath = fullfile(pth, 'classifier', manifestClassiId, ...
+                        [manifestClassiId '_classification.mat']);
+                    if exist(filePath, 'file') ~= 2
+                        error('pipeline2:RuntimeClassifierSnapshotMissing', ...
+                            'The runtime manifest is valid, but its classifier snapshot is missing: %s', filePath);
+                    end
+                elseif ~strcmpi(extName, '.mat') || ...
+                        isempty(regexp(baseName, '_classification$', 'once')) || ...
                         ~isempty(regexp(baseName, '_classification_\d+$', 'once'))
                     error('pipeline2:ClassifierSnapshotOnly', ...
-                        'Please link the current classifier snapshot named <classifierId>_classification.mat, not a numbered backup.');
+                        'Select a current <classifierId>_classification.mat snapshot or a latent-model runtime_manifest.json. Numbered MAT backups are not supported.');
                 end
                 [classiObj, msg] = loadClassifierSnapshotStrict(app, filePath);
                 if isempty(classiObj) || ~isa(classiObj, 'classi')
                     if isempty(msg), msg = 'Selected file is not a classi object.'; end
                     error('pipeline2:BadClassifierLink', '%s', msg);
+                end
+                if exist('bundleReport', 'var') && ...
+                        ~strcmp(char(string(classiObj.strid)), manifestClassiId)
+                    error('pipeline2:RuntimeClassifierIdMismatch', ...
+                        'The runtime manifest names classifier "%s", but the snapshot contains "%s".', ...
+                        manifestClassiId, char(string(classiObj.strid)));
                 end
                 expectedPkg = char(string(getField(app, app.Data.nodes(idx), 'pkg', '')));
                 actualPkg = classifierPackageName(app, classiObj);

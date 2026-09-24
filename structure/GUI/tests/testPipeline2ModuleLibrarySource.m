@@ -71,6 +71,22 @@ verifyEqual(testCase,contract.resources.out.role,'object_metrics');
 verifyEqual(testCase,contract.requirements.roi.channelsMin,0);
 end
 
+function testClassifierLinkAcceptsValidatedLatentRuntimeManifest(testCase)
+sourcePath = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+    'pipeline2_extracted.m');
+source = fileread(sourcePath);
+block = regexp(source, ...
+    'function linkClassifierArtifact\(app, node\).*?(?=\n\s*function )', ...
+    'match', 'once');
+
+verifyNotEmpty(testCase, block);
+verifyTrue(testCase, contains(block, 'runtime_manifest.json'));
+verifyTrue(testCase, contains(block, 'cellLatentModel.validateRuntimeManifest(pth)'));
+verifyTrue(testCase, contains(block, '''classifier'', manifestClassiId'));
+verifyTrue(testCase, contains(block, '[manifestClassiId ''_classification.mat'']'));
+verifyTrue(testCase, contains(block, 'ClassifierSnapshotOnly'));
+end
+
 function testObjectMetricsAutoResolvesBothUpstreamResources(testCase)
 compute=computeMetrics.setparam(struct());
 compute.outputName='channel_quantification';
