@@ -2,6 +2,9 @@ function report = validateRuntimeManifest(bundleRoot)
 %VALIDATERUNTIMEMANIFEST Verify an exported v1 latent-model runtime bundle.
 
 bundleRoot = char(string(bundleRoot));
+% uigetfile returns a folder with a trailing separator. Normalize it before
+% comparing recursive dir() entries with manifest-relative paths below.
+bundleRoot = regexprep(bundleRoot,'[\\/]+$','');
 manifestPath = fullfile(bundleRoot,'runtime_manifest.json');
 if ~isfolder(bundleRoot) || ~isfile(manifestPath)
     error('cellLatentModel:InvalidRuntimeBundle', ...

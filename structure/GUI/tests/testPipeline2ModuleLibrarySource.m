@@ -87,6 +87,14 @@ verifyTrue(testCase, contains(block, '[manifestClassiId ''_classification.mat'']
 verifyTrue(testCase, contains(block, 'ClassifierSnapshotOnly'));
 end
 
+function testRuntimeManifestValidatorNormalizesPickerFolder(testCase)
+sourcePath = fullfile(fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))), ...
+    'engine','classification','+cellLatentModel','validateRuntimeManifest.m');
+source = fileread(sourcePath);
+verifyTrue(testCase, contains(source, ...
+    "bundleRoot = regexprep(bundleRoot,'[\\/]+$','');"));
+end
+
 function testObjectMetricsAutoResolvesBothUpstreamResources(testCase)
 compute=computeMetrics.setparam(struct());
 compute.outputName='channel_quantification';
