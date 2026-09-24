@@ -17476,6 +17476,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 [hubStatus, info] = queryHubStatus(app, hub);
                 detecdiv_hub_settings_set(hub);
                 applyHubSettingsToUi(app, hub);
+                resumeHubRunStatusMonitorAfterReconnect(app, hub);
                 setHubPasswordValue(app, '');
                 closeRuntimeProgress(app, d);
                 summaryText = formatHubStatusSummary(app, hubStatus);
@@ -17494,6 +17495,61 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             refreshValidationReport(app);
+        end
+
+        function resumeHubRunStatusMonitorAfterReconnect(app, hub)
+            jobId = currentHubRunJobId(app);
+            if isempty(jobId)
+                return;
+            end
+
+            hubStatus = '';
+            runStatus = '';
+            try
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                    runStatus = char(string(app.CurrentRun.status));
+                    if isstruct(app.CurrentRun.ctx) && isfield(app.CurrentRun.ctx, 'hub') && ...
+                            isstruct(app.CurrentRun.ctx.hub) && isfield(app.CurrentRun.ctx.hub, 'status')
+                        hubStatus = char(string(app.CurrentRun.ctx.hub.status));
+                    end
+                end
+            catch
+                hubStatus = '';
+            end
+            if isempty(hubStatus) && startsWith(lower(runStatus), 'hub_')
+                hubStatus = char(extractAfter(string(runStatus), 4));
+            end
+
+            hasActiveStatus = any(strcmpi(hubStatus, {'queued','running','cancelling'}));
+            monitorWasActive = strcmpi(char(string(app.ActiveRunMode)), 'hub') || ...
+                ~isempty(app.HubRunMonitorToken) || hasActiveStatus;
+            if ~monitorWasActive
+                return;
+            end
+
+            oldToken = app.HubRunMonitorToken;
+            app.HubRunMonitorToken = '';
+            if ~isempty(oldToken)
+                try
+                    detecdiv_hub_broker('unregister', oldToken);
+                catch
+                end
+            end
+
+            app.HubRunMonitorJobId = jobId;
+            try
+                app.ActiveRunMode = 'hub';
+                applyHubRunUiLock(app, true);
+                startHubRunStatusWorker(app, jobId, false, Inf, hub);
+                appendMonitorConsole(app, ...
+                    '[monitor] Hub connection restored; status polling resumed.');
+                setRuntimeStatus(app, ['Hub reconnected; resuming monitor for job ' jobId '.']);
+            catch ME
+                app.HubRunMonitorToken = '';
+                message = ['Hub connected, but the run monitor could not restart: ' ME.message];
+                appendMonitorConsole(app, ['[monitor] ' message]);
+                setRuntimeStatus(app, message);
+            end
         end
 
         function [status, info] = queryHubStatus(app, hub)
@@ -19634,8 +19690,12 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function startHubRunStatusWorker(app, jobId, showErrors, maxIterations)
-            hub = hubSettingsFromUi(app);
+        function startHubRunStatusWorker(app, jobId, showErrors, maxIterations, hubOverride)
+            if nargin >= 5 && isstruct(hubOverride)
+                hub = hubOverride;
+            else
+                hub = hubSettingsFromUi(app);
+            end
             hub.timeout = min(5, double(hub.timeout));
             keepMonitoring = isinf(maxIterations);
             config = struct('hub', hub, 'jobId', jobId, ...
