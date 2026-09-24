@@ -8046,6 +8046,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             filePath = fullfile(pth, file);
+            linkProgress = [];
             try
                 [~, baseName, extName] = fileparts(filePath);
                 if strcmpi(extName, '.json')
@@ -8058,7 +8059,14 @@ classdef pipeline2 < matlab.apps.AppBase
                         error('pipeline2:ClassifierPackageMismatch', ...
                             'A latent-model runtime manifest can only be linked to a cellLatentModel node.');
                     end
-                    bundleReport = cellLatentModel.validateRuntimeManifest(pth);
+                    linkProgress = uiprogressdlg(app.UIFigure, ...
+                        'Title', 'Link latent-model runtime', ...
+                        'Message', 'Reading runtime manifest...', ...
+                        'Value', 0, 'Cancelable', 'off');
+                    drawnow limitrate nocallbacks;
+                    bundleReport = cellLatentModel.validateRuntimeManifest(pth, ...
+                        @(fraction,message)updateClassifierLinkProgress( ...
+                        app,linkProgress,fraction,message));
                     manifestClassiId = char(string(bundleReport.classifierId));
                     filePath = fullfile(pth, 'classifier', manifestClassiId, ...
                         [manifestClassiId '_classification.mat']);
@@ -8066,6 +8074,8 @@ classdef pipeline2 < matlab.apps.AppBase
                         error('pipeline2:RuntimeClassifierSnapshotMissing', ...
                             'The runtime manifest is valid, but its classifier snapshot is missing: %s', filePath);
                     end
+                    updateClassifierLinkProgress(app,linkProgress,NaN, ...
+                        'Loading the linked classifier snapshot...');
                 elseif ~strcmpi(extName, '.mat') || ...
                         isempty(regexp(baseName, '_classification$', 'once')) || ...
                         ~isempty(regexp(baseName, '_classification_\d+$', 'once'))
@@ -8115,6 +8125,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 elseif strcmpi(executionPkg, 'trackastra')
                     app.Data.nodes(idx).params = copyTrackastraStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 else
+                    updateClassifierLinkProgress(app,linkProgress,NaN, ...
+                        'Importing classifier defaults and checking the release...');
                     app.Data.nodes(idx).params = applyClassifierExecutionDefaults(app, ...
                         app.Data.nodes(idx).params, executionPkg, classiObj, 'missing');
                 end
@@ -8124,9 +8136,29 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params.moduleVar = varName;
                 catch
                 end
+                updateClassifierLinkProgress(app,linkProgress,1, ...
+                    'Classifier linked. Refreshing pipeline...');
+                closeProgressDialog(app,linkProgress);
+                linkProgress = [];
                 refreshAfterModelChange(app);
             catch ME
+                closeProgressDialog(app,linkProgress);
                 uialert(app.UIFigure, ME.message, 'Link classifier', 'Icon', 'error');
+            end
+        end
+
+        function updateClassifierLinkProgress(app,d,fraction,message) %#ok<INUSD>
+            try
+                if isempty(d) || ~isvalid(d),return;end
+                if isfinite(fraction)
+                    d.Indeterminate = 'off';
+                    d.Value = max(0,min(1,double(fraction)));
+                else
+                    d.Indeterminate = 'on';
+                end
+                d.Message = char(string(message));
+                drawnow limitrate nocallbacks;
+            catch
             end
         end
 
@@ -20084,6 +20116,11 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             ctx = runObj.ctx;
+            [restoredNodes, restoredLinks] = ...
+                pipelineRestoreClassifierLinksFromRun(app.Data.nodes,ctx);
+            if ~isempty(restoredLinks)
+                app.Data.nodes = restoredNodes;
+            end
             if isstruct(ctx)
                 if isfield(ctx, 'run') && isstruct(ctx.run)
                     if isfield(ctx.run, 'runPolicy') && strcmpi(char(string(ctx.run.runPolicy)), 'restart')
@@ -20172,6 +20209,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             updateRuntimeInputStates(app);
             if logical(refreshUi)
+                if ~isempty(restoredLinks)
+                    refreshSelectedModuleTable(app, false);
+                end
                 refreshModuleTabs(app);
                 refreshValidationReport(app);
             end

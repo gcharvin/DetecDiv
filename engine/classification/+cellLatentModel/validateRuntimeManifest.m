@@ -1,5 +1,11 @@
-function report = validateRuntimeManifest(bundleRoot)
+function report = validateRuntimeManifest(bundleRoot,progressFcn)
 %VALIDATERUNTIMEMANIFEST Verify an exported v1 latent-model runtime bundle.
+
+if nargin < 2,progressFcn=[];end
+if ~isempty(progressFcn) && ~isa(progressFcn,'function_handle')
+    error('cellLatentModel:InvalidProgressCallback', ...
+        'progressFcn must be a function handle.');
+end
 
 bundleRoot = char(string(bundleRoot));
 % uigetfile returns a folder with a trailing separator. Normalize it before
@@ -10,6 +16,7 @@ if ~isfolder(bundleRoot) || ~isfile(manifestPath)
     error('cellLatentModel:InvalidRuntimeBundle', ...
         'Runtime bundle manifest is missing: %s',manifestPath);
 end
+emitProgress(progressFcn,0.01,'Reading runtime manifest...');
 manifest = readJson(manifestPath);
 requireText(manifest,'format','detecdiv.cell_latent_model.runtime_bundle.v1');
 requireText(manifest,'profile','pipeline');
@@ -24,8 +31,11 @@ if isempty(regexp(classifierId,'^[A-Za-z0-9][A-Za-z0-9._-]*$','once')) || ...
 end
 files = manifest.files;
 if ~isstruct(files) || isempty(files),invalid('files must be a non-empty list.');end
+emitProgress(progressFcn,0.04,sprintf( ...
+    'Verifying %d bundle files and SHA-256 checksums...',numel(files)));
 seen = strings(0,1);
 totalBytes = 0;
+progressStep = max(1,ceil(numel(files)/40));
 for i = 1:numel(files)
     rel = textField(files(i),'path');
     if ~safeRelativePath(rel),invalid('Unsafe file path in manifest: %s',rel);end
@@ -46,8 +56,13 @@ for i = 1:numel(files)
         invalid('SHA-256 mismatch for bundle file: %s',rel);
     end
     totalBytes = totalBytes + double(info.bytes);
+    if i == 1 || mod(i,progressStep) == 0 || i == numel(files)
+        emitProgress(progressFcn,0.04+0.50*i/numel(files), ...
+            sprintf('Verifying bundle files: %d/%d',i,numel(files)));
+    end
 end
 
+emitProgress(progressFcn,0.55,'Checking the promoted release...');
 pointer = fullfile(bundleRoot,'releases','detecdiv_stable.json');
 if ~isfile(pointer),invalid('Stable release pointer is missing.');end
 channel = readJson(pointer);
@@ -69,8 +84,9 @@ if ~strcmp(textField(release,'releaseId'),releaseId)
     invalid('Release manifest and runtime manifest IDs differ.');
 end
 assertNoAbsolutePaths(release,releasePath);
-verifyReleaseArtifacts(release,fileparts(releasePath),bundleRoot);
+verifyReleaseArtifacts(release,fileparts(releasePath),bundleRoot,progressFcn);
 
+emitProgress(progressFcn,0.88,'Checking the reduced classifier snapshot...');
 classifierSnapshot = fullfile(bundleRoot,'classifier',classifierId, ...
     [classifierId '_classification.mat']);
 if ~isfile(classifierSnapshot)
@@ -82,6 +98,7 @@ loadedClassifier = load(classifierSnapshot,'classiObj');
 % staging directory, while the embedded classifier path already names the
 % final destination that will receive the staged bundle.
 loadedClassifier.classiObj.path = fullfile(bundleRoot,'classifier',classifierId);
+emitProgress(progressFcn,NaN,'Resolving and checking the promoted model...');
 try
     resolvedClassifier = cellLatentModel.resolvePromotedRelease( ...
         loadedClassifier.classiObj,loadedClassifier.classiObj.executionParam);
@@ -92,6 +109,7 @@ end
 if ~strcmp(textField(resolvedClassifier,'resolvedModelReleaseId'),releaseId)
     invalid('Runtime classifier resolves a different promoted release.');
 end
+emitProgress(progressFcn,0.97,'Checking the bundle file inventory...');
 required = {'releases/detecdiv_stable.json', ...
     ['releases/' strrep(relativeRelease,'\','/')], ...
     ['classifier/' classifierId '/' classifierId '_classification.mat']};
@@ -101,6 +119,7 @@ for i = 1:numel(required)
     end
 end
 verifyNoUnlistedFiles(bundleRoot,seen);
+emitProgress(progressFcn,1,'Runtime bundle verified.');
 report = struct('valid',true,'bundleRoot',string(bundleRoot), ...
     'classifierId',string(classifierId),'releaseId',string(releaseId), ...
     'fileCount',numel(files),'totalBytes',totalBytes);
@@ -136,12 +155,23 @@ elseif ~any(strcmpi(ext,{'.json','.py','.pt','.pth','.pkl','.pickle', ...
 end
 end
 
-function verifyReleaseArtifacts(release,releaseRoot,bundleRoot)
+function verifyReleaseArtifacts(release,releaseRoot,bundleRoot,progressFcn)
 if ~isfield(release,'artifacts') || ~isstruct(release.artifacts)
     invalid('Runtime release has no artifacts list.');
 end
+weights = ones(1,numel(release.artifacts));
+for i = 1:numel(release.artifacts)
+    parameter = textField(release.artifacts(i),'parameter');
+    if strcmp(parameter,'runtimeCodeRoot'),weights(i)=12;end
+    if strcmp(parameter,'trackingCheckpointDir'),weights(i)=2;end
+end
 for i = 1:numel(release.artifacts)
     artifact = release.artifacts(i);
+    stageStart = 0.55+0.32*sum(weights(1:i-1))/sum(weights);
+    stageEnd = 0.55+0.32*sum(weights(1:i))/sum(weights);
+    emitProgress(progressFcn,stageStart, ...
+        sprintf('Checking release artifact %d/%d: %s', ...
+        i,numel(release.artifacts),textField(artifact,'parameter')));
     rel = textField(artifact,'path');
     if ~safeRelativePath(rel)
         invalid('Release artifact path is not bundle-relative: %s',rel);
@@ -163,6 +193,10 @@ for i = 1:numel(release.artifacts)
             for j = 1:numel(files)
                 relative = textField(files(j),'path');
                 verifyManifestFile(path,relative,textField(files(j),'sha256'),bundleRoot);
+                if mod(j,10) == 0 || j == numel(files)
+                    emitProgress(progressFcn,stageStart+(stageEnd-stageStart)*j/numel(files), ...
+                        sprintf('Checking runtime code: %d/%d files',j,numel(files)));
+                end
             end
         elseif strcmp(textField(artifact,'parameter'),'trackingCheckpointDir')
             [names,hashes] = readFlatHashMap(path,'files');
@@ -171,6 +205,10 @@ for i = 1:numel(release.artifacts)
             end
             for j = 1:numel(names)
                 verifyManifestFile(path,names{j},hashes{j},bundleRoot);
+                if mod(j,10) == 0 || j == numel(names)
+                    emitProgress(progressFcn,stageStart+(stageEnd-stageStart)*j/numel(names), ...
+                        sprintf('Checking tracking files: %d/%d',j,numel(names)));
+                end
             end
         else
             invalid('Unsupported directory-manifest artifact: %s', ...
@@ -179,7 +217,14 @@ for i = 1:numel(release.artifacts)
     elseif ~strcmp(kind,'file')
         invalid('Unsupported artifact kind: %s',kind);
     end
+    emitProgress(progressFcn,stageEnd, ...
+        sprintf('Checked release artifact %d/%d',i,numel(release.artifacts)));
 end
+end
+
+function emitProgress(progressFcn,fraction,message)
+if isempty(progressFcn),return;end
+progressFcn(fraction,message);
 end
 
 function [names,hashes] = readFlatHashMap(path,key)

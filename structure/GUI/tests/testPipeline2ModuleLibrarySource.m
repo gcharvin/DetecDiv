@@ -81,7 +81,9 @@ block = regexp(source, ...
 
 verifyNotEmpty(testCase, block);
 verifyTrue(testCase, contains(block, 'runtime_manifest.json'));
-verifyTrue(testCase, contains(block, 'cellLatentModel.validateRuntimeManifest(pth)'));
+verifyTrue(testCase, contains(block, 'cellLatentModel.validateRuntimeManifest(pth,'));
+verifyTrue(testCase, contains(block, "'Title', 'Link latent-model runtime'"));
+verifyTrue(testCase, contains(block, 'updateClassifierLinkProgress('));
 verifyTrue(testCase, contains(block, '''classifier'', manifestClassiId'));
 verifyTrue(testCase, contains(block, '[manifestClassiId ''_classification.mat'']'));
 verifyTrue(testCase, contains(block, 'ClassifierSnapshotOnly'));
@@ -93,6 +95,18 @@ sourcePath = fullfile(fileparts(fileparts(fileparts(fileparts(mfilename('fullpat
 source = fileread(sourcePath);
 verifyTrue(testCase, contains(source, ...
     "bundleRoot = regexprep(bundleRoot,'[\\/]+$','');"));
+end
+
+function testRunLoadRestoresClassifierLinksFromSavedPipelineSpec(testCase)
+sourcePath = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+    'pipeline2_extracted.m');
+source = fileread(sourcePath);
+block = regexp(source, ...
+    'function loadRunIntoUi\(app, runObj, refreshUi\).*?(?=\n\s*function )', ...
+    'match', 'once');
+verifyNotEmpty(testCase,block);
+verifyTrue(testCase,contains(block, ...
+    'pipelineRestoreClassifierLinksFromRun(app.Data.nodes,ctx)'));
 end
 
 function testObjectMetricsAutoResolvesBothUpstreamResources(testCase)
