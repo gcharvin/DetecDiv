@@ -2,16 +2,22 @@ function [shallowObj, msg] = shallowLoad(filename, varargin)
 
 projectDirOverride = '';
 preferJson = true;
+progressCallback = [];
 if ~isempty(varargin)
     ip = inputParser;
     ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
     ip.addParameter('PreferJson', true, @(x)islogical(x) || isnumeric(x));
+    ip.addParameter('ProgressCallback', [], @(x)isempty(x) || isa(x, 'function_handle'));
     ip.parse(varargin{:});
     projectDirOverride = char(string(ip.Results.ProjectDir));
     preferJson = logical(ip.Results.PreferJson);
+    progressCallback = ip.Results.ProgressCallback;
 end
 
 if nargin == 0
+    filename = [];
+end
+if isempty(filename)
     [file, path] = uigetfile({'*.json;*.mat', 'DetecDiv project (*.json, *.mat)'; ...
         '*.json', 'Light project JSON (*.json)'; '*.mat', 'Legacy shallow project (*.mat)'}, ...
         'Select a shallow project', pwd);
@@ -69,7 +75,8 @@ end
 file = namestr;
 path = pathstr;
 if strcmpi(ext, '.json')
-    [shallowObj, msg] = shallowProjectImportLight(filename, 'ProjectDir', projectDirOverride);
+    [shallowObj, msg] = shallowProjectImportLight(filename, ...
+        'ProjectDir', projectDirOverride, 'ProgressCallback', progressCallback);
     return;
 end
 if isempty(projectDirOverride)

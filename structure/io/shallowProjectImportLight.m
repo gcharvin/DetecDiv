@@ -2,11 +2,14 @@ function [shallowObj, msg] = shallowProjectImportLight(jsonPath, varargin)
 %SHALLOWPROJECTIMPORTLIGHT Reconstruct a shallow object from a v2/v3 JSON manifest.
 
 projectDirOverride = '';
+progressCallback = [];
 if ~isempty(varargin)
     ip = inputParser;
     ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
+    ip.addParameter('ProgressCallback', [], @(x)isempty(x) || isa(x, 'function_handle'));
     ip.parse(varargin{:});
     projectDirOverride = char(string(ip.Results.ProjectDir));
+    progressCallback = ip.Results.ProgressCallback;
 end
 
 jsonPath = char(string(jsonPath));
@@ -17,7 +20,9 @@ if ~isfile(jsonPath)
     return;
 end
 
+localReportProgress(progressCallback, 0.01, 'Reading project JSON manifest...', 'json');
 project = jsondecode(fileread(jsonPath));
+localReportProgress(progressCallback, 0.04, 'Project JSON loaded; resolving project metadata...', 'metadata');
 if ~isfield(project, 'schemaVersion') || double(project.schemaVersion) < 2
     error('shallowProjectImportLight:UnsupportedSchema', ...
         'Unsupported or missing project schemaVersion in %s.', jsonPath);
@@ -61,18 +66,23 @@ if isempty(projectDirOverride) && ~isfolder(projectDir) && ...
 end
 
 if isfield(project, 'runProfilesPath') && ~isempty(project.runProfilesPath)
+    localReportProgress(progressCallback, 0.05, 'Loading project run profiles...', 'metadata');
     profilePath = localResolveProjectPath(project.runProfilesPath, projectDir);
     if ~isfile(profilePath)
         error('shallowProjectImportLight:MissingMetadata', ...
             'Project run profiles file is missing: %s', profilePath);
     end
     shallowObj.runProfiles = jsondecode(fileread(profilePath));
+    localReportProgress(progressCallback, 0.07, 'Run profiles loaded.', 'metadata');
 end
 
-shallowObj.fov = localBuildFovs(localResolveFovItems(project, projectDir), shallowObj, projectDir);
+fovItems = localResolveFovItems(project, projectDir, progressCallback, 0.08, 0.18);
+localReportProgress(progressCallback, 0.18, 'Reconstructing FOV and ROI objects...', 'reconstruction');
+shallowObj.fov = localBuildFovs(fovItems, shallowObj, projectDir, progressCallback, 0.18, 0.68);
 shallowObj.processing = struct('roi', [], 'classification', [], ...
     'processor', process.empty, 'pipelineRun', pipelineRun.empty);
 
+localReportProgress(progressCallback, 0.69, 'Loading classifier objects...', 'classifiers');
 try
     shallowObj.processing.classification = localLoadClassifiers(project, projectDir);
 catch ME
@@ -80,6 +90,7 @@ catch ME
     shallowObj.processing.classification = classi.empty;
 end
 
+localReportProgress(progressCallback, 0.77, 'Loading processor objects...', 'processors');
 try
     shallowObj.processing.processor = localLoadProcessors(project, projectDir);
 catch ME
@@ -87,6 +98,7 @@ catch ME
     shallowObj.processing.processor = process.empty;
 end
 
+localReportProgress(progressCallback, 0.85, 'Loading pipeline run records...', 'pipelineRuns');
 try
     shallowObj.processing.pipelineRun = localLoadPipelineRuns(project, projectDir);
 catch ME
@@ -94,38 +106,53 @@ catch ME
     shallowObj.processing.pipelineRun = pipelineRun.empty;
 end
 
+localReportProgress(progressCallback, 0.92, 'Finalizing project reconstruction...', 'finalizing');
 msg = ['Successfully loaded lightweight shallow project ' jsonPath '!'];
 disp(msg);
+localReportProgress(progressCallback, 0.93, 'Project data reconstructed.', 'complete');
 end
 
-function items = localResolveFovItems(project, projectDir)
+function items = localResolveFovItems(project, projectDir, progressCallback, progressStart, progressEnd)
 items = [];
 if ~isfield(project, 'fovs') || isempty(project.fovs)
+    localReportProgress(progressCallback, progressEnd, 'No FOV metadata to load.', 'fovMetadata');
     return;
 end
 items = project.fovs;
 if ~isfield(items, 'metadataPath')
+    localReportProgress(progressCallback, progressEnd, 'FOV metadata is embedded in the project JSON.', 'fovMetadata');
     return; % Legacy v2 manifests contain full FOV metadata inline.
 end
 details = cell(numel(items), 1);
 for i = 1:numel(items)
+    fovId = localFieldText(items(i), 'id', '');
+    localReportProgress(progressCallback, progressStart + (progressEnd - progressStart) * (i - 1) / numel(items), ...
+        sprintf('Loading FOV metadata %d/%d: %s', i, numel(items), fovId), 'fovMetadata');
     detailPath = localResolveProjectPath(items(i).metadataPath, projectDir);
     if ~isfile(detailPath)
         error('shallowProjectImportLight:MissingMetadata', ...
             'FOV metadata file is missing: %s', detailPath);
     end
     details{i} = jsondecode(fileread(detailPath));
+    localReportProgress(progressCallback, progressStart + (progressEnd - progressStart) * i / numel(items), ...
+        sprintf('Loaded FOV metadata %d/%d: %s', i, numel(items), fovId), 'fovMetadata');
 end
 items = vertcat(details{:});
 end
 
-function fovs = localBuildFovs(items, shallowObj, projectDir)
+function fovs = localBuildFovs(items, shallowObj, projectDir, progressCallback, progressStart, progressEnd)
 fovs = fov.empty;
 if isempty(items)
+    localReportProgress(progressCallback, progressEnd, 'No FOVs to reconstruct.', 'reconstruction');
     return;
 end
 for i = 1:numel(items)
     item = items(i);
+    fovId = localFieldText(item, 'id', '');
+    fovStart = progressStart + (progressEnd - progressStart) * (i - 1) / numel(items);
+    fovEnd = progressStart + (progressEnd - progressStart) * i / numel(items);
+    localReportProgress(progressCallback, fovStart, ...
+        sprintf('Reconstructing FOV %d/%d: %s', i, numel(items), fovId), 'reconstruction');
     f = fov();
     f.parent = shallowObj;
     f.id = localFieldText(item, 'id', '');
@@ -147,61 +174,14 @@ for i = 1:numel(items)
     if isfield(item, 'raw') && isstruct(item.raw)
         f = localApplyRawFields(f, item.raw, projectDir);
     end
-    f = localEnsureFovSourceLists(f);
-    f.roi = localBuildRois(item, f, projectDir);
+    roiStart = fovStart + 0.25 * (fovEnd - fovStart);
+    localReportProgress(progressCallback, roiStart, ...
+        sprintf('Reconstructing ROI objects for FOV %d/%d: %s', i, numel(items), fovId), 'rois');
+    f.roi = localBuildRois(item, f, projectDir, progressCallback, roiStart, fovEnd, i, numel(items), fovId);
     fovs(end + 1) = f; %#ok<AGROW>
+    localReportProgress(progressCallback, fovEnd, ...
+        sprintf('Reconstructed FOV %d/%d: %s (%d ROI)', i, numel(items), fovId, numel(f.roi)), 'reconstruction');
 end
-end
-
-function f = localEnsureFovSourceLists(f)
-usesVirtualSource = (isprop(f, 'isMultiTiff') && f.isMultiTiff) || ...
-    (isprop(f, 'isNDTiff') && f.isNDTiff) || ...
-    (isprop(f, 'isOMEZarr') && f.isOMEZarr) || ...
-    (isprop(f, 'isStackSeries') && f.isStackSeries);
-if usesVirtualSource || ~iscell(f.srcpath) || isempty(f.srcpath)
-    return;
-end
-for ch = 1:numel(f.srcpath)
-    if ch <= numel(f.srclist) && ~isempty(f.srclist{ch})
-        continue;
-    end
-    folder = char(string(f.srcpath{ch}));
-    if ~isfolder(folder)
-        continue;
-    end
-    files = localListImageFiles(folder);
-    if isempty(files)
-        continue;
-    end
-    f.srclist{ch} = files;
-    if numel(f.frames) < ch || isempty(f.frames(ch)) || f.frames(ch) <= 0
-        if isempty(f.frames)
-            f.frames = zeros(1, numel(f.srcpath));
-        elseif numel(f.frames) < ch
-            f.frames(end+1:ch) = 0;
-        end
-        f.frames(ch) = numel(files);
-    end
-end
-end
-
-function files = localListImageFiles(folder)
-patterns = {'*.tif','*.tiff','*.jpg','*.jpeg','*.png'};
-files = struct('name', {}, 'folder', {}, 'date', {}, 'bytes', {}, 'isdir', {}, 'datenum', {});
-for i = 1:numel(patterns)
-    files = [files; dir(fullfile(folder, patterns{i}))]; %#ok<AGROW>
-end
-if isempty(files)
-    return;
-end
-names = {files.name};
-keep = ~startsWith(names, '._') & ~strcmp(names, '.DS_Store');
-files = files(keep);
-if isempty(files)
-    return;
-end
-[~, idx] = sort(lower({files.name}));
-files = files(idx);
 end
 
 function f = localApplyRawFields(f, raw, projectDir)
@@ -226,15 +206,19 @@ for i = 1:numel(names)
 end
 end
 
-function rois = localBuildRois(fovItem, fovObj, projectDir)
+function rois = localBuildRois(fovItem, fovObj, projectDir, progressCallback, progressStart, progressEnd, fovIndex, fovCount, fovId)
 rois = roi.empty;
 if ~isfield(fovItem, 'rois') || isempty(fovItem.rois)
+    localReportProgress(progressCallback, progressEnd, ...
+        sprintf('FOV %d/%d: no ROIs to reconstruct.', fovIndex, fovCount), 'rois');
     return;
 end
 
 items = fovItem.rois;
 for i = 1:numel(items)
     item = items(i);
+    localReportProgress(progressCallback, progressStart + (progressEnd - progressStart) * (i - 1) / numel(items), ...
+        sprintf('Reconstructing FOV %d/%d (%s), ROI %d/%d', fovIndex, fovCount, fovId, i, numel(items)), 'rois');
     r = roi(localFieldText(item, 'id', ''), localFieldValue(item, 'value', []));
     r.parent = fovObj;
     r.path = localResolveRoiPath(localFieldText(item, 'path', ''), projectDir, fovObj.id);
@@ -249,6 +233,8 @@ for i = 1:numel(items)
     r.image = [];
     r.data = dataseries.empty;
     rois(end + 1) = r; %#ok<AGROW>
+    localReportProgress(progressCallback, progressStart + (progressEnd - progressStart) * i / numel(items), ...
+        sprintf('Reconstructed FOV %d/%d (%s), ROI %d/%d', fovIndex, fovCount, fovId, i, numel(items)), 'rois');
 end
 end
 
@@ -437,4 +423,15 @@ end
 function tf = localIsAbsolute(pathText)
 pathText = char(string(pathText));
 tf = ~isempty(regexp(pathText, '^[A-Za-z]:[\\/]', 'once')) || startsWith(pathText, '/') || startsWith(pathText, '\\');
+end
+
+function localReportProgress(progressCallback, fraction, message, stage)
+if isempty(progressCallback)
+    return;
+end
+payload = struct( ...
+    'fraction', min(1, max(0, double(fraction))), ...
+    'message', char(string(message)), ...
+    'stage', char(string(stage)));
+progressCallback(payload);
 end

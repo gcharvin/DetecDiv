@@ -5970,10 +5970,11 @@ function openRecentProjectCallback(app, projectPath)
 
     d = uiprogressdlg(app.DetecDivUIFigure, ...
         'Title','Please Wait...', ...
-        'Message','Loading selected project...');
-    d.Value = 0.33;
+        'Message','Preparing project load...');
+    d.Value = 0.01;
+    progressCallback = @(payload)app.updateProjectLoadProgress(d, payload);
 
-    [proj, msg] = shallowLoad(projectPathChar);
+    [proj, msg] = shallowLoad(projectPathChar, 'ProgressCallback', progressCallback);
 
     if isempty(proj)
         close(d);
@@ -5983,12 +5984,12 @@ function openRecentProjectCallback(app, projectPath)
         return;
     end
 
-    d.Message = 'Checking Hub access and acquiring a local edit lease...';
-    drawnow;
+    app.updateProjectLoadProgress(d, struct('fraction', 0.94, ...
+        'message', 'Checking Hub access and acquiring a local edit lease...', 'stage', 'hubAccess'));
     [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
 
-    d.Value = 0.66;
-    pause(0.2);
+    app.updateProjectLoadProgress(d, struct('fraction', 0.97, ...
+        'message', 'Adding project to the workspace and refreshing the project list...', 'stage', 'display'));
 
     name = makeSafeVariableName(proj.io.file);
     assignin('base', name, proj);
@@ -6000,11 +6001,28 @@ function openRecentProjectCallback(app, projectPath)
     gatherVarsFromWorkspace(app);
     displayNodes(app);
 
+    app.updateProjectLoadProgress(d, struct('fraction', 1, ...
+        'message', 'Project loaded.', 'stage', 'complete'));
+
     if hubAccess.hubManaged && hubAccess.readOnly
         uialert(app.DetecDivUIFigure, hubAccess.reason, 'Hub project opened read-only', 'Icon', 'warning');
     end
 
     close(d);
+end
+
+
+function updateProjectLoadProgress(app, dialog, payload)
+    if isempty(dialog) || ~isvalid(dialog) || ~isstruct(payload)
+        return;
+    end
+    if isfield(payload, 'message')
+        dialog.Message = char(string(payload.message));
+    end
+    if isfield(payload, 'fraction') && isnumeric(payload.fraction) && isscalar(payload.fraction)
+        dialog.Value = max(dialog.Value, min(1, max(0, double(payload.fraction))));
+    end
+    drawnow limitrate;
 end
 
 
@@ -7896,11 +7914,12 @@ end
 
             d = uiprogressdlg(app.DetecDivUIFigure, ...
                 'Title','Please Wait...', ...
-                'Message','Loading selected project...');
+                'Message','Preparing project load...');
 
-            d.Value = 0.33;
+            d.Value = 0.01;
+            progressCallback = @(payload)app.updateProjectLoadProgress(d, payload);
 
-            [proj, msg] = shallowLoad;
+            [proj, msg] = shallowLoad([], 'ProgressCallback', progressCallback);
             if isempty(proj)
                 close(d);
                 if ~isempty(msg)
@@ -7908,12 +7927,12 @@ end
                 end
                 return;
             end
-            d.Message = 'Checking Hub access and acquiring a local edit lease...';
-            drawnow;
+            app.updateProjectLoadProgress(d, struct('fraction', 0.94, ...
+                'message', 'Checking Hub access and acquiring a local edit lease...', 'stage', 'hubAccess'));
             [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
 
-            d.Value = 0.66;
-            pause(0.2);  % (garde si tu veux forcer l'update graphique)
+            app.updateProjectLoadProgress(d, struct('fraction', 0.97, ...
+                'message', 'Adding project to the workspace and refreshing the project list...', 'stage', 'display'));
 
             % mettre l'objet dans le workspace base sous son nom
             name = makeSafeVariableName(proj.io.file);
@@ -7927,6 +7946,8 @@ end
             % mettre à jour l'état interne de l'app
             gatherVarsFromWorkspace(app);
             displayNodes(app);
+            app.updateProjectLoadProgress(d, struct('fraction', 1, ...
+                'message', 'Project loaded.', 'stage', 'complete'));
             if exist('hubAccess', 'var') && hubAccess.hubManaged && hubAccess.readOnly
                 uialert(app.DetecDivUIFigure, hubAccess.reason, 'Hub project opened read-only', 'Icon', 'warning');
             end
