@@ -47,8 +47,10 @@ end
 if isfield(project, 'tag')
     shallowObj.tag = localFieldText(project, 'tag', shallowObj.tag);
 end
+inlineRunProfiles = struct();
 if isfield(project, 'runProfiles') && isstruct(project.runProfiles)
-    shallowObj.runProfiles = project.runProfiles;
+    inlineRunProfiles = project.runProfiles;
+    shallowObj.runProfiles = inlineRunProfiles;
 end
 
 projectDir = fullfile(effectivePath, effectiveFile);
@@ -72,13 +74,16 @@ if isfield(project, 'runProfilesPath') && ~isempty(project.runProfilesPath)
         error('shallowProjectImportLight:MissingMetadata', ...
             'Project run profiles file is missing: %s', profilePath);
     end
-    shallowObj.runProfiles = jsondecode(fileread(profilePath));
+    sidecarRunProfiles = jsondecode(fileread(profilePath));
+    shallowObj.runProfiles = localMergeMissingFields(sidecarRunProfiles, inlineRunProfiles);
     localReportProgress(progressCallback, 0.07, 'Run profiles loaded.', 'metadata');
 end
 
+hubPathSettings = localPathMappingSettings();
 fovItems = localResolveFovItems(project, projectDir, progressCallback, 0.08, 0.18);
 localReportProgress(progressCallback, 0.18, 'Reconstructing FOV and ROI objects...', 'reconstruction');
-shallowObj.fov = localBuildFovs(fovItems, shallowObj, projectDir, progressCallback, 0.18, 0.68);
+shallowObj.fov = localBuildFovs(fovItems, shallowObj, projectDir, hubPathSettings, ...
+    progressCallback, 0.18, 0.68);
 shallowObj.processing = struct('roi', [], 'classification', [], ...
     'processor', process.empty, 'pipelineRun', pipelineRun.empty);
 
@@ -120,8 +125,17 @@ if ~isfield(project, 'fovs') || isempty(project.fovs)
 end
 items = project.fovs;
 if ~isfield(items, 'metadataPath')
-    localReportProgress(progressCallback, progressEnd, 'FOV metadata is embedded in the project JSON.', 'fovMetadata');
-    return; % Legacy v2 manifests contain full FOV metadata inline.
+    [items, recoveredCount] = localRecoverLegacyFovSidecars(items, projectDir);
+    if recoveredCount > 0
+        localReportProgress(progressCallback, progressEnd, ...
+            sprintf('Recovered richer metadata for %d/%d legacy FOVs from project_metadata.', ...
+            recoveredCount, numel(items)), 'fovMetadata');
+    else
+        localReportProgress(progressCallback, progressEnd, ...
+            'FOV metadata is embedded in the project JSON; no richer matching sidecars were found.', ...
+            'fovMetadata');
+    end
+    return;
 end
 details = cell(numel(items), 1);
 for i = 1:numel(items)
@@ -140,7 +154,292 @@ end
 items = vertcat(details{:});
 end
 
-function fovs = localBuildFovs(items, shallowObj, projectDir, progressCallback, progressStart, progressEnd)
+function [items, recoveredCount] = localRecoverLegacyFovSidecars(items, projectDir)
+% Older v2 manifests embed FOVs inline. Some writers left that inventory in
+% place while updating the richer project_metadata/fov_*.json files only.
+% Recover a sidecar only when its FOV id matches and it contains more data.
+recoveredCount = 0;
+resolved = cell(numel(items), 1);
+for i = 1:numel(items)
+    inlineItem = items(i);
+    resolvedItem = inlineItem;
+    fovIndex = localFieldValue(inlineItem, 'index', i);
+    if ~isnumeric(fovIndex) || isempty(fovIndex) || ~isscalar(fovIndex) || ...
+            ~isfinite(fovIndex) || fovIndex < 1 || fovIndex ~= fix(fovIndex)
+        fovIndex = i;
+    end
+    detailPath = fullfile(projectDir, 'project_metadata', ...
+        sprintf('fov_%05d.json', fovIndex));
+    if isfile(detailPath)
+        try
+            sidecar = jsondecode(fileread(detailPath));
+            inlineId = localFieldText(inlineItem, 'id', '');
+            sidecarId = localFieldText(sidecar, 'id', '');
+            if isstruct(sidecar) && isscalar(sidecar) && ...
+                    ~isempty(inlineId) && strcmp(inlineId, sidecarId) && ...
+                    localLegacySidecarIsRicher(inlineItem, sidecar)
+                resolvedItem = localMergeLegacyFov(inlineItem, sidecar);
+                recoveredCount = recoveredCount + 1;
+            end
+        catch
+            % A missing or malformed optional legacy sidecar must not make an
+            % otherwise loadable inline v2 project fail.
+        end
+    end
+    resolved{i} = resolvedItem;
+end
+
+items = localUnifyStructCells(resolved);
+end
+
+function tf = localLegacySidecarIsRicher(inlineItem, sidecar)
+inlineRoiCount = 0;
+sidecarRoiCount = 0;
+if isfield(inlineItem, 'rois') && ~isempty(inlineItem.rois)
+    inlineRoiCount = numel(inlineItem.rois);
+end
+if isfield(sidecar, 'rois') && ~isempty(sidecar.rois)
+    sidecarRoiCount = numel(sidecar.rois);
+end
+
+inlineSrcpath = localFieldValue(inlineItem, 'srcpath', {});
+sidecarSrcpath = localFieldValue(sidecar, 'srcpath', {});
+inlineRaw = localFieldValue(inlineItem, 'raw', struct());
+sidecarRaw = localFieldValue(sidecar, 'raw', struct());
+tf = sidecarRoiCount > inlineRoiCount || ...
+    localMetadataHasMissingValues(inlineSrcpath, sidecarSrcpath) || ...
+    localRawMetadataHasMissingValues(inlineRaw, sidecarRaw);
+end
+
+function merged = localMergeLegacyFov(inlineItem, sidecar)
+% Keep populated inline values, filling only placeholders from the sidecar.
+merged = sidecar;
+names = fieldnames(inlineItem);
+for i = 1:numel(names)
+    name = names{i};
+    value = inlineItem.(name);
+    if strcmp(name, 'rois')
+        inlineCount = 0;
+        sidecarCount = 0;
+        if ~isempty(value), inlineCount = numel(value); end
+        if isfield(sidecar, name) && ~isempty(sidecar.(name))
+            sidecarCount = numel(sidecar.(name));
+        end
+        if inlineCount >= sidecarCount
+            merged.(name) = value;
+        end
+    elseif strcmp(name, 'srcpath')
+        if isfield(sidecar, name)
+            merged.(name) = localMergeMissingMetadata(value, sidecar.(name));
+        else
+            merged.(name) = value;
+        end
+    elseif strcmp(name, 'raw')
+        if isfield(sidecar, name)
+            merged.(name) = localMergeRawMetadata(value, sidecar.(name));
+        else
+            merged.(name) = value;
+        end
+    elseif localHasMetadataValue(value) || ~isfield(sidecar, name)
+        merged.(name) = value;
+    end
+end
+end
+
+function tf = localRawMetadataHasMissingValues(primary, fallback)
+tf = false;
+if ~isstruct(fallback) || ~isscalar(fallback)
+    return;
+end
+if ~isstruct(primary) || ~isscalar(primary)
+    tf = localMetadataHasMissingValues(primary, fallback);
+    return;
+end
+names = fieldnames(fallback);
+for i = 1:numel(names)
+    name = names{i};
+    if ~isfield(primary, name)
+        if ~isempty(fallback.(name))
+            tf = true;
+            return;
+        end
+    elseif startsWith(name, 'is') && isscalar(primary.(name)) && ...
+            isscalar(fallback.(name)) && islogical(fallback.(name)) && fallback.(name) && ...
+            islogical(primary.(name)) && ~primary.(name)
+        tf = true;
+        return;
+    elseif localMetadataHasMissingValues(primary.(name), fallback.(name))
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = localMetadataHasMissingValues(primary, fallback)
+tf = false;
+if isempty(fallback)
+    return;
+end
+if isempty(primary)
+    tf = true;
+    return;
+end
+if ischar(primary) || isstring(primary)
+    tf = (ischar(fallback) || isstring(fallback)) && ...
+        isempty(strtrim(char(string(primary)))) && ...
+        ~isempty(strtrim(char(string(fallback))));
+    return;
+end
+if isstruct(fallback) && isscalar(fallback)
+    if ~isstruct(primary) || ~isscalar(primary)
+        tf = true;
+        return;
+    end
+    names = fieldnames(fallback);
+    for i = 1:numel(names)
+        name = names{i};
+        if ~isfield(primary, name)
+            if ~isempty(fallback.(name))
+                tf = true;
+                return;
+            end
+        elseif localMetadataHasMissingValues(primary.(name), fallback.(name))
+            tf = true;
+            return;
+        end
+    end
+    return;
+end
+if iscell(fallback)
+    if ~iscell(primary)
+        return;
+    end
+    for i = 1:numel(fallback)
+        if i > numel(primary)
+            if ~isempty(fallback{i})
+                tf = true;
+                return;
+            end
+        elseif localMetadataHasMissingValues(primary{i}, fallback{i})
+            tf = true;
+            return;
+        end
+    end
+    return;
+end
+if islogical(primary) && isscalar(primary) && ...
+        islogical(fallback) && isscalar(fallback) && fallback && ~primary
+    tf = true;
+end
+end
+
+function merged = localMergeRawMetadata(primary, fallback)
+merged = primary;
+if ~isstruct(fallback) || ~isscalar(fallback)
+    if isempty(primary)
+        merged = fallback;
+    end
+    return;
+end
+if ~isstruct(merged) || ~isscalar(merged)
+    merged = struct();
+end
+names = fieldnames(fallback);
+for i = 1:numel(names)
+    name = names{i};
+    if ~isfield(merged, name)
+        merged.(name) = fallback.(name);
+    elseif startsWith(name, 'is') && isscalar(merged.(name)) && ...
+            isscalar(fallback.(name)) && islogical(fallback.(name)) && fallback.(name) && ...
+            islogical(merged.(name)) && ~merged.(name)
+        merged.(name) = fallback.(name);
+    else
+        merged.(name) = localMergeMissingMetadata(merged.(name), fallback.(name));
+    end
+end
+end
+
+function merged = localMergeMissingMetadata(primary, fallback)
+merged = primary;
+if isempty(fallback)
+    return;
+end
+if isempty(primary)
+    merged = fallback;
+    return;
+end
+if (ischar(primary) || isstring(primary)) && (ischar(fallback) || isstring(fallback))
+    if isempty(strtrim(char(string(primary))))
+        merged = fallback;
+    end
+    return;
+end
+if isstruct(primary) && isscalar(primary) && isstruct(fallback) && isscalar(fallback)
+    names = fieldnames(fallback);
+    for i = 1:numel(names)
+        name = names{i};
+        if ~isfield(merged, name)
+            merged.(name) = fallback.(name);
+        else
+            merged.(name) = localMergeMissingMetadata(merged.(name), fallback.(name));
+        end
+    end
+    return;
+end
+if iscell(primary) && iscell(fallback)
+    for i = 1:numel(fallback)
+        if i > numel(merged)
+            merged{i} = fallback{i};
+        else
+            merged{i} = localMergeMissingMetadata(merged{i}, fallback{i});
+        end
+    end
+end
+end
+
+function tf = localHasMetadataValue(value)
+tf = ~isempty(value);
+if ischar(value) || (isstring(value) && isscalar(value))
+    tf = ~isempty(strtrim(char(string(value))));
+elseif iscell(value)
+    tf = false;
+    for i = 1:numel(value)
+        if localHasMetadataValue(value{i})
+            tf = true;
+            return;
+        end
+    end
+end
+end
+
+function items = localUnifyStructCells(values)
+if isempty(values)
+    items = struct.empty;
+    return;
+end
+allNames = {};
+for i = 1:numel(values)
+    names = fieldnames(values{i});
+    for j = 1:numel(names)
+        if ~any(strcmp(allNames, names{j}))
+            allNames{end + 1} = names{j}; %#ok<AGROW>
+        end
+    end
+end
+for i = 1:numel(values)
+    item = values{i};
+    for j = 1:numel(allNames)
+        if ~isfield(item, allNames{j})
+            item.(allNames{j}) = [];
+        end
+    end
+    values{i} = orderfields(item, allNames);
+end
+items = vertcat(values{:});
+end
+
+function fovs = localBuildFovs(items, shallowObj, projectDir, hubPathSettings, ...
+        progressCallback, progressStart, progressEnd)
 fovs = fov.empty;
 if isempty(items)
     localReportProgress(progressCallback, progressEnd, 'No FOVs to reconstruct.', 'reconstruction');
@@ -160,6 +459,7 @@ for i = 1:numel(items)
     f.tag = localFieldText(item, 'tag', f.tag);
     f.comments = localFieldText(item, 'comments', '');
     f.srcpath = localRowCell(localCellValue(localFieldValue(item, 'srcpath', {''})));
+    f.srcpath = localResolvePathValue(f.srcpath, projectDir, hubPathSettings);
     f.channel = localRowCell(localCellValue(localFieldValue(item, 'channel', {})));
     f.frames = localRowValue(localFieldValue(item, 'frames', []));
     f.interval = localRowValue(localFieldValue(item, 'interval', []));
@@ -172,7 +472,7 @@ for i = 1:numel(items)
         f.display = item.display;
     end
     if isfield(item, 'raw') && isstruct(item.raw)
-        f = localApplyRawFields(f, item.raw, projectDir);
+        f = localApplyRawFields(f, item.raw, projectDir, hubPathSettings);
     end
     roiStart = fovStart + 0.25 * (fovEnd - fovStart);
     localReportProgress(progressCallback, roiStart, ...
@@ -184,7 +484,7 @@ for i = 1:numel(items)
 end
 end
 
-function f = localApplyRawFields(f, raw, projectDir)
+function f = localApplyRawFields(f, raw, projectDir, hubPathSettings)
 names = {'isMultiTiff','tiffSource','pageMap','isStackSeries','stackPageMap', ...
     'isNDTiff','ndtiffPath','ndtiffPosition','ndtiffChannels','ndtiffZ', ...
     'isOMEZarr','omeZarrPath','omeZarrSeries','omeZarrArrayPath', ...
@@ -197,11 +497,30 @@ for i = 1:numel(names)
     end
     value = raw.(name);
     if any(strcmp(name, {'tiffSource','ndtiffPath','omeZarrPath'}))
-        value = localResolvePathValue(value, projectDir);
+        value = localResolvePathValue(value, projectDir, hubPathSettings);
     end
     try
         f.(name) = value;
     catch
+    end
+end
+end
+
+function merged = localMergeMissingFields(primary, fallback)
+% The sidecar is authoritative; retain inline-only fields such as Hub state.
+merged = primary;
+if ~isstruct(primary) || ~isscalar(primary) || ...
+        ~isstruct(fallback) || ~isscalar(fallback)
+    return;
+end
+names = fieldnames(fallback);
+for i = 1:numel(names)
+    name = names{i};
+    if ~isfield(merged, name)
+        merged.(name) = fallback.(name);
+    elseif isstruct(merged.(name)) && isstruct(fallback.(name)) && ...
+            isscalar(merged.(name)) && isscalar(fallback.(name))
+        merged.(name) = localMergeMissingFields(merged.(name), fallback.(name));
     end
 end
 end
@@ -361,13 +680,37 @@ elseif iscell(value)
 end
 end
 
-function value = localResolvePathValue(value, baseDir)
+function value = localResolvePathValue(value, baseDir, hubPathSettings)
 if iscell(value)
     for i = 1:numel(value)
-        value{i} = localResolveProjectPath(value{i}, baseDir);
+        value{i} = localResolvePathValue(value{i}, baseDir, hubPathSettings);
     end
 elseif ischar(value) || isstring(value)
-    value = localResolveProjectPath(value, baseDir);
+    pathText = char(string(value));
+    value = localResolveProjectPath(pathText, baseDir);
+    if ~isfolder(value) && ~isfile(value) && ~isempty(hubPathSettings) && ...
+            (exist('detecdiv_hub_apply_path_mapping', 'file') == 2)
+        try
+            [mappedPath, ~] = detecdiv_hub_apply_path_mapping(pathText, hubPathSettings);
+            if ~isempty(mappedPath) && (isfolder(mappedPath) || isfile(mappedPath))
+                value = mappedPath;
+            end
+        catch
+        end
+    end
+end
+end
+
+function hubPathSettings = localPathMappingSettings()
+hubPathSettings = struct();
+if exist('detecdiv_hub_settings_get', 'file') ~= 2 || ...
+        exist('detecdiv_hub_apply_path_mapping', 'file') ~= 2
+    return;
+end
+try
+    hubPathSettings = detecdiv_hub_settings_get();
+catch
+    hubPathSettings = struct();
 end
 end
 
