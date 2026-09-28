@@ -170,8 +170,7 @@ catch
 end
 
 % Apply the classifier's per-ROI training bounds after merging the run
-% profile.  A missing bound deliberately means "all" and therefore leaves
-% the caller's frame selector unchanged.
+% profile. A missing bound leaves the caller's frame selector unchanged.
 requestedFrames = Frames;
 try
     if isfield(ctx, 'sel') && isfield(ctx.sel, 'frames')
@@ -179,16 +178,14 @@ try
     end
 catch
 end
-boundedFrames = trainingBounds.selectionSpec(classif, requestedFrames);
-ctx.sel.frames = boundedFrames;
-Frames = boundedFrames;
 
-% ---- Prefer standardized package formatter when available ----
+% Resolve the package before selecting frames because some formatters write
+% validation ROIs into the same dataset while others only export training
+% ROIs.
 pkg = '';
 if isprop(classif, 'classifierPkg') && ~isempty(classif.classifierPkg)
     pkg = classif.classifierPkg;
 else
-    % Backfill from legacy fun names if present
     try
         if isprop(classif,'trainingFun') && ~isempty(classif.trainingFun)
             pkg = localInferPkg(classif.trainingFun);
@@ -199,6 +196,33 @@ else
     end
 end
 
+boundedFrames = trainingBounds.selectionSpec(classif, requestedFrames);
+% All classifier training targets require explicit review and inclusion in
+% the effective bounds. Resolve this before clearing/rebuilding the dataset.
+[frameSelection, hasTrainingFrames] = ...
+    annotationManager.reviewedFramesForClassifier( ...
+        classif, rois, 'Frames', boundedFrames);
+if ~hasTrainingFrames
+    error('classi:NoReviewedFramesInScope', ...
+        ['No reviewed frames intersect the selected training ROIs, frame ' ...
+         'bounds, and requested frame selection. Review training frames ' ...
+         'in scope or remove those ROIs from the training split.']);
+end
+if ~isempty(valrois) && ...
+        localFormatterUsesValidationRois(classif, pkg, category)
+    validationFrames = annotationManager.reviewedFramesForClassifier( ...
+        classif, valrois, 'Frames', boundedFrames);
+    validationFields = fieldnames(validationFrames);
+    for i = 1:numel(validationFields)
+        field = validationFields{i};
+        frameSelection.(field) = validationFrames.(field);
+    end
+end
+boundedFrames = frameSelection;
+ctx.sel.frames = boundedFrames;
+Frames = boundedFrames;
+
+% ---- Prefer standardized package formatter when available ----
     if ~isempty(pkg)
         fmtFun = [pkg '.format'];
         if ~isempty(which(fmtFun))
@@ -292,6 +316,35 @@ end
         dot = strfind(f, '.');
         if ~isempty(dot)
             pkg = f(1:dot(1)-1);
+        end
+    end
+
+    function tf = localFormatterUsesValidationRois(classiObj, packageName, categoryName)
+        tf = any(strcmpi(char(string(packageName)), ...
+            {'cellLatentModel','cellLatentTracker','trackastra', ...
+             'sam31','budMotherLinker'}));
+        if tf || ~strcmpi(char(string(categoryName)), 'Pixel')
+            return;
+        end
+        description = '';
+        try
+            description = localDescriptionText(classiObj.description);
+        catch
+        end
+        description = lower(description);
+        tf = contains(description, 'yolo') || contains(description, 'tracktr');
+    end
+
+    function text = localDescriptionText(value)
+        if iscell(value)
+            parts = cellfun(@localDescriptionText, value, 'UniformOutput', false);
+            text = strjoin(parts, ' ');
+        elseif ischar(value)
+            text = strjoin(cellstr(value), ' ');
+        elseif isstring(value)
+            text = char(strjoin(value(:).', ' '));
+        else
+            text = '';
         end
     end
 

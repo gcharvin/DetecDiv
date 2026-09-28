@@ -25,6 +25,7 @@ component = annotationManager.newComponent( ...
 spec.displayName = 'Semantic segmentation';
 spec.components = component;
 spec.defaultEditor = 'semantic_mask';
+spec.trainingFramePolicy = 'disjoint';
 % Semantic segmentation is frame-local: a reviewed subset is a valid GT
 % dataset.  Unreviewed frames remain excluded by the training formatter.
 spec.allowPartialApproval = true;

@@ -82,6 +82,34 @@ switch category
         spec.defaultEditor = 'mask';
 end
 spec.legacyFallback = true;
+if category == "pixel" && ~isLegacyTrackingPixelClassifier(classif)
+    % Pixel-mask classifiers consume independent frame samples by default.
+    % Tracking packages with explicit contracts keep their own contiguous
+    % policy; legacy Cell-TRACKTR is recognized here because it has no hook.
+    spec.trainingFramePolicy = 'disjoint';
+end
+end
+
+function tf = isLegacyTrackingPixelClassifier(classif)
+description = '';
+try
+    description = flattenText(classif.description);
+catch
+end
+tf = contains(lower(description), 'track');
+end
+
+function text = flattenText(value)
+if iscell(value)
+    parts = cellfun(@flattenText, value, 'UniformOutput', false);
+    text = strjoin(parts, ' ');
+elseif ischar(value)
+    text = strjoin(cellstr(value), ' ');
+elseif isstring(value)
+    text = char(strjoin(value(:).', ' '));
+else
+    text = '';
+end
 end
 
 function name=packageOrLegacy(classif)

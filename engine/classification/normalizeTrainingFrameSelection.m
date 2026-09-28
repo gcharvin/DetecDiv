@@ -38,11 +38,19 @@ if isstruct(spec)
     candidates{end+1} = 'frames';
 
     selected = [];
+    hasSelection = false;
     for k = 1:numel(candidates)
         if isfield(spec, candidates{k})
             selected = spec.(candidates{k});
+            hasSelection = true;
             break;
         end
+    end
+    % An explicitly present empty ROI/split field means that no frames were
+    % selected. A missing field keeps the legacy default of all frames.
+    if hasSelection && isempty(selected)
+        frames = [];
+        return;
     end
     frames = normalizeTrainingFrameSelection(selected, frameCount, varargin{:});
     return;
