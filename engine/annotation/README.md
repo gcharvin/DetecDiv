@@ -286,18 +286,22 @@ At the top of the existing `AnnotationsTab`, above `AnnotationPanel`, create
    choice in the shared initialization dialog rather than a separate action.
 6. `MarkFrameReviewedButton`, text **Mark frame reviewed**. Call
    `markReviewed('Frames', currentFrame)` without changing image pixels.
-7. `MarkThroughCurrentButton`, text **Review 1 -> current...**. After
+7. `MarkFrameUnreviewedButton`, text **Unreview current**. Clear review
+   coverage for the current frame's required frame-level components without
+   changing GT pixels. For ROI-only annotation contracts, the control clears
+   the ROI-level reviewed flag.
+8. `MarkThroughCurrentButton`, text **Review 1 -> current...**. After
    confirmation, mark every required frame-level component reviewed from frame
    1 through the current frame. As soon as every frame inside the ROI training
    bounds is covered, the session also completes required ROI-level units such
    as parentage; validation still checks their actual content.
-8. `ReviewWhileNavigatingCheckBox`, text **Review while navigating**. When
+9. `ReviewWhileNavigatingCheckBox`, text **Review while navigating**. When
    enabled, leaving a frame with keyboard or incomplete-frame navigation marks
    all required frame-level components reviewed. It is off by default.
-9. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
+10. `PreviousIncompleteButton` and `NextIncompleteButton`, text **Previous
    incomplete** and **Next incomplete**. Navigate through frames not covered by
    every required frame-level component.
-10. `ReviewFindingsButton`, text **Review findings (N)**. Call the read-only
+11. `ReviewFindingsButton`, text **Review findings (N)**. Call the read-only
     `AnnotationSession.findings()` audit independently of validation. Display
     all errors, warnings and classifier-local `review_hints.json` items in the
     shared non-modal findings dialog. **Go to selected** must keep the dialog

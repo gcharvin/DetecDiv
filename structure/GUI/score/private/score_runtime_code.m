@@ -139,6 +139,7 @@ classdef score < matlab.apps.AppBase
         CensorSelectedTrackButton        matlab.ui.control.Button
         ReviewFindingsButton             matlab.ui.control.Button
         MarkThroughCurrentButton         matlab.ui.control.Button
+        MarkFrameUnreviewedButton       matlab.ui.control.Button
         ReviewWhileNavigatingCheckBox    matlab.ui.control.CheckBox
         LineageLinkWidthEditFieldLabel   matlab.ui.control.Label
         LineageLinkWidthEditField        matlab.ui.control.NumericEditField
@@ -2199,6 +2200,20 @@ end
             app.StartBlankGTButton.Enable = 'on';
             app.StartBlankGTButton.Visible = 'off';
             app.MarkFrameReviewedButton.Enable = app.onOff(hasDraft);
+            hasCurrentReview = app.annotationCurrentUnitHasReview(summary);
+            app.MarkFrameUnreviewedButton.Enable = app.onOff( ...
+                hasDraft && hasCurrentReview);
+            if isempty(app.annotationFrameComponentIds())
+                app.MarkFrameUnreviewedButton.Text = 'Unreview ROI';
+                app.MarkFrameUnreviewedButton.Tooltip = ...
+                    'Clear the ROI-level reviewed flag without changing GT.';
+            else
+                app.MarkFrameUnreviewedButton.Text = 'Unreview current';
+                app.MarkFrameUnreviewedButton.Tooltip = [ ...
+                    'Clear review coverage for all required frame-level ' ...
+                    'components on the current frame. GT pixels and ' ...
+                    'ROI-level review are unchanged.'];
+            end
             app.MarkThroughCurrentButton.Enable = app.onOff(hasDraft);
             app.ReviewWhileNavigatingCheckBox.Enable = app.onOff(hasDraft);
             coverageComponents = summary.coverage.components;
@@ -2285,6 +2300,38 @@ end
                 mask = mask & reviewed;
             end
             app.AnnotationFrameReviewMask = mask;
+        end
+
+        function reviewed = annotationCurrentUnitHasReview(app, summary)
+            reviewed = false;
+            frame = round(double(app.AnnotationSession.Roi.display.frame));
+            components = app.AnnotationSession.Spec.components;
+            components = components([components.required]);
+            frameComponents = components(strcmp( ...
+                {components.coverageUnit}, 'frame'));
+            if ~isempty(frameComponents)
+                components = frameComponents;
+            else
+                components = components(strcmp( ...
+                    {components.coverageUnit}, 'roi'));
+            end
+            for i = 1:numel(components)
+                reviewIndex = find(strcmp( ...
+                    string({summary.entry.review.component_id}), ...
+                    string(components(i).id)), 1, 'first');
+                if isempty(reviewIndex), continue; end
+                if strcmp(components(i).coverageUnit, 'frame')
+                    frames = logical(summary.entry.review(reviewIndex).frames);
+                    if frame >= 1 && frame <= numel(frames) && frames(frame)
+                        reviewed = true;
+                        return;
+                    end
+                elseif strcmp(components(i).coverageUnit, 'roi') && ...
+                        logical(summary.entry.review(reviewIndex).complete)
+                    reviewed = true;
+                    return;
+                end
+            end
         end
 
         function status = annotationReadyStatus(app, storedStatus, ...
@@ -5086,6 +5133,37 @@ end
                 end
             catch ME
                 uialert(app.ScoreAppUIFigure, ME.message, 'Review annotation');
+            end
+        end
+
+        function MarkFrameUnreviewedButtonPushed(app, event) %#ok<INUSD>
+            if isempty(app.AnnotationSession), return; end
+            roi = app.getSelectedROI();
+            if isempty(roi), return; end
+            try
+                components = app.AnnotationSession.Spec.components;
+                required = [components.required];
+                frameComponents = components(required & strcmp( ...
+                    {components.coverageUnit}, 'frame'));
+                if ~isempty(frameComponents)
+                    app.AnnotationSession.markUnreviewed( ...
+                        'Frames', round(double(roi.display.frame)), ...
+                        'Components', {frameComponents.id});
+                else
+                    roiComponents = components(required & strcmp( ...
+                        {components.coverageUnit}, 'roi'));
+                    if isempty(roiComponents), return; end
+                    app.AnnotationSession.markUnreviewed( ...
+                        'Components', {roiComponents.id});
+                end
+                app.AnnotationReviewDirty = false;
+                app.AnnotationLastValidationValid = false;
+                app.AnnotationQuickValidationState = 'idle';
+                app.AnnotationQuickValidationMessage = '';
+                app.refreshAnnotationSessionUI();
+            catch ME
+                uialert(app.ScoreAppUIFigure, ME.message, ...
+                    'Unreview annotation');
             end
         end
 
@@ -9066,6 +9144,11 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             app.ReviewWhileNavigatingCheckBox.Text = 'Review while navigating';
             app.ReviewWhileNavigatingCheckBox.Position = [421 36 166 22];
             app.ReviewWhileNavigatingCheckBox.Value = false;
+            % Create MarkFrameUnreviewedButton
+            app.MarkFrameUnreviewedButton = uibutton(app.AnnotationSessionPanel, 'push');
+            app.MarkFrameUnreviewedButton.ButtonPushedFcn = createCallbackFcn(app, @MarkFrameUnreviewedButtonPushed, true);
+            app.MarkFrameUnreviewedButton.Position = [421 66 170 23];
+            app.MarkFrameUnreviewedButton.Text = 'Unreview current';
             % Create ReviewFindingsButton
             app.ReviewFindingsButton = uibutton(app.AnnotationSessionPanel, 'push');
             app.ReviewFindingsButton.ButtonPushedFcn = createCallbackFcn(app, @ReviewFindingsButtonPushed, true);

@@ -103,6 +103,15 @@ classdef Session < handle
             obj.changed();
         end
 
+        function entry = markUnreviewed(obj, varargin)
+            if ~hasOption(varargin, 'Frames')
+                varargin = [varargin {'Frames', obj.trainingFrames()}];
+            end
+            entry = annotationManager.markUnreviewed( ...
+                obj.Roi, obj.Spec, varargin{:});
+            obj.changed();
+        end
+
         function entry = markChanged(obj, varargin)
             entry = annotationManager.markChanged(obj.Roi, obj.Spec, varargin{:});
             entry = obj.completeRoiReviewWhenFramesComplete(entry, ...
