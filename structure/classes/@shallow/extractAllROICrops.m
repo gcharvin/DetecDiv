@@ -31,6 +31,7 @@ CancelTokenFile   = '';      % cooperative cancellation token written by Hub / p
 ProgressFOVIndex  = [];
 ProgressFOVTotal  = [];
 ProgressCallback  = [];
+MemoryShareCount  = 1;       % concurrent FOVs sharing worker RAM
 
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
@@ -81,6 +82,9 @@ for i = 1:2:numel(varargin)
     if key=="channel", key = "channels"; end
 
     switch key
+        case "memorysharecount"
+            MemoryShareCount = varargin{i+1};
+            validateattributes(MemoryShareCount, {'numeric'}, {'scalar','integer','positive','finite'});
         case "frames"
             FrameList = varargin{i+1};
         case "fovindex"
@@ -338,7 +342,7 @@ end
 fprintf('=============================================\n');
 
 % ====== Qualifier la RAM dispo + classe d'échantillon en amont ======
-[availBytes, fallbackReason] = getAvailableMemoryBytes();
+[availBytes, fallbackReason] = roiExtract.availableMemoryBytes();
 if ~isempty(fallbackReason)
     fprintf('   (mem) %s\n', fallbackReason);
 end
@@ -583,8 +587,14 @@ for kF = 1:numel(FOVIndex)
     % -------- Estimation mémoire & taille de bloc temporel --------
     [H,W,sampleBytes] = probeFrameSpec(fovObj, chanSelIdx(1));
 
-    maxBlockBudget = 4e9;
-    perBlockBudget = min(maxBlockBudget, max(64e6, 0.25 * double(availBytes)));
+    maxBlockBudget = 512 * 2^20; % matches the FOV peak-memory planner
+    [availBytes, memoryNote] = roiExtract.availableMemoryBytes();
+    fprintf('   (mem) %s; shared by %d FOV task(s)\n', memoryNote, MemoryShareCount);
+    perBlockBudget = min(maxBlockBudget, 0.25 * double(availBytes) / MemoryShareCount);
+    if perBlockBudget < double(H)*double(W)*Csel*sampleBytes
+        error('roiExtract:InsufficientWorkerMemory', ...
+            'Worker RAM headroom is too low for one frame. Reduce parallel FOVs or increase worker RAM. %s', memoryNote);
+    end
     Tblock_auto    = max(1, floor(perBlockBudget / double(H*W*Csel*sampleBytes)));
     Tblock_auto    = max(1, min(Tblock_auto, nFramesThisRun));
 
@@ -1387,135 +1397,6 @@ if isempty(h5p) || isempty(matp)
 end
 if isfile(h5p),  delete(h5p);  end
 if isfile(matp), delete(matp); end
-end
-
-function [availBytes, note] = getAvailableMemoryBytes()
-note = '';
-availBytes = 2e9;
-try
-    if ~ispc
-        [hostBytes, hostNote] = readLinuxMemAvailableBytes();
-        [cgroupBytes, cgroupNote] = readCgroupAvailableBytes();
-
-        candidates = [];
-        notes = {};
-        if ~isempty(hostBytes) && isfinite(hostBytes) && hostBytes > 0
-            candidates(end+1) = hostBytes;
-            notes{end+1} = hostNote;
-        end
-        if ~isempty(cgroupBytes) && isfinite(cgroupBytes) && cgroupBytes > 0
-            candidates(end+1) = cgroupBytes;
-            notes{end+1} = cgroupNote;
-        end
-
-        if isempty(candidates)
-            try
-                feature('memstats');
-                note = 'feature(''memstats'') available (no unified free bytes) -> using 2 GB fallback.';
-            catch
-                note = 'No Linux memory estimate available -> using 2 GB fallback.';
-            end
-        else
-            availBytes = min(candidates);
-            note = sprintf('Linux memory estimate: %s.', strjoin(notes, '; '));
-        end
-
-        availBytes = max(256e6, 0.8 * availBytes);
-        return;
-    end
-
-    if ispc
-        m = memory;
-        availBytes = double(m.MaxPossibleArrayBytes);
-        note = sprintf('Windows memory(): MaxPossibleArrayBytes=%.1f GB', availBytes/1e9);
-    else
-        try
-            feature('memstats');
-            note = 'feature(''memstats'') available (no unified free bytes) → using 2 GB fallback.';
-        catch
-            note = 'No memory() on this platform → using 2 GB fallback.';
-        end
-    end
-catch
-    note = 'Unable to query memory → using 2 GB fallback.';
-end
-availBytes = max(256e6, 0.8 * availBytes);
-end
-
-function [availBytes, note] = readLinuxMemAvailableBytes()
-availBytes = [];
-note = '';
-if ~isunix || ~isfile('/proc/meminfo')
-    return;
-end
-
-txt = fileread('/proc/meminfo');
-tok = regexp(txt, '(?m)^MemAvailable:\s+(\d+)\s+kB\s*$', 'tokens', 'once');
-source = 'MemAvailable';
-if isempty(tok)
-    tok = regexp(txt, '(?m)^MemFree:\s+(\d+)\s+kB\s*$', 'tokens', 'once');
-    source = 'MemFree';
-end
-if isempty(tok)
-    return;
-end
-
-availBytes = str2double(tok{1}) * 1024;
-note = sprintf('/proc/meminfo %s=%.1f GB', source, availBytes/1e9);
-end
-
-function [availBytes, note] = readCgroupAvailableBytes()
-availBytes = [];
-note = '';
-if ~isunix
-    return;
-end
-
-[limitBytes, limitPath] = readFirstNumericFile({ ...
-    '/sys/fs/cgroup/memory.max', ...
-    '/sys/fs/cgroup/memory/memory.limit_in_bytes'});
-if isempty(limitBytes) || ~isfinite(limitBytes) || limitBytes <= 0 || limitBytes > 1e18
-    return;
-end
-
-[currentBytes, currentPath] = readFirstNumericFile({ ...
-    '/sys/fs/cgroup/memory.current', ...
-    '/sys/fs/cgroup/memory/memory.usage_in_bytes'});
-if isempty(currentBytes) || ~isfinite(currentBytes) || currentBytes < 0
-    return;
-end
-
-availBytes = max(0, limitBytes - currentBytes);
-note = sprintf('cgroup %s %.1f GB minus %s %.1f GB = %.1f GB', ...
-    baseFileName(limitPath), limitBytes/1e9, ...
-    baseFileName(currentPath), currentBytes/1e9, ...
-    availBytes/1e9);
-end
-
-function [value, usedPath] = readFirstNumericFile(paths)
-value = [];
-usedPath = '';
-for ii = 1:numel(paths)
-    p = paths{ii};
-    if ~isfile(p)
-        continue;
-    end
-    raw = strtrim(fileread(p));
-    if isempty(raw) || strcmpi(raw, 'max')
-        continue;
-    end
-    v = str2double(raw);
-    if isfinite(v)
-        value = double(v);
-        usedPath = p;
-        return;
-    end
-end
-end
-
-function name = baseFileName(pathStr)
-[~, name, ext] = fileparts(pathStr);
-name = [name ext];
 end
 
 function [H,W,sampleBytes] = probeFrameSpec(fovObj, firstChan)

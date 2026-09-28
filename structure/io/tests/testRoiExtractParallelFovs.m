@@ -8,7 +8,7 @@ repoRoot = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
 addpath(genpath(repoRoot));
 end
 
-function testTwoFovsAreExtractedThroughProcessPool(testCase)
+function testThreeFovsAreQueuedThroughTwoProcessSlots(testCase)
 root = tempname;
 mkdir(root);
 addTeardown(testCase, @() removeFolder(root));
@@ -21,7 +21,8 @@ end
 project = shallow();
 project.io = struct('path', root, 'file', 'parallel_project.mat');
 project.projectId = 'parallel-test';
-project.fov = [makeFov(root, 'Pos1_1', 10), makeFov(root, 'Pos2_2', 20)];
+project.fov = [makeFov(root, 'Pos1_1', 10), makeFov(root, 'Pos2_2', 20), ...
+    makeFov(root, 'Pos3_3', 30)];
 
 ctx = struct();
 ctx.shallow = project;
@@ -32,14 +33,14 @@ ctx.roiExtract = struct('correctDrift', false, 'parallelFovWorkers', 2);
 
 out = roiExtract.process(ctx);
 
-for i = 1:2
+for i = 1:3
     roiId = project.fov(i).roi(1).id;
     h5File = fullfile(root, 'parallel_project', project.fov(i).id, ['im_' roiId '.h5']);
     verifyTrue(testCase, isfile(h5File));
     image = squeeze(h5read(h5File, '/raw'));
     verifySize(testCase, image, [4 5 2]);
 end
-verifyEqual(testCase, numel(out.roiList), 2);
+verifyEqual(testCase, numel(out.roiList), 3);
 end
 
 function f = makeFov(root, id, baseValue)
