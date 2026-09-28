@@ -31,8 +31,18 @@ for i=1:size(pairs,1)
 end
 writeJson(configPath,cfg);
 detecdiv_check_cancel(ctx,'cellLatentModel before biological-state inference');
+runtimeCtx=ctx;
+if isfield(param,'runtimeCodeRoot') && ~isempty(param.runtimeCodeRoot)
+    pinnedRuntime=cellLatentModel.utils.resolvePythonRuntime(ctx);
+    pinnedRuntime.repositoryRoot=char(string(param.runtimeCodeRoot));
+    pinnedLineageRoot=fullfile(pinnedRuntime.repositoryRoot,'lineage');
+    if isfolder(fullfile(pinnedLineageRoot,'src','cell_lineage_linker'))
+        pinnedRuntime.lineageRepositoryRoot=pinnedLineageRoot;
+    end
+    runtimeCtx.resolvedPythonRuntime=pinnedRuntime;
+end
 runtime=cellLatentModel.utils.runPythonModule( ...
-    'infer-detecdiv-biological-state',configPath,ctx,stdoutPath);
+    'infer-detecdiv-biological-state',configPath,runtimeCtx,stdoutPath);
 detecdiv_check_cancel(ctx,'cellLatentModel after biological-state inference');
 if ~isfile(outputPath)
     error('cellLatentModel:MissingBiologicalStateOutput', ...
