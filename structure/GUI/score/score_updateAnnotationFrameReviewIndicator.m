@@ -9,6 +9,7 @@ try
     app.AnnotationSessionPanel.Title = sprintf( ...
         'Annotation Session — Frame %d: %s', frame, upper(label(2:end-1)));
     app.AnnotationStatusLabel.FontColor = color;
+    app.refreshAnnotationReviewActionForFrame(roiObj, frame);
 catch
     % Never let a display refresh fail because of an optional status cue.
 end

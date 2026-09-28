@@ -235,6 +235,9 @@ classdef score < matlab.apps.AppBase
         AnnotationQuickValidationMessage char = ''
         AnnotationReviewDirty logical = false
         AnnotationFrameReviewMask logical = false(1,0)
+        AnnotationFrameAnyReviewMask logical = false(1,0)
+        AnnotationRoiReviewComplete logical = false
+        AnnotationSessionHasDraft logical = false
         AnnotationFrameReviewRoiId string = ""
         ModifiedRoiIds string = strings(0, 1)
     end
@@ -2195,6 +2198,7 @@ end
             if isempty(required), required = true(size(predictions)); end
             hasPrediction = any(predictions);
             hasDraft = ~strcmp(storedStatus, 'missing');
+            app.AnnotationSessionHasDraft = hasDraft;
 
             app.CreateFromPredictionButton.Enable = 'on';
             app.StartBlankGTButton.Enable = 'on';
@@ -2282,12 +2286,26 @@ end
             required = app.AnnotationSession.Spec.components( ...
                 [app.AnnotationSession.Spec.components.required]);
             frameComponents = required(strcmp({required.coverageUnit}, 'frame'));
+            roiComponents = required(strcmp({required.coverageUnit}, 'roi'));
+            app.AnnotationRoiReviewComplete = false;
+            for i = 1:numel(roiComponents)
+                reviewIndex = find(strcmp( ...
+                    string({summary.entry.review.component_id}), ...
+                    string(roiComponents(i).id)), 1, 'first');
+                if ~isempty(reviewIndex) && ...
+                        logical(summary.entry.review(reviewIndex).complete)
+                    app.AnnotationRoiReviewComplete = true;
+                    break;
+                end
+            end
             if isempty(frameComponents)
                 app.AnnotationFrameReviewMask = false(1,0);
+                app.AnnotationFrameAnyReviewMask = false(1,0);
                 return;
             end
             frameCount = annotationManager.frameCount(app.AnnotationSession.Roi);
             mask = true(1, frameCount);
+            anyMask = false(1, frameCount);
             for i = 1:numel(frameComponents)
                 reviewIndex = find(strcmp(string({summary.entry.review.component_id}), ...
                     string(frameComponents(i).id)), 1, 'first');
@@ -2298,8 +2316,31 @@ end
                         stored(1:min(frameCount, numel(stored)));
                 end
                 mask = mask & reviewed;
+                anyMask = anyMask | reviewed;
             end
             app.AnnotationFrameReviewMask = mask;
+            app.AnnotationFrameAnyReviewMask = anyMask;
+        end
+
+        function refreshAnnotationReviewActionForFrame(app, roiObj, frame)
+            if isempty(app.AnnotationSession) || ...
+                    ~isvalid(app.AnnotationSession) || ...
+                    isempty(app.MarkFrameUnreviewedButton) || ...
+                    ~isvalid(app.MarkFrameUnreviewedButton) || ...
+                    string(roiObj.id) ~= string(app.AnnotationSession.Roi.id)
+                return;
+            end
+            frameComponents = app.annotationFrameComponentIds();
+            if isempty(frameComponents)
+                hasReview = app.AnnotationRoiReviewComplete;
+            else
+                frame = round(double(frame));
+                hasReview = frame >= 1 && ...
+                    frame <= numel(app.AnnotationFrameAnyReviewMask) && ...
+                    app.AnnotationFrameAnyReviewMask(frame);
+            end
+            app.MarkFrameUnreviewedButton.Enable = app.onOff( ...
+                app.AnnotationSessionHasDraft && hasReview);
         end
 
         function reviewed = annotationCurrentUnitHasReview(app, summary)
