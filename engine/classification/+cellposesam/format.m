@@ -41,7 +41,8 @@ end
 frames = annotationManager.reviewedFramesForClassifier( ...
     classif, rois, 'Frames', frames);
 
-[output, skippedInputChannelRois] = formatPixelTrainingSetCPSAMInternal( ...
+[output, skippedInputChannelRois, roiFrameSummary, maxTrainImages, ...
+    eligibleFrameCountBeforeCap] = formatPixelTrainingSetCPSAMInternal( ...
     foldername, classif, rois, [], 'Frames', frames);
 
 out.status = "OK";
@@ -49,9 +50,14 @@ out.metrics.outputCount = output;
 out.metrics.checkedInputChannelRoiCount = numel(rois);
 out.metrics.skippedInputChannelRois = skippedInputChannelRois;
 out.metrics.requiredInputChannel = localChannelLabel(classif.channelName);
+out.metrics.roiFrameSummary = roiFrameSummary;
+out.metrics.maxTrainImages = maxTrainImages;
+out.metrics.eligibleFrameCountBeforeCap = eligibleFrameCountBeforeCap;
 end
 
-function [output, skippedInputChannelRois] = formatPixelTrainingSetCPSAMInternal( ...
+function [output, skippedInputChannelRois, roiFrameSummary, ...
+        MaxTrainImages, eligibleFrameCountBeforeCap] = ...
+        formatPixelTrainingSetCPSAMInternal( ...
         foldername, classif, trainrois, valrois, varargin)
 % formatPixelTrainingSetCPSAM  Build a Cellpose/CellposeSAM training set
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
@@ -80,6 +86,22 @@ function [output, skippedInputChannelRois] = formatPixelTrainingSetCPSAMInternal
 output = 0;
 skippedInputChannelRois = struct('roiIndex', {}, 'roiId', {}, ...
     'requiredChannel', {}, 'missingChannels', {}, 'availableChannels', {});
+summaryTemplate = struct( ...
+    'roiIndex', 0, ...
+    'roiId', '', ...
+    'inputChannelAvailable', false, ...
+    'missingInputChannels', '', ...
+    'reviewedInScopeFrameCount', 0, ...
+    'passedMaskFilterFrameCount', 0, ...
+    'excludedByMaskFilterFrameCount', 0, ...
+    'eligibleBeforeGlobalCap', 0, ...
+    'excludedByNegativeSamplingFrameCount', 0, ...
+    'keptAfterGlobalCapFrameCount', 0, ...
+    'exportedFrameCount', 0, ...
+    'exportedFrameIndices', zeros(1, 0));
+roiFrameSummary = repmat(summaryTemplate, 0, 1);
+MaxTrainImages = 0;
+eligibleFrameCountBeforeCap = 0;
 warning('off','all');  %#ok<WNOFF>
 
 p = inputParser;
@@ -184,6 +206,7 @@ cltmp   = classif.roi;
 % On ne prend QUE les trainROIs dans le framebank (le "val" Python
 % sera géré en interne via ValFraction, uniquement parmi ces frames).
 all_rois = trainrois(:).';
+roiFrameSummary = repmat(summaryTemplate, numel(all_rois), 1);
 
 fprintf('Scanning ROIs to build frame index...\n');
 
@@ -206,9 +229,6 @@ for ii = 1:numel(all_rois)
     roi_id = all_rois(ii);
     fprintf('  [scan] ROI %d...\n', roi_id);
 
-    cltmp(roi_id).load;
-    im = cltmp(roi_id).image;  % H x W x C x T
-
     roiName = '';
     try
         roiName = char(string(cltmp(roi_id).id));
@@ -217,10 +237,22 @@ for ii = 1:numel(all_rois)
     if isempty(roiName)
         roiName = sprintf('ROI_%d', roi_id);
     end
+    roiFrameSummary(ii).roiIndex = roi_id;
+    roiFrameSummary(ii).roiId = roiName;
+
+    cltmp(roi_id).load;
+    im = cltmp(roi_id).image;  % H x W x C x T
+
+    T = size(im, 4);
+    frameList = normalizeTrainingFrameSelection(framesSpec, T, ...
+        'RoiId', roi_id, 'RoiPosition', ii);
+    roiFrameSummary(ii).reviewedInScopeFrameCount = numel(frameList);
 
     [pix, missingInputChannels] = localResolveInputChannels( ...
         cltmp(roi_id), channel);
     if ~isempty(missingInputChannels)
+        roiFrameSummary(ii).missingInputChannels = ...
+            strjoin(missingInputChannels, ', ');
         warning('No channel found for "%s" in ROI %d, skipping.', channelLabel, roi_id);
         skippedInputChannelRois(end+1,1) = struct( ...
             'roiIndex', roi_id, ...
@@ -231,8 +263,8 @@ for ii = 1:numel(all_rois)
         cltmp(roi_id).clear;
         continue;
     end
+    roiFrameSummary(ii).inputChannelAvailable = true;
 
-    T    = size(im, 4);
     Hloc = size(im, 1);
     Wloc = size(im, 2);
 
@@ -245,9 +277,6 @@ for ii = 1:numel(all_rois)
     end
 
     splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = "train" (au sens global)
-
-    frameList = normalizeTrainingFrameSelection(framesSpec, T, ...
-        'RoiId', roi_id, 'RoiPosition', ii);
 
     for jj = frameList
         instMask    = zeros(Hloc, Wloc, 'uint16');
@@ -278,6 +307,8 @@ for ii = 1:numel(all_rois)
 
         if n_masks == 0 || n_masks < min_train_masks || n_pixels < min_train_pixels
             excludedCount = excludedCount + 1;
+            roiFrameSummary(ii).excludedByMaskFilterFrameCount = ...
+                roiFrameSummary(ii).excludedByMaskFilterFrameCount + 1;
             fprintf('  [exclude] %s (id=%d), frame %d: masks=%d, pixels=%d\n', ...
                 roiName, roi_id, jj, n_masks, n_pixels);
             continue;
@@ -296,6 +327,8 @@ for ii = 1:numel(all_rois)
         idx_frame(end+1,1)  = int32(jj);        %#ok<AGROW>
         idx_split(end+1,1)  = splitFlag;        %#ok<AGROW>
         hasMaskVec(end+1,1) = (n_masks > 0);    %#ok<AGROW>  % true = positif (au moins un masque)
+        roiFrameSummary(ii).passedMaskFilterFrameCount = ...
+            roiFrameSummary(ii).passedMaskFilterFrameCount + 1;
     end
 
     cltmp(roi_id).clear;
@@ -311,6 +344,7 @@ fprintf('Excluded %d frames not satisfying criteria (min_train_masks=%d, min_tra
 Ntotal = numel(idx_roi);
 
 if Ntotal == 0
+    eligibleFrameCountBeforeCap = 0;
     warning('formatPixelTrainingSetCPSAM:Empty', ...
         'No frames with instances found after filtering. Nothing written.');
     warning('on','all');
@@ -366,6 +400,17 @@ if NegDownsampleTrainRatio > 0
                 numel(keepNegIdx)/max(1,numel(keepPosIdx)));
         end
     end
+end
+
+% Count the per-ROI pool presented to MaxTrainImages. This is after the
+% reviewed-frame, input-channel, GT-mask, and negative-sampling filters.
+eligibleFrameCountBeforeCap = Ntotal;
+for iRoi = 1:numel(roiFrameSummary)
+    roiId = int32(roiFrameSummary(iRoi).roiIndex);
+    roiFrameSummary(iRoi).eligibleBeforeGlobalCap = sum(idx_roi == roiId);
+    roiFrameSummary(iRoi).excludedByNegativeSamplingFrameCount = max(0, ...
+        roiFrameSummary(iRoi).passedMaskFilterFrameCount - ...
+        roiFrameSummary(iRoi).eligibleBeforeGlobalCap);
 end
 
 fprintf('DEBUG: after NegDownsample, train=%d (pos=%d, neg=%d), val=%d.\n', ...
@@ -456,6 +501,11 @@ else
             MaxTrainImages, Ntotal);
     end
     N = Ntotal;
+end
+
+for iRoi = 1:numel(roiFrameSummary)
+    roiId = int32(roiFrameSummary(iRoi).roiIndex);
+    roiFrameSummary(iRoi).keptAfterGlobalCapFrameCount = sum(idx_roi == roiId);
 end
 
 
@@ -718,6 +768,12 @@ for ii = 1:numel(all_rois)
         h5write(framebankPath, '/images', imgWrite, [1 1 1 writeIndex], [H W C 1]);
         % /masks : [H W N]
         h5write(framebankPath, '/masks',  maskWrite, [1 1 writeIndex],  [H W 1]);
+        summaryIndex = find([roiFrameSummary.roiIndex] == roi_id, 1, 'first');
+        if ~isempty(summaryIndex)
+            roiFrameSummary(summaryIndex).exportedFrameCount = ...
+                roiFrameSummary(summaryIndex).exportedFrameCount + 1;
+            roiFrameSummary(summaryIndex).exportedFrameIndices(end+1) = jj;
+        end
     end
 
     cltmp(roi_id).clear;
@@ -726,6 +782,29 @@ end
 if k ~= N
     warning('formatPixelTrainingSetCPSAM:CountMismatch', ...
         'Expected %d frames, actually wrote %d.', N, k);
+end
+
+output = k;
+fprintf('Per-ROI framebank contribution (exported / eligible before MaxTrainImages):\n');
+for iRoi = 1:numel(roiFrameSummary)
+    item = roiFrameSummary(iRoi);
+    fprintf('  %s (ROI %d): %d/%d frames', item.roiId, item.roiIndex, ...
+        item.exportedFrameCount, item.eligibleBeforeGlobalCap);
+    if ~item.inputChannelAvailable
+        fprintf('; missing input channel: %s', item.missingInputChannels);
+    elseif item.reviewedInScopeFrameCount > item.passedMaskFilterFrameCount
+        fprintf('; %d excluded by GT mask/threshold filters', ...
+            item.reviewedInScopeFrameCount - item.passedMaskFilterFrameCount);
+    end
+    if item.excludedByNegativeSamplingFrameCount > 0
+        fprintf('; %d removed by negative-frame sampling', ...
+            item.excludedByNegativeSamplingFrameCount);
+    end
+    if item.eligibleBeforeGlobalCap > item.keptAfterGlobalCapFrameCount
+        fprintf('; %d not selected by MaxTrainImages', ...
+            item.eligibleBeforeGlobalCap - item.keptAfterGlobalCapFrameCount);
+    end
+    fprintf('\n');
 end
 
 warning('on','all');

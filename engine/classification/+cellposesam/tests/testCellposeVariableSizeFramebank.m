@@ -13,6 +13,8 @@ mkdir(root);
 cleanup = onCleanup(@() removeTestFolder(root));
 
 classifier = classi(root, 'variable_cellpose', 1, 'InitTraining', false);
+classifier.classifierPkg = 'cellposesam';
+classifier.category = {'Pixel'};
 classifier.channelName = 'raw';
 classifier.classes = {'cell'};
 classifier.trainingParam = struct( ...
@@ -37,6 +39,9 @@ for index = 1:2
     item.addChannel(reshape(raw, height, width, 1, 1), 'raw');
     item.addChannel(reshape(mask, height, width, 1, 1), ...
         [classifier.strid '_cell'], [1 1 1], [0 0 0]);
+    annotationSpec = annotationManager.specForClassifier(classifier);
+    annotationManager.markReviewed(item, annotationSpec, ...
+        'Frames', 1, 'Components', {'instances'}, 'Save', false);
     verifyTrue(testCase, item.save([], false));
     item.clear;
     rois(index) = item;
@@ -73,6 +78,58 @@ for index = 1:2
     verifyEqual(testCase, size(classifier.roi(index).image, 1), nativeSizes(index,1));
     verifyEqual(testCase, size(classifier.roi(index).image, 2), nativeSizes(index,2));
 end
+end
+
+function testFormatterReportsPerRoiEligibilityAndActualExport(testCase)
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@() removeTestFolder(root)); %#ok<NASGU>
+
+classifier = classi(root, 'roi_sampling_report', 1, 'InitTraining', false);
+classifier.classifierPkg = 'cellposesam';
+classifier.category = {'Pixel'};
+classifier.channelName = 'raw';
+classifier.classes = {'cell'};
+classifier.trainingParam = struct( ...
+    'min_train_masks', 0, ...
+    'min_train_pixels', 0, ...
+    'MaxTrainImages', 1, ...
+    'NegDownsampleTrainRatio', 0, ...
+    'CPSAM_ValFraction', 0, ...
+    'Seed', 11);
+
+annotationSpec = annotationManager.specForClassifier(classifier);
+rois(1,2) = roi;
+for index = 1:2
+    item = roi(sprintf('sampling_roi_%d', index), [1 1 8 8]);
+    item.path = classifier.path;
+    raw = uint8(ones(8, 8, 1, 4) * index);
+    mask = zeros(8, 8, 1, 4, 'uint16');
+    mask(2:4, 3:5, 1, :) = uint16(index);
+    item.addChannel(raw, 'raw');
+    item.addChannel(mask, [classifier.strid '_cell'], [1 1 1], [0 0 0]);
+    annotationManager.markReviewed(item, annotationSpec, ...
+        'Frames', 1:4, 'Components', {'instances'}, 'Save', false);
+    verifyTrue(testCase, item.save([], false));
+    rois(index) = item;
+end
+classifier.roi = rois;
+
+result = cellposesam.format(classifier, 1:2, struct());
+summary = result.metrics.roiFrameSummary;
+verifyEqual(testCase, [summary.reviewedInScopeFrameCount], [4 4]);
+verifyEqual(testCase, [summary.passedMaskFilterFrameCount], [4 4]);
+verifyEqual(testCase, [summary.eligibleBeforeGlobalCap], [4 4]);
+verifyEqual(testCase, result.metrics.maxTrainImages, 1);
+verifyEqual(testCase, result.metrics.eligibleFrameCountBeforeCap, 8);
+
+framebank = fullfile(classifier.path, [classifier.strid '_framebank.h5']);
+exportedRois = double(h5read(framebank, '/roi_id'));
+actualCounts = reshape(arrayfun( ...
+    @(item) sum(exportedRois == item.roiIndex), summary), 1, []);
+verifyEqual(testCase, [summary.exportedFrameCount], actualCounts);
+verifyEqual(testCase, sum(actualCounts), 1);
+verifyEqual(testCase, sort(actualCounts), [0 1]);
 end
 
 function testCheckpointDefaultAndParameterSpec(testCase)
