@@ -41,15 +41,18 @@ end
 frames = annotationManager.reviewedFramesForClassifier( ...
     classif, rois, 'Frames', frames);
 
-output = formatPixelTrainingSetCPSAMInternal(foldername, classif, rois, [], 'Frames', frames);
+[output, skippedInputChannelRois] = formatPixelTrainingSetCPSAMInternal( ...
+    foldername, classif, rois, [], 'Frames', frames);
 
 out.status = "OK";
-if isnumeric(output)
-    out.metrics.outputCount = output;
-end
+out.metrics.outputCount = output;
+out.metrics.checkedInputChannelRoiCount = numel(rois);
+out.metrics.skippedInputChannelRois = skippedInputChannelRois;
+out.metrics.requiredInputChannel = localChannelLabel(classif.channelName);
 end
 
-function output = formatPixelTrainingSetCPSAMInternal(foldername, classif, trainrois, valrois, varargin)
+function [output, skippedInputChannelRois] = formatPixelTrainingSetCPSAMInternal( ...
+        foldername, classif, trainrois, valrois, varargin)
 % formatPixelTrainingSetCPSAM  Build a Cellpose/CellposeSAM training set
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
 %
@@ -75,6 +78,8 @@ function output = formatPixelTrainingSetCPSAMInternal(foldername, classif, train
 %   output     : nombre de frames exportées (N)
 
 output = 0;
+skippedInputChannelRois = struct('roiIndex', {}, 'roiId', {}, ...
+    'requiredChannel', {}, 'missingChannels', {}, 'availableChannels', {});
 warning('off','all');  %#ok<WNOFF>
 
 p = inputParser;
@@ -173,6 +178,7 @@ end
 % -------------------------------------------------------------------------
 
 channel = classif.channelName;
+channelLabel = localChannelLabel(channel);
 cltmp   = classif.roi;
 
 % On ne prend QUE les trainROIs dans le framebank (le "val" Python
@@ -203,10 +209,25 @@ for ii = 1:numel(all_rois)
     cltmp(roi_id).load;
     im = cltmp(roi_id).image;  % H x W x C x T
 
-    pix = cltmp(roi_id).findChannelID(channel);
-    if iscell(pix), pix = cell2mat(pix); end
-    if isempty(pix)
-        warning('No channel found for "%s" in ROI %d, skipping.', channel, roi_id);
+    roiName = '';
+    try
+        roiName = char(string(cltmp(roi_id).id));
+    catch
+    end
+    if isempty(roiName)
+        roiName = sprintf('ROI_%d', roi_id);
+    end
+
+    [pix, missingInputChannels] = localResolveInputChannels( ...
+        cltmp(roi_id), channel);
+    if ~isempty(missingInputChannels)
+        warning('No channel found for "%s" in ROI %d, skipping.', channelLabel, roi_id);
+        skippedInputChannelRois(end+1,1) = struct( ...
+            'roiIndex', roi_id, ...
+            'roiId', roiName, ...
+            'requiredChannel', channelLabel, ...
+            'missingChannels', strjoin(missingInputChannels, ', '), ...
+            'availableChannels', localAvailableChannelNames(cltmp(roi_id))); %#ok<AGROW>
         cltmp(roi_id).clear;
         continue;
     end
@@ -224,21 +245,6 @@ for ii = 1:numel(all_rois)
     end
 
     splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = "train" (au sens global)
-
-    % Nom ROI pour log
-    roiName = '';
-    try
-        if isprop(cltmp(roi_id), 'id')
-            roiName = cltmp(roi_id).id;
-        elseif isfield(cltmp(roi_id), 'id')
-            roiName = cltmp(roi_id).id;
-        end
-    catch
-        roiName = '';
-    end
-    if isempty(roiName)
-        roiName = sprintf('ROI_%d', roi_id);
-    end
 
     frameList = normalizeTrainingFrameSelection(framesSpec, T, ...
         'RoiId', roi_id, 'RoiPosition', ii);
@@ -585,8 +591,7 @@ for ii = 1:numel(all_rois)
 
     cltmp(roi_id).load;
     im  = cltmp(roi_id).image;
-    pix = cltmp(roi_id).findChannelID(channel);
-    if iscell(pix), pix = cell2mat(pix); end
+    pix = localResolveInputChannels(cltmp(roi_id), channel);
     if isempty(pix)
         cltmp(roi_id).clear;
         continue;
@@ -828,5 +833,91 @@ fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
             maxTries+1, basePath);
     end
 
+end
+
+function label = localChannelLabel(value)
+% Convert channel selectors to printable text for formatter diagnostics.
+if iscell(value)
+    parts = cellfun(@localChannelLabel, value(:).', 'UniformOutput', false);
+    parts = parts(~cellfun(@isempty, parts));
+    label = strjoin(parts, ', ');
+elseif isstring(value)
+    label = char(strjoin(value(:).', ', '));
+elseif ischar(value)
+    label = strjoin(cellstr(value), ', ');
+else
+    label = char(string(value));
+end
+end
+
+function [pix, missingNames] = localResolveInputChannels(roiObj, names)
+% Resolve classifier inputs by stored channel name, then display alias.
+if ischar(names)
+    names = cellstr(names);
+elseif isstring(names)
+    names = cellstr(names(:));
+elseif ~iscell(names)
+    names = {char(string(names))};
+end
+
+pix = [];
+missingNames = {};
+if isempty(names)
+    missingNames = {'(no input channel configured)'};
+    return;
+end
+for iName = 1:numel(names)
+    name = char(string(names{iName}));
+    idx = roiObj.findChannelID(name);
+    if isempty(idx)
+        idx = localFindChannelAlias(roiObj, name);
+    end
+    if isempty(idx)
+        missingNames{end+1} = name; %#ok<AGROW>
+    else
+        pix = [pix, idx(:).']; %#ok<AGROW>
+    end
+end
+pix = unique(pix, 'stable');
+end
+
+function pix = localFindChannelAlias(roiObj, alias)
+pix = [];
+if ~isstruct(roiObj.display) || ...
+        ~isfield(roiObj.display, 'channelAlias') || ...
+        isempty(roiObj.display.channelAlias)
+    return;
+end
+
+aliases = cellstr(string(roiObj.display.channelAlias(:)));
+logicalChannels = find(strcmpi(aliases, alias));
+if isempty(logicalChannels) || isempty(roiObj.channelid)
+    return;
+end
+pix = find(ismember(roiObj.channelid, logicalChannels));
+end
+
+function label = localAvailableChannelNames(roiObj)
+label = '';
+if ~isstruct(roiObj.display) || ~isfield(roiObj.display, 'channel') || ...
+        isempty(roiObj.display.channel)
+    return;
+end
+
+names = cellstr(string(roiObj.display.channel(:)));
+aliases = {};
+if isfield(roiObj.display, 'channelAlias') && ...
+        ~isempty(roiObj.display.channelAlias)
+    aliases = cellstr(string(roiObj.display.channelAlias(:)));
+end
+
+parts = names;
+for iName = 1:numel(names)
+    if numel(aliases) >= iName && ~isempty(aliases{iName}) && ...
+            ~strcmpi(names{iName}, aliases{iName})
+        parts{iName} = sprintf('%s (alias: %s)', names{iName}, aliases{iName});
+    end
+end
+label = strjoin(parts, ', ');
 end
 

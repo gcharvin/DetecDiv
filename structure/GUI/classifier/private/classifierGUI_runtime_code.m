@@ -3421,10 +3421,56 @@ end
         elseif isfield(output.metrics, 'skippedFrames') && output.metrics.skippedFrames > 0
             formatNotes{end+1} = sprintf('%d frame(s) were not exported.', output.metrics.skippedFrames); %#ok<AGROW>
         end
+
+        if isfield(output.metrics, 'skippedInputChannelRois') && ...
+                ~isempty(output.metrics.skippedInputChannelRois)
+            missingRois = output.metrics.skippedInputChannelRois;
+            requiredChannel = '';
+            if isfield(output.metrics, 'requiredInputChannel')
+                requiredChannel = char(string(output.metrics.requiredInputChannel));
+            end
+            if isempty(requiredChannel) && isfield(missingRois, 'requiredChannel')
+                requiredChannel = char(string(missingRois(1).requiredChannel));
+            end
+            checkedRoiCount = numel(nrois);
+            if isfield(output.metrics, 'checkedInputChannelRoiCount')
+                checkedRoiCount = output.metrics.checkedInputChannelRoiCount;
+            end
+            formatNotes{end+1} = sprintf([ ...
+                '%d of %d selected ROI(s) were skipped because they do not ' ...
+                'have all configured input channel(s) "%s" (by name or alias):'], ...
+                numel(missingRois), checkedRoiCount, requiredChannel); %#ok<AGROW>
+            maxMissing = min(numel(missingRois), 12);
+            for ii = 1:maxMissing
+                roiLabel = char(string(missingRois(ii).roiId));
+                roiIndex = missingRois(ii).roiIndex;
+                missing = char(string(missingRois(ii).missingChannels));
+                available = char(string(missingRois(ii).availableChannels));
+                if isempty(available)
+                    formatNotes{end+1} = sprintf( ...
+                        ' - %s (ROI %d); missing channel(s): %s', ...
+                        roiLabel, roiIndex, missing); %#ok<AGROW>
+                else
+                    formatNotes{end+1} = sprintf( ...
+                        ' - %s (ROI %d); missing: %s; available channels: %s', ...
+                        roiLabel, roiIndex, missing, available); %#ok<AGROW>
+                end
+            end
+            if numel(missingRois) > maxMissing
+                formatNotes{end+1} = sprintf(' - ... %d more ROI(s)', ...
+                    numel(missingRois) - maxMissing); %#ok<AGROW>
+            end
+        end
     end
 
     if nExport > 0
-        d.Message = [num2str(nExport) ' files/images were exported; The classifier is ready to be trained!'];
+        if isstruct(output) && isfield(output, 'metrics') && ...
+                isfield(output.metrics, 'outputCount')
+            d.Message = sprintf('%d training frame(s) were exported; the classifier is ready to be trained!', ...
+                nExport);
+        else
+            d.Message = [num2str(nExport) ' files/images were exported; The classifier is ready to be trained!'];
+        end
         strr = d.Message;
     else
         d.Message = 'No file was exported; Check your trainingset!';
@@ -3437,7 +3483,15 @@ end
 
     close(d);
     displayProperties(app);
-    uialert(app.ClassifierUIFigure, strr, 'Success', 'Icon','success');
+    alertTitle = 'Success';
+    alertIcon = 'success';
+    if isstruct(output) && isfield(output, 'metrics') && ...
+            isfield(output.metrics, 'skippedInputChannelRois') && ...
+            ~isempty(output.metrics.skippedInputChannelRois)
+        alertTitle = 'Training set formatted with warnings';
+        alertIcon = 'warning';
+    end
+    uialert(app.ClassifierUIFigure, strr, alertTitle, 'Icon', alertIcon);
             
 
 
