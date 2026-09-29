@@ -4,6 +4,13 @@ import random
 import datetime
 import gc
 import numpy as np
+# Initialize NumPy's BLAS/OpenMP runtime before PyTorch loads its bundled
+# libiomp5md.dll. Reversing this order can load two Intel OpenMP runtimes on
+# Windows and abort the process with OMP Error #15.
+if os.name == "nt":
+    _numpy_runtime_probe = np.ones((256, 256), dtype=np.float32)
+    np.matmul(_numpy_runtime_probe, _numpy_runtime_probe)
+    del _numpy_runtime_probe
 import h5py
 import torch
 import matplotlib
