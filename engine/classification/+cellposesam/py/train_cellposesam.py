@@ -80,11 +80,10 @@ def cuda_runtime_usable():
         device_name = torch.cuda.get_device_name(0)
         print(f"[INFO] CUDA device: {device_name} | capability: {device_sm}")
         print(f"[INFO] PyTorch CUDA arch list: {arch_list}")
-        if arch_list and device_sm not in arch_list:
-            return False, (
-                f"PyTorch was not built for this GPU capability ({device_sm}); "
-                f"supported archs are {arch_list}"
-            )
+        # The exact minor SM tag may be absent even when a compatible cubin
+        # executes on this device; the kernel probe below is authoritative.
+        exact_arch_listed = device_sm in arch_list if arch_list else None
+        print(f"[INFO] Exact CUDA architecture listed: {exact_arch_listed}")
     except Exception as exc:
         return False, f"CUDA capability check failed: {exc}"
 
@@ -98,8 +97,11 @@ def cuda_runtime_usable():
 
     print(f"[INFO] PyTorch CUDA memory before runtime test: {cuda_memory_info()}")
     try:
-        x = torch.ones((1,), device="cuda")
-        _ = (x + 1).cpu().numpy()
+        model = torch.nn.Conv2d(1, 2, 3).cuda()
+        x = torch.ones((1, 1, 8, 8), device="cuda", requires_grad=True)
+        y = model(x)
+        y.sum().backward()
+        torch.cuda.synchronize()
     except Exception as exc:
         reason = f"CUDA runtime test failed: {exc}"
         if cuda_reason_is_oom(reason):
