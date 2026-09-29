@@ -436,8 +436,40 @@ function classiPath = localClassifierPathFromRun(runObj)
         candidate = localText(candidates{i});
         if ~isempty(candidate)
             classiPath = candidate;
-            return;
+            break;
         end
+    end
+    classiPath = localRestoreClassifierRootForBundledRun(classiPath, runObj);
+end
+
+function classiPath = localRestoreClassifierRootForBundledRun(classiPath, runObj)
+    if isempty(classiPath)
+        return;
+    end
+    runPath = '';
+    try
+        runPath = char(string(runObj.path));
+    catch
+    end
+    if isempty(runPath)
+        return;
+    end
+
+    [~, classifierId] = fileparts(regexprep(classiPath, '[\\/]+$', ''));
+    bundleClassifierPath = fullfile(runPath, 'hub_pipeline_bundle', ...
+        'assets', 'classification', classifierId);
+    if ~localSamePath(classiPath, bundleClassifierPath)
+        return;
+    end
+
+    % A previous submission can leave targetRef.classiPath pointing at the
+    % exported classifier snapshot. Use the enclosing classifier directory
+    % for path mapping, while the run request still points at the bundled
+    % snapshot that the worker should load.
+    classifierRoot = fileparts(fileparts(runPath));
+    [~, rootId] = fileparts(classifierRoot);
+    if strcmpi(rootId, classifierId) && exist(classifierRoot, 'dir') == 7
+        classiPath = classifierRoot;
     end
 end
 
@@ -610,6 +642,8 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
             continue;
         end
         pipelineRef.pipeline_json_path = candidatePath;
+        pipelineRef = localAttachRunBundleRefsIfApplicable( ...
+            pipelineRef, sourceCandidates{iCandidate}, runObj, ref, hub);
         break;
     end
     if isempty(pipelineRef.pipeline_json_path) || localLooksLikeLocalClientPath(pipelineRef.pipeline_json_path) || ~localLooksLikeServerPath(pipelineRef.pipeline_json_path)
@@ -622,8 +656,37 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
         end
     end
     localAssertServerVisiblePipelineRef(pipelineRef);
-    localAssertPipelineNodeLinksServerVisible(runObj, ref, hub);
+    localAssertPipelineNodeLinksServerVisible(runObj, ref, hub, pipelineRef);
     pipelineRef.link_mode = 'server_visible';
+end
+
+function pipelineRef = localAttachRunBundleRefsIfApplicable(pipelineRef, sourcePath, runObj, ref, hub)
+    runPath = '';
+    try
+        runPath = char(string(runObj.path));
+    catch
+    end
+    if isempty(runPath)
+        return;
+    end
+
+    bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
+    sourceJsonPath = char(string(sourcePath));
+    [~, ~, ext] = fileparts(sourceJsonPath);
+    if isfolder(sourceJsonPath) || ~strcmpi(ext, '.json')
+        sourceJsonPath = fullfile(sourceJsonPath, 'pipeline.json');
+    end
+    if exist(sourceJsonPath, 'file') ~= 2 || ...
+            ~(localPathInside(sourceJsonPath, bundlePath) || localSamePath(sourceJsonPath, bundlePath))
+        return;
+    end
+
+    manifestPath = fullfile(bundlePath, 'export_manifest.json');
+    if exist(manifestPath, 'file') ~= 2
+        return;
+    end
+    pipelineRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
+    pipelineRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
 end
 
 function localAssertServerVisiblePipelineRef(pipelineRef)
@@ -652,7 +715,7 @@ function localAssertServerVisiblePipelineRef(pipelineRef)
     end
 end
 
-function localAssertPipelineNodeLinksServerVisible(runObj, ref, hub)
+function localAssertPipelineNodeLinksServerVisible(runObj, ref, hub, pipelineRef)
     spec = localRunPipelineExportSource(runObj);
     if isempty(spec) || ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
         return;
@@ -661,10 +724,95 @@ function localAssertPipelineNodeLinksServerVisible(runObj, ref, hub)
         node = spec.nodes(i);
         nodeId = localText(localGetField(node, 'id', sprintf('node_%d', i)));
         modulePath = localText(localNested(node, {'params','modulePath'}, ''));
-        localAssertLinkedPathServerVisible(modulePath, sprintf('node %s params.modulePath', nodeId), ref, hub);
+        localAssertPipelineNodeLink(modulePath, sprintf('node %s params.modulePath', nodeId), ...
+            runObj, pipelineRef, ref, hub);
         originPath = localText(localNested(node, {'origin','path'}, ''));
-        localAssertLinkedPathServerVisible(originPath, sprintf('node %s origin.path', nodeId), ref, hub);
+        localAssertPipelineNodeLink(originPath, sprintf('node %s origin.path', nodeId), ...
+            runObj, pipelineRef, ref, hub);
     end
+end
+
+function localAssertPipelineNodeLink(pathValue, label, runObj, pipelineRef, ref, hub)
+    pathValue = localText(pathValue);
+    if isempty(pathValue)
+        return;
+    end
+
+    % pipelineExport stores links to resources included in the bundle as paths
+    % relative to pipeline/pipeline.json (for example ../assets/classification).
+    % Keep those portable links when they resolve inside the freshly exported
+    % bundle; external links still need an absolute server-visible mapping.
+    if localIsRelativePath(pathValue) && ...
+            (localPipelineRefHasBundle(pipelineRef) || localRunPipelineSourceIsInBundle(runObj))
+        runPath = '';
+        try
+            runPath = char(string(runObj.path));
+        catch
+        end
+        if ~isempty(runPath)
+            bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
+            pipelineDir = fullfile(bundlePath, 'pipeline');
+            resolvedPath = localResolveBundleRelativePath(pathValue, pipelineDir);
+            pathExists = exist(resolvedPath, 'dir') == 7 || exist(resolvedPath, 'file') == 2;
+            pathInside = localPathInside(resolvedPath, bundlePath) || localSamePath(resolvedPath, bundlePath);
+            if pathExists && pathInside
+                return;
+            end
+        end
+    end
+
+    localAssertLinkedPathServerVisible(pathValue, label, ref, hub);
+end
+
+function tf = localPipelineRefHasBundle(pipelineRef)
+    bundlePath = localText(localGetField(pipelineRef, 'pipeline_bundle_uri', ''));
+    manifestPath = localText(localGetField(pipelineRef, 'export_manifest_uri', ''));
+    tf = ~isempty(bundlePath) && ~isempty(manifestPath);
+end
+
+function tf = localRunPipelineSourceIsInBundle(runObj)
+    tf = false;
+    runPath = '';
+    candidates = {};
+    try
+        runPath = char(string(runObj.path));
+    catch
+    end
+    try
+        if ~isempty(runObj.templatePath)
+            candidates{end+1} = char(string(runObj.templatePath)); %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ...
+                ~isempty(runObj.pipelineRef.path)
+            candidates{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
+        end
+    catch
+    end
+    if isempty(runPath) || isempty(candidates)
+        return;
+    end
+
+    bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
+    for i = 1:numel(candidates)
+        candidate = candidates{i};
+        [~, ~, ext] = fileparts(candidate);
+        if isfolder(candidate) || ~strcmpi(ext, '.json')
+            candidate = fullfile(candidate, 'pipeline.json');
+        end
+        if exist(candidate, 'file') == 2 && localPathInside(candidate, bundlePath)
+            tf = true;
+            return;
+        end
+    end
+end
+
+function tf = localIsRelativePath(pathValue)
+    pathValue = char(string(pathValue));
+    tf = ~isempty(pathValue) && ~localLooksLikeLocalClientPath(pathValue) && ...
+        ~localLooksLikeServerPath(pathValue);
 end
 
 function localAssertLinkedPathServerVisible(pathValue, label, ref, hub)
