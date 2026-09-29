@@ -390,81 +390,88 @@ if exist('parpool', 'file') ~= 2 || ~license('test', 'Distrib_Computing_Toolbox'
         'parallelFovWorkers=%d was requested but Parallel Computing Toolbox is unavailable.', requestedWorkers);
 end
 
-workerCount = min(requestedWorkers, numel(tasks));
+nextTask = 1;
+maxWorkers = min(requestedWorkers, numel(tasks));
 pool = gcp('nocreate');
-if isempty(pool)
-    pool = parpool('Processes', workerCount);
-end
-workerCount = min(workerCount, pool.NumWorkers);
-if workerCount < 2
-    error('roiExtract:ParallelUnavailable', ...
-        'The active parallel pool has only %d worker(s).', workerCount);
-end
-
-fprintf('[roiExtract] Parallel FOV extraction: %d FOV(s) over %d process worker(s).\n', ...
-    numel(tasks), workerCount);
-
-argsBase = [buildExtractArgs(p, [], ctx) {'MemoryShareCount'} {workerCount}];
-if ~persistOutputs
-    argsBase = [argsBase {'MemoryOnly'} {true}]; %#ok<AGROW>
-end
-threadsPerFov = resolveParallelFovThreads(ctx, workerCount);
+ownsPool = isempty(pool);
 progressState = zeros(1, numel(tasks));
 progressQueue = parallel.pool.DataQueue;
 afterEach(progressQueue, @receiveParallelFovProgress);
-futures(1, workerCount) = parallel.FevalFuture;
-for taskIndex = 1:workerCount
-    args = [argsBase {'ROISelect'} {tasks(taskIndex).roiSelect} ...
-        {'ProgressFOVIndex'} {tasks(taskIndex).fovPosition} ...
-        {'ProgressFOVTotal'} {numel(fovIdx)}];
-    taskInfo = struct('taskIndex', taskIndex, 'fovIndex', tasks(taskIndex).fovIndex, ...
-        'fovPosition', tasks(taskIndex).fovPosition, 'fovTotal', numel(fovIdx));
-    futures(taskIndex) = parfeval(pool, @roiExtract.extractFovTask, 1, ...
-        tasks(taskIndex).fov, shallowObj.io, shallowObj.projectId, args, ...
-        threadsPerFov, progressQueue, taskInfo);
-end
-
-slotTasks = 1:workerCount;
-for completedCount = 1:numel(tasks)
-    checkRoiExtractCancellation(ctx, sprintf('waiting for parallel FOV %d/%d', ...
-        completedCount, numel(tasks)));
-    [slotIndex, fovOut] = fetchNext(futures);
-    taskIndex = slotTasks(slotIndex);
-    nextTask = workerCount + completedCount;
-    if nextTask <= numel(tasks)
-        args = [argsBase {'ROISelect'} {tasks(nextTask).roiSelect} ...
-            {'ProgressFOVIndex'} {tasks(nextTask).fovPosition} ...
-            {'ProgressFOVTotal'} {numel(fovIdx)}];
-        taskInfo = struct('taskIndex', nextTask, 'fovIndex', tasks(nextTask).fovIndex, ...
-            'fovPosition', tasks(nextTask).fovPosition, 'fovTotal', numel(fovIdx));
-        futures(slotIndex) = parfeval(pool, @roiExtract.extractFovTask, 1, ...
-            tasks(nextTask).fov, shallowObj.io, shallowObj.projectId, args, ...
-            threadsPerFov, progressQueue, taskInfo);
-        slotTasks(slotIndex) = nextTask;
+while nextTask <= numel(tasks)
+    checkRoiExtractCancellation(ctx, sprintf('before parallel FOV batch %d', nextTask));
+    % Replan at each batch boundary. Closing the preceding pool releases MATLAB
+    % worker processes and their retained allocator state before new FOVs start.
+    if ownsPool && ~isempty(pool), delete(pool); pool = []; end
+    workerCount = roiExtract.planFovWorkers([tasks(nextTask:end).fov], p, maxWorkers);
+    workerCount = min(workerCount, numel(tasks)-nextTask+1);
+    if ~ownsPool, workerCount = min(workerCount, pool.NumWorkers); end
+    if workerCount > 1
+        if ownsPool, pool = parpool('Processes', workerCount); end
+        workerCount = min(workerCount, pool.NumWorkers);
     end
-    task = tasks(taskIndex);
-    progressState(taskIndex) = 1;
-    emitParallelFovProgress(taskIndex, struct( ...
-        'value', 1, 'status', 'running', 'phase', 'fov_done', ...
-        'message', sprintf('FOV %d/%d completed.', ...
-            task.fovPosition, numel(fovIdx))));
-    i = task.fovIndex;
-    shallowObj.fov(i) = fovOut;
-    try
-        for r = 1:numel(shallowObj.fov(i).roi)
-            shallowObj.fov(i).roi(r).parent = shallowObj.fov(i);
+    fprintf('[roiExtract] FOV batch: %d process worker(s), starting at task %d/%d.\n', ...
+        workerCount, nextTask, numel(tasks));
+    argsBase = [buildExtractArgs(p, [], ctx) {'MemoryShareCount'} {workerCount}];
+    if ~persistOutputs
+        argsBase = [argsBase {'MemoryOnly'} {true}]; %#ok<AGROW>
+    end
+    threadsPerFov = resolveParallelFovThreads(ctx, workerCount);
+    batchEnd = nextTask + workerCount - 1;
+    if workerCount > 1
+        clear futures
+        futures(1, workerCount) = parallel.FevalFuture;
+        for taskIndex = nextTask:batchEnd
+            args = [argsBase {'ROISelect'} {tasks(taskIndex).roiSelect} ...
+                {'ProgressFOVIndex'} {tasks(taskIndex).fovPosition} ...
+                {'ProgressFOVTotal'} {numel(fovIdx)}];
+            taskInfo = struct('taskIndex', taskIndex, 'fovIndex', tasks(taskIndex).fovIndex, ...
+                'fovPosition', tasks(taskIndex).fovPosition, 'fovTotal', numel(fovIdx));
+            futures(taskIndex-nextTask+1) = parfeval(pool, @roiExtract.extractFovTask, 1, ...
+                tasks(taskIndex).fov, shallowObj.io, shallowObj.projectId, args, ...
+                threadsPerFov, progressQueue, taskInfo);
         end
-    catch
     end
-    fovList(i) = shallowObj.fov(i);
-    checkRoiExtractCancellation(ctx, sprintf('after FOV %d extraction', i));
-    validateExtractedRoisForFov(fovList, i, task.roiSelect, persistOutputs, p, shallowObj);
-    prog = progressMark(shallowObj, ctx, 'roiExtract', i, task.roiSelect);
-    if persistOutputs && saveProgress
-        try, shallowSave(shallowObj); catch, end
+    for completedCount = 1:workerCount
+        checkRoiExtractCancellation(ctx, sprintf('waiting for parallel FOV %d/%d', ...
+            nextTask+completedCount-1, numel(tasks)));
+        if workerCount > 1
+            [slotIndex, fovOut] = fetchNext(futures);
+            taskIndex = nextTask + slotIndex - 1;
+        else
+            taskIndex = nextTask;
+            args = [argsBase {'ROISelect'} {tasks(taskIndex).roiSelect} ...
+                {'ProgressFOVIndex'} {tasks(taskIndex).fovPosition} ...
+                {'ProgressFOVTotal'} {numel(fovIdx)}];
+            taskInfo = struct('taskIndex', taskIndex, 'fovIndex', tasks(taskIndex).fovIndex, ...
+                'fovPosition', tasks(taskIndex).fovPosition, 'fovTotal', numel(fovIdx));
+            fovOut = roiExtract.extractFovTask(tasks(taskIndex).fov, shallowObj.io, ...
+                shallowObj.projectId, args, threadsPerFov, progressQueue, taskInfo);
+        end
+        task = tasks(taskIndex);
+        progressState(taskIndex) = 1;
+        emitParallelFovProgress(taskIndex, struct( ...
+            'value', 1, 'status', 'running', 'phase', 'fov_done', ...
+            'message', sprintf('FOV %d/%d completed.', ...
+                task.fovPosition, numel(fovIdx))));
+        i = task.fovIndex;
+        shallowObj.fov(i) = fovOut;
+        try
+            for r = 1:numel(shallowObj.fov(i).roi)
+                shallowObj.fov(i).roi(r).parent = shallowObj.fov(i);
+            end
+        catch
+        end
+        fovList(i) = shallowObj.fov(i);
+        checkRoiExtractCancellation(ctx, sprintf('after FOV %d extraction', i));
+        validateExtractedRoisForFov(fovList, i, task.roiSelect, persistOutputs, p, shallowObj);
+        prog = progressMark(shallowObj, ctx, 'roiExtract', i, task.roiSelect);
+        if persistOutputs && saveProgress
+            try, shallowSave(shallowObj); catch, end
+        end
     end
+    nextTask = batchEnd + 1;
 end
-
+if ownsPool && ~isempty(pool), delete(pool); end
     function receiveParallelFovProgress(event)
         if ~isstruct(event)
             return;

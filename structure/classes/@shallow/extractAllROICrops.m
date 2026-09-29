@@ -588,18 +588,23 @@ for kF = 1:numel(FOVIndex)
     [H,W,sampleBytes] = probeFrameSpec(fovObj, chanSelIdx(1));
 
     maxBlockBudget = 512 * 2^20; % matches the FOV peak-memory planner
+    frameBytes = double(H)*double(W)*Csel*sampleBytes;
+    % Account for scaled ROI crops as well as the raw frame.
+    for rIdx = 1:nROI
+        frameBytes = max(frameBytes, double(ROI(rIdx).h)*double(ROI(rIdx).w)* ...
+            max(1, double(Scale)^2)*Csel*sampleBytes);
+    end
+    driftBytes = 0;
+    if CorrectDrift, driftBytes = double(H)*double(W)*128; end
     [availBytes, memoryNote] = roiExtract.availableMemoryBytes();
     fprintf('   (mem) %s; shared by %d FOV task(s)\n', memoryNote, MemoryShareCount);
-    perBlockBudget = min(maxBlockBudget, 0.25 * double(availBytes) / MemoryShareCount);
-    if perBlockBudget < double(H)*double(W)*Csel*sampleBytes
+    perBlockBudget = min(maxBlockBudget, max(0, double(availBytes)/MemoryShareCount - driftBytes)/4);
+    Tblock_auto = roiExtract.planFrameBlock(availBytes, frameBytes, driftBytes, MemoryShareCount, nFramesThisRun);
+    if Tblock_auto < 1
         error('roiExtract:InsufficientWorkerMemory', ...
             'Worker RAM headroom is too low for one frame. Reduce parallel FOVs or increase worker RAM. %s', memoryNote);
     end
-    Tblock_auto    = max(1, floor(perBlockBudget / double(H*W*Csel*sampleBytes)));
-    Tblock_auto    = max(1, min(Tblock_auto, nFramesThisRun));
-
-    frameStarts = 1:Tblock_auto:nFramesThisRun;
-    nBlocks     = numel(frameStarts);
+    nBlocks = ceil(nFramesThisRun/Tblock_auto);
     fprintf('   Block memory budget ~ %.1f GB (raw image block cap %.1f GB)\n', ...
         double(perBlockBudget)/1e9, double(maxBlockBudget)/1e9);
     fprintf('   RAM avail ~ %.1f GB → Tblock=%d (H=%d,W=%d,Csel=%d,class=%s)\n', ...
@@ -626,9 +631,21 @@ for kF = 1:numel(FOVIndex)
     driftReferenceImage = [];
 
     % --------- Boucle bloc par bloc ---------
-    for ib = 1:nBlocks
+    fs = 1;
+    ib = 0;
+    while fs <= nFramesThisRun
+        ib = ib + 1;
+        % Free the preceding block before allocating its replacement.
+        clear blockImg roiBlock crop driftBlk scoreBlk
+        [availBytes, memoryNote] = roiExtract.availableMemoryBytes();
+        Tblock_auto = roiExtract.planFrameBlock(availBytes, frameBytes, driftBytes, ...
+            MemoryShareCount, nFramesThisRun-fs+1);
+        if Tblock_auto < 1
+            error('roiExtract:InsufficientWorkerMemory', ...
+                'Worker RAM headroom is too low for one frame. Reduce parallel FOVs or increase worker RAM. %s', memoryNote);
+        end
+        nBlocks = ib-1 + ceil((nFramesThisRun-fs+1)/Tblock_auto);
         checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('before block %d/%d', ib, nBlocks));
-        fs = frameStarts(ib);
         fe = min(fs+Tblock_auto-1, nFramesThisRun);
 
         localRange = fs:fe;
@@ -644,7 +661,7 @@ for kF = 1:numel(FOVIndex)
         checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('after block %d/%d load', ib, nBlocks));
 
         % UI update
-        fracGlobal = ((displayFOVIndex-1) + (ib-1)/max(1,nBlocks)) / max(1,displayFOVTotal);
+        fracGlobal = ((displayFOVIndex-1) + (fs-1)/max(1,nFramesThisRun)) / max(1,displayFOVTotal);
         pbUpdateUI(hprogressbar, fracGlobal, sprintf('FOV %d/%d - bloc %d/%d', displayFOVIndex, displayFOVTotal, ib, nBlocks));
 
 
@@ -1049,17 +1066,20 @@ for kF = 1:numel(FOVIndex)
             end
             r.display.write_abs_start = [];
             ROI(rIdx).obj = r;
+            clear roiBlock crop
         end
 
         fprintf('\n');
         pbBlk.update(ib, sprintf('bloc %d/%d terminé', ib, nBlocks));
         emitExtractionProgress(ProgressCallback, struct( ...
-            'value', ib / max(1, nBlocks), 'status', 'running', ...
+            'value', fe / max(1, nFramesThisRun), 'status', 'running', ...
             'phase', 'block', 'fovIndex', displayFOVIndex, ...
             'fovTotal', displayFOVTotal, 'blockIndex', ib, ...
             'blockTotal', nBlocks, 'message', sprintf( ...
                 'FOV %d/%d: block %d/%d saved.', ...
                 displayFOVIndex, displayFOVTotal, ib, nBlocks)));
+        clear blockImg roiBlock crop driftBlk scoreBlk
+        fs = fe + 1;
     end
 
     pbBlk.close();

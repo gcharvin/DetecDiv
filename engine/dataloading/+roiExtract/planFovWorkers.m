@@ -3,7 +3,9 @@ function count = planFovWorkers(fovs, params, requested)
 % Raw blocks are capped at 512 MiB in extractAllROICrops. Reserve four block
 % copies plus double/complex drift workspaces and a measured MATLAB baseline.
 [available, note] = roiExtract.availableMemoryBytes();
-baseline = 2^30;
+% A process worker retains ROI metadata, HDF5 buffers and MATLAB allocator
+% pages across FOVs. The client RSS alone underestimates that worker floor.
+baseline = 4*2^30;
 try
     if ispc
         m = memory; baseline = max(baseline, double(m.MemUsedMATLAB));
