@@ -19,10 +19,24 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     P = pipelineToStructLocal(pipe);
     nodes = normalizeNodesWithContracts(P.nodes);
     nodes = applyValidationRunNodeOverrides(nodes, ctx);
+    nodes = normalizeNodesWithContracts(nodes);
     edges = normalizeEdges(P, nodes);
+    selectedIds = selectedNodeIdsFromContext(ctx);
+    templateNodes = getField(getField(ctx, 'pipelineSpec', struct()), 'nodes', struct([]));
+    templateIds = unique([getNodeIds(nodes) getNodeIds(templateNodes)], 'stable');
+    ctx.validationPartialRun = ~isempty(selectedIds) && ...
+        any(~ismember(templateIds, selectedIds));
     [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx);
     nodes = injectContextResolvedNodeBindings(nodes, ctx);
     edges = addResourceBindingDependencyEdges(nodes, edges);
+
+    % Keep this policy outside the best-effort semantic validation below:
+    % an excluded producer must never be rebound to a persisted output.
+    selectionErrors = partialRunBindingErrors(nodes, ctx);
+    if ~isempty(selectionErrors)
+        ok = false;
+        report.errors = [report.errors selectionErrors];
+    end
 
     report.nodes = nodes;
     report.edges = edges;
@@ -182,7 +196,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
         report.binding = bindingReport;
         if isfield(bindingReport, 'errors') && ~isempty(bindingReport.errors)
             ok = false;
-            report.errors = [report.errors, bindingReport.errors]; %#ok<AGROW>
+            report.errors = unique([report.errors, bindingReport.errors], 'stable');
         end
         if isfield(bindingReport, 'warnings') && ~isempty(bindingReport.warnings)
             report.warnings = [report.warnings, bindingReport.warnings]; %#ok<AGROW>
@@ -216,109 +230,12 @@ function P = pipelineToStructLocal(pipe)
 end
 
 function nodes = applyValidationRunNodeOverrides(nodes, ctx)
-    if isempty(nodes) || ~isstruct(ctx) || ~isfield(ctx, 'run') || ~isstruct(ctx.run) || ...
-            ~isfield(ctx.run, 'nodeParams') || isempty(ctx.run.nodeParams)
-        return;
-    end
-    np = ctx.run.nodeParams;
-    for i = 1:numel(nodes)
-        nodeId = char(string(getField(nodes(i), 'id', '')));
-        patch = findRunNodeParamPatch(np, nodeId);
-        if isempty(patch)
-            continue;
-        end
-        if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
-            nodes(i).params = struct();
-        end
-        if isstruct(patch) && isfield(patch, 'params') && isstruct(patch.params)
-            nodes(i).params = mergeStructLocal(nodes(i).params, sanitizeRunNodeParamPatch(nodes(i).params, patch.params));
-        elseif isstruct(patch)
-            patchParams = rmfieldIfPresentLocal(patch, {'id','nodeId'});
-            nodes(i).params = mergeStructLocal(nodes(i).params, sanitizeRunNodeParamPatch(nodes(i).params, patchParams));
-        end
+    if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) && ...
+            isfield(ctx.run, 'nodeParams')
+        nodes = pipelineApplyRunNodeParams(nodes, ctx.run.nodeParams);
     end
 end
 
-function patch = sanitizeRunNodeParamPatch(baseParams, patch)
-    if ~isstruct(patch)
-        return;
-    end
-    if ~isstruct(baseParams)
-        baseParams = struct();
-    end
-    names = fieldnames(patch);
-    for i = 1:numel(names)
-        key = names{i};
-        if ~isfield(baseParams, key) || isempty(baseParams.(key))
-            continue;
-        end
-        if isGenericSourceSymbolicBinding(patch.(key)) && ~isSymbolicResourceBinding(baseParams.(key))
-            patch = rmfield(patch, key);
-        end
-    end
-end
-
-function patch = findRunNodeParamPatch(nodeParams, nodeId)
-    patch = [];
-    if isempty(nodeParams) || isempty(nodeId)
-        return;
-    end
-    try
-        if iscell(nodeParams)
-            for i = 1:numel(nodeParams)
-                item = nodeParams{i};
-                if isstruct(item) && nodeParamIdMatches(item, nodeId)
-                    patch = item;
-                    return;
-                end
-            end
-        elseif isstruct(nodeParams) && numel(nodeParams) > 1
-            for i = 1:numel(nodeParams)
-                if nodeParamIdMatches(nodeParams(i), nodeId)
-                    patch = nodeParams(i);
-                    return;
-                end
-            end
-        elseif isstruct(nodeParams)
-            if nodeParamIdMatches(nodeParams, nodeId)
-                patch = nodeParams;
-                return;
-            end
-            f = matlab.lang.makeValidName(nodeId);
-            if isfield(nodeParams, f)
-                patch = nodeParams.(f);
-            elseif isfield(nodeParams, nodeId)
-                patch = nodeParams.(nodeId);
-            end
-        end
-    catch
-        patch = [];
-    end
-end
-
-function tf = nodeParamIdMatches(item, nodeId)
-    tf = false;
-    try
-        if isfield(item, 'id') && strcmp(char(string(item.id)), nodeId)
-            tf = true;
-        elseif isfield(item, 'nodeId') && strcmp(char(string(item.nodeId)), nodeId)
-            tf = true;
-        end
-    catch
-        tf = false;
-    end
-end
-
-function S = rmfieldIfPresentLocal(S, names)
-    if ~isstruct(S)
-        return;
-    end
-    for i = 1:numel(names)
-        if isfield(S, names{i})
-            S = rmfield(S, names{i});
-        end
-    end
-end
 
 function arr = appendStructArray(arr, item)
     if isempty(item)
@@ -364,6 +281,50 @@ function ids = selectedNodeIdsFromContext(ctx)
     catch
         ids = {};
     end
+end
+
+function errors = partialRunBindingErrors(nodes, ctx)
+    errors = {};
+    if isempty(selectedNodeIdsFromContext(ctx))
+        return;
+    end
+    for i = 1:numel(nodes)
+        if ~logical(getField(nodes(i), 'enabled', true))
+            continue;
+        end
+        specs = getField(getField(nodes(i).contract, 'resources', struct()), 'in', struct([]));
+        for j = 1:numel(specs)
+            [hasRaw, raw] = resolveResourceRawValue(nodes(i), specs(j));
+            if ~hasRaw
+                continue;
+            end
+            values = normalizeChannelList(raw);
+            for k = 1:numel(values)
+                msg = excludedProducerBindingError(nodes(i), specs(j), values{k}, ctx);
+                if ~isempty(msg)
+                    errors{end+1} = msg; %#ok<AGROW>
+                end
+            end
+        end
+    end
+    errors = unique(errors, 'stable');
+end
+
+function msg = excludedProducerBindingError(node, spec, value, ctx)
+    msg = '';
+    selectedIds = selectedNodeIdsFromContext(ctx);
+    if isempty(selectedIds) || ~isSymbolicResourceBinding(value)
+        return;
+    end
+    sourceNodeId = symbolicResourceSourceNode(value);
+    if isempty(sourceNodeId) || any(strcmp(selectedIds, sourceNodeId))
+        return;
+    end
+    msg = sprintf(['Partial run: node %s input %s references excluded module %s through "%s". ' ...
+        'Select an explicit existing input binding, or include %s in this run. ' ...
+        'Persisted outputs do not automatically replace symbolic module bindings.'], ...
+        char(string(node.id)), char(string(spec.param)), sourceNodeId, ...
+        char(string(value)), sourceNodeId);
 end
 
 function nodes = normalizeNodesWithContracts(nodes)
@@ -1522,8 +1483,12 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
         resourceConfiguredChannelSetMatches(hasConfiguredRaw, configuredRaw, compatible, spec);
     status = 'resolved';
     autoChoice = resourceInventoryDef();
+    selectionError = excludedProducerBindingError(node, spec, symbolic, ctx);
 
-    if ~isempty(configuredChannelSet)
+    if ~isempty(selectionError)
+        status = 'invalid';
+        msg = selectionError;
+    elseif ~isempty(configuredChannelSet)
         autoChoice = configuredChannelSetMatches;
         if isempty(configuredChannelSetMissing)
             msg = sprintf('Node %s binds %d channel resource(s) to %s.', ...
@@ -1560,9 +1525,6 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
         end
     elseif ~isempty(symbolic)
         symbolicChoice = findSymbolicResourceChoice(compatible, symbolic);
-        if isempty(symbolicChoice)
-            symbolicChoice = findExistingConcreteChoiceForSymbolicBinding(symbolic, spec, compatible, ctx);
-        end
         if numel(symbolicChoice) == 1
             status = 'auto_resolvable';
             autoChoice = symbolicChoice;
@@ -1596,6 +1558,12 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
         status = 'needs_user_binding';
         msg = sprintf('Node %s needs a %s/%s resource selection; multiple compatible upstream module resources exist.', ...
             char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)));
+    elseif logical(getField(ctx, 'validationPartialRun', false)) && ...
+            logical(getField(spec, 'required', false))
+        status = 'invalid';
+        msg = sprintf(['Partial run: node %s requires an explicit existing input binding for %s. ' ...
+            'Select an input from the project, or include its producer module in this run.'], ...
+            char(string(getField(node, 'id', ''))), char(string(spec.param)));
     elseif numel(compatible) == 1
         status = 'auto_resolvable';
         autoChoice = compatible;
@@ -4105,78 +4073,6 @@ function choice = findSymbolicResourceChoice(resources, symbolicValue)
     end
 end
 
-function choice = findExistingConcreteChoiceForSymbolicBinding(symbolicValue, spec, compatibleResources, ctx)
-    choice = resourceInventoryDef();
-    sourceNodeId = symbolicResourceSourceNode(symbolicValue);
-    if isempty(sourceNodeId) || ~symbolicFallbackAllowedFromContext(ctx, sourceNodeId)
-        return;
-    end
-
-    sourceNode = findPipelineNodeInContext(ctx, sourceNodeId);
-    if isempty(sourceNode)
-        return;
-    end
-
-    expectedOutputs = compatibleDeclaredOutputsForSourceNode(sourceNode, spec);
-    if isempty(expectedOutputs)
-        return;
-    end
-
-    matches = resourceInventoryDef();
-    for i = 1:numel(expectedOutputs)
-        out = expectedOutputs(i);
-        if isempty(strtrim(char(string(getField(out, 'concreteName', '')))))
-            continue;
-        end
-        matches = mergeResourceInventory(matches, findExistingResourcesMatchingConcreteName(compatibleResources, out)); %#ok<AGROW>
-    end
-
-    choice = pickUniqueConcreteResourceChoice(matches, expectedOutputs);
-end
-
-function tf = symbolicFallbackAllowedFromContext(ctx, sourceNodeId)
-    tf = false;
-    if ~isstruct(ctx) || ~isfield(ctx, 'run') || ~isstruct(ctx.run) || ...
-            ~isfield(ctx.run, 'selectedNodes') || isempty(ctx.run.selectedNodes)
-        return;
-    end
-    selected = cellstr(string(ctx.run.selectedNodes(:)))';
-    tf = ~any(strcmp(selected, char(string(sourceNodeId))));
-end
-
-function node = findPipelineNodeInContext(ctx, nodeId)
-    node = struct([]);
-    if ~isstruct(ctx) || isempty(nodeId)
-        return;
-    end
-
-    node = findNodeByIdLocal(getField(getField(ctx, 'pipelineSpec', struct()), 'nodes', struct([])), nodeId);
-    if ~isempty(node)
-        return;
-    end
-
-    pipelinePath = '';
-    try
-        pipelineRef = getField(ctx, 'pipelineRef', struct());
-        pipelinePath = char(string(getField(pipelineRef, 'path', '')));
-    catch
-        pipelinePath = '';
-    end
-    if isempty(strtrim(pipelinePath))
-        return;
-    end
-
-    try
-        [pipeObj, msg] = pipelineLoad(pipelinePath); %#ok<ASGLU>
-        if isempty(pipeObj)
-            return;
-        end
-        node = findNodeByIdLocal(pipeObj.nodes, nodeId);
-    catch
-        node = struct([]);
-    end
-end
-
 function node = findNodeByIdLocal(nodes, nodeId)
     node = struct([]);
     if isempty(nodes)
@@ -4188,83 +4084,6 @@ function node = findNodeByIdLocal(nodes, nodeId)
             return;
         end
     end
-end
-
-function outputs = compatibleDeclaredOutputsForSourceNode(node, inputSpec)
-    outputs = resourceBindingDef();
-    if isempty(node)
-        return;
-    end
-
-    contract = getField(node, 'contract', struct());
-    if isempty(fieldnames(contract))
-        try
-            contract = pipelineNodeContract(node);
-        catch
-            contract = struct();
-        end
-    end
-    outSpecs = getField(getField(contract, 'resources', struct()), 'out', resourceSpecDef());
-    if isempty(outSpecs)
-        return;
-    end
-
-    wantedType = char(string(getField(inputSpec, 'type', '')));
-    wantedRole = char(string(getField(inputSpec, 'role', '')));
-    for i = 1:numel(outSpecs)
-        spec = outSpecs(i);
-        if isempty(getField(spec, 'type', ''))
-            continue;
-        end
-        if ~resourceSpecCompatible(wantedType, wantedRole, spec.type, spec.role)
-            continue;
-        end
-        outputs(end+1) = makeResourceOutput(node, spec); %#ok<AGROW>
-    end
-end
-
-function matches = findExistingResourcesMatchingConcreteName(resources, expectedOutput)
-    matches = resourceInventoryDef();
-    resources = normalizeResourceInventory(resources);
-    expectedName = strtrim(char(string(getField(expectedOutput, 'concreteName', ''))));
-    if isempty(expectedName)
-        return;
-    end
-    for i = 1:numel(resources)
-        concreteName = strtrim(char(string(getField(resources(i), 'concreteName', ''))));
-        if strcmpi(concreteName, expectedName)
-            matches(end+1) = resources(i); %#ok<AGROW>
-        end
-    end
-end
-
-function choice = pickUniqueConcreteResourceChoice(matches, expectedOutputs)
-    choice = resourceInventoryDef();
-    matches = normalizeResourceInventory(matches);
-    if isempty(matches)
-        return;
-    end
-
-    concreteNames = {matches.concreteName};
-    concreteNames = concreteNames(~cellfun(@isempty, concreteNames));
-    if isempty(concreteNames)
-        return;
-    end
-    uniqueConcrete = unique(cellfun(@(x) lower(char(string(x))), concreteNames, 'UniformOutput', false), 'stable');
-    if numel(uniqueConcrete) ~= 1
-        return;
-    end
-
-    for i = 1:numel(expectedOutputs)
-        exact = matches(strcmpi({matches.type}, char(string(expectedOutputs(i).type))) & ...
-                        strcmpi({matches.role}, char(string(expectedOutputs(i).role))));
-        if numel(exact) == 1
-            choice = exact;
-            return;
-        end
-    end
-
-    choice = matches(1);
 end
 
 function sourceNode = symbolicResourceSourceNode(symbolicValue)

@@ -11065,7 +11065,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if isInput || ~isempty(choices)
                 displayValue = choiceScalarText(app, value);
                 placeholder = '<unconfigured>';
-                invalidStoredValue = false;
+                invalidSymbolicSource = isInput && isSymbolicBindingLabel(app, displayValue) && ...
+                    ~symbolicBindingIsActive(app, displayValue);
+                invalidStoredValue = invalidSymbolicSource;
                 if isempty(choices)
                     choices = {displayValue};
                 end
@@ -11102,8 +11104,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     ctrl.Items = itemLabels;
                     ctrl.ItemsData = choices;
                     ctrl.BackgroundColor = [1.00 0.88 0.88];
-                    ctrl.Tooltip = ['Stored channel "' displayValue ...
-                        '" is absent from the authoritative runtime inventory. Select a valid channel.'];
+                    if invalidSymbolicSource
+                        ctrl.Tooltip = ['This binding references a module excluded from this run. ' ...
+                            'Select an explicit existing input, or include the producer module in the run.'];
+                    else
+                        ctrl.Tooltip = ['Stored channel "' displayValue ...
+                            '" is absent from the authoritative runtime inventory. Select a valid channel.'];
+                    end
                 else
                     ctrl.Items = choices;
                 end
@@ -11862,34 +11869,22 @@ classdef pipeline2 < matlab.apps.AppBase
             runtimeParams = getRuntimeNodeParams(app, nodeId);
             if app.RuntimeModeUnlocked && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
                     isConfiguredBindingValue(app, runtimeParams.(param))
-                if ~(isInput && isSymbolicStoredBinding(app, runtimeParams.(param)) && ~symbolicBindingIsActive(app, runtimeParams.(param)))
-                    value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
-                    return;
-                end
+                value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
+                return;
             end
 
             p = getField(app, node, 'params', struct());
-            if isInput && isstruct(p) && isfield(p, param) && isSymbolicStoredBinding(app, p.(param))
-                if symbolicBindingIsActive(app, p.(param))
-                    value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
-                    return;
-                end
-            end
-
-            if isstruct(p) && isfield(p, param) && (~isInput || isConfiguredBindingValue(app, p.(param))) && ...
-                    (~isInput || ~isSymbolicStoredBinding(app, p.(param)) || symbolicBindingIsActive(app, p.(param)))
+            % Keep inactive symbolic values visible. Hiding one behind an
+            % empty control must not suggest that the stored binding is valid.
+            if isstruct(p) && isfield(p, param) && (~isInput || isConfiguredBindingValue(app, p.(param)))
                 value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
                 return;
             end
 
             if isInput && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
                     isConfiguredBindingValue(app, runtimeParams.(param))
-                if isSymbolicStoredBinding(app, runtimeParams.(param)) && ~symbolicBindingIsActive(app, runtimeParams.(param))
-                    value = '';
-                else
-                    value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
-                    return;
-                end
+                value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
+                return;
             end
 
             if isInput && isempty(value) && isAllChannelBindingSpec(app, spec)
@@ -15778,6 +15773,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isstruct(nodeParams)
                 return;
             end
+            nodes = pipelineApplyRunNodeParams(nodes, nodeParams);
             for i = 1:numel(nodes)
                 nodeId = char(string(getField(app, nodes(i), 'id', '')));
                 key = matlab.lang.makeValidName(nodeId);
@@ -15788,16 +15784,6 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodes(i).params = struct();
                 end
                 runParams = nodeParams.(key);
-                if isstruct(nodes(i).params)
-                    fields = fieldnames(nodes(i).params);
-                    for f = 1:numel(fields)
-                        pname = fields{f};
-                        if isSymbolicStoredBinding(app, nodes(i).params.(pname)) && isfield(runParams, pname)
-                            runParams.(pname) = nodes(i).params.(pname);
-                        end
-                    end
-                end
-                nodes(i).params = mergeStructDefaults(app, runParams, nodes(i).params);
                 nodes(i) = applyCustomPackagePatchToNode(app, nodes(i), runParams);
             end
         end
