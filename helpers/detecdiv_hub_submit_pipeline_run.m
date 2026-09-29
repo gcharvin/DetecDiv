@@ -67,6 +67,10 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref, opts.hub));
     payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub, shallowObj));
     payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
+    if classifierScopedRun
+        payload.run_request = localRunStage('bind bundled classifier snapshot for worker input', ...
+            @() localBindBundledClassifierSnapshot(runObj, payload.run_request, ref, opts.hub));
+    end
     payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts, runObj));
     localRunStageNoOutput('prepare Hub monitor files', @() localPrepareMonitorFiles(runObj));
 
@@ -576,22 +580,40 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
         pipelineRef.pipeline_key = char(string(runObj.templateId));
     catch
     end
+    sourceCandidates = {};
     try
         if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'id') && ~isempty(runObj.pipelineRef.id)
             pipelineRef.pipeline_key = char(string(runObj.pipelineRef.id));
         end
         if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.pipelineRef.path, ref, hub);
+            sourceCandidates{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
         end
     catch
     end
-    if isempty(pipelineRef.pipeline_json_path)
-        try
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath, ref, hub);
-        catch
+    try
+        if ~isempty(runObj.templatePath)
+            templatePath = char(string(runObj.templatePath));
+            if ~any(strcmp(sourceCandidates, templatePath))
+                sourceCandidates{end+1} = templatePath; %#ok<AGROW>
+            end
         end
+    catch
+    end
+
+    % Prefer a locally available, readable template when one is referenced.
+    % Runs can outlive their template JSON (for example, a template folder may
+    % exist but be empty); in that case the effective pipelineSpec saved in
+    % the run is the authoritative source and must be exported as a bundle.
+    for iCandidate = 1:numel(sourceCandidates)
+        candidatePath = localPipelineJsonPath(sourceCandidates{iCandidate}, ref, hub);
+        if localPipelineJsonUnavailableLocally(sourceCandidates{iCandidate}, ref, hub)
+            continue;
+        end
+        pipelineRef.pipeline_json_path = candidatePath;
+        break;
     end
     if isempty(pipelineRef.pipeline_json_path) || localLooksLikeLocalClientPath(pipelineRef.pipeline_json_path) || ~localLooksLikeServerPath(pipelineRef.pipeline_json_path)
+        fprintf('[hub-submit] Exporting the saved pipeline run spec because no usable server-visible template JSON was found.\n');
         bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj);
         if ~isempty(localText(localGetField(bundleRef, 'pipeline_json_path', '')))
             pipelineRef.pipeline_bundle_uri = localText(localGetField(bundleRef, 'pipeline_bundle_uri', ''));
@@ -661,6 +683,40 @@ function localAssertLinkedPathServerVisible(pathValue, label, ref, hub)
         error('detecdiv_hub_submit_pipeline_run:NonServerLinkedPathForHub', ...
             'Hub-linked path for %s is not server-visible after mapping: %s', label, serverPath);
     end
+end
+
+function runRequest = localBindBundledClassifierSnapshot(runObj, runRequest, ref, hub)
+    if ~isstruct(runRequest) || ~isfield(runRequest, 'paths') || ~isstruct(runRequest.paths)
+        return;
+    end
+    classifierId = localText(localGetField(ref, 'classifier_id', ''));
+    runPath = '';
+    try
+        runPath = char(string(runObj.path));
+    catch
+    end
+    if isempty(classifierId) || isempty(runPath)
+        return;
+    end
+    classifierBundlePath = fullfile(runPath, 'hub_pipeline_bundle', ...
+        'assets', 'classification', classifierId);
+    if exist(classifierBundlePath, 'dir') ~= 7 || ...
+            isempty(dir(fullfile(classifierBundlePath, '*_classification.mat')))
+        return;
+    end
+
+    serverPath = localTranslatePathForServer(classifierBundlePath, ref, hub);
+    if isempty(serverPath) || localLooksLikeLocalClientPath(serverPath) || ...
+            ~localLooksLikeServerPath(serverPath)
+        return;
+    end
+
+    % Resolve the runtime ROI snapshot from the classifier copy that was
+    % exported with this pipeline bundle. Keep classifier_path (the write
+    % target) and node_params.modulePath (the training output target) intact.
+    runRequest.paths.server_classifier_path = serverPath;
+    detecdiv_paths_assert_hub_payload_safe(runRequest, 'run_request');
+    fprintf('[hub-submit] Classifier snapshot input resolved from the exported bundle: %s\n', serverPath);
 end
 
 function exportSource = localRunPipelineExportSource(runObj)
@@ -1532,10 +1588,52 @@ end
 
 function pathOut = localPipelineJsonPath(pathIn, ref, hub)
     pathOut = char(string(pathIn));
-    if isfolder(pathOut)
+    [~, ~, ext] = fileparts(pathOut);
+    if isfolder(pathOut) || ~strcmpi(ext, '.json')
         pathOut = fullfile(pathOut, 'pipeline.json');
     end
     pathOut = localTranslatePathForServer(pathOut, ref, hub);
+end
+
+function tf = localPipelineJsonUnavailableLocally(pathIn, ref, hub)
+    tf = false;
+    sourcePath = char(string(pathIn));
+    if isempty(sourcePath)
+        return;
+    end
+    [~, ~, ext] = fileparts(sourcePath);
+    if isfolder(sourcePath) || ~strcmpi(ext, '.json')
+        sourcePath = fullfile(sourcePath, 'pipeline.json');
+    end
+
+    if exist(sourcePath, 'file') == 2
+        tf = ~localPipelineJsonHasNodes(sourcePath);
+        return;
+    end
+
+    % A server-visible POSIX path may not be mounted on this client. Only
+    % classify it as missing when a configured mapping resolves it locally.
+    if localLooksLikeServerPath(sourcePath)
+        [localPath, mapped] = detecdiv_paths_map_module_path( ...
+            sourcePath, localPathMappingCtx(ref, hub), 'local');
+        if ~mapped
+            return;
+        end
+        sourcePath = localPath;
+    end
+
+    if localLooksLikeLocalClientPath(sourcePath) || ~localLooksLikeServerPath(sourcePath)
+        tf = exist(sourcePath, 'file') ~= 2 || ~localPipelineJsonHasNodes(sourcePath);
+    end
+end
+
+function tf = localPipelineJsonHasNodes(pathIn)
+    tf = false;
+    try
+        spec = jsondecode(fileread(pathIn));
+        tf = isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes);
+    catch
+    end
 end
 
 function [out, translated] = localTranslatePathForServer(pathIn, ref, hub)
