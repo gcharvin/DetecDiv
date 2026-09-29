@@ -106,8 +106,10 @@ if exist(scriptPath, 'file') ~= 2
 end
 
 cfg = struct();
-cfg.framebank_path = strrep(framebank_path, '\\', '/');
-cfg.save_path      = strrep(classif.path, '\\', '/');
+% Preserve native paths in JSON. Replacing a doubled UNC prefix with one /
+% turns \\server\share into /server\share, which is not a Windows UNC path.
+cfg.framebank_path = char(framebank_path);
+cfg.save_path      = char(classif.path);
 cfg.model_name     = classif.strid;
 cfg.seed           = trainingParam.Seed;
 cfg.use_pretrained = logical(trainingParam.use_pretrained);
@@ -118,7 +120,7 @@ cfg.n_epochs       = trainingParam.n_epochs;
 cfg.batch_size     = trainingParam.batch_size;
 cfg.checkpoint_every = max(1, round(double(trainingParam.checkpoint_every)));
 cfg.cancel_path    = cancelTokenFileFromCtx(ctx);
-cfg.log_path       = strrep(fullfile(classif.path, 'train_cellposesam_live.log'), '\\', '/');
+cfg.log_path       = fullfile(classif.path, 'train_cellposesam_live.log');
 
 cfg.min_train_masks = 0;
 if isfield(trainingParam, 'min_train_masks') && ~isempty(trainingParam.min_train_masks)
@@ -130,7 +132,7 @@ statusPath = fullfile(classif.path, 'train_cellposesam_status.json');
 if exist(statusPath, 'file') == 2
     delete(statusPath);
 end
-cfg.status_path = strrep(statusPath, '\\', '/');
+cfg.status_path = statusPath;
 fid = fopen(configPath, 'w');
 if fid == -1
     error('Unable to create Python config: %s', configPath);
