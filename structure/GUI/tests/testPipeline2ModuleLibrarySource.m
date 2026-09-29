@@ -17,6 +17,30 @@ verifyFalse(testCase, contains(block, 'classiObj'));
 verifyFalse(testCase, contains(block, 'app.Data.nodes'));
 end
 
+function testCellposeTrainingSkipsSourceRoiChannelValidation(testCase)
+sourcePath = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+    'pipeline2_extracted.m');
+source = fileread(sourcePath);
+validationBlock = regexp(source, ...
+    'function issues = attachedRoiModuleChannelIssues.*?(?=\n\s*function )', ...
+    'match', 'once');
+intentBlock = regexp(source, ...
+    'function tf = classifierUsesFramebankTrainingInput.*?(?=\n\s*function )', ...
+    'match', 'once');
+
+verifyNotEmpty(testCase, validationBlock);
+verifyNotEmpty(testCase, intentBlock);
+verifyTrue(testCase, contains(validationBlock, ...
+    'classifierUsesFramebankTrainingInput(app, node)'));
+verifyTrue(testCase, contains(intentBlock, "strcmpi(pkg, 'cellposesam')"));
+verifyTrue(testCase, contains(intentBlock, "params, 'operation'"));
+verifyTrue(testCase, contains(intentBlock, "params, 'intent'"));
+verifyTrue(testCase, contains(intentBlock, "'train'"));
+verifyLessThan(testCase, ...
+    strfind(validationBlock, 'classifierUsesFramebankTrainingInput'), ...
+    strfind(validationBlock, 'roiHasRequiredChannels'));
+end
+
 function testTypedLatentObservationsAcceptPhysicalRoiChannels(testCase)
 sourcePath = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
     'pipeline2_extracted.m');

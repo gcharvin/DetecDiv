@@ -6170,6 +6170,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 node = app.Data.nodes(nodeIdx);
                 classiObj = [];
                 nodeType = lower(char(string(getField(app, node, 'type', ''))));
+                if strcmp(nodeType, 'classifier') && ...
+                        classifierUsesFramebankTrainingInput(app, node)
+                    % CellposeSAM training consumes the already formatted
+                    % framebank. Its ROI IDs are provenance only; the
+                    % source ROI channel labels are not training inputs.
+                    continue;
+                end
                 if strcmp(nodeType, 'classifier')
                     try
                         classiObj = linkedClassifierObject(app, node);
@@ -6205,6 +6212,38 @@ classdef pipeline2 < matlab.apps.AppBase
                 issues{end+1} = formatRoiModuleChannelIssue(app, nodeName, nodeType, requiredChannels, ...
                     presentIdx, missingIdx, missingFirstChannels); %#ok<AGROW>
             end
+        end
+
+        function tf = classifierUsesFramebankTrainingInput(app, node)
+            tf = false;
+            pkg = strtrim(char(string(getField(app, node, 'pkg', ''))));
+            if isempty(pkg)
+                func = strtrim(char(string(getField(app, node, 'func', ''))));
+                if contains(func, '.')
+                    pkg = char(extractBefore(string(func), '.'));
+                end
+            end
+            if ~strcmpi(pkg, 'cellposesam')
+                return;
+            end
+
+            params = getField(app, node, 'params', struct());
+            intent = getRuntimeValue(app, 'intent');
+            if isstruct(params)
+                % Match runPipeline.classifierRunIntent precedence exactly:
+                % node operation, node intent, then the runtime intent.
+                if isfield(params, 'operation') && ~isempty(params.operation)
+                    intent = params.operation;
+                elseif isfield(params, 'intent') && ~isempty(params.intent)
+                    intent = params.intent;
+                end
+            end
+            try
+                intent = normalizeStartupIntent(app, intent);
+            catch
+                intent = lower(strtrim(char(string(intent))));
+            end
+            tf = strcmpi(char(string(intent)), 'train');
         end
 
         function [roiList, roiIndices] = selectedClassifierRoisForValidation(app)
