@@ -3,15 +3,18 @@ function [shallowObj, msg] = shallowLoad(filename, varargin)
 projectDirOverride = '';
 preferJson = true;
 progressCallback = [];
+hubPathSettings = [];
 if ~isempty(varargin)
     ip = inputParser;
     ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
     ip.addParameter('PreferJson', true, @(x)islogical(x) || isnumeric(x));
     ip.addParameter('ProgressCallback', [], @(x)isempty(x) || isa(x, 'function_handle'));
+    ip.addParameter('HubPathSettings', [], @(x)isempty(x) || isstruct(x));
     ip.parse(varargin{:});
     projectDirOverride = char(string(ip.Results.ProjectDir));
     preferJson = logical(ip.Results.PreferJson);
     progressCallback = ip.Results.ProgressCallback;
+    hubPathSettings = ip.Results.HubPathSettings;
 end
 
 if nargin == 0
@@ -76,7 +79,8 @@ file = namestr;
 path = pathstr;
 if strcmpi(ext, '.json')
     [shallowObj, msg] = shallowProjectImportLight(filename, ...
-        'ProjectDir', projectDirOverride, 'ProgressCallback', progressCallback);
+        'ProjectDir', projectDirOverride, 'ProgressCallback', progressCallback, ...
+        'HubPathSettings', hubPathSettings);
     return;
 end
 if isempty(projectDirOverride)
@@ -130,6 +134,14 @@ if isunix || ismac
     shallowObj.setPath([effectivePath '/'], effectiveFile);
 else
     shallowObj.setPath([effectivePath '\'], effectiveFile);
+end
+
+% A previous host may have saved accessible UNC paths. Resolve them to this
+% client's preferred mapped drive before rebuilding parser metadata.
+if isempty(hubPathSettings)
+    shallowObj = detecdiv_paths_localize_project(shallowObj);
+else
+    shallowObj = detecdiv_paths_localize_project(shallowObj, hubPathSettings);
 end
 
 % éviter de charger 2x le même projet dans le workspace

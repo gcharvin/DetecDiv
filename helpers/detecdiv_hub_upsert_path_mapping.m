@@ -20,7 +20,10 @@ function hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot)
 
     idx = [];
     for i = 1:numel(hub.pathMappings)
-        if strcmp(localNormalizeRoot(hub.pathMappings(i).remoteRoot, '/'), remoteRoot)
+        % Several client aliases can identify the same server storage root.
+        % Updating a UNC alias must not remove its mapped-drive counterpart.
+        if strcmpi(localNormalizeRoot(hub.pathMappings(i).localRoot, '\'), ...
+                localNormalizeRoot(localRoot, '\'))
             idx = i;
             break;
         end
@@ -30,6 +33,7 @@ function hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot)
         hub.pathMappings(end+1).remoteRoot = remoteRoot;
         hub.pathMappings(end).localRoot = localRoot;
     else
+        hub.pathMappings(idx).remoteRoot = remoteRoot;
         hub.pathMappings(idx).localRoot = localRoot;
     end
 end

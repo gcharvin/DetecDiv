@@ -3,13 +3,16 @@ function [shallowObj, msg] = shallowProjectImportLight(jsonPath, varargin)
 
 projectDirOverride = '';
 progressCallback = [];
+hubPathSettingsOverride = [];
 if ~isempty(varargin)
     ip = inputParser;
     ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
     ip.addParameter('ProgressCallback', [], @(x)isempty(x) || isa(x, 'function_handle'));
+    ip.addParameter('HubPathSettings', [], @(x)isempty(x) || isstruct(x));
     ip.parse(varargin{:});
     projectDirOverride = char(string(ip.Results.ProjectDir));
     progressCallback = ip.Results.ProgressCallback;
+    hubPathSettingsOverride = ip.Results.HubPathSettings;
 end
 
 jsonPath = char(string(jsonPath));
@@ -80,6 +83,9 @@ if isfield(project, 'runProfilesPath') && ~isempty(project.runProfilesPath)
 end
 
 hubPathSettings = localPathMappingSettings();
+if ~isempty(hubPathSettingsOverride)
+    hubPathSettings = hubPathSettingsOverride;
+end
 fovItems = localResolveFovItems(project, projectDir, progressCallback, 0.08, 0.18);
 localReportProgress(progressCallback, 0.18, 'Reconstructing FOV and ROI objects...', 'reconstruction');
 shallowObj.fov = localBuildFovs(fovItems, shallowObj, projectDir, hubPathSettings, ...
@@ -105,7 +111,7 @@ end
 
 localReportProgress(progressCallback, 0.85, 'Loading pipeline run records...', 'pipelineRuns');
 try
-    shallowObj.processing.pipelineRun = localLoadPipelineRuns(project, projectDir);
+    shallowObj.processing.pipelineRun = localLoadPipelineRuns(project, projectDir, hubPathSettings);
 catch ME
     warning('shallowProjectImportLight:PipelineRunLoadFailed', '%s', ME.message);
     shallowObj.processing.pipelineRun = pipelineRun.empty;
@@ -595,7 +601,7 @@ for i = 1:numel(refs)
 end
 end
 
-function list = localLoadPipelineRuns(project, projectDir)
+function list = localLoadPipelineRuns(project, projectDir, hubPathSettings)
 list = pipelineRun.empty;
 if ~isfield(project, 'pipelineRuns')
     return;
@@ -611,6 +617,7 @@ for i = 1:numel(refs)
         if isempty(obj)
             warning('shallowProjectImportLight:PipelineRunSkipped', '%s', msg);
         elseif isa(obj, 'pipelineRun')
+            obj = detecdiv_paths_localize_run(obj, hubPathSettings);
             list(end + 1) = obj; %#ok<AGROW>
         end
     end
@@ -688,13 +695,12 @@ if iscell(value)
 elseif ischar(value) || isstring(value)
     pathText = char(string(value));
     value = localResolveProjectPath(pathText, baseDir);
-    if ~isfolder(value) && ~isfile(value) && ~isempty(hubPathSettings) && ...
+    if ~isempty(hubPathSettings) && ...
             (exist('detecdiv_hub_apply_path_mapping', 'file') == 2)
         try
-            [mappedPath, ~] = detecdiv_hub_apply_path_mapping(pathText, hubPathSettings);
-            if ~isempty(mappedPath) && (isfolder(mappedPath) || isfile(mappedPath))
-                value = mappedPath;
-            end
+            % An accessible UNC is still a foreign path view when this
+            % client prefers a mapped drive. Existence must not skip mapping.
+            value = detecdiv_paths_prefer_local(value, hubPathSettings);
         catch
         end
     end

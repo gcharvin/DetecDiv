@@ -2,34 +2,53 @@ function mappings = detecdiv_paths_module_mappings(ctx)
 % detecdiv_paths_module_mappings  Central local<->server path mappings.
 %
 % Mappings are ordered by specificity at use time. Sources, in priority order:
-% ctx.hub.pathMappings, ctx.run.paths.path_mappings, ctx.hub defaults,
-% persisted Hub settings, and deployment defaults.
+% ctx.hub preferred root, explicit mappings, run mappings, persisted Hub
+% settings, and deployment defaults. Windows aliases share the same identity.
 
     if nargin < 1 || isempty(ctx) || ~isstruct(ctx)
         ctx = struct();
     end
 
     mappings = struct('remoteRoot', {}, 'localRoot', {});
-    mappings = appendMappings(mappings, nestedField(ctx, {'hub','pathMappings'}, []));
-    mappings = appendMappings(mappings, nestedField(ctx, {'run','paths','path_mappings'}, []));
-
     localRoot = nestedField(ctx, {'hub','defaultLocalProjectRoot'}, '');
     remoteRoot = nestedField(ctx, {'hub','defaultRemoteProjectRoot'}, '');
     mappings = appendMapping(mappings, localRoot, remoteRoot);
+    mappings = appendMappings(mappings, nestedField(ctx, {'hub','pathMappings'}, []));
+    mappings = appendPrefixMappings(mappings, nestedField(ctx, {'hub','pathPrefixMap'}, struct()));
+    mappings = detecdiv_paths_expand_windows_aliases(mappings);
+    % A recorded run may come from another workstation. Its drive letters
+    % must not acquire aliases from this workstation's SMB connections.
+    mappings = appendMappings(mappings, nestedField(ctx, {'run','paths','path_mappings'}, []));
 
     try
         if exist('detecdiv_hub_settings_get', 'file') == 2
             hub = detecdiv_hub_settings_get();
-            mappings = appendMappings(mappings, nestedField(hub, {'pathMappings'}, []));
-            mappings = appendMapping(mappings, ...
+            settingsMappings = struct('remoteRoot', {}, 'localRoot', {});
+            settingsMappings = appendMapping(settingsMappings, ...
                 nestedField(hub, {'defaultLocalProjectRoot'}, ''), ...
                 nestedField(hub, {'defaultRemoteProjectRoot'}, ''));
+            settingsMappings = appendMappings(settingsMappings, nestedField(hub, {'pathMappings'}, []));
+            settingsMappings = appendPrefixMappings(settingsMappings, nestedField(hub, {'pathPrefixMap'}, struct()));
+            mappings = appendMappings(mappings, detecdiv_paths_expand_windows_aliases(settingsMappings));
         end
     catch
     end
 
+    % The legacy X: fallback is not an explicit storage identity. Do not
+    % infer new UNC aliases from it when X: may name another share here.
     mappings = appendDeploymentDefaultMappings(mappings);
     mappings = uniqueMappings(mappings);
+end
+
+function mappings = appendPrefixMappings(mappings, prefixMap)
+    if ~isstruct(prefixMap), return; end
+    names = fieldnames(prefixMap);
+    for i = 1:numel(names)
+        item = prefixMap.(names{i});
+        if isstruct(item) && isfield(item, 'localPrefix') && isfield(item, 'remotePrefix')
+            mappings = appendMapping(mappings, item.localPrefix, item.remotePrefix);
+        end
+    end
 end
 
 function mappings = appendDeploymentDefaultMappings(mappings)
@@ -66,7 +85,9 @@ function mappings = uniqueMappings(mappings)
     for i = 1:numel(mappings)
         localRoot = normalizeLocalRoot(mappings(i).localRoot);
         remoteRoot = normalizeRemoteRoot(mappings(i).remoteRoot);
-        key = [lower(localRoot) '|' lower(remoteRoot)];
+        if isWindowsRoot(mappings(i).localRoot), localRoot = lower(localRoot); end
+        if isWindowsRoot(remoteRoot), remoteRoot = lower(remoteRoot); end
+        key = [localRoot '|' remoteRoot];
         if isempty(localRoot) || isempty(remoteRoot) || any(strcmp(seen, key))
             keep(i) = false;
         else
@@ -88,6 +109,11 @@ function value = nestedField(S, pathParts, defaultValue)
     if ~isempty(cur)
         value = cur;
     end
+end
+
+function tf = isWindowsRoot(path)
+    path = char(string(path));
+    tf = ~isempty(regexp(path, '^[A-Za-z]:', 'once')) || startsWith(path, '\\') || startsWith(path, '//');
 end
 
 function out = normalizeLocalRoot(value)

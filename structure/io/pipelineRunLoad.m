@@ -13,6 +13,7 @@ function [runObj, msg] = pipelineRunLoad(inputPath)
         inputPath = fullfile(path, file);
     end
 
+    inputPath = detecdiv_paths_prefer_local(inputPath);
     if exist(inputPath, 'dir')
         jsonFile = fullfile(inputPath, 'run.json');
     else
@@ -75,6 +76,7 @@ function [runObj, msg] = pipelineRunLoad(inputPath)
         runObj.createdAt = getField(S,'createdAt','');
         runObj.updatedAt = getField(S,'updatedAt','');
         runObj.path = inputPath;
+        runObj = detecdiv_paths_localize_run(runObj);
         runObj = reconcileRunFromEventLog(runObj);
     catch ME
         msg = ME.message;

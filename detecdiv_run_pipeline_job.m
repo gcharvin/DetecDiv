@@ -460,48 +460,7 @@ function candidates = localAppendPathCandidate(candidates, pathText, payload)
 end
 
 function pathOut = localApplyPathMappings(pathIn, payload)
-    pathOut = char(string(pathIn));
-    mappings = localGetField(localGetField(localGetField(payload, 'run_request', struct()), 'paths', struct()), 'path_mappings', []);
-    if isempty(mappings)
-        return;
-    end
-    if isstruct(mappings)
-        mappings = mappings(:)';
-    elseif iscell(mappings)
-        mappings = [mappings{:}];
-    else
-        return;
-    end
-    candidateNorm = strrep(pathOut, '/', '\');
-    bestLen = -1;
-    bestOut = pathOut;
-    for i = 1:numel(mappings)
-        localRoot = localGetText(mappings(i), {'localRoot'}, localGetText(mappings(i), {'local_root'}, ''));
-        remoteRoot = localGetText(mappings(i), {'remoteRoot'}, localGetText(mappings(i), {'remote_root'}, ''));
-        localNorm = regexprep(strrep(localRoot, '/', '\'), '[\\\/]+$', '');
-        remoteNorm = regexprep(strrep(remoteRoot, '\', '/'), '[\\\/]+$', '');
-        if isempty(localNorm) || isempty(remoteNorm)
-            continue;
-        end
-        if localPathStartsWithRoot(candidateNorm, localNorm) && numel(localNorm) > bestLen
-            suffix = candidateNorm(numel(localNorm)+1:end);
-            suffix = strrep(suffix, '\', '/');
-            bestLen = numel(localNorm);
-            bestOut = [remoteNorm suffix];
-        end
-    end
-    pathOut = bestOut;
-end
-
-function tf = localPathStartsWithRoot(pathValue, rootValue)
-    pathCmp = lower(char(string(pathValue)));
-    rootCmp = lower(char(string(rootValue)));
-    tf = startsWith(pathCmp, rootCmp);
-    if ~tf || numel(pathCmp) == numel(rootCmp) || endsWith(rootCmp, ':')
-        return;
-    end
-    nextChar = pathCmp(numel(rootCmp)+1);
-    tf = any(nextChar == ['\' '/']);
+    pathOut = detecdiv_paths_worker_path(pathIn, payload);
 end
 
 function leaf = localPathLeaf(pathText)
@@ -1221,19 +1180,14 @@ function shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload)
             if ~isprop(fovObj, 'srcpath') || ~iscell(fovObj.srcpath)
                 continue;
             end
+            [fovObj, mappedCount] = detecdiv_paths_map_fov_sources(fovObj, ...
+                @(source)localMapWorkerSource(source, payload));
+            changedCount = changedCount + mappedCount;
             for channelIndex = 1:numel(fovObj.srcpath)
                 sourceValue = fovObj.srcpath{channelIndex};
                 sourcePath = localUnwrapPathText(sourceValue);
-                mappedPath = localApplyPathMappings(sourcePath, payload);
-                if strcmp(mappedPath, sourcePath)
-                    % Project source paths are loaded before run parameters
-                    % are attached to ctx.  Keep the standard Hub mapping
-                    % available at that point too, including project-only
-                    % runs where no dataloader node is selected.
-                    mappedPath = localApplyDefaultHubSourceMapping(sourcePath);
-                end
-                if ~isempty(mappedPath) && (~strcmp(mappedPath, sourcePath) || ~ischar(sourceValue))
-                    fovObj.srcpath{channelIndex} = mappedPath;
+                if ~isempty(sourcePath) && ~ischar(sourceValue)
+                    fovObj.srcpath{channelIndex} = sourcePath;
                     changedCount = changedCount + 1;
                 end
                 % Lightweight JSON imports may preserve a single value as a
@@ -1256,6 +1210,13 @@ function shallowObj = localApplyProjectSourcePathMappings(shallowObj, payload)
     end
     if changedCount > 0
         fprintf('[pipeline-job] Applied Hub path mappings to %d project source entries.\n', changedCount);
+    end
+end
+
+function pathOut = localMapWorkerSource(pathIn, payload)
+    pathOut = localApplyPathMappings(pathIn, payload);
+    if strcmp(pathOut, pathIn) && ~ispc
+        pathOut = localApplyDefaultHubSourceMapping(pathIn);
     end
 end
 

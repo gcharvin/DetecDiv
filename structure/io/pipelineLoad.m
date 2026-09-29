@@ -13,6 +13,7 @@ function [pipe, msg] = pipelineLoad(inputPath)
         inputPath = fullfile(path, file);
     end
 
+    inputPath = detecdiv_paths_prefer_local(inputPath);
     [jsonFile, inputPath, msg, bundleRoot] = resolvePipelineJsonTarget(inputPath);
     if ~isempty(msg)
         return;

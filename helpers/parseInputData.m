@@ -2,6 +2,20 @@ function output=parseInputData(pathdir,varargin)
 % this function is used to parse input file or directory when importing
 % data
 
+% Folder pickers, stored projects and worker runs can use different names
+% for the same SMB storage. Keep the current client's preferred path view.
+hubPathSettings = [];
+for arg = 1:2:numel(varargin)-1
+    if (ischar(varargin{arg}) || isstring(varargin{arg})) && strcmpi(varargin{arg}, 'HubPathSettings')
+        hubPathSettings = varargin{arg+1};
+    end
+end
+if isempty(hubPathSettings)
+    pathdir = detecdiv_paths_prefer_local(pathdir);
+else
+    pathdir = detecdiv_paths_prefer_local(pathdir, hubPathSettings);
+end
+
 output=[];
 %output.posinfolder=0; % 1 : positions are stored as folders; 0 positions are stores as files in the same folder, multitiff or not
 output.pos=[];

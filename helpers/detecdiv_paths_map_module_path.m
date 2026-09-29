@@ -31,6 +31,14 @@ function [mappedPath, mapped, status] = detecdiv_paths_map_module_path(pathIn, c
             if mapped, status = 'mapped_to_server'; end
         case {'local','client'}
             [mappedPath, mapped] = mapRemoteToLocal(mappedPath, mappings);
+            if ~mapped
+                % A stored UNC or another client's drive is a local alias of
+                % the same canonical server path, even when it still exists.
+                [serverPath, aliasMapped] = mapLocalToRemote(pathIn, mappings);
+                if aliasMapped
+                    [mappedPath, mapped] = mapRemoteToLocal(serverPath, mappings);
+                end
+            end
             if mapped, status = 'mapped_to_local'; end
         otherwise
             error('detecdiv_paths_map_module_path:BadDirection', ...
@@ -51,8 +59,7 @@ function [out, mapped] = mapLocalToRemote(pathIn, mappings)
         if isempty(localRoot) || isempty(remoteRoot)
             continue;
         end
-        if startsWith(lower(localComparable), lower(localRoot)) && ...
-                (numel(localComparable) == numel(localRoot) || any(localComparable(numel(localRoot)+1) == ['\' '/']))
+        if pathHasRoot(localComparable, localRoot, isWindowsPath(mappings(i).localRoot))
             if numel(localRoot) > bestLen
                 bestLen = numel(localRoot);
                 bestRemote = remoteRoot;
@@ -79,23 +86,38 @@ function [out, mapped] = mapRemoteToLocal(pathIn, mappings)
         if isempty(localRoot) || isempty(remoteRoot)
             continue;
         end
-        if startsWith(lower(remoteComparable), lower(remoteRoot)) && ...
-                (numel(remoteComparable) == numel(remoteRoot) || remoteComparable(numel(remoteRoot)+1) == '/')
+        if pathHasRoot(remoteComparable, remoteRoot, isWindowsPath(remoteRoot))
             if numel(remoteRoot) > bestLen
                 bestLen = numel(remoteRoot);
-                bestLocal = localRoot;
+                bestLocal = regexprep(char(string(mappings(i).localRoot)), '[\\/]+$', '');
                 bestSuffix = remoteComparable(numel(remoteRoot)+1:end);
             end
         end
     end
     if bestLen > 0
-        out = [bestLocal strrep(bestSuffix, '/', filesep)];
+        sep = filesep;
+        if isWindowsPath(bestLocal), sep = '\'; end
+        bestLocal = strrep(strrep(bestLocal, '/', sep), '\', sep);
+        out = [bestLocal strrep(bestSuffix, '/', sep)];
+        if ~isempty(regexp(out, '^[A-Za-z]:$', 'once'))
+            out = [out '\'];
+        end
         mapped = true;
     end
 end
 
 function out = normalizeLocalRoot(value)
     out = regexprep(strrep(char(string(value)), '/', '\'), '[\\\/]+$', '');
+end
+
+function tf = pathHasRoot(path, root, ignoreCase)
+    tf = startsWith(path, root, 'IgnoreCase', ignoreCase) && ...
+        (numel(path) == numel(root) || any(path(numel(root)+1) == ['\' '/']));
+end
+
+function tf = isWindowsPath(path)
+    path = char(string(path));
+    tf = ~isempty(regexp(path, '^[A-Za-z]:', 'once')) || startsWith(path, '\\') || startsWith(path, '//');
 end
 
 function out = normalizeRemoteRoot(value)
