@@ -43,6 +43,10 @@ c.dataset.channels = {'BF'};
 app = classifierGUI(c);
 appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
 drawnow;
+editors = findall(app.SettrainingparametersTab, 'Type', 'uilistbox');
+verifyNumElements(testCase, editors, 1);
+verifyEqual(testCase, char(editors(1).Enable), 'off', ...
+    'ROI channel coverage is deferred until training parameters are opened.');
 
 % Exercise the App Designer callback path used when the ROI tab is opened.
 % Coverage formatters are private app methods after the runtime .mlapp is
@@ -50,6 +54,11 @@ drawnow;
 tabCallback = app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;
 tabCallback(app.SettrainingandvalidationsetROIsTab, []);
 drawnow;
+trainingTabCallback = app.SettrainingparametersTab.ButtonDownFcn;
+trainingTabCallback(app.SettrainingparametersTab, []);
+drawnow;
+editors = findall(app.SettrainingparametersTab, 'Type', 'uilistbox');
+verifyEqual(testCase, char(editors(1).Enable), 'on');
 coverageColumn = find(strcmp(app.UITableData.ColumnName, 'Coverage'), 1);
 verifyNotEmpty(testCase, coverageColumn);
 verifyTrue(testCase, contains(string(app.UITableData.Data{1, coverageColumn}), '/'));

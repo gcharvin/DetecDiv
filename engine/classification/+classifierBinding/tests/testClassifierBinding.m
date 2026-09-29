@@ -371,6 +371,33 @@ verifyTrue(testCase, any(strcmp(imageChoices.values, 'raw')));
 verifyFalse(testCase, any(strcmp(imageChoices.values, 'reviewed_mask')));
 end
 
+function testCatalogCountsMappedDisplayAliases(testCase)
+folder = tempname;
+mkdir(folder);
+addTeardown(testCase, @()removeFolder(folder));
+
+c = classi(folder, 'alias_binding_demo', 1);
+c.classifierPkg = 'cellposesam';
+c.trainingParam = cellposesam.utils.defaultTrainingParam();
+
+r1 = roiWithRaw(folder, 'R1');
+r1.display.channelAlias = {'Channel0'};
+r2 = roiWithRaw(folder, 'R2');
+r2.display.channelAlias = {'Channel0'};
+r3 = roiWithRaw(folder, 'R3');
+r3.display.channelAlias = {'Channel0'};
+r3.channelid = [];
+c.roi = [r1 r2 r3];
+
+catalog = classifierBinding.catalog(c);
+spec = classifierBinding.trainingSpec(c);
+input = spec(strcmp({spec.param}, 'inputChannelName'));
+choices = classifierBinding.choices(input, catalog, '');
+verifyTrue(testCase, any(strcmp(choices.values, 'Channel0')));
+label = choices.labels{strcmp(choices.values, 'Channel0')};
+verifyTrue(testCase, contains(label, '2/3 ROI'));
+end
+
 function r = roiWithRaw(folder, id)
 r = roi(id, [1 1 4 4]);
 r.path = folder;

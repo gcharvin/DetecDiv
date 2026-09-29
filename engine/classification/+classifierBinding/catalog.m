@@ -92,6 +92,29 @@ try
 catch
 end
 
+% Display aliases (for example "Channel0") are valid classifier inputs too.
+% Count one only when its logical channel is mapped to at least one stored
+% image plane, matching the resolver used by CellposeSAM formatting.
+try
+    if isfield(roiObj.display, 'channelAlias') && ...
+            ~isempty(roiObj.display.channelAlias) && ...
+            ~isempty(roiObj.channelid)
+        aliases = cellstr(string(roiObj.display.channelAlias(:)));
+        channelIds = double(roiObj.channelid(:));
+        indexed = [];
+        if isfield(roiObj.display, 'indexed')
+            indexed = logical(roiObj.display.indexed(:));
+        end
+        for i = 1:numel(aliases)
+            if isempty(aliases{i}) || ~any(channelIds == i), continue; end
+            isIndexed = numel(indexed) >= i && indexed(i);
+            channels = mergeStoredChannel(channels, aliases{i}, ...
+                isIndexed, sum(channelIds == i) <= 1); %#ok<AGROW>
+        end
+    end
+catch
+end
+
 % Classifier MAT files can hold stale ROI display metadata after a pipeline
 % or annotation run. Read only the lightweight HDF5 header so bindings show
 % channels that are actually persisted, without loading image stacks.

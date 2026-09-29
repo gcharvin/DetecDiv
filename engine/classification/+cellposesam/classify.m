@@ -106,10 +106,8 @@ if isempty(data)
     data = roiobj.data;
 end
 
-pix = roiobj.findChannelID(channel);
-if iscell(pix)
-    pix = cell2mat(pix);
-end
+[pix, missingInputChannels] = ...
+    cellposesam.utils.resolveInputChannels(roiobj, channel);
 
 % --- Type de sortie demandee (robuste struct/class) ---
 outputType = 'segmentation';
@@ -167,7 +165,12 @@ end
 
 % Preparation des images pour CellposeSAM
 if isempty(pix)
-    error('cellposesam.classify: input channel not found.');
+    if isempty(missingInputChannels)
+        missingLabel = 'configured input channel';
+    else
+        missingLabel = strjoin(missingInputChannels, ', ');
+    end
+    error('cellposesam.classify: input channel not found: %s.', missingLabel);
 end
 
 gfp = uint8(zeros(size(image, 1), size(image, 2), numel(pix), numel(frames)));

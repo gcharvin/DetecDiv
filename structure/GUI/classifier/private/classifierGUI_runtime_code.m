@@ -119,6 +119,7 @@ classdef classifierGUI < matlab.apps.AppBase
 paramSelectedKey = '';
 paramEditorControls = gobjects(0);
 trainingScopeTextArea = gobjects(0);
+typedBindingChoicesLoaded logical = false;
     end
 
     properties (Access = public)
@@ -129,10 +130,11 @@ trainingScopeTextArea = gobjects(0);
 
 
       
-function [spec, t] = buildParamTable(app, trainingParam, classiObj)
+function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingCatalog)
 % buildParamTable  Build UITable data + spec from trainingParam.
 
     if nargin < 3, classiObj = []; end
+    if nargin < 4, loadBindingCatalog = false; end
 
     tp = trainingParam;
     rawKeys = fieldnames(tp);
@@ -152,7 +154,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
     parameterDisplayPolicy = struct('showUnspecified',true);
     try
         bindingSpec = classifierBinding.trainingSpec(classiObj);
-        if ~isempty(bindingSpec)
+        if ~isempty(bindingSpec) && loadBindingCatalog
             bindingCatalog = classifierBinding.catalog(classiObj);
         end
     catch ME
@@ -237,9 +239,31 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
                 choices = {};
                 choiceLabels = {};
             else
-                resolved = classifierBinding.choices(binding, bindingCatalog, v);
-                choices = resolved.values;
-                choiceLabels = resolved.labels;
+                if loadBindingCatalog
+                    resolved = classifierBinding.choices(binding, bindingCatalog, v);
+                    choices = resolved.values;
+                    choiceLabels = resolved.labels;
+                else
+                    % Classifier startup only shows saved bindings.  Defer
+                    % scanning imported ROI metadata until the user opens the
+                    % training-parameters tab.
+                    choices = bindingValueList(app, v);
+                    choiceLabels = choices;
+                    if logical(binding.required) && ~logical(binding.allowAuto)
+                        choices = [{'<unconfigured>'} choices];
+                        choiceLabels = [{'Open this tab to load ROI channels'} choiceLabels];
+                    elseif logical(binding.allowAuto)
+                        choices = [{'<auto>'} choices];
+                        choiceLabels = [{'Open this tab to load ROI channels'} choiceLabels];
+                    elseif logical(binding.allowNone) || ~logical(binding.required)
+                        choices = [{'<none>'} choices];
+                        choiceLabels = [{'Open this tab to load ROI channels'} choiceLabels];
+                    end
+                    if isempty(choices)
+                        choices = {'<unconfigured>'};
+                        choiceLabels = {'Open this tab to load ROI channels'};
+                    end
+                end
                 if strcmpi(binding.cardinality, 'many')
                     vType = 'binding_multi';
                 else
@@ -280,6 +304,7 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj)
         end
         if ~isempty(bindingIndex)
             spec.(k).binding = bindingSpec(bindingIndex);
+            spec.(k).bindingChoicesLoaded = loadBindingCatalog;
         end
     end
 
@@ -506,9 +531,10 @@ function refreshTypedTrainingBindingChoices(app)
     if ~hasTypedTrainingBindings(app, classiObj)
         return;
     end
+    app.typedBindingChoicesLoaded = true;
     selectedKey = app.paramSelectedKey;
     [app.paramSpec, app.paramTableData] = buildParamTable( ...
-        app, classiObj.trainingParam, classiObj);
+        app, classiObj.trainingParam, classiObj, true);
     app.UITableParam.Data = app.paramTableData;
     row = find(strcmp(app.paramTableData.Param, selectedKey), 1);
     if isempty(row) && height(app.paramTableData) > 0
@@ -542,6 +568,13 @@ function UITableParamCellEdit(app, event)
     row = event.Indices(1);
     key = app.UITableParam.Data.Param{row};
     newValStr = event.NewData;
+
+    if isfield(app.paramSpec, key) && ...
+            isfield(app.paramSpec.(key), 'bindingChoicesLoaded') && ...
+            ~app.paramSpec.(key).bindingChoicesLoaded
+        app.paramSelectedKey = key;
+        refreshTypedTrainingBindingChoices(app);
+    end
 
     if isfield(app.paramSpec, key) && ...
             startsWith(app.paramSpec.(key).type, 'binding')
@@ -652,6 +685,12 @@ function showParamEditor(app, key)
             if isfield(spec, 'binding')
                 dd.Tooltip = char(string(spec.binding.tip));
             end
+            if isfield(spec, 'bindingChoicesLoaded') && ...
+                    ~spec.bindingChoicesLoaded
+                dd.Enable = 'off';
+                dd.Tooltip = [dd.Tooltip ' ROI channel choices load when the ' ...
+                    'training-parameters tab is opened.'];
+            end
             app.paramEditorControls(end+1) = dd;
 
         case 'binding_multi'
@@ -681,6 +720,12 @@ function showParamEditor(app, key)
                 'ValueChangedFcn', @(src,evt)applyParamEdit(app, key, src.Value));
             if isfield(spec, 'binding')
                 lb.Tooltip = char(string(spec.binding.tip));
+            end
+            if isfield(spec, 'bindingChoicesLoaded') && ...
+                    ~spec.bindingChoicesLoaded
+                lb.Enable = 'off';
+                lb.Tooltip = [lb.Tooltip ' ROI channel choices load when the ' ...
+                    'training-parameters tab is opened.'];
             end
             app.paramEditorControls(end+1) = lb;
 
@@ -1200,7 +1245,8 @@ end
         end
 
         % Build table-based editor
-        [app.paramSpec, app.paramTableData] = buildParamTable(app, c.trainingParam, c);
+        [app.paramSpec, app.paramTableData] = buildParamTable( ...
+            app, c.trainingParam, c, app.typedBindingChoicesLoaded);
         app.UITableParam.Data = app.paramTableData;
         app.UITableParam.ColumnName = { ...
             'Parameter','Value','Model component / category','',''};
@@ -2648,7 +2694,8 @@ end
     end
 
     % Build table-based editor
-    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
+    [app.paramSpec, app.paramTableData] = buildParamTable( ...
+        app, classiObj.trainingParam, classiObj, app.typedBindingChoicesLoaded);
     app.UITableParam.Data = app.paramTableData;
     app.UITableParam.ColumnName = { ...
         'Parameter','Value','Model component / category','',''};
@@ -2863,7 +2910,8 @@ end
     end
 
     % Rebuild table-based editor
-    [app.paramSpec, app.paramTableData] = buildParamTable(app, classiObj.trainingParam, classiObj);
+    [app.paramSpec, app.paramTableData] = buildParamTable( ...
+        app, classiObj.trainingParam, classiObj, app.typedBindingChoicesLoaded);
     app.UITableParam.Data = app.paramTableData;
     app.UITableParam.ColumnName = { ...
         'Parameter','Value','Model component / category','',''};

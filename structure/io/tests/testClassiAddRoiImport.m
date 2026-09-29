@@ -93,6 +93,27 @@ info = h5info(fullfile(destination.path, 'im_source_roi.h5'));
 verifyEqual(testCase, string({info.Datasets.Name}), "Channel0");
 end
 
+function testInputAliasIsNormalizedWhenImportHasNoCanonicalInputName(testCase)
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@()rmdir(root, 's')); %#ok<NASGU>
+
+source = sourceWithRawChannels(root, 'source_alias_input');
+source.roi(1).display.channelAlias = {'Channel0','Channel1','Mask'};
+destination = classi(root, 'destination_alias_input', 1, ...
+    'InitTraining', false);
+destination.category = {'Tracking'};
+destination.classes = {'stable track'};
+destination.channelName = {'Channel0'};
+
+destination.addROI(source, 'rois', 1);
+
+verifyEqual(testCase, destination.roi(1).display.channel{1}, 'Channel0');
+verifyEqual(testCase, destination.roi(1).findChannelID('Channel0'), 1);
+info = h5info(fullfile(destination.path, 'im_source_roi.h5'));
+verifyTrue(testCase, any(strcmp({info.Datasets.Name}, 'Channel0')));
+end
+
 function testIoMapUncheckedRowsAreAuthoritative(testCase)
 root = tempname;
 mkdir(root);

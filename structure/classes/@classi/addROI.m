@@ -385,6 +385,7 @@ for ii = 1:length(rois)
     if ~isempty(ioMap) && isstruct(ioMap)
         applyIOMapChannelRename(classif.roi(cc+1), classif, ioMap);
     end
+    normalizeInputChannelAliases(classif.roi(cc+1), classif);
 
     % ============================================================
     % 7) PIXEL/OBJECT/DELTA/PEDIGREE OUTPUT CHANNEL HANDLING
@@ -721,6 +722,61 @@ end
         if isfield(roiObj.display, 'intensity') && size(roiObj.display.intensity, 1) >= idx && ...
                 all(double(roiObj.display.intensity(idx, :)) == 0)
             roiObj.display.intensity(idx, :) = [1 1 1];
+        end
+    end
+
+    function normalizeInputChannelAliases(roiObj, classifObj)
+        % Imported aliases are an explicit per-ROI mapping. When one uniquely
+        % identifies a configured raw input, store that input under the
+        % classifier's canonical name so future training/inference does not
+        % depend on display aliases.
+        if ~isstruct(roiObj.display) || ...
+                ~isfield(roiObj.display, 'channel') || ...
+                ~isfield(roiObj.display, 'channelAlias') || ...
+                isempty(roiObj.display.channelAlias) || ...
+                isempty(roiObj.channelid) || ...
+                ~isprop(classifObj, 'channelName') || ...
+                isempty(classifObj.channelName)
+            return
+        end
+
+        aliases = cellstr(string(roiObj.display.channelAlias(:)));
+        try
+            channelNames = cellstr(string(roiObj.display.channel(:).'));
+        catch
+            return
+        end
+        inputNames = cellstr(string(classifObj.channelName(:)));
+        channelIds = double(roiObj.channelid(:));
+        indexed = [];
+        if isfield(roiObj.display, 'indexed')
+            indexed = logical(roiObj.display.indexed(:));
+        end
+
+        for inputIndex = 1:numel(inputNames)
+            inputName = strtrim(inputNames{inputIndex});
+            if isempty(inputName) || ~isempty(roiObj.findChannelID(inputName))
+                continue
+            end
+            aliasMatches = find(strcmpi(aliases, inputName));
+            if numel(aliasMatches) ~= 1
+                continue
+            end
+            logicalIndex = aliasMatches(1);
+            if logicalIndex > numel(channelNames) || ...
+                    ~any(channelIds == logicalIndex) || ...
+                    (numel(indexed) >= logicalIndex && indexed(logicalIndex))
+                continue
+            end
+
+            sourceName = channelNames{logicalIndex};
+            if isempty(sourceName) || strcmpi(sourceName, inputName) || ...
+                    sum(strcmpi(channelNames, sourceName)) ~= 1
+                continue
+            end
+            roiObj.display.channel{logicalIndex} = inputName;
+            resetInputChannelDisplayStyle(roiObj, logicalIndex);
+            channelNames{logicalIndex} = inputName;
         end
     end
 
