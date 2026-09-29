@@ -209,7 +209,10 @@ The active priorities at the end of this thread are:
 - Preserve legacy compatibility unless the user explicitly approves a breaking migration.
 - Log or expose enough runtime information to debug Python-backed tools and pipeline runs.
 - Assume ROI extracted image data lives in `.h5`, not `.mat`.
-- After every successful push of DetecDiv changes to GitHub or GitLab, deploy the pushed commit to the canonical checkout `/home/charvin-admin/repos/DetecDiv` on `detecdiv-server` and verify that checkout; before any required worker restart, check for active Hub jobs and never interrupt one without explicit approval.
+- After every successful push of DetecDiv processing changes to GitHub or GitLab, deploy that exact commit to both compute checkouts and verify both: Linux `/home/charvin-admin/repos/DetecDiv` on `detecdiv-server`, and Windows `C:\Users\Charvin-Admin\Documents\GitHub\DetecDiv` on `10.20.11.56` (`CG-PCDELL01-306`, branch `unstable`). A push or a Linux-only update is not a complete two-worker deployment.
+- Before updating either checkout, check the Hub queue and confirm no active job is using that target; also check that the Windows host has no active MATLAB process. Require a clean checkout and use fast-forward-only synchronization. If a checkout is dirty, diverged, or the target is busy, preserve it and stop instead of resetting or interrupting work. Verify `git rev-parse HEAD` on both hosts equals the approved pushed commit.
+- Windows administration uses Windows OpenSSH with the dedicated key and local admin SSH account `detecdiv-ops`, not the domain account `GMGM\Charvin-Admin` (key authentication to the domain account currently fails before shell startup due to the Windows S4U issue). The working client identity is `C:\Users\Gilles\.ssh\id_ed25519_detecdiv_windows`; force it with `-o IdentitiesOnly=yes -i <key> -l detecdiv-ops 10.20.11.56`. For the full remote PowerShell/Git procedure, consult `detecdiv-hub/docs/windows_worker.md` and `detecdiv-hub/CURRENT_DEPLOYMENT.md`.
+- A DetecDiv checkout-only sync does not require restarting the Windows Hub polling worker: it starts a fresh MATLAB batch process for each job. Restart a worker only if the Hub worker code/configuration changed or runtime evidence requires it, and only after that target is idle.
 
 ### Don't
 - Do not make pipelines physical children of `@shallow` again.
