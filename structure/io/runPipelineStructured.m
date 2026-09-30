@@ -2864,8 +2864,11 @@ for i = 1:numel(rois)
             continue;
         end
         currentPath = char(string(rois(i).path));
-        [mappedPath, mapped] = mapModulePathToServerPath(currentPath, ctx);
-        if mapped && ~isempty(mappedPath)
+        if isfolder(currentPath)
+            continue;
+        end
+        [mappedPath, mapped] = mapModulePathToLocalPath(currentPath, ctx);
+        if mapped && isfolder(mappedPath)
             rois(i).path = mappedPath;
         end
     catch
