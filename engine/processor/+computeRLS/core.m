@@ -411,7 +411,11 @@ for j=1:2 % loop on training and prediction data
                 varnames=fluo_data.data.Properties.VariableNames;
 
                 for k=1:numel(varnames)
-                    dat=fluo_data.data.(varnames{k});
+                    dat=localScalarMetricSeries(fluo_data.data.(varnames{k}));
+                    if isempty(dat)
+                        localWarnSkippedMetric(fluo_data.groupid, varnames{k});
+                        continue
+                    end
 
                     if totaltime_int(end)-1 > numel(dat)
                         continue
@@ -447,7 +451,11 @@ for j=1:2 % loop on training and prediction data
                 varnames=md.data.Properties.VariableNames;
 
                 for k=1:numel(varnames)
-                    dat=md.data.(varnames{k});
+                    dat=localScalarMetricSeries(md.data.(varnames{k}));
+                    if isempty(dat)
+                        localWarnSkippedMetric(md.groupid, varnames{k});
+                        continue
+                    end
 
                     if totaltime_int(end)-1 > numel(dat)
                         continue
@@ -1235,6 +1243,48 @@ end
 tokens=lower(strtrim(string(selection(:))));
 tf=any(tokens=="<auto>" | tokens=="auto" | tokens=="all" | tokens=="<all>");
 
+end
+
+function dat=localScalarMetricSeries(column)
+% computeMetrics can store one value per frame either directly or in cells.
+% Per-object vectors cannot be reduced to an RLS interval without selecting
+% the tracked object, so do not silently average unrelated cells.
+dat=[];
+if (isnumeric(column) || islogical(column)) && isvector(column) && ...
+        isreal(column) && ~issparse(column)
+    dat=double(column(:));
+    return
+end
+if ~iscell(column) || ~isvector(column)
+    return
+end
+dat=NaN(numel(column),1);
+for frameIdx=1:numel(column)
+    value=column{frameIdx};
+    if isempty(value)
+        continue
+    end
+    if ~(isnumeric(value) || islogical(value)) || ~isscalar(value) || ...
+            ~isreal(value) || issparse(value)
+        dat=[];
+        return
+    end
+    dat(frameIdx)=double(value);
+end
+end
+
+function localWarnSkippedMetric(groupid,name)
+persistent warned
+if isempty(warned)
+    warned={};
+end
+key=[char(string(groupid)) '/' char(string(name))];
+if any(strcmp(warned,key))
+    return
+end
+warned{end+1}=key;
+warning('computeRLS:UnsupportedMetricColumn', ...
+    'Skipping non-scalar or non-numeric metric %s for RLS interval averages.', key);
 end
 
 function tf=localCanQuantifyIntervals(totaltime)
