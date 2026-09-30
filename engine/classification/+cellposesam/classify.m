@@ -748,7 +748,10 @@ try
             end
         end
     end
-    if ~explicitMode && isstruct(ctx) && isfield(ctx,'pipeline') && isstruct(ctx.pipeline)
+    % MATLAB's Windows Python engine can load a second Intel OpenMP runtime
+    % when the Cellpose model is imported after torch. The standalone runner
+    % uses the verified conda process and keeps those DLLs outside MATLAB.
+    if ~explicitMode && ~ispc && isstruct(ctx) && isfield(ctx,'pipeline') && isstruct(ctx.pipeline)
         mode = 'session';
     end
 catch
