@@ -161,7 +161,12 @@ function ctx = process(ctx)
         end
     end
 
-    ctx.shallow.addData(out);
+    mappedFovIndices = ctx.shallow.addData(out, ctx);
+    if ~isfield(ctx,'dataLoader') || ~isstruct(ctx.dataLoader)
+        ctx.dataLoader = struct();
+    end
+    ctx.dataLoader.loadedFovIndices = unique( ...
+        mappedFovIndices(mappedFovIndices >= 1), 'stable');
     ctx.shallow = syncPhyloCellAnnotationsFromParsed(ctx.shallow, out);
     detecdiv_check_cancel(ctx, 'dataLoader after addData');
     if p.write

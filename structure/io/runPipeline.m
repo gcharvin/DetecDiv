@@ -1159,7 +1159,12 @@ function ctx = markDataloaderFovSelectionApplied(ctx)
         ctx.sel = struct();
     end
     ctx.sel.sourceFovs = appliedFovs;
-    ctx.sel.fovs = [];
+    loadedFovs = [];
+    if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader) && ...
+            isfield(ctx.dataLoader,'loadedFovIndices')
+        loadedFovs = normalizeIndexVectorLocal(ctx.dataLoader.loadedFovIndices);
+    end
+    ctx.sel.fovs = loadedFovs;
     if isfield(ctx,'run') && isstruct(ctx.run)
         ctx.run.sourceFovIndex = appliedFovs;
     end

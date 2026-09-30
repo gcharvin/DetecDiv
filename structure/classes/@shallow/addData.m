@@ -1,4 +1,9 @@
-function addData(obj,inputarg)
+function mappedFovIndices = addData(obj,inputarg,pathCtx)
+
+if nargin < 3 || ~isstruct(pathCtx)
+    pathCtx = struct();
+end
+mappedFovIndices = [];
 
 tmppath = pwd;
 
@@ -23,13 +28,14 @@ if isempty(newdata) || ~isfield(newdata,'pos') || isempty(newdata.pos)
     disp('No parsed position to add.');
     return;
 end
+mappedFovIndices = zeros(1,numel(newdata.pos));
 
 % Existing FOV signatures to avoid duplicate import from same source.
-existingKeys = buildExistingKeyMap(obj);
+existingKeys = buildExistingKeyMap(obj,pathCtx);
 
 % gestion de l'indice FOV a creer
 nfov = numel(obj.fov);
-if nfov==1 && numel(obj.fov.srclist)==0
+if nfov==1 && isempty(obj.fov(1).id) && isempty(obj.fov(1).srcpath)
     cc = 1;
 else
     cc = nfov+1;
@@ -40,9 +46,10 @@ nSkipped = 0;
 
 for i = 1:numel(newdata.pos)
     posStruct = newdata.pos(i);
-    posKey = buildIncomingPosKey(posStruct);
+    posKey = buildIncomingPosKey(posStruct,pathCtx);
 
     if ~isempty(posKey) && isKey(existingKeys, posKey)
+        mappedFovIndices(i) = existingKeys(posKey);
         nSkipped = nSkipped + 1;
         continue;
     end
@@ -127,8 +134,9 @@ for i = 1:numel(newdata.pos)
     end
 
     if ~isempty(posKey)
-        existingKeys(posKey) = true;
+        existingKeys(posKey) = cc;
     end
+    mappedFovIndices(i) = cc;
 
     cc = cc+1;
     nAdded = nAdded + 1;
@@ -146,30 +154,30 @@ end
 
 end
 
-function mapObj = buildExistingKeyMap(obj)
-mapObj = containers.Map('KeyType','char','ValueType','logical');
+function mapObj = buildExistingKeyMap(obj,pathCtx)
+mapObj = containers.Map('KeyType','char','ValueType','double');
 if isempty(obj.fov)
     return;
 end
 
 for i = 1:numel(obj.fov)
     try
-        key = buildFovKey(obj.fov(i));
-        if ~isempty(key)
-            mapObj(key) = true;
+        key = buildFovKey(obj.fov(i),pathCtx);
+        if ~isempty(key) && ~isKey(mapObj,key)
+            mapObj(key) = i;
         end
     catch
     end
 end
 end
 
-function key = buildFovKey(f)
+function key = buildFovKey(f,pathCtx)
 key = '';
 
 chanSig = signatureList(f.channel);
 
 if isprop(f,'isNDTiff') && f.isNDTiff
-    src = normPath(getMaybe(f,'ndtiffPath',''));
+    src = normPath(getMaybe(f,'ndtiffPath',''),pathCtx);
     pos = num2str(getMaybe(f,'ndtiffPosition',-1));
     zst = num2str(getMaybe(f,'ndtiffZ',0));
     % Name can vary across imports (e.g. legacy long ids vs PosX), so avoid
@@ -183,20 +191,20 @@ if isprop(f,'isMultiTiff') && f.isMultiTiff
     if isempty(src)
         src = firstNonEmptyCell(f.srcpath);
     end
-    src = normPath(src);
+    src = normPath(src,pathCtx);
     key = lower(sprintf('multitiff|%s|%s|%s', src, chanSig, pageMapSignature(f.pageMap)));
     return;
 end
 
 if isprop(f,'isStackSeries') && f.isStackSeries
     src = firstNonEmptyCell(f.srcpath);
-    sample = firstFileFromFov(f);
-    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, pageMapSignature(f.stackPageMap)));
+    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src,pathCtx), ...
+        baseNameFromFov(f), chanSig, pageMapSignature(f.stackPageMap)));
     return;
 end
 
 if isprop(f,'isOMEZarr') && f.isOMEZarr
-    src = normPath(getMaybe(f,'omeZarrPath',''));
+    src = normPath(getMaybe(f,'omeZarrPath',''),pathCtx);
     seriesName = char(string(getMaybe(f,'omeZarrSeries','')));
     arrayPath = char(string(getMaybe(f,'omeZarrArrayPath','0')));
     key = lower(sprintf('omezarr|%s|%s|%s|%s', src, seriesName, arrayPath, chanSig));
@@ -204,16 +212,15 @@ if isprop(f,'isOMEZarr') && f.isOMEZarr
 end
 
 src = firstNonEmptyCell(f.srcpath);
-sample = firstFileFromFov(f);
-key = lower(sprintf('files|%s|%s|%s', normPath(src), normPath(sample), chanSig));
+key = lower(sprintf('files|%s|%s|%s', normPath(src,pathCtx), baseNameFromFov(f), chanSig));
 end
 
-function key = buildIncomingPosKey(pos)
+function key = buildIncomingPosKey(pos,pathCtx)
 key = '';
 chanSig = signatureList(getField(pos,'channelname',{}));
 
 if isfield(pos,'isNDTiff') && pos.isNDTiff
-    src = normPath(getField(pos,'ndtiffPath',''));
+    src = normPath(getField(pos,'ndtiffPath',''),pathCtx);
     p = num2str(getField(pos,'ndtiffPosition',-1));
     z = num2str(getField(pos,'ndtiffZ',0));
     key = lower(sprintf('ndtiff|%s|%s|%s|%s', src, p, z, chanSig));
@@ -225,19 +232,19 @@ if isfield(pos,'isMultiTiff') && pos.isMultiTiff
     if isempty(src)
         src = firstNonEmptyCell(getField(pos,'pathlist',{}));
     end
-    key = lower(sprintf('multitiff|%s|%s|%s', normPath(src), chanSig, pageMapSignature(getField(pos,'pageMap',{}))));
+    key = lower(sprintf('multitiff|%s|%s|%s', normPath(src,pathCtx), chanSig, pageMapSignature(getField(pos,'pageMap',{}))));
     return;
 end
 
 if isfield(pos,'isStackSeries') && pos.isStackSeries
     src = firstNonEmptyCell(getField(pos,'pathlist',{}));
-    sample = firstFileFromParsedPos(pos);
-    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, pageMapSignature(getField(pos,'stackPageMap',{}))));
+    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src,pathCtx), ...
+        char(string(getField(pos,'name',''))), chanSig, pageMapSignature(getField(pos,'stackPageMap',{}))));
     return;
 end
 
 if isfield(pos,'isOMEZarr') && pos.isOMEZarr
-    src = normPath(getField(pos,'omeZarrPath',''));
+    src = normPath(getField(pos,'omeZarrPath',''),pathCtx);
     seriesName = char(string(getField(pos,'omeZarrSeries','')));
     arrayPath = char(string(getField(pos,'omeZarrArrayPath','0')));
     key = lower(sprintf('omezarr|%s|%s|%s|%s', src, seriesName, arrayPath, chanSig));
@@ -245,8 +252,16 @@ if isfield(pos,'isOMEZarr') && pos.isOMEZarr
 end
 
 src = firstNonEmptyCell(getField(pos,'pathlist',{}));
-sample = firstFileFromParsedPos(pos);
-key = lower(sprintf('files|%s|%s|%s', normPath(src), normPath(sample), chanSig));
+key = lower(sprintf('files|%s|%s|%s', normPath(src,pathCtx), ...
+    char(string(getField(pos,'name',''))), chanSig));
+end
+
+function name = baseNameFromFov(f)
+name = char(string(f.id));
+suffix = ['_' num2str(f.number)];
+if endsWith(name,suffix)
+    name = name(1:end-numel(suffix));
+end
 end
 
 function v = getMaybe(obj, name, defaultVal)
@@ -292,41 +307,6 @@ for i = 1:numel(c)
 end
 end
 
-function s = firstFileFromFov(f)
-s = '';
-try
-    if ~isempty(f.srclist) && iscell(f.srclist) && ~isempty(f.srclist{1})
-        e = f.srclist{1};
-        if isstruct(e) && ~isempty(e) && isfield(e,'name')
-            s = e(1).name;
-            return;
-        end
-    end
-catch
-end
-end
-
-function s = firstFileFromParsedPos(pos)
-s = '';
-if ~isfield(pos,'filelist') || isempty(pos.filelist)
-    return;
-end
-fl = pos.filelist;
-try
-    if iscell(fl)
-        x = fl{1};
-        if isstruct(x) && ~isempty(x) && isfield(x,'name')
-            s = x(1).name;
-            return;
-        end
-    elseif isstruct(fl) && ~isempty(fl) && isfield(fl,'name')
-        s = fl(1).name;
-        return;
-    end
-catch
-end
-end
-
 function s = signatureList(v)
 if ischar(v) || isstring(v)
     s = lower(char(string(v)));
@@ -355,7 +335,7 @@ else
 end
 end
 
-function p = normPath(in)
+function p = normPath(in,pathCtx)
 p = '';
 if isempty(in)
     return;
@@ -365,8 +345,17 @@ try
 catch
     return;
 end
-p = strrep(p,'\\','/');
+p = strrep(p,'\','/');
 p = regexprep(p,'/+$','');
+if ~isempty(p) && exist('detecdiv_paths_map_module_path','file') == 2
+    try
+        [canonical,mapped] = detecdiv_paths_map_module_path(p,pathCtx,'server');
+        if mapped
+            p = regexprep(strrep(char(string(canonical)),'\','/'),'/+$','');
+        end
+    catch
+    end
+end
 end
 
 function s = pageMapSignature(pageMap)
