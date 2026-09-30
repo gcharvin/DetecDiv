@@ -67,6 +67,26 @@ put(fullfile(leaf,'memory.usage_in_bytes'),sprintf('%d',4*2^30));
 verifyEqual(testCase,roiExtract.availableMemoryBytes(proc,cg),0.8*12*2^30);
 end
 
+function testFramePlannerAllowsOneLargeFrameWhenMemoryFits(testCase)
+frameBytes = 600*2^20;
+driftBytes = 512*2^20;
+verifyEqual(testCase,roiExtract.planFrameBlock(8*2^30,frameBytes,driftBytes,1,10),1);
+verifyEqual(testCase,roiExtract.planFrameBlock(2*2^30,frameBytes,driftBytes,1,10),0);
+end
+
+function testActiveCacheLeavesRoomForTwoFovBlocks(testCase)
+[proc,cg] = fixture(testCase,'0::/workers/worker1');
+leaf = fullfile(cg,'workers','worker1');
+put(fullfile(leaf,'memory.high'),sprintf('%d',21600*2^20));
+put(fullfile(leaf,'memory.current'),sprintf('%d',15500*2^20));
+put(fullfile(leaf,'memory.stat'),sprintf('anon %d\nfile %d\nshmem 0\nfile_dirty 0\nfile_writeback 0\nactive_file %d\n', ...
+    5300*2^20,10000*2^20,9500*2^20));
+available = roiExtract.availableMemoryBytes(proc,cg);
+frameBytes = 2048*2048*5*2;
+driftBytes = 2048*2048*128;
+verifyEqual(testCase,roiExtract.planFrameBlock(available,frameBytes,driftBytes,2,70),12);
+end
+
 function [proc,cg] = fixture(testCase,membership)
 root=tempname; mkdir(root);
 addTeardown(testCase,@() rmdir(root,'s'));
