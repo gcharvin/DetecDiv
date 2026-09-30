@@ -33,6 +33,7 @@ writeJson(configPath,cfg);
 detecdiv_check_cancel(ctx,'cellLatentModel before biological-state inference');
 runtimeCtx=ctx;
 if isfield(param,'runtimeCodeRoot') && ~isempty(param.runtimeCodeRoot)
+    runtimeCtx.pinnedCodeRoot=char(string(param.runtimeCodeRoot));
     pinnedRuntime=cellLatentModel.utils.resolvePythonRuntime(ctx);
     pinnedRuntime.repositoryRoot=char(string(param.runtimeCodeRoot));
     pinnedLineageRoot=fullfile(pinnedRuntime.repositoryRoot,'lineage');

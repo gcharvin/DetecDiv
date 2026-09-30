@@ -6,6 +6,18 @@ runtime = cellLatentModel.utils.resolvePythonRuntime(ctx);
 pythonExe = char(string(runtime.pythonExecutable));
 repoRoot = char(string(runtime.repositoryRoot));
 lineageRepoRoot = char(string(runtime.lineageRepositoryRoot));
+if isfield(ctx,'pinnedCodeRoot') && ~isempty(ctx.pinnedCodeRoot)
+    repoRoot = char(string(ctx.pinnedCodeRoot));
+    if ~isfolder(fullfile(repoRoot,'src','cell_latent_model'))
+        error('cellLatentModel:MissingPinnedCode', ...
+            'The promoted latent-model Python package is missing from %s.', ...
+            repoRoot);
+    end
+    pinnedLineageRoot = fullfile(repoRoot,'lineage');
+    if isfolder(fullfile(pinnedLineageRoot,'src','cell_lineage_linker'))
+        lineageRepoRoot = pinnedLineageRoot;
+    end
+end
 pythonConfigPath = ...
     cellLatentModel.utils.windowsLongPath(configPath);
 moduleArgs = sprintf('-u -m cell_latent_model %s --config %s', ...
@@ -14,6 +26,9 @@ sourceRoots = {};
 if ~isempty(repoRoot), sourceRoots{end+1} = fullfile(repoRoot,'src'); end
 if ~isempty(lineageRepoRoot)
     sourceRoots{end+1} = fullfile(lineageRepoRoot,'src');
+end
+if ~isempty(sourceRoots)
+    fprintf(1,'[cellLatentModel] Python source: %s\n',sourceRoots{1});
 end
 if ispc
     encodingPrefix = ['set "PYTHONUTF8=1" && ' ...
