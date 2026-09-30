@@ -302,7 +302,22 @@ try
     % be transported in the JSON job payload, so that worker reloads this
     % snapshot.  Always persist the live object: an existing snapshot may
     % predate ROI imports or annotation/split changes made in classifierGUI.
-    classiSave(classiObj);
+    % Saving the classifier's ROI files here would rewrite every HDF5 image,
+    % even though opening a validation pipeline does not modify those images.
+    % In particular, an ROI image open in another process blocks that write.
+    rois = classiObj.roi;
+    imageCache = cell(1, numel(rois));
+    dataCache = cell(1, numel(rois));
+    for i = 1:numel(rois)
+        imageCache{i} = rois(i).image;
+        dataCache{i} = rois(i).data;
+        rois(i).image = [];
+        rois(i).data = dataseries;
+    end
+    restoreCaches = onCleanup(@() restoreClassifierRoiCaches(rois, imageCache, dataCache));
+    classiObj.syncDatasetFromLegacy();
+    save(target, 'classiObj');
+    clear restoreCaches;
 catch ME
     error('classifierOpenValidationPipeline:ClassifierSaveFailed', ...
         ['Could not synchronize the classifier snapshot required by the ' ...
@@ -311,6 +326,13 @@ end
 if exist(target, 'file') ~= 2
     error('classifierOpenValidationPipeline:ClassifierSnapshotMissing', ...
         'Classifier snapshot was not created: %s', target);
+end
+end
+
+function restoreClassifierRoiCaches(rois, imageCache, dataCache)
+for i = 1:numel(rois)
+    rois(i).image = imageCache{i};
+    rois(i).data = dataCache{i};
 end
 end
 
