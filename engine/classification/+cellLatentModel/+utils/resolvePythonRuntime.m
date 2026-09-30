@@ -7,10 +7,17 @@ function runtime = resolvePythonRuntime(ctx)
 if nargin < 1, ctx = struct(); end
 try
     resolved = ctx.resolvedPythonRuntime;
-    if isstruct(resolved) && isfield(resolved,'pythonExecutable') && ...
-            isfile(char(string(resolved.pythonExecutable)))
-        runtime = resolved;
-        return;
+    if isstruct(resolved) && isfield(resolved,'pythonExecutable')
+        pythonExecutable = char(string(resolved.pythonExecutable));
+        % An executable selected from PATH is still a valid pinned runtime.
+        % Dropping it here also drops the release's pinned repositoryRoot,
+        % so the following Python process cannot import cell_latent_model.
+        if isfile(pythonExecutable) || ...
+                (~contains(pythonExecutable,filesep) && ...
+                commandAvailable(pythonExecutable))
+            runtime = resolved;
+            return;
+        end
     end
 catch
 end
