@@ -66,6 +66,20 @@ classNames = resolveClassNamesLocal(classif, ctx);
 if isempty(classNames)
     classNames = {'cell'};
 end
+% Pipeline imports may provide the complete physical channel name instead
+% of the output stem. Strip only that form so results_ and the class suffix
+% are not added twice; ordinary stems keep their historical naming.
+resultStem = outputName;
+if startsWith(resultStem, 'results_', 'IgnoreCase', true)
+    resultStem = resultStem(numel('results_')+1:end);
+    for classIdx = 1:numel(classNames)
+        classSuffix = ['_' char(string(classNames{classIdx}))];
+        if endsWith(resultStem, classSuffix, 'IgnoreCase', true)
+            resultStem = resultStem(1:end-numel(classSuffix));
+            break;
+        end
+    end
+end
 try
     if isobject(classif) && isprop(classif, 'classes')
         classif.classes = classNames;
@@ -135,7 +149,7 @@ wantProbability = any(strcmpi(outputType, {'proba','both'}));
 % --- Channels results (instance mask) ---
 pixresults = [];
 for i = 1:numel(classNames)
-    chName = ['results_' outputName '_' classNames{i}];
+    chName = ['results_' resultStem '_' classNames{i}];
     pixresultstmp = cellposesam.utils.loadExistingOutputChannel(roiobj, chName);
     if isempty(pixresultstmp)
         matrix = uint16(zeros(size(image,1), size(image,2), 1, size(image,4)));
@@ -147,7 +161,7 @@ for i = 1:numel(classNames)
     pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
 end
 if isempty(pixresults)
-    error('cellposesam.classify: impossible de determiner/ajouter un channel results_%s_* pour %s', outputName, safeClassifierIdLocal(classif));
+    error('cellposesam.classify: impossible de determiner/ajouter un channel results_%s_* pour %s', resultStem, safeClassifierIdLocal(classif));
 end
 pixresults = pixresults(1);
 
