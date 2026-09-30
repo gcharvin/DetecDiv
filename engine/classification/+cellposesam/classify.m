@@ -237,9 +237,11 @@ end
 runnerPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'cellposesam_runner.py');
 
 cfg = struct();
-cfg.tmp_mat_path = strrep(tmp_mat_path, '\\', '/');
-cfg.classif_path = strrep(workDir, '\\', '/');
-cfg.model_path   = strrep(model_path_to_use, '\\', '/');
+% Preserve native paths: replacing a UNC prefix (\\server\share) with '/'
+% turns it into a path that Python cannot open on Windows.
+cfg.tmp_mat_path = char(string(tmp_mat_path));
+cfg.classif_path = char(string(workDir));
+cfg.model_path   = char(string(model_path_to_use));
 cfg.gpu          = logical(gpu);
 cfg.diameter     = diameter;
 cfg.flow_threshold = flow_threshold;
@@ -247,7 +249,7 @@ cfg.cell_prob_threshold = cellprob_threshold;
 cfg.min_size     = round(min_size);
 cfg.mode         = mode_str;
 cfg.cancel_path  = char(string(cancelPath));
-cfg.log_path     = strrep(fullfile(workDir, 'runner_live.log'), '\\', '/');
+cfg.log_path     = fullfile(workDir, 'runner_live.log');
 cfg.progress_base = 0;
 cfg.progress_span = 1;
 cfg.progress_enabled = isfield(ctx, 'progressCallback') && ...
