@@ -18,6 +18,9 @@ if strcmp(paramout.backend,'causal_composite')
     trackerParam.solverTimeLimitSeconds = ...
         paramout.trackingSolverTimeLimitSeconds;
     trackerCtx = fullRoiContext(ctx);
+    if ~isempty(paramout.runtimeCodeRoot)
+        trackerCtx.pinnedCodeRoot = paramout.runtimeCodeRoot;
+    end
     [tracks,frames,trackingRefs] = cellLatentTracker.inferStack( ...
         roiobj,classif,trackerParam,trackerCtx);
     if ~isequal(frames,1:size(roiobj.image,4))
