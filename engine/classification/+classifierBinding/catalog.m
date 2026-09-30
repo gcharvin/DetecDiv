@@ -7,6 +7,7 @@ function catalog = catalog(classif, varargin)
 
 p = inputParser;
 p.addParameter('RoiIndices', [], @isnumeric);
+p.addParameter('ProgressFcn', [], @(x) isempty(x) || isa(x, 'function_handle'));
 p.parse(varargin{:});
 
 rois = classifierRois(classif);
@@ -20,10 +21,13 @@ catalog = struct( ...
     'roiCount', numel(indices), ...
     'channels', repmat(channelDef(), 0, 1), ...
     'families', repmat(familyDef(), 0, 1));
-for i = indices
-    roiObj = rois(i);
+for position = 1:numel(indices)
+    roiObj = rois(indices(position));
     catalog.channels = mergeChannels(catalog.channels, roiObj);
     catalog.families = mergeFamilies(catalog.families, roiObj);
+    if ~isempty(p.Results.ProgressFcn)
+        p.Results.ProgressFcn(position, numel(indices));
+    end
 end
 catalog.channels = sortRows(catalog.channels);
 catalog.families = sortRows(catalog.families);

@@ -132,11 +132,12 @@ annotationInitialRows = struct([]);
 
 
       
-function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingCatalog)
+function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingCatalog, progressFcn)
 % buildParamTable  Build UITable data + spec from trainingParam.
 
     if nargin < 3, classiObj = []; end
     if nargin < 4, loadBindingCatalog = false; end
+    if nargin < 5, progressFcn = []; end
 
     tp = trainingParam;
     rawKeys = fieldnames(tp);
@@ -157,7 +158,8 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingC
     try
         bindingSpec = classifierBinding.trainingSpec(classiObj);
         if ~isempty(bindingSpec) && loadBindingCatalog
-            bindingCatalog = classifierBinding.catalog(classiObj);
+            bindingCatalog = classifierBinding.catalog(classiObj, ...
+                'ProgressFcn', progressFcn);
         end
     catch ME
         warning('classifierGUI:TrainingBindings', ...
@@ -534,8 +536,19 @@ function refreshTypedTrainingBindingChoices(app)
         return;
     end
     selectedKey = app.paramSelectedKey;
+    progressDialog = [];
+    if ~isempty(classiObj.roi)
+        progressDialog = uiprogressdlg(app.ClassifierUIFigure, ...
+            'Title', 'Training parameters', ...
+            'Message', 'Reading stored channels from ROI files...', ...
+            'Value', 0, 'Cancelable', 'off');
+        drawnow;
+    end
+    progressCleanup = onCleanup(@()closeRoiScanProgress(app, progressDialog)); %#ok<NASGU>
     [app.paramSpec, app.paramTableData] = buildParamTable( ...
-        app, classiObj.trainingParam, classiObj, true);
+        app, classiObj.trainingParam, classiObj, true, ...
+        @(done, total)updateRoiScanProgress(app, progressDialog, done, total, ...
+        'Reading stored channels from ROI files'));
     app.UITableParam.Data = app.paramTableData;
     app.typedBindingChoicesLoaded = true;
     row = find(strcmp(app.paramTableData.Param, selectedKey), 1);
@@ -547,6 +560,23 @@ function refreshTypedTrainingBindingChoices(app)
         app.paramSelectedKey = selectedKey;
         app.UITableParam.Selection = [row 1];
         showParamEditor(app, selectedKey);
+    end
+end
+
+function updateRoiScanProgress(app, dialog, done, total, activity) %#ok<INUSD>
+    if isempty(dialog) || ~isvalid(dialog) || total < 1
+        return;
+    end
+    if done == 1 || done == total || mod(done, max(1, ceil(total/50))) == 0
+        dialog.Value = done/total;
+        dialog.Message = sprintf('%s (%d/%d ROI)', activity, done, total);
+        drawnow limitrate nocallbacks;
+    end
+end
+
+function closeRoiScanProgress(app, dialog) %#ok<INUSD>
+    if ~isempty(dialog) && isvalid(dialog)
+        delete(dialog);
     end
 end
 
@@ -1716,9 +1746,20 @@ function displayData(app, annotationScanMode) % displays rois in the table
             ~strcmpi(char(string(annotationScanMode)), 'full')
         annotationRows = app.annotationInitialRows;
     else
+        progressDialog = [];
+        if ~app.roiTableInitialized && ~isempty(rois)
+            progressDialog = uiprogressdlg(app.ClassifierUIFigure, ...
+                'Title', 'Training and validation ROIs', ...
+                'Message', 'Checking annotations and frame counts...', ...
+                'Value', 0, 'Cancelable', 'off');
+            drawnow;
+        end
+        progressCleanup = onCleanup(@()closeRoiScanProgress(app, progressDialog)); %#ok<NASGU>
         try
             annotationRows = annotationSummaryRows(app, classiObj, [], ...
-                'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'));
+                'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'), ...
+                'ProgressFcn', @(done, total)updateRoiScanProgress( ...
+                app, progressDialog, done, total, 'Checking annotations and frame counts'));
         catch ME
             warning('classifierGUI:AnnotationSummary', ...
                 'Could not summarize annotations: %s', ME.message);

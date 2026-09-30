@@ -5,6 +5,7 @@ if nargin < 2 || isempty(roiIndices), roiIndices = 1:numel(classif.roi); end
 p = inputParser;
 p.addParameter('Fast', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('VerifyHash', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('ProgressFcn', [], @(x) isempty(x) || isa(x, 'function_handle'));
 p.parse(varargin{:});
 roiIndices = unique(round(double(roiIndices(:)')), 'stable');
 roiIndices = roiIndices(isfinite(roiIndices) & roiIndices >= 1 & ...
@@ -49,5 +50,8 @@ for i = 1:numel(roiIndices)
     rows(i).validatedAt = summary.validatedAt;
     rows(i).staleApproval = summary.staleApproval;
     rows(i).hashVerificationError = summary.hashVerificationError;
+    if ~isempty(p.Results.ProgressFcn)
+        p.Results.ProgressFcn(i, numel(roiIndices));
+    end
 end
 end
