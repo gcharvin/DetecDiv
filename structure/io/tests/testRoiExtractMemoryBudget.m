@@ -35,6 +35,30 @@ put(fullfile(leaf,'memory.swap.max'),sprintf('%d',100*2^30));
 verifyEqual(testCase,roiExtract.availableMemoryBytes(proc,cg),0.8*20*2^30);
 end
 
+function testCleanInactiveFileCacheIsReclaimableAtEveryCgroup(testCase)
+[proc,cg] = fixture(testCase,'0::/workers/worker1');
+leaf=fullfile(cg,'workers','worker1');
+parent=fullfile(cg,'workers');
+put(fullfile(leaf,'memory.high'),sprintf('%d',24*2^30));
+put(fullfile(leaf,'memory.current'),sprintf('%d',22*2^30));
+put(fullfile(leaf,'memory.stat'),sprintf('anon %d\ninactive_file %d\nfile_dirty %d\nfile_writeback %d\n', ...
+    2*2^30,18*2^30,1*2^30,1*2^30));
+put(fullfile(parent,'memory.max'),sprintf('%d',96*2^30));
+put(fullfile(parent,'memory.current'),sprintf('%d',90*2^30));
+put(fullfile(parent,'memory.stat'),sprintf('inactive_file %d\n',20*2^30));
+[bytes,note]=roiExtract.availableMemoryBytes(proc,cg);
+verifyEqual(testCase,bytes,0.8*18*2^30);
+verifyTrue(testCase,contains(note,'memory.high'));
+end
+
+function testMissingMemoryStatRetainsConservativeHeadroom(testCase)
+[proc,cg] = fixture(testCase,'0::/workers/worker1');
+leaf=fullfile(cg,'workers','worker1');
+put(fullfile(leaf,'memory.max'),sprintf('%d',24*2^30));
+put(fullfile(leaf,'memory.current'),sprintf('%d',22*2^30));
+verifyEqual(testCase,roiExtract.availableMemoryBytes(proc,cg),0.8*2*2^30);
+end
+
 function testLegacyCgroup(testCase)
 [proc,cg] = fixture(testCase,'5:memory:/workers/worker1');
 leaf=fullfile(cg,'memory','workers','worker1');

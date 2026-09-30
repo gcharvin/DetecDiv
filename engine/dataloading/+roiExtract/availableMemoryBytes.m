@@ -54,6 +54,18 @@ else
     directory = leaf;
     while isfolder(directory)
         used = numericFile(fullfile(directory, usageName));
+        % cgroup memory.current includes the page cache created while writing
+        % ROI HDF5 files. Clean inactive pages are reclaimable and must not
+        % make a streaming extraction appear to run out of RAM. Keep dirty or
+        % writeback pages charged until the kernel has flushed them.
+        stat = readText(fullfile(directory, 'memory.stat'));
+        inactive = statValue(stat, 'inactive_file');
+        dirty = statValue(stat, 'file_dirty');
+        writeback = statValue(stat, 'file_writeback');
+        if isfinite(used) && isfinite(inactive)
+            reclaimable = max(0, inactive - max(0, dirty) - max(0, writeback));
+            used = max(0, used - reclaimable);
+        end
         limits = {limitName};
         if strcmp(limitName, 'memory.max'), limits{end+1} = 'memory.high'; end
         for i = 1:numel(limits)
@@ -95,4 +107,9 @@ end
 
 function value = numericFile(path)
 value = str2double(strtrim(readText(path)));
+end
+
+function value = statValue(stat, key)
+token = regexp(stat, ['(?m)^' key '\s+(\d+)\s*$'], 'tokens', 'once');
+if isempty(token), value = 0; else, value = str2double(token{1}); end
 end
