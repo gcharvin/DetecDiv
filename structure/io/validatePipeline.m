@@ -2658,18 +2658,18 @@ function [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(pathIn, ctx)
     checkPath = char(string(pathIn));
     mapped = false;
     pathText = char(string(pathIn));
+    [localPath, reverseMapped] = mapHubServerPathToLocalPath(pathText, ctx);
+    if reverseMapped
+        checkPath = localPath;
+        mapped = true;
+        return;
+    end
     if looksLikeWindowsAbsPathLocal(pathText)
         [~, mapped] = mapLocalPathToHubServerPath(pathText, ctx);
         if mapped
             checkPath = pathText;
         end
         return;
-    end
-
-    [localPath, reverseMapped] = mapHubServerPathToLocalPath(pathText, ctx);
-    if reverseMapped
-        checkPath = localPath;
-        mapped = true;
     end
 end
 

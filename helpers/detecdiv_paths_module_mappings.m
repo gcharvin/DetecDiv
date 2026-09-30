@@ -2,14 +2,19 @@ function mappings = detecdiv_paths_module_mappings(ctx)
 % detecdiv_paths_module_mappings  Central local<->server path mappings.
 %
 % Mappings are ordered by specificity at use time. Sources, in priority order:
-% ctx.hub preferred root, explicit mappings, run mappings, persisted Hub
-% settings, and deployment defaults. Windows aliases share the same identity.
+% worker-host mappings, ctx.hub preferred root, explicit mappings, run
+% mappings, persisted Hub settings, and deployment defaults. Windows aliases
+% share the same identity.
 
     if nargin < 1 || isempty(ctx) || ~isstruct(ctx)
         ctx = struct();
     end
 
     mappings = struct('remoteRoot', {}, 'localRoot', {});
+    % A Hub worker's mappings describe this execution host and take priority
+    % over drive letters recorded by the submitting client.
+    mappings = appendWorkerMappings(mappings, ...
+        nestedField(ctx, {'execution','worker_path_mappings'}, []));
     localRoot = nestedField(ctx, {'hub','defaultLocalProjectRoot'}, '');
     remoteRoot = nestedField(ctx, {'hub','defaultRemoteProjectRoot'}, '');
     mappings = appendMapping(mappings, localRoot, remoteRoot);
@@ -38,6 +43,18 @@ function mappings = detecdiv_paths_module_mappings(ctx)
     % infer new UNC aliases from it when X: may name another share here.
     mappings = appendDeploymentDefaultMappings(mappings);
     mappings = uniqueMappings(mappings);
+end
+
+function mappings = appendWorkerMappings(mappings, workerMappings)
+    if isempty(workerMappings) || ~isstruct(workerMappings)
+        return;
+    end
+    for i = 1:numel(workerMappings)
+        item = workerMappings(i);
+        if isfield(item, 'source') && isfield(item, 'target')
+            mappings = appendMapping(mappings, item.target, item.source);
+        end
+    end
 end
 
 function mappings = appendPrefixMappings(mappings, prefixMap)
