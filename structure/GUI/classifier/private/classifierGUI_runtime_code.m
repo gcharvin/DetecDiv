@@ -120,6 +120,8 @@ paramSelectedKey = '';
 paramEditorControls = gobjects(0);
 trainingScopeTextArea = gobjects(0);
 typedBindingChoicesLoaded logical = false;
+roiTableInitialized logical = false;
+annotationInitialRows = struct([]);
     end
 
     properties (Access = public)
@@ -531,11 +533,11 @@ function refreshTypedTrainingBindingChoices(app)
     if ~hasTypedTrainingBindings(app, classiObj)
         return;
     end
-    app.typedBindingChoicesLoaded = true;
     selectedKey = app.paramSelectedKey;
     [app.paramSpec, app.paramTableData] = buildParamTable( ...
         app, classiObj.trainingParam, classiObj, true);
     app.UITableParam.Data = app.paramTableData;
+    app.typedBindingChoicesLoaded = true;
     row = find(strcmp(app.paramTableData.Param, selectedKey), 1);
     if isempty(row) && height(app.paramTableData) > 0
         row = 1;
@@ -1211,6 +1213,9 @@ end
     rebuildTP = p.Results.RebuildTrainingParam;
 
     app.isRefreshing = true;
+    app.typedBindingChoicesLoaded = false;
+    app.roiTableInitialized = false;
+    app.annotationInitialRows = struct([]);
     c = app.Data.classiObj;
 
     % 1) Type dropdown
@@ -1707,13 +1712,19 @@ function displayData(app, annotationScanMode) % displays rois in the table
     t    = app.UITableData;
     Data = {};
     annotationRows = struct([]);
-    try
-        annotationRows = annotationSummaryRows(app, classiObj, [], ...
-            'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'));
-    catch ME
-        warning('classifierGUI:AnnotationSummary', ...
-            'Could not summarize annotations: %s', ME.message);
+    if ~app.roiTableInitialized && ~isempty(app.annotationInitialRows) && ...
+            ~strcmpi(char(string(annotationScanMode)), 'full')
+        annotationRows = app.annotationInitialRows;
+    else
+        try
+            annotationRows = annotationSummaryRows(app, classiObj, [], ...
+                'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'));
+        catch ME
+            warning('classifierGUI:AnnotationSummary', ...
+                'Could not summarize annotations: %s', ME.message);
+        end
     end
+    app.annotationInitialRows = struct([]);
 
     if numel(rois) == 1
         if numel(rois.id) == 0
@@ -1721,6 +1732,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
             app.Data.annotationVisibleRoiIndices = [];
             app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
             updateAnnotationActionState(app);
+            app.roiTableInitialized = true;
             return;
         end
     end
@@ -1903,6 +1915,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
     end
     app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
     updateAnnotationActionState(app);
+    app.roiTableInitialized = true;
 end
 
 function rows = annotationSummaryRows(app, classiObj, roiIndices, varargin) %#ok<INUSD>
@@ -1963,6 +1976,7 @@ end
 
 function refreshAnnotationTableRow(app, session)
     try
+        app.typedBindingChoicesLoaded = false;
         if isempty(app) || ~isvalid(app) || isempty(app.UITableData.Data)
             return;
         end
@@ -2214,6 +2228,29 @@ function setClassifierTrainingSelection(app, trainIndices)
     app.Data.classiObj = classiObj;
 end
 
+function refreshTrainingSelectionTable(app)
+    data = app.UITableData.Data;
+    if isempty(data), return; end
+    roiIndices = cellfun(@double, data(:,3));
+    isTraining = ismember(roiIndices, ...
+        double(app.Data.classiObj.trainingset(:)));
+    data(:,1) = num2cell(isTraining);
+    data(:,2) = num2cell(~isTraining);
+    app.UITableData.Data = data;
+end
+
+function applyVisibleTrainingSelection(app)
+    data = app.UITableData.Data;
+    if isempty(data), return; end
+    visibleIndices = cellfun(@double, data(:,3)).';
+    selectedRows = cellfun(@logical, data(:,1)).';
+    current = double(app.Data.classiObj.trainingset(:).');
+    preserved = setdiff(current, visibleIndices, 'stable');
+    selected = visibleIndices(selectedRows);
+    setClassifierTrainingSelection(app, union(preserved, selected, 'stable'));
+    refreshTrainingSelectionTable(app);
+end
+
 function dataset = remapClassifierDatasetAfterRoiRemoval( ...
         app, dataset, legacyTraining, keep, oldRoiCount) %#ok<INUSD>
     if ~isstruct(dataset) || ~isscalar(dataset)
@@ -2446,6 +2483,9 @@ end
      % Annotation lifecycle statistics shared by every classifier category.
      try
          rows = annotationSummaryRows(app, classiObj);
+         if ~app.roiTableInitialized
+             app.annotationInitialRows = rows;
+         end
          statuses = string({rows.status});
          validationStatuses = string({rows.validationStatus});
          app.NumberofannotatedROIsEditField.Value = ...
@@ -2596,6 +2636,9 @@ end
 
     app.ClassifierUIFigure.Name = [classiObj.strid];
     app.Data.classiObj = classiObj;
+    app.typedBindingChoicesLoaded = false;
+    app.roiTableInitialized = false;
+    app.annotationInitialRows = struct([]);
     try
         isLatent = strcmpi(char(string(classiObj.classifierPkg)), ...
             'cellLatentModel');
@@ -2777,7 +2820,9 @@ end
 
         % Button down function: SettrainingparametersTab
         function SettrainingparametersTabButtonDown(app, event)
-            refreshTypedTrainingBindingChoices(app);
+            if ~app.typedBindingChoicesLoaded
+                refreshTypedTrainingBindingChoices(app);
+            end
     % 
     % 
     %         % --- 1) Récupérer le classifier ---
@@ -2909,6 +2954,9 @@ end
         end
     end
 
+    % A classifier type change invalidates its ROI binding catalog.
+    app.typedBindingChoicesLoaded = false;
+    app.roiTableInitialized = false;
     % Rebuild table-based editor
     [app.paramSpec, app.paramTableData] = buildParamTable( ...
         app, classiObj.trainingParam, classiObj, app.typedBindingChoicesLoaded);
@@ -3052,7 +3100,9 @@ end
 
         % Button down function: SettrainingandvalidationsetROIsTab
         function SettrainingandvalidationsetROIsTabButtonDown(app, event)
-            displayData(app);
+            if ~app.roiTableInitialized
+                displayData(app);
+            end
         end
 
         % Cell edit callback: UITableData
@@ -3107,7 +3157,7 @@ end
             end
             setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false);
-            displayData(app);
+            refreshTrainingSelectionTable(app);
          
 
 
@@ -3175,6 +3225,7 @@ end
 
             displayData(app);
             displayClassi(app); % uodates the channel in particular in the classi tab
+            app.typedBindingChoicesLoaded = false;
             refreshTypedTrainingBindingChoices(app);
         end
 
@@ -3185,7 +3236,7 @@ end
                 double(visible(:).'), 'stable');
             setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false)
-            displayData(app);
+            refreshTrainingSelectionTable(app);
         end
 
         % Button pushed function: DeselectallButton
@@ -3195,7 +3246,7 @@ end
                 double(visible(:).'), 'stable');
             setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false)
-            displayData(app);
+            refreshTrainingSelectionTable(app);
         end
 
         % Button pushed function: removeselectedROIButton
@@ -3248,6 +3299,7 @@ end
     % Mise à jour de l’état et de l’affichage
     checkStatus(app,false);
     displayData(app);
+    app.typedBindingChoicesLoaded = false;
     refreshTypedTrainingBindingChoices(app);
 
         end
@@ -4178,10 +4230,8 @@ end
           
             app.UITableData.Data(:,1)=dt';
 
-            selectedfortraining=cellfun(@(x) x==1,app.UITableData.Data(:,1));
-            app.Data.classiObj.trainingset=find(selectedfortraining');
+            applyVisibleTrainingSelection(app);
             checkStatus(app,false)
-            displayData(app);
             
         end
 
@@ -4204,10 +4254,8 @@ end
   
             app.UITableData.Data(:,1)=dt';
 
-            selectedfortraining=cellfun(@(x) x==1,app.UITableData.Data(:,1));
-            app.Data.classiObj.trainingset=find(selectedfortraining');
+            applyVisibleTrainingSelection(app);
             checkStatus(app,false)
-            displayData(app);
             
         end
 
@@ -4217,7 +4265,6 @@ end
         %h = app.TabGroup.Children(2)
        % pause(1)
        % app.TabGroup.SelectedTab = h;
-       displayData(app);
        displayProperties(app)
         end
 
@@ -4225,7 +4272,7 @@ end
         function ManageROIsformattrainingsetButtonPushed(app, event)
             h = app.TabGroup.Children(4);
             app.TabGroup.SelectedTab = h;
-            displayData(app);
+            if ~app.roiTableInitialized, displayData(app); end
         end
 
         % Button pushed function: BackupButton
@@ -4275,14 +4322,15 @@ disp('unable to display folder with this OS');
         function SetclassfierparametersButtonPushed(app, event)
                   h = app.TabGroup.Children(2);
             app.TabGroup.SelectedTab = h;
-            displayData(app);
         end
 
         % Button pushed function: SettrainingparametersButton
         function SettrainingparametersButtonPushed(app, event)
                   h = app.TabGroup.Children(3);
             app.TabGroup.SelectedTab = h;
-            displayData(app);
+            if ~app.typedBindingChoicesLoaded
+                refreshTypedTrainingBindingChoices(app);
+            end
         end
 
         % Value changed function: UsercommentsEditField_2
@@ -4317,7 +4365,7 @@ disp('unable to display folder with this OS');
         function displayROIsusedforvalidationButtonPushed(app, event)
               h = app.TabGroup.Children(4);
             app.TabGroup.SelectedTab = h;
-            displayData(app);
+            if ~app.roiTableInitialized, displayData(app); end
         end
 
         % Button pushed function: SaveclassifierButton
@@ -4562,6 +4610,7 @@ disp('unable to display folder with this OS');
                         app.Data.classiObj, indices, arguments{:});
                     if isvalid(progress), close(progress); end
                     checkStatus(app,false);
+                    app.typedBindingChoicesLoaded = false;
                     displayData(app, 'full');
                     uialert(app.ClassifierUIFigure, sprintf( ...
                         uiText.classifierSuccess, ...
@@ -4604,6 +4653,7 @@ disp('unable to display folder with this OS');
             end
             if ~isempty(progress) && isvalid(progress), close(progress); end
             checkStatus(app,false);
+            if changed > 0, app.typedBindingChoicesLoaded = false; end
             displayData(app);
             if ~isempty(errors)
                 uialert(app.ClassifierUIFigure, strjoin(errors, newline), ...
@@ -4650,6 +4700,7 @@ disp('unable to display folder with this OS');
                 end
             end
             checkStatus(app,false);
+            if changed > 0, app.typedBindingChoicesLoaded = false; end
             displayData(app);
             if ~isempty(errors)
                 uialert(app.ClassifierUIFigure, strjoin(errors, newline), ...
@@ -4663,6 +4714,7 @@ disp('unable to display folder with this OS');
 
         % Button pushed function: RefreshAnnotationStatusButton
         function RefreshAnnotationStatusButtonPushed(app, event)
+            app.typedBindingChoicesLoaded = false;
             displayData(app, 'full');
         end
 

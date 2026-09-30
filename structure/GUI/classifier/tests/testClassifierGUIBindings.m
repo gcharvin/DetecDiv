@@ -153,6 +153,61 @@ verifyTrue(testCase,contains(scopeText, ...
 verifyEqual(testCase,app.UITableParam.Data.Value{1},'lineage_only_v1');
 end
 
+function testTabNavigationReusesLoadedRoiTableAndBindingChoices(testCase)
+folder = tempname;
+mkdir(folder);
+folderCleanup = onCleanup(@()removeFolder(folder)); %#ok<NASGU>
+
+c = classi(folder, 'ui_tab_cache', 1);
+c.classifierPkg = 'cnn';
+c.trainingFun = 'cnn.train';
+c.classifyFun = 'cnn.classify';
+c.description = {'cnn','','cnn'};
+c.category = {'Image'};
+c.classes = {'negative','positive'};
+c.trainingParam = cnn.utils.defaultTrainingParam();
+c.roi = localGuiTestRoi('R1', folder);
+c.channelName = {'BF'};
+c.dataset.channels = {'BF'};
+
+app = classifierGUI(c);
+appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
+
+roiTabCallback = app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;
+trainingTabCallback = app.SettrainingparametersTab.ButtonDownFcn;
+roiTabCallback(app.SettrainingandvalidationsetROIsTab, []);
+trainingTabCallback(app.SettrainingparametersTab, []);
+inputRow = find(strcmp(app.UITableParam.Data.Param, 'inputChannelNames'), 1);
+verifyNotEmpty(testCase, inputRow);
+selectParam = app.UITableParam.CellSelectionCallback;
+selectParam(app.UITableParam, struct('Indices', [inputRow 1]));
+editor = findall(app.SettrainingparametersTab, 'Type', 'uilistbox');
+verifyNumElements(testCase, editor, 1);
+
+% Repeated tab clicks should use the already displayed metadata. An
+% explicit status refresh still rebuilds the ROI table when requested.
+roiIdColumn = find(strcmp(app.UITableData.ColumnName, 'ROI Id'), 1);
+app.UITableData.Data{1, roiIdColumn} = 'cached row';
+c.roi.display.channel{1} = 'New channel';
+roiTabCallback(app.SettrainingandvalidationsetROIsTab, []);
+trainingTabCallback(app.SettrainingparametersTab, []);
+verifyEqual(testCase, app.UITableData.Data{1, roiIdColumn}, 'cached row');
+editor = findall(app.SettrainingparametersTab, 'Type', 'uilistbox');
+verifyFalse(testCase, any(strcmp(editor(1).Items, 'New channel')));
+
+selectionCallback = app.UITableData.CellEditCallback;
+selectionCallback(app.UITableData, struct('Indices', [1 1], ...
+    'NewData', true));
+verifyEqual(testCase, c.trainingset, 1);
+verifyTrue(testCase, app.UITableData.Data{1,1});
+verifyFalse(testCase, app.UITableData.Data{1,2});
+verifyEqual(testCase, app.UITableData.Data{1, roiIdColumn}, 'cached row');
+
+refreshCallback = app.RefreshAnnotationStatusButton.ButtonPushedFcn;
+refreshCallback(app.RefreshAnnotationStatusButton, []);
+verifyEqual(testCase, app.UITableData.Data{1, roiIdColumn}, 'R1');
+end
+
 function testPersistedValidDraftRequiresExplicitValidation(testCase)
 folder = tempname;
 mkdir(folder);

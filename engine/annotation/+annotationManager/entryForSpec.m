@@ -3,14 +3,15 @@ function [entry, found, manifest] = entryForSpec(roiObj, spec)
 
 [manifest, ~] = annotationManager.readManifest(roiObj);
 found = false;
-entry = annotationManager.newEntry(spec, annotationManager.frameCount(roiObj));
+totalFrames = annotationManager.frameCount(roiObj);
+entry = annotationManager.newEntry(spec, totalFrames);
 if isempty(manifest.entries), return; end
 
 ids = string({manifest.entries.annotation_id});
 idx = find(ids == string(spec.id), 1, 'first');
 if isempty(idx), return; end
 found = true;
-entry = normalizeEntry(manifest.entries(idx), spec, annotationManager.frameCount(roiObj));
+entry = normalizeEntry(manifest.entries(idx), spec, totalFrames);
 end
 
 function entry = normalizeEntry(value, spec, totalFrames)
