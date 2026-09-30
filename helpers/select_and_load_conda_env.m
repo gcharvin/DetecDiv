@@ -694,6 +694,13 @@ function [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchC
         warning('off','all');
         c = onCleanup(@() warning(oldWarn));
 
+        % On Windows, initialize NumPy's native numerical runtime before
+        % importing PyTorch. Importing Cellpose later into a torch-first
+        % interpreter can load a second libiomp5md.dll and terminate pyenv.
+        % Match the ordering used by the verified standalone import probe.
+        if ispc
+            pyrun('import numpy as np; a = np.ones((256, 256)); np.matmul(a, a); del a');
+        end
         evalc('torch = py.importlib.import_module(''torch'');');
 
         okTorch  = true;

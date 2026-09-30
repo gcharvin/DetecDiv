@@ -748,10 +748,9 @@ try
             end
         end
     end
-    % MATLAB's Windows Python engine can load a second Intel OpenMP runtime
-    % when the Cellpose model is imported after torch. The standalone runner
-    % uses the verified conda process and keeps those DLLs outside MATLAB.
-    if ~explicitMode && ~ispc && isstruct(ctx) && isfield(ctx,'pipeline') && isstruct(ctx.pipeline)
+    % Pipeline runs reuse the loaded model across ROIs in the MATLAB Python
+    % session. The Python bootstrap initializes NumPy before PyTorch on Windows.
+    if ~explicitMode && isstruct(ctx) && isfield(ctx,'pipeline') && isstruct(ctx.pipeline)
         mode = 'session';
     end
 catch
