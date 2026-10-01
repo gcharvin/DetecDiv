@@ -8,10 +8,14 @@ for i = 1:numel(plugins)
 end
 roots = unique(roots, 'stable');
 
+pathChanged = false;
 for i = 1:numel(roots)
     if isfolder(roots{i}) && ~contains(path, roots{i})
         addpath(roots{i});
+        pathChanged = true;
     end
 end
-rehash;
+if pathChanged
+    rehash;
+end
 end

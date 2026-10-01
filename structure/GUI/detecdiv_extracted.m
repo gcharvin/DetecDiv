@@ -88,6 +88,8 @@ classdef detecdiv < matlab.apps.AppBase
         RoiTreeBuildState = struct()
         MainGrid matlab.ui.container.GridLayout
         WorkspaceEventListenerId string = ""
+        SkipRunDiskRefresh logical = false
+        IsHandlingTreeSelection logical = false
 
     end
 
@@ -183,17 +185,18 @@ classdef detecdiv < matlab.apps.AppBase
 
 
                 for k=1:numel(app.Data.Projectpos{i})
+                    fovIdx = app.Data.ProjectposIndices{i}(k);
                     cm=uicontextmenu(app.DetecDivUIFigure);
                     m = uimenu(cm,'Text','Open position...');
-                    m.MenuSelectedFcn={@contextMenuPositionFcn,[i,k],'Projectpos'};
+                    m.MenuSelectedFcn={@contextMenuPositionFcn,[i,fovIdx],'Projectpos'};
                     m = uimenu(cm,'Text','Relink raw data for this position...');
-                    m.MenuSelectedFcn={@contextMenuRelinkRawDataFcn,[i,k],'Projectpos'};
+                    m.MenuSelectedFcn={@contextMenuRelinkRawDataFcn,[i,fovIdx],'Projectpos'};
                     m = uimenu(cm,'Text','Delete ROIs...');
-                    m.MenuSelectedFcn={@contextMenuDeleteROIsFcn,[i,k],'Projectpos'};
+                    m.MenuSelectedFcn={@contextMenuDeleteROIsFcn,[i,fovIdx],'Projectpos'};
                     m = uimenu(cm,'Text','Delete current position');
-                    m.MenuSelectedFcn={@contextMenuDeletePositionFcn,[i,k],'Projectpos'};
+                    m.MenuSelectedFcn={@contextMenuDeletePositionFcn,[i,fovIdx],'Projectpos'};
 
-                    g2(i,k)=uitreenode(h1(i),'Text',app.Data.Projectpos{i}{k},'Tag','Projectpos','UserData',[i,k],'ContextMenu',cm,'Icon',fullfile(pth,'data.png'));
+                    g2(i,k)=uitreenode(h1(i),'Text',app.Data.Projectpos{i}{k},'Tag','Projectpos','UserData',[i,fovIdx],'ContextMenu',cm,'Icon',fullfile(pth,'data.png'));
 
                     %                      if numel(app.Data.Projectposrois{i})
                     %
@@ -2412,7 +2415,7 @@ end
 
         function gatherVarsFromWorkspace(app)
             varlist=evalin('base','who');
-            st=struct('Project',{{}},'Classifier',{{}},'Pipeline',{{}},'PipelineDisplay',{{}},'PipelineModules',{{}},'PipelineModuleIds',{{}},'PipelineModuleTypes',{{}},'Projectpos',{{}},'Projectclassi',{{}},'Projectprocess',{{}},'ProjectpipelineRun',{{}},'Projectposrois',{{}},'Projectclassirois',{{}},'Classifierrois',{{}},'ClassifierpipelineRun',{{}},'ClassifierpipelineRunPath',{{}});
+            st=struct('Project',{{}},'Classifier',{{}},'Pipeline',{{}},'PipelineDisplay',{{}},'PipelineModules',{{}},'PipelineModuleIds',{{}},'PipelineModuleTypes',{{}},'Projectpos',{{}},'ProjectposIndices',{{}},'Projectclassi',{{}},'Projectprocess',{{}},'ProjectpipelineRun',{{}},'Projectposrois',{{}},'Projectclassirois',{{}},'Classifierrois',{{}},'ClassifierpipelineRun',{{}},'ClassifierpipelineRunPath',{{}});
             cc=0;
             cd=0;
             cp=0;
@@ -2535,12 +2538,14 @@ end
                     st.ProjectpipelineRun{cc}=tmprun;
 
                     tmpproj={};
+                    positionIndices=[];
 
                     for k=1:numel(tmp.fov)
                         %  k
                         if isprop(tmp.fov(k), 'srcpath') && iscell(tmp.fov(k).srcpath) && ...
                                 numel(tmp.fov(k).srcpath) >= 1 && ~isempty(tmp.fov(k).srcpath{1})
-                            tmpproj = [tmpproj [num2str(k) ' - ' tmp.fov(k).id]];
+                            positionIndices(end+1) = k; %#ok<AGROW>
+                            tmpproj{end+1} = [num2str(numel(positionIndices)) ' - ' tmp.fov(k).id]; %#ok<AGROW>
                             %  aa=tmp.fov(k).srcpath
                         end
 
@@ -2549,6 +2554,7 @@ end
                     end
 
                     st.Projectpos{cc}=tmpproj;
+                    st.ProjectposIndices{cc}=positionIndices;
                 end
 
                 if isa(tmp,'pipeline')
@@ -2641,6 +2647,11 @@ end
 
         function [shallowObj, loaded] = ensureProjectPipelineRunsLoaded(app, shallowObj)
             loaded = false;
+            % Run-save events already carry the live project and attached run.
+            % Do not reload all run JSONs while acknowledging that UI action.
+            if app.SkipRunDiskRefresh
+                return;
+            end
             if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
                 return;
             end
@@ -2836,9 +2847,20 @@ end
             app.stopRoiTreeBuild();
 
             [pth, ~, ~] = fileparts(which('detecdiv.mlapp'));
+            if numel(roiLabels) <= 100
+                % Small lists need no modal web dialog: creating that dialog
+                % can cost much more than creating the tree nodes themselves.
+                for n = 1:numel(roiLabels)
+                    uitreenode(parentNode, 'Text', roiLabels{n}, ...
+                        'Tag', childTag, 'UserData', [userDataPrefix, n], ...
+                        'Icon', fullfile(pth, 'roi.png'));
+                end
+                try, expand(parentNode); catch, end
+                return;
+            end
             app.RoiTreeBuildDialog = uiprogressdlg(app.DetecDivUIFigure, ...
                 'Title', 'Please Wait...', ...
-                'Message', sprintf('Generating classifier ROI list... 0/%d', numel(roiLabels)), ...
+                'Message', sprintf('Generating ROI list... 0/%d', numel(roiLabels)), ...
                 'Value', 0, ...
                 'Cancelable', 'on');
             app.RoiTreeBuildState = struct( ...
@@ -2854,9 +2876,13 @@ end
                 'Period', 0.05, ...
                 'StartDelay', 0.01, ...
                 'BusyMode', 'drop', ...
-                'TimerFcn', @(~,~) app.buildNextRoiTreeChunk());
+                'TimerFcn', createCallbackFcn(app, @RoiTreeBuildTimerFired, true));
             start(app.RoiTreeBuildTimer);
             drawnow limitrate nocallbacks;
+        end
+
+        function RoiTreeBuildTimerFired(app, event) %#ok<INUSD>
+            app.buildNextRoiTreeChunk();
         end
 
         function buildNextRoiTreeChunk(app)
@@ -2890,11 +2916,12 @@ end
                 d = app.RoiTreeBuildDialog;
                 if ~isempty(d) && isvalid(d)
                     d.Value = lastIndex ./ nRoi;
-                    d.Message = sprintf('Generating classifier ROI list... %d/%d', lastIndex, nRoi);
+                    d.Message = sprintf('Generating ROI list... %d/%d', lastIndex, nRoi);
                 end
-                drawnow limitrate;
+                drawnow limitrate nocallbacks;
 
                 if lastIndex >= nRoi
+                    try, expand(state.parentNode); catch, end
                     app.stopRoiTreeBuild();
                 end
             catch ME
@@ -2945,30 +2972,11 @@ end
                 return;
             end
 
-            d = uiprogressdlg(app.DetecDivUIFigure, ...
-                'Title', 'Please Wait...', ...
-                'Message', 'Generating ROI list...', ...
-                'Value', 0);
-            cleanupObj = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
-            drawnow limitrate;
-
-            [pth, ~, ~] = fileparts(which('detecdiv.mlapp'));
-            nRoi = numel(roiLabels);
-            for n = 1:nRoi
-                if n == 1 || n == nRoi || mod(n, 10) == 0
-                    d.Value = n ./ nRoi;
-                    d.Message = ['Generating ROI list... ' num2str(n) '/' num2str(nRoi)];
-                    drawnow limitrate;
-                end
-                uitreenode(positionNode, ...
-                    'Text', roiLabels{n}, ...
-                    'Tag', 'Projectposrois', ...
-                    'UserData', [projIdx, posIdx, n], ...
-                    'Icon', fullfile(pth, 'roi.png'));
-            end
-
+            % Reuse the incremental ROI builder; drawing from a selection
+            % callback must not re-enter that callback through drawnow.
+            app.startRoiTreeBuild(positionNode, roiLabels, 'Projectposrois', [projIdx, posIdx]);
             try, expand(positionNode); catch, end
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
         end
 
 
@@ -6566,7 +6574,9 @@ end
                 return;
             end
             try
-                app.(name).Position = position;
+                if ~isequal(app.(name).Position, position)
+                    app.(name).Position = position;
+                end
             catch
             end
         end
@@ -6606,13 +6616,23 @@ end
                 return;
             end
             app.syncProjectFromWorkspaceEvent(payload);
+            previousSkip = app.SkipRunDiskRefresh;
+            skipCleanup = onCleanup(@()app.restoreRunDiskRefresh(previousSkip)); %#ok<NASGU>
+            app.SkipRunDiskRefresh = isstruct(payload) && isfield(payload, 'kind') && ...
+                strcmpi(char(string(payload.kind)), 'pipelineRun') && ...
+                isfield(payload, 'projectObj') && isa(payload.projectObj, 'shallow');
             try
                 gatherVarsFromWorkspace(app);
                 displayNodes(app);
             catch
             end
-            RefreshtreewindowMenuSelected(app, []);
-            drawnow limitrate;
+            % The workspace and tree were already refreshed above. Repeating
+            % the menu callback reloads every run and recreates the tree twice.
+            drawnow limitrate nocallbacks;
+        end
+
+        function restoreRunDiskRefresh(app, value)
+            app.SkipRunDiskRefresh = value;
         end
 
         function syncProjectFromWorkspaceEvent(app, payload) %#ok<INUSD>
@@ -7047,7 +7067,16 @@ end
         end
 
         % Selection changed function: Tree
+        function finishTreeSelection(app)
+            app.IsHandlingTreeSelection = false;
+        end
+
         function TreeSelectionChanged(app, event)
+            if app.IsHandlingTreeSelection
+                return;
+            end
+            app.IsHandlingTreeSelection = true;
+            selectionCleanup = onCleanup(@()app.finishTreeSelection()); %#ok<NASGU>
             selectedNodes = app.Tree.SelectedNodes;
 
             app.AdddataButton.Visible='off';
@@ -7068,7 +7097,9 @@ end
             app.InspectRunButton.Visible='off';
             app.setComponentVisible('EditRunButton', 'off');
             app.OpenButton.Visible='off';
-            cla( app.UIAxes);
+            if ~isempty(app.UIAxes.Children)
+                cla(app.UIAxes);
+            end
             app.UIAxes.Visible='off';
             app.applyTextOnlyMainPanelLayout();
 
@@ -7097,7 +7128,7 @@ end
 
                 app.ProjectsPanel.Title='Project';
                 app.ProjectInformationLabel.Text='Loading project information...';
-                drawnow;
+                drawnow nocallbacks;
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
                 shallowObj=evalin('base',proj);

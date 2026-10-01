@@ -16,6 +16,9 @@ classdef shallow < handle
     
     methods
         function obj = shallow(pathname,filename) % filename contains a list of path to images used in the movi project
+            % Handle-valued property defaults are shared across instances.
+            % Every new project needs its own empty FOV placeholder.
+            obj.fov = fov();
             %  obj.props.path=pathname;
             % obj.props.name=filename;
             

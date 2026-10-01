@@ -95,6 +95,7 @@ classdef pipeline2 < matlab.apps.AppBase
         ModuleTabRefreshBatchDepth double = 0
         ModuleTabRefreshPending logical = false
         IsRedrawingGraph logical = false
+        HasStartupPipeline logical = false
         RuntimeFieldHandles struct = struct()
         RuntimeButtonHandles struct = struct()
         RuntimeValues struct = struct()
@@ -167,8 +168,12 @@ classdef pipeline2 < matlab.apps.AppBase
             configureControls(app);
             refreshAvailableModuleTable(app);
             refreshSelectedModuleTable(app);
-            redrawGraph(app);
-            refreshValidationReport(app, false);
+            % A supplied pipeline is loaded immediately after startup. Avoid
+            % first rendering and validating an empty placeholder graph.
+            if ~app.HasStartupPipeline
+                redrawGraph(app);
+                refreshValidationReport(app, false);
+            end
             markPipelineDirty(app, isempty(app.CurrentPipelinePath));
         end
 
@@ -3725,7 +3730,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RunTargetDropDown.Value = 'local';
             target = app.RunTargetDropDown;
             app.HubFieldHandles.executionTargetLabel = app.RunTargetDropDownLabel;
-            target.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, 'executionTarget', src.Value);
+            target.ValueChangedFcn = createCallbackFcn(app, @HubExecutionTargetChanged, true);
             app.HubFieldHandles.executionTarget = target;
             app.RuntimeValues.executionTarget = 'local';
 
@@ -3862,6 +3867,16 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 tf = false;
             end
+        end
+
+        function HubExecutionTargetChanged(app, event)
+            src = getCallbackSource(app, event);
+            if isempty(src) || ~isvalid(src)
+                return;
+            end
+            d = openRuntimeProgress(app, 'Run target', 'Updating execution target...');
+            progressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+            hubRuntimeFieldChanged(app, 'executionTarget', src.Value);
         end
 
         function hubRuntimeFieldChanged(app, key, value)
@@ -4733,7 +4748,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(active) && isvalid(active)
                     active.Message = messageText;
                     setRuntimeStatus(app, messageText);
-                    drawnow limitrate nocallbacks;
+                    drawnow nocallbacks;
                     return;
                 end
                 d = uiprogressdlg(app.UIFigure, ...
@@ -4742,7 +4757,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     'Indeterminate', 'on');
                 app.RuntimeProgressDialog = d;
                 setRuntimeStatus(app, messageText);
-                drawnow limitrate nocallbacks;
+                drawnow nocallbacks;
             catch
                 d = [];
             end
@@ -16416,6 +16431,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             nodes = pipeObj.nodes;
+            d = openRuntimeProgress(app, 'Open pipeline', 'Loading pipeline modules...');
+            progressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             if isempty(nodes)
                 nodes = struct([]);
             end
@@ -18375,7 +18392,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if createNewRun
                 ref = buildPipelineRef(app);
                 target = buildTargetRef(app);
-                args = {'ctx', ctxForStorage, 'status', status, 'pipelineRef', ref, 'targetRef', target};
+                % Publish once after saving, when run.json is available.
+                args = {'ctx', ctxForStorage, 'status', status, 'pipelineRef', ref, 'targetRef', target, 'notifyWorkspace', false};
                 if ~isempty(strtrim(char(string(requestedRunId))))
                     args = [{'runId', char(string(requestedRunId))} args]; %#ok<AGROW>
                 end
@@ -18532,14 +18550,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 saveProject = true;
             end
             updateRunSaveProgress(app, progressDlg, message);
+            saveTimer = tic;
             pipelineRunSave(runObj);
+            jsonSec = toc(saveTimer);
+            updateRunSaveProgress(app, progressDlg, 'Attaching run to project...');
             projectChanged = attachCurrentRunToProject(app, runObj);
-            publishCurrentProjectForTreeRefresh(app, runObj);
             markRunDirty(app, false);
             if logical(saveProject) && projectChanged && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 updateRunSaveProgress(app, progressDlg, 'Saving project state...');
                 shallowSave(app.CurrentProject, 'shallowObj');
             end
+            updateRunSaveProgress(app, progressDlg, 'Refreshing main application tree...');
+            treeTimer = tic;
+            publishCurrentProjectForTreeRefresh(app, runObj);
+            fprintf('Run save timings: JSON %.3fs, tree refresh %.3fs, total %.3fs.\n', ...
+                jsonSec, toc(treeTimer), toc(saveTimer));
         end
 
         function changed = attachCurrentRunToProject(app, runObj)
@@ -18810,7 +18835,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Save run', ...
                     'Message', 'Preparing run save...', ...
                     'Value', 0.05, 'Cancelable', 'off');
-                drawnow limitrate nocallbacks;
+                drawnow nocallbacks;
             catch
                 d = [];
             end
@@ -22133,6 +22158,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 CloseappButtonPushed(app, []);
                 return;
             end
+
+            d = openRuntimeProgress(app, 'New run', 'Preparing a new run...');
+            progressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             setRuntimeModeUnlocked(app, true);
             app.CurrentRun = [];
             app.CurrentRunPath = '';
@@ -22154,7 +22182,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 applyRuntimeInputSourceMode(app, 'existing_rois');
             end
             delete(tabRefreshCleanup);
+            updateRuntimeProgress(app, d, 'Preparing module parameters...');
             refreshModuleTabs(app);
+            updateRuntimeProgress(app, d, 'Choosing run id...');
             runId = suggestNextRunIdForUi(app);
             try
                 app.TemplateidEditField.Value = runId;
@@ -22701,13 +22731,30 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create UIFigure and components
             createComponents(app)
 
+            % The fixed App Designer layout can exceed a laptop display.
+            % Fit the window and allow access to controls through scrolling.
+            screen = get(groot, 'ScreenSize');
+            width = min(1240, max(320, screen(3) - 64));
+            height = min(960, max(320, screen(4) - 96));
+            app.UIFigure.Position = [screen(1) + (screen(3)-width)/2, ...
+                screen(2) + (screen(4)-height)/2, width, height];
+            app.MainTabGroup.Units = 'normalized';
+            app.MainTabGroup.Position = [0 0 1 1];
+            app.BuildTab.Scrollable = 'on';
+            app.RunTab.Scrollable = 'on';
+
             % Register the app with App Designer
             registerApp(app, app.UIFigure)
+
+            app.HasStartupPipeline = any(cellfun(@(arg)isa(arg, 'pipeline') || isa(arg, 'pipelineRun'), varargin));
+            d = openRuntimeProgress(app, 'Pipeline', 'Opening pipeline interface...');
+            startupProgressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
 
             % Execute startup logic after the designer-created layout exists
             runStartupFcn(app, @startupFcn)
 
             applyStartupArguments(app, varargin{:});
+            delete(startupProgressCleanup);
 
             if app.BatchPrototypeMode && app.BatchPrototypeModal
                 try

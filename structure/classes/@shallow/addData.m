@@ -35,7 +35,7 @@ existingKeys = buildExistingKeyMap(obj,pathCtx);
 
 % gestion de l'indice FOV a creer
 nfov = numel(obj.fov);
-if nfov==1 && isempty(obj.fov(1).id) && isempty(obj.fov(1).srcpath)
+if nfov==1 && isEmptyPlaceholderFov(obj.fov(1))
     cc = 1;
 else
     cc = nfov+1;
@@ -152,6 +152,20 @@ if nSkipped > 0
     disp([num2str(nSkipped) ' FOV(s) were skipped because they were already loaded.']);
 end
 
+end
+
+function tf = isEmptyPlaceholderFov(f)
+% fov() initializes srcpath as {''}, which is a nonempty cell array.
+% Reuse only the untouched default object, never a FOV with annotations/ROIs.
+tf = isempty(f.id) && isempty(firstNonEmptyCell(f.srcpath)) && ...
+    isempty(f.channel) && isempty(f.frames) && isempty(f.crop) && ...
+    isempty(f.pattern) && isempty(f.contours) && isempty(f.comments) && ...
+    isempty(f.ndtiffPath) && isempty(f.omeZarrPath) && ...
+    isempty(firstNonEmptyCell(f.tiffSource));
+if tf && ~isempty(f.roi)
+    tf = numel(f.roi) == 1 && isempty(f.roi(1).id) && isempty(f.roi(1).value) && ...
+        isempty(f.roi(1).image) && isempty(f.roi(1).results);
+end
 end
 
 function mapObj = buildExistingKeyMap(obj,pathCtx)

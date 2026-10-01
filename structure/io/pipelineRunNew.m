@@ -18,6 +18,7 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     status = 'new';
     pipelineRef = struct();
     targetRef = struct();
+    notifyWorkspace = true;
 
     i = 1;
     while i <= numel(varargin)
@@ -40,6 +41,8 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
                 pipelineRef = varargin{i+1};
             case 'targetref'
                 targetRef = varargin{i+1};
+            case 'notifyworkspace'
+                notifyWorkspace = logical(varargin{i+1});
         end
         i = i + 2;
     end
@@ -91,7 +94,7 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
 
     % attach to project
     shallowObj.processing.pipelineRun(end+1) = runObj;
-    emitPipelineRunCreated(shallowObj, runObj);
+    emitPipelineRunCreated(shallowObj, runObj, notifyWorkspace);
 end
 
 function ctx = stripHeavyContextForRunStorage(ctx)
@@ -119,7 +122,7 @@ function ctx = stripHeavyContextForRunStorage(ctx)
     end
 end
 
-function emitPipelineRunCreated(shallowObj, runObj)
+function emitPipelineRunCreated(shallowObj, runObj, notifyWorkspace)
     if exist('detecdiv_event', 'file') ~= 2
         return;
     end
@@ -128,6 +131,8 @@ function emitPipelineRunCreated(shallowObj, runObj)
     payload.kind = 'pipelineRun';
     payload.action = 'created';
     payload.source = 'pipelineRunNew';
+    % Publish the live project; listeners need not reload it from disk.
+    payload.projectObj = shallowObj;
     try
         payload.runId = char(string(runObj.runId));
     catch
@@ -156,7 +161,9 @@ function emitPipelineRunCreated(shallowObj, runObj)
 
     try
         detecdiv_event('emit', 'pipelineRunCreated', payload);
-        detecdiv_event('emit', 'workspaceChanged', payload);
+        if notifyWorkspace
+            detecdiv_event('emit', 'workspaceChanged', payload);
+        end
     catch ME
         warning('pipelineRunNew:EventEmitFailed', ...
             'Unable to broadcast pipeline run creation: %s', ME.message);
