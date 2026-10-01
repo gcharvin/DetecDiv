@@ -2592,28 +2592,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 y = -(row - 1) * (blockH + gapY);
                 selected = isequal(i, app.SelectedNodeIndex);
                 runSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(getField(app, nodes(i), 'id', '')))));
-                [face, edge] = graphNodeColors(app, nodes(i));
-                textColor = [0.14 0.18 0.22];
-                subTextColor = [0.25 0.25 0.25];
-                if ~runSelected
-                    face = [0.88 0.88 0.88];
-                    edge = [0.68 0.68 0.68];
-                    textColor = [0.48 0.48 0.48];
-                    subTextColor = [0.58 0.58 0.58];
-                end
-                if selected
-                    if runSelected
-                        edge = darkenColor(app, edge, 0.55);
-                        face = lightenColor(app, face, 0.18);
-                        textColor = [0.02 0.14 0.36];
-                        subTextColor = [0.07 0.20 0.43];
-                    else
-                        face = [0.80 0.86 0.93];
-                        edge = [0.20 0.32 0.46];
-                        textColor = [0.16 0.20 0.25];
-                        subTextColor = [0.24 0.28 0.33];
-                    end
-                end
+                [face, edge, textColor, subTextColor] = graphNodeSelectionColors(app, nodes(i), selected, runSelected);
                 h = rectangle(app.UIGraphAxes, 'Position', [x y blockW blockH], ...
                     'Curvature', 0.08, 'FaceColor', face, 'EdgeColor', edge, ...
                     'LineWidth', ternary(app, selected, 2.8, 1.5), ...
@@ -2673,6 +2652,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function GraphNodeButtonDown(app, event)
+            if app.IsRedrawingGraph
+                return;
+            end
             src = getCallbackSource(app, event);
             if isempty(src) || ~isvalid(src) || ~isstruct(src.UserData) || ~isfield(src.UserData, 'nodeIndex')
                 return;
@@ -2768,12 +2750,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     edgeColor = [0.62 0.57 0.50];
                     edgeWidth = 1.2;
                 end
-                h = quiver(app.UIGraphAxes, x1, y1, x2 - x1, y2 - y1, 0, ...
-                    'Color', edgeColor, ...
-                    'LineWidth', edgeWidth, ...
-                    'MaxHeadSize', 0.45, ...
-                    'AutoScale', 'off', ...
-                    'HitTest', 'off');
+                h = drawGraphArrow(app, x1, y1, x2, y2, 0.18, edgeColor, edgeWidth);
                 app.EdgeHandles(end+1) = h; %#ok<AGROW>
             end
         end
@@ -2845,12 +2822,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     'Color', edgeColor, ...
                     'LineWidth', edgeWidth, ...
                     'HitTest', 'off');
-                hHead = quiver(app.UIGraphAxes, headStartX, y2, -headLen, 0, 0, ...
-                    'Color', edgeColor, ...
-                    'LineWidth', edgeWidth, ...
-                    'MaxHeadSize', 0.70, ...
-                    'AutoScale', 'off', ...
-                    'HitTest', 'off');
+                hHead = drawGraphArrow(app, headStartX, y2, targetRight, y2, headLen, edgeColor, edgeWidth);
                 return;
             end
 
@@ -2867,12 +2839,27 @@ classdef pipeline2 < matlab.apps.AppBase
                 'Color', edgeColor, ...
                 'LineWidth', edgeWidth, ...
                 'HitTest', 'off');
-            hHead = quiver(app.UIGraphAxes, x2 - headLen, y2, headLen, 0, 0, ...
-                'Color', edgeColor, ...
-                'LineWidth', edgeWidth, ...
-                'MaxHeadSize', 0.65, ...
-                'AutoScale', 'off', ...
-                'HitTest', 'off');
+            hHead = drawGraphArrow(app, x2 - headLen, y2, x2, y2, headLen, edgeColor, edgeWidth);
+        end
+
+        function h = drawGraphArrow(app, x1, y1, x2, y2, headLen, edgeColor, edgeWidth)
+            % A plain line avoids Quiver's marker/axes listeners during UI redraws.
+            delta = [x2 - x1, y2 - y1];
+            distance = hypot(delta(1), delta(2));
+            xs = [x1 x2];
+            ys = [y1 y2];
+            if distance > eps
+                direction = delta / distance;
+                normal = [-direction(2), direction(1)];
+                headLen = min(headLen, distance);
+                base = [x2 y2] - headLen * direction;
+                left = base + 0.4 * headLen * normal;
+                right = base - 0.4 * headLen * normal;
+                xs = [xs NaN left(1) x2 right(1)];
+                ys = [ys NaN left(2) y2 right(2)];
+            end
+            h = line(app.UIGraphAxes, xs, ys, 'Color', edgeColor, ...
+                'LineWidth', edgeWidth, 'HitTest', 'off', 'PickableParts', 'none');
         end
 
         function edges = resourceBindingEdgesForGraph(app)
@@ -3041,6 +3028,53 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function [face, edge, textColor, subTextColor] = graphNodeSelectionColors(app, node, selected, runSelected)
+            [face, edge] = graphNodeColors(app, node);
+            textColor = [0.14 0.18 0.22];
+            subTextColor = [0.25 0.25 0.25];
+            if ~runSelected
+                face = [0.88 0.88 0.88];
+                edge = [0.68 0.68 0.68];
+                textColor = [0.48 0.48 0.48];
+                subTextColor = [0.58 0.58 0.58];
+            end
+            if selected
+                if runSelected
+                    edge = darkenColor(app, edge, 0.55);
+                    face = lightenColor(app, face, 0.18);
+                    textColor = [0.02 0.14 0.36];
+                    subTextColor = [0.07 0.20 0.43];
+                else
+                    face = [0.80 0.86 0.93];
+                    edge = [0.20 0.32 0.46];
+                    textColor = [0.16 0.20 0.25];
+                    subTextColor = [0.24 0.28 0.33];
+                end
+            end
+        end
+
+        function refreshGraphNodeSelection(app)
+            % Selection changes appearance only; retain edges and callback sources.
+            nodes = app.Data.nodes;
+            if app.IsRedrawingGraph
+                return;
+            end
+            if numel(app.BlockHandles) ~= 3 * numel(nodes) || any(~isgraphics(app.BlockHandles))
+                redrawGraph(app);
+                return;
+            end
+            selectedRunIds = selectedRunNodeIds(app);
+            for i = 1:numel(nodes)
+                selected = isequal(i, app.SelectedNodeIndex);
+                runSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(getField(app, nodes(i), 'id', '')))));
+                [face, edge, textColor, subTextColor] = graphNodeSelectionColors(app, nodes(i), selected, runSelected);
+                handles = app.BlockHandles(3*i-2:3*i);
+                set(handles(1), 'FaceColor', face, 'EdgeColor', edge, 'LineWidth', ternary(app, selected, 2.8, 1.5));
+                handles(2).Color = textColor;
+                handles(3).Color = subTextColor;
+            end
+        end
+
         function selectNode(app, idx)
             if idx < 1 || idx > numel(app.Data.nodes)
                 return;
@@ -3050,7 +3084,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.IdEditField.Value = char(string(getField(app, node, 'id', '')));
             app.AdvancedmodeCheckBox.Value = false;
             selectTypeControlsForNode(app, node);
-            redrawGraph(app);
+            refreshGraphNodeSelection(app);
             selectExistingModuleTab(app, node);
             updateCommonControlsEnableState(app);
         end
@@ -3060,7 +3094,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             app.SelectedNodeIndex = NaN;
-            redrawGraph(app);
+            refreshGraphNodeSelection(app);
             updateCommonControlsEnableState(app);
         end
 
