@@ -3636,12 +3636,44 @@ function resources = initialResourceInventory(ctx, sem)
         resources(end+1) = resourceInventoryDef('mask', 'segmentation', masks{i}, masks{i}, 'ctx', 'masks', 'context'); %#ok<AGROW>
     end
 
+    resources = mergeResourceInventory(resources, persistedCellModelResources(ctx));
+
     phyloSegFiles = phyloSegmentationFilesFromContext(ctx);
     for i = 1:numel(phyloSegFiles)
         resources(end+1) = resourceInventoryDef('annotation', 'phyloCell_segmentation', 'phyloCell_segmentation', phyloSegFiles{i}, 'ctx', 'annotations', 'context'); %#ok<AGROW>
     end
 
     resources = mergeResourceInventory(resourceInventoryDef(), resources);
+end
+
+function resources = persistedCellModelResources(ctx)
+    resources = resourceInventoryDef();
+    if ~validationStartsFromExistingProject(ctx)
+        return;
+    end
+    roiList = getField(ctx, 'roiList', []);
+    if isempty(roiList)
+        return;
+    end
+    try
+        filename = cellModel.pathForROI(roiList(1));
+        if isempty(filename) || ~isfile(filename)
+            return;
+        end
+        metadata = cellModel.readMetadata(filename);
+        families = getField(metadata, 'families', struct([]));
+        for i = 1:numel(families)
+            name = strtrim(char(string(getField(families(i), 'name', ''))));
+            if ~isempty(name)
+                resources(end+1) = resourceInventoryDef( ...
+                    'cellModel', 'cellular_objects', name, name, ...
+                    'ctx', 'objects', 'context'); %#ok<AGROW>
+            end
+        end
+    catch
+        % A missing or unreadable cell model must not satisfy a partial run.
+        resources = resourceInventoryDef();
+    end
 end
 
 function files = phyloSegmentationFilesFromContext(ctx)
@@ -4340,6 +4372,9 @@ function available = initialAvailablePorts(ctx)
     end
     if validationStartsFromExistingProject(ctx) && ~any(strcmp(available, 'roiList'))
         available{end+1} = 'roiList'; %#ok<AGROW>
+    end
+    if ~isempty(persistedCellModelResources(ctx)) && ~any(strcmp(available, 'objects'))
+        available{end+1} = 'objects'; %#ok<AGROW>
     end
     available = unique(available(:));
 end
