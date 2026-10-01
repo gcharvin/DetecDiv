@@ -363,6 +363,15 @@ function contract = defaultContractForNode(node)
                 end
             end
 
+        case 'custom'
+            customContract = customModule.contract(node);
+            in = customContract.in;
+            out = customContract.out;
+            parameters = mergeParameterStruct(parameters, customContract.parameters);
+            requirements.params.required = customContract.requirements.params.required;
+            capabilities = mergeCapabilityStruct(capabilities, customContract.capabilities);
+            summary = customContract.summary;
+
         otherwise
             if isfield(node, 'inputs') && ~isempty(node.inputs)
                 in = genericPorts(node.inputs, 'in');

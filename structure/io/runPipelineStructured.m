@@ -4,6 +4,11 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     if nargin < 2 || isempty(ctx)
         ctx = struct();
     end
+    if isa(pipe, 'pipeline')
+        ctx.pipelineTemplatePath = pipe.path;
+    elseif isstruct(pipe) && isfield(pipe, 'path')
+        ctx.pipelineTemplatePath = pipe.path;
+    end
 
     if isfield(ctx,'dryRun') && ~isempty(ctx.dryRun) && logical(ctx.dryRun)
         [~, report] = runPipelineDry(pipe, ctx);
@@ -1061,6 +1066,12 @@ function ctx = executeNode(node, ctx)
             ctx = executeProcessorNode(node, ctx);
         case 'classifier'
             ctx = executeClassifierNode(node, ctx);
+        case 'custom'
+            try
+                ctx = customModule.process(ctx);
+            catch ME
+                throwNodeFailed(node, ME);
+            end
         otherwise
             try
                 fun = resolveNodeFunc(node);

@@ -153,6 +153,8 @@ switch nodeType
         if ~isempty(pkg)
             fun = [pkg '.classify'];
         end
+    case 'custom'
+        fun = 'customModule.process';
 end
 end
 

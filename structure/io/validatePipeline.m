@@ -17,6 +17,11 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     end
 
     P = pipelineToStructLocal(pipe);
+    if isa(pipe, 'pipeline')
+        ctx.pipelineTemplatePath = pipe.path;
+    elseif isstruct(pipe) && isfield(pipe, 'path')
+        ctx.pipelineTemplatePath = pipe.path;
+    end
     nodes = normalizeNodesWithContracts(P.nodes);
     nodes = applyValidationRunNodeOverrides(nodes, ctx);
     nodes = normalizeNodesWithContracts(nodes);
@@ -98,6 +103,13 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 
         for i = 1:numel(order)
             node = nodes(strcmp(ids, order{i}));
+            if strcmpi(char(string(node.type)), 'custom')
+                customIssues = customModule.validate(node, ctx);
+                if ~isempty(customIssues)
+                    ok = false;
+                    report.errors = [report.errors customIssues];
+                end
+            end
             req = requiredInputNames(node);
             if ~isempty(req)
                 missing = setdiff(req, available);

@@ -1055,7 +1055,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function configureControls(app)
             configureFileMenus(app);
             configureGraphAppearance(app);
-            app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier'};
+            app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier','custom'};
             app.TypeDropDown.Value = 'dataLoader';
             app.TypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TypeDropDownValueChanged, true);
             updateSubtypeChoices(app);
@@ -1213,6 +1213,8 @@ classdef pipeline2 < matlab.apps.AppBase
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'processor'), 'processor'));
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'classification'), 'classifier'));
             modules = appendModuleRows(app, modules, pluginModuleRows(app));
+            modules = appendModuleRows(app, modules, ...
+                {'Custom function', 'custom', 'customModule', 'Call a user MATLAB function with declared inputs, outputs and parameters'});
             modules = appendModuleRows(app, modules, customPackageModuleRow(app));
 
             if isempty(modules)
@@ -1225,7 +1227,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function rows = customPackageModuleRow(app) %#ok<INUSD>
-            rows = {'<custom pkg>', 'custom', '', 'Load an external processor/classifier package'};
+            rows = {'<custom pkg>', 'customPackage', '', 'Load an external processor/classifier package'};
         end
 
         function rows = pluginModuleRows(app) %#ok<INUSD>
@@ -1603,6 +1605,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     items = moduleLibraryPackagesForType(app, {'processor'});
                 case 'classifier'
                     items = moduleLibraryPackagesForType(app, {'classifier'});
+                case 'custom'
+                    items = {'customModule'};
                 otherwise
                     items = {typeLabel};
             end
@@ -1675,6 +1679,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 if any(strcmp(app.SubtypeDropDown.Items, pkg))
                     app.SubtypeDropDown.Value = pkg;
                 end
+            elseif strcmpi(moduleType, 'customPackage')
+                setRuntimeStatus(app, 'Add an external package using the module library or Modules menu.');
+                return;
             else
                 app.TypeDropDown.Value = moduleType;
                 updateSubtypeChoices(app);
@@ -1869,6 +1876,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'classifier'
                     nodeType = 'classifier';
                     pkg = subtype;
+                case 'custom'
+                    nodeType = 'custom';
+                    pkg = 'customModule';
                 otherwise
                     nodeType = typeLabel;
             end
@@ -1890,7 +1900,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             nodeType = char(string(modules{row,2}));
             pkg = char(string(modules{row,3}));
-            if strcmpi(nodeType, 'custom')
+            if strcmpi(nodeType, 'customPackage')
                 choice = resolveCustomPackageChoice(app, 'Select custom package');
                 if isempty(choice)
                     nodeType = '';
@@ -1930,7 +1940,7 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(getField(app, data, 'nodeType', '')));
             pkg = char(string(getField(app, data, 'pkg', '')));
             paramsPatch = struct();
-            if strcmpi(nodeType, 'custom')
+            if strcmpi(nodeType, 'customPackage')
                 choice = resolveCustomPackageChoice(app, 'Select custom package');
                 if isempty(choice)
                     return;
@@ -2058,7 +2068,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     continue;
                 end
                 nodeType = char(string(app.AvailableModules{i,2}));
-                if strcmpi(nodeType, 'custom')
+                if strcmpi(nodeType, 'customPackage')
                     continue;
                 end
                 [key, label] = moduleTypeMenuGroup(app, nodeType, pluginMask(i));
@@ -2123,7 +2133,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         key = 'classifier';
                         label = 'Builtin / Classifier';
                     end
-                case 'custom'
+                case {'custom','custompackage'}
                     key = 'custom';
                     label = 'Custom';
                 otherwise
@@ -2145,7 +2155,7 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(app.AvailableModules{idx,2}));
             pkg = char(string(app.AvailableModules{idx,3}));
             name = char(string(app.AvailableModules{idx,1}));
-            if strcmpi(nodeType, 'custom')
+            if any(strcmpi(nodeType, {'custom','customPackage'}))
                 label = name;
             elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 label = nodeType;
@@ -2172,7 +2182,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~ok || isempty(idx)
                 return;
             end
-            if strcmpi(char(string(app.AvailableModules{idx,2})), 'custom')
+            if strcmpi(char(string(app.AvailableModules{idx,2})), 'customPackage')
                 choice = resolveCustomPackageChoice(app, titleText);
                 return;
             end
@@ -2185,7 +2195,7 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(app.AvailableModules{idx,2}));
             pkg = char(string(app.AvailableModules{idx,3}));
             name = char(string(app.AvailableModules{idx,1}));
-            if strcmpi(nodeType, 'custom')
+            if any(strcmpi(nodeType, {'custom','customPackage'}))
                 label = name;
             elseif startsWith(lower(name), 'plugin:')
                 label = [name ' (' nodeType ' / ' pkg ')'];
@@ -2391,6 +2401,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     f = [char(string(pkg)) '.process'];
                 case 'classifier'
                     f = [char(string(pkg)) '.classify'];
+                case 'custom'
+                    f = 'customModule.process';
                 otherwise
                     f = '';
             end
@@ -2451,6 +2463,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 case 'classifier'
                     candidates = {};
+                case 'custom'
+                    candidates = {'customModule.setparam'};
             end
 
             for i = 1:numel(candidates)
@@ -3361,6 +3375,10 @@ classdef pipeline2 < matlab.apps.AppBase
                             'fromPort', firstPort(app, nodes(srcIdx), 'out'), ...
                             'toPort', firstPort(app, nodes(dstIdx), 'in'), ...
                             'condition', '');
+                        if strcmpi(nodes(srcIdx).type, 'custom') || strcmpi(nodes(dstIdx).type, 'custom')
+                            [compatibleEdge, compatible] = preferredGraphEdge(app, nodes(srcIdx), nodes(dstIdx));
+                            if compatible, e = compatibleEdge; end
+                        end
                         edges = appendStruct(app, edges, e); %#ok<AGROW>
                     end
                 end
@@ -13401,6 +13419,23 @@ classdef pipeline2 < matlab.apps.AppBase
             keyLower = lower(char(string(key)));
             enableState = ternary(app, editable, 'on', 'off');
 
+            if strcmp(nodeType, 'custom') && strcmp(keyLower, 'entrypoint')
+                ctrl = uigridlayout(parent, [1 2]);
+                ctrl.ColumnWidth = {'1x', 90};
+                ctrl.RowHeight = {22};
+                ctrl.Padding = [0 0 0 0];
+                edit = uieditfield(ctrl, 'text', 'Value', char(string(value)), 'Enable', enableState);
+                edit.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+                btn = uibutton(ctrl, 'push', 'Text', 'Browse...', 'Enable', enableState);
+                btn.ButtonPushedFcn = @(src,~)browseCustomFunction(app, node, ancestor(src, 'figure'));
+                return;
+            end
+            if strcmp(nodeType, 'custom') && any(strcmp(keyLower, {'parametersjson','argumentsjson'}))
+                ctrl = uieditfield(parent, 'text', 'Value', char(string(value)), 'Enable', enableState);
+                ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+                return;
+            end
+
             if isBooleanParamKey(app, node, key) && isEmptyParamValue(app, value)
                 defaults = defaultNodeParams(app, nodeType, getField(app, node, 'pkg', ''));
                 if isstruct(defaults) && isfield(defaults, key)
@@ -13491,6 +13526,25 @@ classdef pipeline2 < matlab.apps.AppBase
             ctrl.Value = paramValueToDisplay(app, node, key, value);
             ctrl.Enable = enableState;
             ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+        end
+
+        function browseCustomFunction(app, node, dialog)
+            [file, folder] = uigetfile('*.m', 'Select a MATLAB function');
+            if isequal(file, 0), return; end
+            try
+                patch = customModule.referenceForFile(fullfile(folder, file), app.CurrentPipelinePath);
+                idx = find(strcmp({app.Data.nodes.id}, char(string(node.id))), 1);
+                if isempty(idx), return; end
+                app.Data.nodes(idx).params.entryPoint = patch.entryPoint;
+                app.Data.nodes(idx).params.codeFolder = patch.codeFolder;
+                markPipelineDirty(app, true);
+                refreshAfterModelChange(app);
+                if ~isequal(dialog, app.UIFigure) && isvalid(dialog) && isstruct(dialog.UserData)
+                    populateStaticParametersDialogBody(app, dialog.UserData.bodyPanel, char(string(node.id)));
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Custom function', 'Icon', 'error');
+            end
         end
 
         function tf = isEmptyParamValue(app, value)
@@ -13612,6 +13666,8 @@ classdef pipeline2 < matlab.apps.AppBase
             keyLower = lower(char(string(key)));
             choices = {};
             switch nodeType
+                case 'custom'
+                    if strcmp(keyLower, 'callmode'), choices = {'context','arguments'}; end
                 case 'classifier'
                     pkgName = char(string(getField(app, node, 'pkg', '')));
                     [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
@@ -13845,6 +13901,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 (any(strcmpi(keyText, {'outputMode','outputType'})) || ...
                 staticParamAffectsBindings(app, app.Data.nodes(idx), keyText));
             if needsBindingRefresh
+                if strcmpi(nodeType, 'custom') && any(strcmpi(keyText, {'inputPorts','outputPorts'}))
+                    rebuildEdgesFromLayout(app);
+                end
                 updateRuntimeProgress(app, d, 'Rebuilding changed module tab...');
                 rebuildModuleTabForNode(app, idx);
             end
@@ -13909,7 +13968,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 any(strcmpi(keyText, {'backend','temporalVariant'}))) || ...
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'deeplab_pixel_classification') && ...
-                strcmpi(keyText, 'outputType'));
+                strcmpi(keyText, 'outputType')) || ...
+                (strcmpi(nodeType, 'custom') && ...
+                any(strcmpi(keyText, {'inputPorts','outputPorts','argumentsJson','callMode','parametersJson'})));
         end
 
         function data = paramsToTableData(app, node, scope)
@@ -14540,6 +14601,10 @@ classdef pipeline2 < matlab.apps.AppBase
         function out = paramValueToDisplay(app, node, key, value)
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             key = char(string(key));
+            if strcmp(nodeType, 'custom') && (ischar(value) || (isstring(value) && isscalar(value)))
+                out = char(value);
+                return;
+            end
             if iscell(value)
                 out = choiceScalarText(app, value);
             else
@@ -14631,6 +14696,25 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
             keyLower = lower(char(string(key)));
+            if strcmp(nodeType, 'custom')
+                switch keyLower
+                    case 'entrypoint'
+                        txt = 'MATLAB function name, optionally package.function. Context mode expects ctx = function(ctx).';
+                    case 'codefolder'
+                        txt = 'Folder containing the function or its +package. Relative to the saved pipeline folder, then the DetecDiv root. Must be accessible on the executing machine.';
+                    case 'callmode'
+                        txt = 'context: function receives ctx with user settings in ctx.params. arguments: ordered argumentsJson values, with returns assigned to outputPorts in order.';
+                    case 'inputports'
+                        txt = 'Required context fields separated by commas, e.g. roiList, masks. Optional type: features:tableSet. Connected modules share fields with the same name.';
+                    case 'outputports'
+                        txt = 'Output context fields separated by commas. In arguments mode, their order matches MATLAB return values, e.g. tables, files.';
+                    case 'parametersjson'
+                        txt = 'User parameter JSON object, e.g. {"threshold":0.5}. Available in ctx.params or via argument references. A run override replaces this object.';
+                    case 'argumentsjson'
+                        txt = 'Ordered JSON array, e.g. [{"context":"roiList"},{"param":"threshold"},"verbose",true]. Context references must be declared in inputPorts. No MATLAB expressions are evaluated.';
+                end
+                return;
+            end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier')
                 pkgName = char(string(getField(app, node, 'pkg', '')));
                 [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
@@ -15529,6 +15613,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function pipe = buildPipelineStruct(app)
             pipe = struct();
             pipe.name = currentPipelineName(app);
+            pipe.path = app.CurrentPipelinePath;
             pipe.nodes = sanitizeNodeParamsForPipeline(app, app.Data.nodes);
             pipe.nodes = applyRuntimeDerivedNodePolicies(app, pipe.nodes);
             pipe.edges = app.Data.edges;

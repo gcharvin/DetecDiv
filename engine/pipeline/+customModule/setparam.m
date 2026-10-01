@@ -1,0 +1,6 @@
+function p = setparam(varargin)
+% User function configuration, stored verbatim in pipeline JSON.
+p = struct('entryPoint', '', 'codeFolder', '', 'callMode', 'context', ...
+    'inputPorts', '', 'outputPorts', '', 'parametersJson', '{}', ...
+    'argumentsJson', '[]');
+end
