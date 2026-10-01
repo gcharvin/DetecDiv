@@ -45,18 +45,18 @@ and `inputPorts` empty, declare `outputPorts=tables`, and set
 ## Ready-to-copy function template
 
 `engine/pipeline/+customModule/template.m` is an executable template with
-French comments. Its sections explain parameter defaults and validation,
+English comments. Its sections explain parameter defaults and validation,
 pipeline inputs, the user computation, and outputs shared with later nodes.
 
 Copy it to your code folder and rename the first function to match the file:
 
 ```matlab
-copyfile(which('customModule.template'), fullfile(myCodeFolder, 'monAnalyse.m'));
-edit(fullfile(myCodeFolder, 'monAnalyse.m'));
-% First line: function ctx = monAnalyse(ctx)
+copyfile(which('customModule.template'), fullfile(myCodeFolder, 'myAnalysis.m'));
+edit(fullfile(myCodeFolder, 'myAnalysis.m'));
+% First line: function ctx = myAnalysis(ctx)
 ```
 
-In pipeline2, browse to `monAnalyse.m`, keep `callMode=context`, leave
+In pipeline2, browse to `myAnalysis.m`, keep `callMode=context`, leave
 `inputPorts` empty, set `outputPorts=tables` and
 `parametersJson={"value":3,"scale":2}`. The template produces a table with
 `Value=6`; replace the computation with your analysis and adapt its ports.

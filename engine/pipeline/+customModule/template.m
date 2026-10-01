@@ -1,23 +1,23 @@
 function ctx = template(ctx)
-% TEMPLATE Modele de fonction utilisateur pour un module custom DetecDiv.
+% TEMPLATE User function template for a DetecDiv custom module.
 %
-% Copier ce fichier en monAnalyse.m et renommer la fonction ci-dessus :
-%   function ctx = monAnalyse(ctx)
+% Copy this file to myAnalysis.m and rename the function above:
+%   function ctx = myAnalysis(ctx)
 %
-% Configuration dans pipeline2 (Custom function) :
-%   entryPoint     : monAnalyse (ou customModule.template pour essayer)
-%   codeFolder     : dossier contenant monAnalyse.m
+% Configuration in pipeline2 (Custom function):
+%   entryPoint     : myAnalysis (or customModule.template to try this example)
+%   codeFolder     : folder containing myAnalysis.m
 %   callMode       : context
-%   inputPorts     : vide pour cet exemple ; roiList si votre code l'utilise
+%   inputPorts     : empty for this example; roiList if your code uses it
 %   outputPorts    : tables
 %   parametersJson: {"value":3,"scale":2}
 %   argumentsJson : []
 %
-% La fonction est appelee une fois par noeud. Elle retourne le contexte
-% recu, enrichi des sorties declarees ; conserver les autres champs de ctx.
+% The function is called once per node. Return the incoming context with
+% the declared outputs added; preserve the other fields of ctx.
 
-%% 1. Parametres utilisateur (issus de parametersJson)
-% Adapter les valeurs par defaut et les controles a votre analyse.
+%% 1. User parameters (from parametersJson)
+% Adapt the defaults and validation checks to your analysis.
 if ~isfield(ctx, 'params') || isempty(ctx.params)
     ctx.params = struct();
 end
@@ -29,25 +29,26 @@ validateattributes(p.value, {'numeric'}, {'scalar','real','finite'}, ...
 validateattributes(p.scale, {'numeric'}, {'scalar','real','finite'}, ...
     mfilename, 'scale');
 
-%% 2. Entrees du pipeline
-% Declarer chaque champ utilise dans inputPorts et connecter son producteur.
-% Exemple pour une analyse des ROI (decommenter et adapter) :
-% assert(isfield(ctx, 'roiList'), 'monAnalyse:MissingROI', ...
-%     'Une entree roiList est necessaire.');
+%% 2. Pipeline inputs
+% Declare each field used in inputPorts and connect its producer.
+% Example for ROI analysis (uncomment and adapt):
+% assert(isfield(ctx, 'roiList'), 'myAnalysis:MissingROI', ...
+%     'A roiList input is required.');
 % rois = ctx.roiList;
-% Le projet est accessible via ctx.shallow ; les selections peuvent inclure
-% ctx.fovList et ctx.frames. Consulter le contexte effectivement fourni.
+% The project is available through ctx.shallow; selections may include
+% ctx.fovList and ctx.frames. Check the context actually supplied to your node.
 
-%% 3. Votre traitement
-% Remplacer ce calcul par votre code. Pas de GUI requise pour les workers.
+%% 3. Your processing code
+% Replace this calculation with your code. Workers must be able to run it
+% without a GUI.
 value = p.value * p.scale;
 
-%% 4. Sorties accessibles aux noeuds suivants
-% Creer tous les champs declares dans outputPorts, meme si le resultat est
-% vide. Le nom du champ doit correspondre exactement au nom du port.
+%% 4. Outputs available to subsequent nodes
+% Create every field declared in outputPorts, even when the result is empty.
+% Each field name must match its port name exactly.
 ctx.tables = table(value, 'VariableNames', {'Value'});
-% Autres exemples : ctx.dataSeries, ctx.masks, ctx.files, ctx.artifacts.
-% Un resultat dans ctx n'est pas une sauvegarde automatique dans les ROI.
-% Si votre traitement ecrit des fichiers ou modifie le projet, appliquer
-% explicitement la politique fournie dans ctx.io / ctx.executionPolicy.
+% Other examples: ctx.dataSeries, ctx.masks, ctx.files, ctx.artifacts.
+% Returning a result in ctx does not automatically save it in the ROIs.
+% If your code writes files or changes the project, explicitly apply
+% the policy supplied through ctx.io / ctx.executionPolicy.
 end
