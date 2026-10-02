@@ -18,18 +18,34 @@ function [shallowObj, access, info] = detecdiv_hub_resume_project_editing(shallo
         projectMatPath = localProjectMatPath(shallowObj);
     end
     info.projectMatPath = projectMatPath;
-    if isempty(projectMatPath) || exist(projectMatPath, 'file') ~= 2
+    [projectParent, projectName] = fileparts(projectMatPath);
+    projectJsonPath = fullfile(projectParent, [projectName '.json']);
+    if isempty(projectMatPath) || ...
+            (exist(projectMatPath, 'file') ~= 2 && exist(projectJsonPath, 'file') ~= 2)
         error('detecdiv_hub_resume_project_editing:MissingProjectFile', ...
             'Cannot reload the Hub-updated project file: %s', projectMatPath);
     end
 
-    S = load(projectMatPath, 'shallowObj');
-    if ~isfield(S, 'shallowObj') || ~isa(S.shallowObj, 'shallow')
-        error('detecdiv_hub_resume_project_editing:InvalidProjectFile', ...
-            'The project file does not contain a valid shallowObj: %s', projectMatPath);
+    % Match normal project opening: workers update the light JSON manifest
+    % and its FOV sidecars; the legacy MAT snapshot may still be older.
+    % Import directly so a stale base-workspace handle cannot be reused.
+    if exist(projectJsonPath, 'file') == 2
+        [reloadedObj, loadMsg] = shallowProjectImportLight(projectJsonPath, ...
+            'HubPathSettings', opts.hub);
+        if isempty(reloadedObj) || ~isa(reloadedObj, 'shallow')
+            error('detecdiv_hub_resume_project_editing:InvalidProjectFile', ...
+                'Cannot reload project manifest %s: %s', projectJsonPath, loadMsg);
+        end
+        shallowObj = reloadedObj;
+    else
+        S = load(projectMatPath, 'shallowObj');
+        if ~isfield(S, 'shallowObj') || ~isa(S.shallowObj, 'shallow')
+            error('detecdiv_hub_resume_project_editing:InvalidProjectFile', ...
+                'The project file does not contain a valid shallowObj: %s', projectMatPath);
+        end
+        shallowObj = S.shallowObj;
+        shallowObj = detecdiv_paths_localize_project(shallowObj, opts.hub);
     end
-
-    shallowObj = S.shallowObj;
     localRestoreProjectPath(shallowObj, projectMatPath);
     info.reloaded = true;
 
