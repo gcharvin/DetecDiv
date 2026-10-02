@@ -382,9 +382,28 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
 
             try
-                if isstruct(runObj.ctx) && isfield(runObj.ctx,'sel') && isstruct(runObj.ctx.sel) ...
-                        && isfield(runObj.ctx.sel,'fovs') && ~isempty(runObj.ctx.sel.fovs)
-                    app.FovSelectionEditField.Value = valueToDisplay(app, runObj.ctx.sel.fovs);
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'sel') && isstruct(runObj.ctx.sel)
+                    selection = runObj.ctx.sel;
+                    if strcmpi(app.InputSourceDropDown.Value, 'Start from raw data (dataloader)')
+                        % Execution replaces sel.fovs with project FOV indices.
+                        % Restore the original raw-position selection instead.
+                        if isfield(selection,'sourceFovs') && ~isempty(selection.sourceFovs)
+                            app.FovSelectionEditField.Value = valueToDisplay(app, selection.sourceFovs);
+                        elseif isfield(runObj.ctx,'run') && isstruct(runObj.ctx.run) ...
+                                && isfield(runObj.ctx.run,'sourceFovIndex') && ~isempty(runObj.ctx.run.sourceFovIndex)
+                            app.FovSelectionEditField.Value = valueToDisplay(app, runObj.ctx.run.sourceFovIndex);
+                        elseif isfield(runObj.ctx,'dataLoader') && isstruct(runObj.ctx.dataLoader) ...
+                                && isfield(runObj.ctx.dataLoader,'positionIdx') && ~isempty(runObj.ctx.dataLoader.positionIdx)
+                            app.FovSelectionEditField.Value = valueToDisplay(app, runObj.ctx.dataLoader.positionIdx);
+                        elseif isfield(selection,'fovs') && ~isempty(selection.fovs) ...
+                                && ~(isfield(runObj.ctx,'dataLoader') && isstruct(runObj.ctx.dataLoader) ...
+                                && isfield(runObj.ctx.dataLoader,'loadedFovIndices'))
+                            % A run that has not executed yet still stores raw positions here.
+                            app.FovSelectionEditField.Value = valueToDisplay(app, selection.fovs);
+                        end
+                    elseif isfield(selection,'fovs') && ~isempty(selection.fovs)
+                        app.FovSelectionEditField.Value = valueToDisplay(app, selection.fovs);
+                    end
                 end
             catch
             end
@@ -2802,12 +2821,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             src = char(string(app.InputSourceDropDown.Value));
             switch lower(src)
                 case 'start from raw data (dataloader)'
-                    app.FovSelectionEditFieldLabel.Text = 'Selection';
-                    app.FovSelectionEditField.Placeholder = 'Not used when starting from raw data';
+                    app.FovSelectionEditFieldLabel.Text = 'Raw positions';
+                    app.FovSelectionEditField.Placeholder = 'Configured in the dataloader node';
                     app.FovSelectionEditField.Enable = 'off';
                     selTip = { ...
-                        'Not used for this run source.', ...
-                        'When starting from the dataloader, the pipeline decides the FOV set itself.'};
+                        'Shows the raw positions selected for a saved run.', ...
+                        'Edit the dataloader node to change the raw-position selection.'};
                 case 'reuse existing project fovs'
                     app.FovSelectionEditFieldLabel.Text = 'Project FOVs';
                     app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
