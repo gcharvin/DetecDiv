@@ -20285,6 +20285,7 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             ctx = runObj.ctx;
+            app.Data.nodes = pipelineRestoreRoiPatternsFromRun(app.Data.nodes, ctx);
             [restoredNodes, restoredLinks] = ...
                 pipelineRestoreClassifierLinksFromRun(app.Data.nodes,ctx);
             if ~isempty(restoredLinks)
@@ -20343,7 +20344,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     updateHubRuntimeControlsVisibility(app);
                 end
                 if isfield(ctx, 'sel') && isstruct(ctx.sel)
-                    if isfield(ctx.sel, 'fovs'), setRuntimeValuePreserveParse(app, 'fovs', selectionToText(app, ctx.sel.fovs)); end
+                    if strcmpi(runtimeInputModeFromRunContext(app, ctx), 'raw_dataloader') ...
+                            && isfield(ctx.sel, 'sourceFovs') && ~isempty(ctx.sel.sourceFovs)
+                        setRuntimeValuePreserveParse(app, 'fovs', selectionToText(app, ctx.sel.sourceFovs));
+                    elseif isfield(ctx.sel, 'fovs')
+                        setRuntimeValuePreserveParse(app, 'fovs', selectionToText(app, ctx.sel.fovs));
+                    end
                     if isfield(ctx.sel, 'frames'), setRuntimeValuePreserveParse(app, 'frames', selectionToText(app, ctx.sel.frames)); end
                     if isfield(ctx.sel, 'rois'), setRuntimeValuePreserveParse(app, 'rois', selectionToText(app, ctx.sel.rois)); end
                 end

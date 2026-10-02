@@ -3509,6 +3509,7 @@ function rois = selectRoisForNode(ctx, node)
         rois = filterRoisBySelectionVector(rois, ctx.sel.rois);
     end
 
+    rois = pipelineScopeRoisToSelectedFovs(rois, ctx);
     p = getfielddefault(node, 'params', struct());
     if isstruct(p) && isfield(p,'roiList') && ~isempty(p.roiList) && ~isempty(rois)
         idx = resolveIndexSelectionLocal(p.roiList, numel(rois));
