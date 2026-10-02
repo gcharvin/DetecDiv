@@ -20315,9 +20315,6 @@ classdef pipeline2 < matlab.apps.AppBase
                     if isfield(ctx.run, 'selectedNodes')
                         applySelectedRunNodes(app, ctx.run.selectedNodes);
                     end
-                    if isfield(ctx.run, 'rawDataPath')
-                        setRuntimeValuePreserveParse(app, 'rawDataPath', ctx.run.rawDataPath);
-                    end
                     if isfield(ctx.run, 'projectPath')
                         setRuntimeValuePreserveParse(app, 'projectPath', ctx.run.projectPath);
                     end
@@ -20376,6 +20373,15 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 bindProjectFromPath(app, [regexprep(projectPath, '\.mat$', '') '.mat'], false);
+            end
+            rawDataPath = pipelineRunRawDataPath(ctx);
+            if ~isempty(rawDataPath)
+                localRawPath = hubRemotePathToLocalPath(app, rawDataPath);
+                if ~isempty(localRawPath)
+                    rawDataPath = localRawPath;
+                end
+                setRuntimeValuePreserveParse(app, 'rawDataPath', rawDataPath);
+                app.RuntimeValues.rawDataPathActive = rawDataPath;
             end
             app.RuntimeInventoryRefreshSuspended = wasSuspended;
             hydrateRuntimeInventoryFromRunContext(app, ctx);
@@ -20506,12 +20512,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            rawDataPath = '';
-            if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'rawDataPath')
-                rawDataPath = strtrim(char(string(ctx.run.rawDataPath)));
-            end
-            if isempty(rawDataPath) && isfield(ctx, 'rawDataPath')
-                rawDataPath = strtrim(char(string(ctx.rawDataPath)));
+            rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
+            if isempty(rawDataPath)
+                rawDataPath = pipelineRunRawDataPath(ctx);
             end
             if isempty(rawDataPath) || ~(exist(rawDataPath, 'dir') == 7 || exist(rawDataPath, 'file') == 2)
                 return;
