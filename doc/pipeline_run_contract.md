@@ -43,6 +43,16 @@ The payload stored in the hub for a `pipeline_run` job should map directly to th
 - GPU policy
 - execution target
 
+Pattern ROI nodes must submit their complete detection settings (including
+the image patch and its source metadata) as node overrides. A queued job must
+not obtain a different pattern after a shared pipeline template is edited.
+Preview rectangles are display state, not a substitute for these settings.
+Changing a pattern or threshold invalidates its preview; browsing another
+FOV/frame and closing the editor must preserve the captured source patch.
+ROI detection returns only the selected project FOVs. A generation attempt
+with no detections and no intentionally reused ROIs fails explicitly instead
+of continuing against unrelated or stale project ROIs.
+
 The hub should persist and transport this payload, not reinterpret pipeline logic.
 
 ## 3. Pipeline identity

@@ -51,6 +51,8 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
 
             if isfield(params, 'patternList') && isstruct(params.patternList) && ~isempty(params.patternList)
                 app.Data.patternList = params.patternList;
+            elseif isfield(params, 'pattern') && isstruct(params.pattern) && ~isempty(params.pattern)
+                app.Data.patternList = params.pattern;
             else
                 app.Data.patternList = struct([]);
             end
@@ -462,13 +464,23 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
 
             pat = getSelectedPattern(app);
             if ~isempty(pat)
+                % Keep the single-pattern compatibility field consistent
+                % with the selected list instead of the original patch.
+                if numel(app.Data.patternList) == 1
+                    params.pattern = pat;
+                else
+                    params.pattern = struct([]);
+                end
                 try
                     if isfield(pat, 'crop')
                         params.crop = pat.crop;
                     end
                 catch
                 end
+            else
+                params.pattern = struct([]);
             end
+            params = pipelineInvalidateRoiPatternPreview(params);
         end
 
         function idx = promptTargetPositions(app)
@@ -564,12 +576,11 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
         end
 
         function closeFigure(app)
+            % The caller reads Result/Cancelled after uiwait returns and
+            % owns deletion. Deleting this app here loses the saved pattern.
+            app.UIFigure.Visible = 'off';
             try
                 uiresume(app.UIFigure);
-            catch
-            end
-            try
-                delete(app.UIFigure);
             catch
             end
         end

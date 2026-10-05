@@ -90,7 +90,7 @@ function ctx = runCore(ctx)
         detecdiv_check_cancel(ctx, 'roiPattern before test');
         detections = runPatternTest(fovList, fovIdx, ctx, p, patternList);
         ctx.fovList = fovList;
-        ctx.roiList = collectROIs(fovList);
+        ctx.roiList = collectROIs(fovList(fovIdx));
         ctx.patternList = patternList;
         ctx.patternDetection = detections;
         ctx.roiPattern = p;
@@ -121,11 +121,12 @@ function ctx = runCore(ctx)
 
     if isempty(fovIdxToProcess)
         ctx.fovList = fovList;
-        ctx.roiList = collectROIs(fovList);
+        ctx.roiList = collectROIs(fovList(fovIdx));
         ctx.patternList = patternList;
         return;
     end
 
+    detectionCounts = zeros(1, numel(fovIdxToProcess));
     for k = 1:numel(fovIdxToProcess)
         i = fovIdxToProcess(k);
         detecdiv_check_cancel(ctx, sprintf('roiPattern before FOV %d/%d', k, numel(fovIdxToProcess)));
@@ -136,17 +137,21 @@ function ctx = runCore(ctx)
             detecdiv_check_cancel(ctx, sprintf('roiPattern before patch FOV %d', i));
             [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p, ctx);
             detecdiv_check_cancel(ctx, sprintf('roiPattern before identify FOV %d', i));
-            identifyROIsLocal('FOV', currentFov, ...
+            detections = identifyROIsLocal('FOV', currentFov, ...
                 'Frames', refFrame, ...
                 'Threshold', p.threshold, ...
                 'Pattern', pattimg, ...
                 'Crop', crop, ...
                 'Channel', chanIdx, ...
                 'Keep', p.keepExisting);
+            for d = 1:numel(detections)
+                detectionCounts(k) = detectionCounts(k) + size(detections(d).scaled, 1);
+            end
             detecdiv_check_cancel(ctx, sprintf('roiPattern after identify FOV %d', i));
         elseif p.fallbackFullFrame
             detecdiv_check_cancel(ctx, sprintf('roiPattern fallback FOV %d', i));
             applyFullFrameFallback(currentFov, p);
+            detectionCounts(k) = numel(collectROIs(currentFov));
         else
             error('roiPattern.runCore:NoPattern', 'No pattern available for FOV %d.', i);
         end
@@ -156,11 +161,17 @@ function ctx = runCore(ctx)
             if n == 1 && isempty(currentFov.roi(1).id)
                 n = 0;
             end
-            if n > 0
+            if n > 0 && detectionCounts(k) > 0
                 progressMarkLocal(shallowObj, ctx, 'roiPattern', i, 1:n);
             end
         catch
         end
+    end
+
+    if ~any(detectionCounts > 0) && (~p.keepExisting || isempty(collectROIs(fovList(fovIdx))))
+        error('roiPattern:NoDetections', ...
+            ['No ROIs were detected in the selected FOVs. Check the saved ' ...
+             'pattern, reference frame, channel and threshold before rerunning.']);
     end
 
     if saveProgress && ~isempty(shallowObj)
@@ -171,7 +182,11 @@ function ctx = runCore(ctx)
     end
 
     ctx.fovList = fovList;
-    ctx.roiList = collectROIs(fovList);
+    outputFovIdx = fovIdx;
+    if ~p.keepExisting
+        outputFovIdx = setdiff(outputFovIdx, fovIdxToProcess(detectionCounts == 0), 'stable');
+    end
+    ctx.roiList = collectROIs(fovList(outputFovIdx));
     ctx.patternList = patternList;
     ctx.roiPattern = p;
     ctx.params = p;
@@ -295,11 +310,6 @@ end
 function patternList = normalizePatternList(ctx, p, shallowObj, fovList)
 patternList = struct([]);
 
-if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
-    patternList = ctx.pattern;
-    return;
-end
-
 if isfield(p,'pattern') && isstruct(p.pattern) && hasValidPattern(p.pattern)
     patternList = p.pattern;
     return;
@@ -307,6 +317,11 @@ end
 
 if isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList)
     patternList = p.patternList;
+    return;
+end
+
+if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
+    patternList = ctx.pattern;
     return;
 end
 
@@ -340,7 +355,7 @@ end
 function pattern = selectPatternForFov(fovObj, fovIndex, ctx, p, patternList)
 pattern = struct();
 
-if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
+if isempty(patternList) && isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
     pattern = ctx.pattern;
     return;
 end
@@ -414,6 +429,9 @@ function roiList = collectROIs(fovList)
     roiList = [];
     for i = 1:numel(fovList)
         r = fovList(i).roi;
+        if numel(r) == 1 && isempty(r(1).id)
+            continue;
+        end
         if ~isempty(r)
             roiList = [roiList r(:)']; %#ok<AGROW>
         end

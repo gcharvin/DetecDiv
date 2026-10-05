@@ -110,6 +110,8 @@ classdef workflow2 < matlab.apps.AppBase
 
         PreviewRoiPositions double = zeros(0,4)
 
+        PatternPreviewConfig struct = struct()
+
         PendingManualRect double = zeros(0,4)
 
         ManualRoiRecords struct = repmat(struct('fovIndex', [], 'rect', []), 0, 1)
@@ -690,6 +692,9 @@ classdef workflow2 < matlab.apps.AppBase
                 oldValue = [];
             end
             params.(key) = app.parseStaticParamValue(value, oldValue);
+            if strcmpi(mode, 'roiPattern') && ~isequaln(params.(key), oldValue)
+                params = app.invalidatePatternPreview(params);
+            end
             if strcmpi(mode, 'roiGrid') && strcmpi(key, 'gridCount')
                 try
                     params.gridCount = max(1, round(double(params.gridCount(1))));
@@ -792,9 +797,14 @@ classdef workflow2 < matlab.apps.AppBase
             end
 
             params = app.Pipeline.nodes(idx).params;
+            if ~isequaln(params.threshold, app.RoiThresholdEditField.Value)
+                params = app.invalidatePatternPreview(params);
+            end
             params.threshold = app.RoiThresholdEditField.Value;
             app.Pipeline.nodes(idx).params = params;
             app.markDirty(true);
+            app.refreshRoiCandidateTable();
+            app.renderCurrentFrame();
 
         end
 
@@ -979,6 +989,9 @@ classdef workflow2 < matlab.apps.AppBase
             end
 
             app.Pipeline.nodes(idx).params = app.mergeStructOverride(app.Pipeline.nodes(idx).params, app.StartupParams);
+            if strcmpi(mode, 'roiPattern')
+                app.Pipeline.nodes(idx).params = app.invalidatePatternPreview(app.Pipeline.nodes(idx).params);
+            end
 
         end
 
@@ -5950,7 +5963,19 @@ classdef workflow2 < matlab.apps.AppBase
 
                 else
 
-                    app.createPatternEditor(crop);
+                    idx = app.findNodeIndex('roiPattern');
+                    pat = app.Pipeline.nodes(idx).params.pattern;
+                    sourceMatches = true;
+                    if isfield(pat, 'fovId') && ~isempty(pat.fovId)
+                        sourceMatches = strcmp(char(string(pat.fovId)), char(string(app.Project.fov(app.SelectedFov).id)));
+                    elseif isfield(pat, 'fovIndex') && ~isempty(pat.fovIndex)
+                        sourceMatches = isequal(pat.fovIndex, app.SelectedFov);
+                    end
+                    if sourceMatches
+                        app.createPatternEditor(crop);
+                    else
+                        app.clearPatternEditor();
+                    end
 
                 end
 
@@ -6256,6 +6281,7 @@ classdef workflow2 < matlab.apps.AppBase
             end
 
             params = app.Pipeline.nodes(idx).params;
+            oldConfig = pipelineRoiPatternPreviewConfig(params);
 
             pat = struct();
 
@@ -6341,6 +6367,9 @@ classdef workflow2 < matlab.apps.AppBase
 
             if isfield(params,'fovIndex'), params.fovIndex = app.SelectedFov; end
 
+            if ~isequaln(oldConfig, pipelineRoiPatternPreviewConfig(params))
+                params = app.invalidatePatternPreview(params);
+            end
 
 
             app.Pipeline.nodes(idx).params = params;
@@ -6892,6 +6921,8 @@ classdef workflow2 < matlab.apps.AppBase
 
             try
 
+                params = app.Pipeline.nodes(idx).params;
+                app.Pipeline.nodes(idx).params = app.invalidatePatternPreview(params);
                 out = app.runPatternDetection(fovIndex, true);
 
                 counts = zeros(1, numel(fovIndex));
@@ -6962,6 +6993,7 @@ classdef workflow2 < matlab.apps.AppBase
 
                 end
 
+                app.PatternPreviewConfig = pipelineRoiPatternPreviewConfig(app.Pipeline.nodes(idx).params);
                 lines = arrayfun(@(k,c) sprintf('FOV %d: %d ROI(s)', k, c), fovIndex, counts, 'UniformOutput', false);
 
                 uialert(app.UIFigure, strjoin(lines, newline), 'ROI pattern test results', 'Icon', 'info');
@@ -8021,12 +8053,15 @@ classdef workflow2 < matlab.apps.AppBase
 
             end
 
-            [chanIdx, chanName] = app.getSelectedReferenceChannel();
-
-            params.fovIndex = app.SelectedFov;
-            params.referenceFrame = app.SelectedFrame;
-            params.channelIndex = chanIdx;
-            params.channel = chanName;
+            % Browsing preview targets must not recapture the pattern from
+            % the displayed FOV/frame/channel when closing the editor.
+            if ~strcmpi(mode, 'roiPattern')
+                [chanIdx, chanName] = app.getSelectedReferenceChannel();
+                params.fovIndex = app.SelectedFov;
+                params.referenceFrame = app.SelectedFrame;
+                params.channelIndex = chanIdx;
+                params.channel = chanName;
+            end
 
             switch lower(char(string(mode)))
 
@@ -8092,29 +8127,13 @@ classdef workflow2 < matlab.apps.AppBase
                     end
 
                 case 'roipattern'
-
-                    if ~isempty(app.PatternHandle)
-
-                        try
-
-                            pos = double(app.PatternHandle.Position);
-                            app.upsertPattern(pos);
-                            idx = app.findNodeIndex('roiPattern');
-
-                            if ~isempty(idx)
-
-                                params = app.Pipeline.nodes(idx).params;
-
-                            end
-
-                        catch
-
-                        end
-
+                    if ~isequaln(app.PatternPreviewConfig, pipelineRoiPatternPreviewConfig(params))
+                        params = app.invalidatePatternPreview(params);
                     end
 
                     app.syncCandidateStateFromCurrentMode();
                     selectedRects = app.selectedCandidateRects();
+                    params = pipelineInvalidateRoiPatternPreview(params);
                     if ~isempty(selectedRects)
                         params.candidateRects = round(double(selectedRects(:,1:4)));
                         params.previewRects = params.candidateRects;
@@ -8140,6 +8159,16 @@ classdef workflow2 < matlab.apps.AppBase
 
             end
 
+        end
+
+        function params = invalidatePatternPreview(app, params)
+            params = pipelineInvalidateRoiPatternPreview(params);
+            app.PatternPreviewConfig = struct();
+            app.PreviewRoiPositions = zeros(0,4);
+            app.RoiCandidateRects = zeros(0,4);
+            app.RoiCandidateSelected = false(0,1);
+            app.RoiCandidateSource = {};
+            app.SelectedCandidateRow = NaN;
         end
 
         function rects = selectedCandidateRects(app)

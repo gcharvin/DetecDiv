@@ -17031,6 +17031,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 nodeParams.(matlab.lang.makeValidName(nodeId)) = params;
             end
 
+            nodeParams = pipelineSnapshotRoiPatternOverrides(app.Data.nodes, nodeParams);
             rawDataPath = effectiveRuntimeRawDataPath(app);
             useProjectSources = runtimeShouldUseExistingProjectSources(app);
             for i = 1:numel(app.Data.nodes)
