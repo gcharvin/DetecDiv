@@ -34,7 +34,8 @@ try
     ok = true;
 catch
     message = ['Use an RGB triplet between 0 and 1, or a colormap name: ' ...
-        'parula, jet, turbo, hot, gray, bone, copper, pink, spring, summer, autumn, winter, cool, hsv.'];
+        'parula, parula2green, jet, turbo, hot, gray, bone, copper, pink, ' ...
+        'spring, summer, autumn, winter, cool, hsv.'];
 end
 end
 

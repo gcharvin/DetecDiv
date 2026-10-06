@@ -1124,14 +1124,16 @@ tableData{i, 4} = sprintf('%.0f %.0f', ...
 
                 % Colonne "Auto" : par défaut, "Auto" est désactivé
                 tableData{i, 7} = false;
-                tableData{i, 8} = selectedROI.display.log(chIndex);
+                tableData{i, 8} = logical(selectedROI.display.log(chIndex));
 
             end
 
             % Mettre à jour la table et ses propriétés
             app.UIChannelTable.Data = tableData;
             app.UIChannelTable.ColumnName = {'Display', 'Name', 'Scale', 'Levels', 'RGB', 'Weight', 'Auto','Log'};
-            app.UIChannelTable.ColumnWidth = {70, 200, 55, 70, 70, 70, 50, 50};
+            app.UIChannelTable.ColumnWidth = {70, 130, 55, 70, 70, 70, 50, 50};
+            app.UIChannelTable.ColumnFormat = ...
+                {'logical', 'char', 'logical', 'char', 'char', 'char', 'logical', 'logical'};
             % Rendre certaines colonnes éditables (ici Display, Levels, RGB, Weight, Auto)
             app.UIChannelTable.ColumnEditable = [true, true, true, true, true, true, true, true];
 
@@ -1303,7 +1305,7 @@ case 4
 
                  
                         % Appliquer un auto-ajustement des niveaux
-                       selectedROI.display.log(chIndex) = event.NewData;
+                       selectedROI.display.log(chIndex) = logical(event.NewData);
                        % app.displayROIChannels(); % Mettre à jour la table
                   %  end
 
@@ -1543,12 +1545,14 @@ case 4
                 %   end
                 tableData{i, 6} = sprintf('%.2f', selectedROI.display.alpha(chanIndex));
 
-                tableData{i, 8} =  selectedROI.display.log(chanIndex);
+                tableData{i, 8} = logical(selectedROI.display.log(chanIndex));
 
             end
 
             % Mettre à jour les données de la table
             app.UIChannelTable.Data = tableData;
+            app.UIChannelTable.ColumnFormat = ...
+                {'logical', 'char', 'logical', 'char', 'char', 'char', 'logical', 'logical'};
             score_display(app, 'refresh');
         end
 
@@ -8550,7 +8554,8 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
             % Create UIChannelTable
             app.UIChannelTable = uitable(app.DisplaysettingsPanel);
             app.UIChannelTable.ColumnName = {'Display'; 'Name'; 'Scale'; 'Levels'; 'RGB'; 'Weight'; 'Auto'; 'Log'};
-            app.UIChannelTable.ColumnWidth = {70, 200, 55, 70, 70, 70, 50, 50};
+            app.UIChannelTable.ColumnWidth = {70, 130, 55, 70, 70, 70, 50, 50};
+            app.UIChannelTable.ColumnFormat = {'logical', 'char', 'logical', 'char', 'char', 'char', 'logical', 'logical'};
             app.UIChannelTable.RowName = {};
             app.UIChannelTable.SelectionChangedFcn = createCallbackFcn(app, @UIChannelTableSelectionChanged, true);
             app.UIChannelTable.FontSize = 10;
