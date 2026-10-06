@@ -51,6 +51,8 @@ function testPerfectAnchorHasHighConfidence(testCase)
 f = fov();
 [~,drift,score] = f.computeDrift('images',ref,'method','robust');
 verifyGreaterThan(testCase,score,10);
+verifyGreaterThan(testCase,drift.anchorCorrelation,.99);
+verifyTrue(testCase,drift.accepted);
 verifyEqual(testCase,drift.x,0,'AbsTol',1e-8);
 verifyEqual(testCase,drift.y,0,'AbsTol',1e-8);
 verifyEqual(testCase,drift.method,'robust');
@@ -68,6 +70,10 @@ verifyEqual(testCase,next.x(5),first.x(4));
 verifyEqual(testCase,next.y(5),first.y(4));
 verifyEqual(testCase,next.frames,1:5);
 verifyEqual(testCase,next.score(1:4),first.score(1:4));
+verifyEqual(testCase,next.consensusCount(1:4),first.consensusCount(1:4));
+verifyEqual(testCase,next.consensusSpread(1:4),first.consensusSpread(1:4));
+verifyEqual(testCase,next.accepted(1:4),first.accepted(1:4));
+verifyEqual(testCase,next.anchorCorrelation(1:4),first.anchorCorrelation(1:4));
 end
 
 function testAbsoluteJumpIsRejectedAtBlockBoundary(testCase)
@@ -84,8 +90,8 @@ end
 function testCompactLegacyHistoryIsNormalized(testCase)
 [~,~,~,ref] = syntheticTranslatedSequence();
 f = fov();
-f.drift = struct('frames',[11 12],'x',[-1 -2],'y',[-3 -4], ...
-    'score',[15 16]);
+f.drift = struct('frames',[11;12],'x',[-1;-2],'y',[-3;-4], ...
+    'score',[15;16]);
 [~,next] = f.computeDrift('images',zeros(size(ref),'uint16'), ...
     'framesid',13,'refimage',ref,'method','robust');
 verifyEqual(testCase,next.frames,[11 12 13]);
@@ -96,6 +102,9 @@ end
 
 function testExtractorPreservesHistoryAcrossMemoryBlocks(testCase)
 [images,expectedRow,expectedCol] = syntheticTranslatedSequence();
+images=repmat(images,1,1,1,6);
+expectedRow=repmat(expectedRow,1,6);
+expectedCol=repmat(expectedCol,1,6);
 folder = tempname; mkdir(folder);
 cleanup = onCleanup(@()rmdir(folder,'s')); %#ok<NASGU>
 for k=1:size(images,4)
@@ -108,15 +117,20 @@ f.roi=roi('synthetic_1',[30 30 60 60]);
 s=shallow(); s.fov=f; s.io=struct('path',folder,'file','project');
 frameBytes=256*256*2; driftBytes=256*256*128;
 available=roiExtract.availableMemoryBytes();
-% Exercise the real streaming path with two frames per block, without large
-% synthetic TIFFs or modifying the process's actual RAM allocation.
-shareCount=max(1,floor(available/(driftBytes+4*2.5*frameBytes)));
+% Force several small streaming blocks while tolerating a 50% drop in free
+% RAM between probes. The extractor's production memory guard stays active.
+shareCount=max(1,floor(.5*available/(driftBytes+4*2.5*frameBytes)));
+blockCount=0;
 s.extractAllROICrops('MemoryOnly',true,'MemoryShareCount',shareCount, ...
-    'DriftMethod','robust','DriftDebug',false);
+    'DriftMethod','robust','DriftDebug',false,'ProgressCallback',@trackBlocks);
+verifyGreaterThan(testCase,blockCount,1);
 verifyEqual(testCase,f.drift.frames,1:size(images,4));
 verifyEqual(testCase,numel(f.drift.score),size(images,4));
 verifyLessThan(testCase,max(abs(f.drift.x-expectedRow)),0.75);
 verifyLessThan(testCase,max(abs(f.drift.y-expectedCol)),0.75);
+    function trackBlocks(progress)
+        if isfield(progress,'blockIndex'), blockCount=max(blockCount,progress.blockIndex); end
+    end
 end
 
 function [images, expectedRow, expectedCol, ref] = syntheticTranslatedSequence()

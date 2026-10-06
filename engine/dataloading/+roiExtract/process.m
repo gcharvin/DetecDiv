@@ -1684,6 +1684,12 @@ function args = buildExtractArgs(p, progressDlg, ctx)
     if isfield(p,'driftMaxShift') && ~isempty(p.driftMaxShift)
         args = [args {'DriftMaxShift'} {p.driftMaxShift}];
     end
+    if isfield(p,'driftMaxStep') && ~isempty(p.driftMaxStep)
+        args = [args {'DriftMaxStep'} {p.driftMaxStep}];
+    end
+    if isfield(p,'driftPsrMin') && ~isempty(p.driftPsrMin)
+        args = [args {'DriftPsrMin'} {p.driftPsrMin}];
+    end
     if isfield(p,'scale') && ~isempty(p.scale)
         args = [args {'Scale'} {p.scale}];
     end

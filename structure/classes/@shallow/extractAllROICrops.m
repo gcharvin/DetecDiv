@@ -629,6 +629,7 @@ for kF = 1:numel(FOVIndex)
     % Fixed-anchor methods reuse exactly the same raw reference in every
     % memory block. It is populated from the first loaded block below.
     driftReferenceImage = [];
+    driftPreviousImage = [];
 
     % --------- Boucle bloc par bloc ---------
     fs = 1;
@@ -805,10 +806,14 @@ for kF = 1:numel(FOVIndex)
 
 
 
+            nextDriftPreviousImage=blockImg(:,:,driftLocal,end);
             [blockImg, driftBlk] = fovObj.computeDrift( ...
                 'images', blockImg, ...
                 'framesid', frameBatch, ...
+                'previousimage',driftPreviousImage, ...
                 driftArgs{:});
+            driftPreviousImage=nextDriftPreviousImage;
+            clear nextDriftPreviousImage
             checkExtractionCancellation(CancelTokenFile, hprogressbar, sprintf('after block %d/%d drift', ib, nBlocks));
 
 
@@ -1046,6 +1051,23 @@ for kF = 1:numel(FOVIndex)
     end
 
     pbBlk.close();
+    if CorrectDrift && isstruct(fovObj.drift) && isfield(fovObj.drift,'accepted')
+        rejectedFrames=framesToDo(~fovObj.drift.accepted(framesToDo));
+        if ~isempty(rejectedFrames)
+            warning('extractAllROICrops:DriftHeld', ...
+                ['FOV %s: drift held on %d/%d requested frames. ' ...
+                 'Inspect drift.decision and drift.estimation at frame IDs %s.'], ...
+                fovObj.id,numel(rejectedFrames),numel(framesToDo),mat2str(rejectedFrames));
+        end
+        provisional=framesToDo(fovObj.drift.accepted(framesToDo) & ...
+            ~fovObj.drift.anchorValidated(framesToDo));
+        if strcmpi(DriftMethod,'robust') && ~isempty(provisional)
+            warning('extractAllROICrops:DriftTemporalFallback', ...
+                ['FOV %s: %d/%d frames use validated temporal motion without ' ...
+                 'anchor confirmation. Inspect drift.anchorValidated and drift.temporalCorrelation.'], ...
+                fovObj.id,numel(provisional),numel(framesToDo));
+        end
+    end
     pbFOV.update(kF, sprintf('FOV %d/%d terminé', displayFOVIndex, displayFOVTotal));
     emitExtractionProgress(ProgressCallback, struct( ...
         'value', 1, 'status', 'running', 'phase', 'fov_done', ...
