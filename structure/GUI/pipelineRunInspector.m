@@ -26,6 +26,7 @@ function fig = pipelineRunInspector(runObj, shallowObj)
     eventsTab = uitab(tabs, 'Title', 'Events');
     paramsTab = uitab(tabs, 'Title', 'Parameters');
     nodesTab = uitab(tabs, 'Title', 'Nodes');
+    scopeTab = uitab(tabs, 'Title', 'Execution scope');
 
     summaryArea = uitextarea(summaryTab, 'Editable', 'off', ...
         'Position', [10 10 930 510]);
@@ -55,32 +56,49 @@ function fig = pipelineRunInspector(runObj, shallowObj)
         'Position', [10 10 930 510]);
     nodeTable.Data = buildNodeRows(runObj);
 
+    scopeGrid = uigridlayout(scopeTab, [2 1]);
+    scopeGrid.RowHeight = {'1x', 54};
+    scopeGrid.ColumnWidth = {'1x'};
+    scopeGrid.Padding = [10 10 10 10];
+    scopeTable = uitable(scopeGrid, ...
+        'ColumnName', {'Selection', 'Recorded value', 'Interpretation'}, ...
+        'RowName', {}, ...
+        'ColumnWidth', {140, 380, 400});
+    scopeTable.Layout.Row = 1;
+    scopeTable.Layout.Column = 1;
+    scopeTable.Data = buildScopeRows(runObj);
+    scopeNote = uilabel(scopeGrid, ...
+        'Text', ['Empty selections mean all items. Per-node frame overrides are listed in Parameters.'], ...
+        'WordWrap', 'on');
+    scopeNote.Layout.Row = 2;
+    scopeNote.Layout.Column = 1;
+
     btnGrid = uigridlayout(grid, [1 8]);
     btnGrid.ColumnWidth = {110, 100, 110, 120, 120, 130, 130, '1x'};
     btnGrid.Padding = [0 0 0 0];
 
     refreshTimer = timer('ExecutionMode', 'fixedSpacing', 'Period', 2, ...
         'TimerFcn', @(~,~)safeRefreshInspector(runObj, shallowObj, ...
-        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable));
+            headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable));
     fig.CloseRequestFcn = @(~,~)closeInspector(fig, refreshTimer);
 
     autoRefreshBtn = uibutton(btnGrid, 'state', 'Text', 'Auto refresh');
     autoRefreshBtn.Layout.Row = 1;
     autoRefreshBtn.Layout.Column = 1;
     autoRefreshBtn.ValueChangedFcn = @(src,~)toggleAutoRefresh(src, refreshTimer, runObj, shallowObj, ...
-        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
 
     refreshBtn = uibutton(btnGrid, 'push', 'Text', 'Refresh');
     refreshBtn.Layout.Row = 1;
     refreshBtn.Layout.Column = 2;
     refreshBtn.ButtonPushedFcn = @(~,~)refreshInspector(runObj, shallowObj, ...
-        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
 
     writeReviewBtn = uibutton(btnGrid, 'push', 'Text', 'Write review');
     writeReviewBtn.Layout.Row = 1;
     writeReviewBtn.Layout.Column = 3;
     writeReviewBtn.ButtonPushedFcn = @(~,~)writeReviewAndRefresh(runObj, shallowObj, ...
-        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
 
     openReviewBtn = uibutton(btnGrid, 'push', 'Text', 'Open review');
     openReviewBtn.Layout.Row = 1;
@@ -221,6 +239,112 @@ function rows = buildParamRows(runObj)
     end
 end
 
+function rows = buildScopeRows(runObj)
+    rows = cell(0, 3);
+    try
+        ctx = runObj.ctx;
+    catch
+        ctx = struct();
+    end
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    sel = getFieldOr(ctx, 'sel', struct());
+    runCfg = getFieldOr(ctx, 'run', struct());
+
+    [value, found] = recordedSelection(sel, runCfg, {'fovs'}, {'fovIndex'});
+    rows(end+1,:) = scopeRow('FOVs', value, found, ...
+        'Indices of FOVs selected for this run.'); %#ok<AGROW>
+
+    [value, found] = recordedSelection(sel, runCfg, {'rois'}, {'rois'});
+    rows(end+1,:) = scopeRow('ROIs', value, found, ...
+        'ROI indices selected within each selected FOV.'); %#ok<AGROW>
+
+    [value, found] = recordedSelection(sel, runCfg, {'frames'}, {'frames'});
+    rows(end+1,:) = scopeRow('Frames', value, found, ...
+        'Frame indices selected for the run.'); %#ok<AGROW>
+
+    if isstruct(sel) && isfield(sel, 'sourceFovs')
+        rows(end+1,:) = scopeRow('Source FOVs', sel.sourceFovs, true, ...
+            'Input position indices selected before data loading.'); %#ok<AGROW>
+    end
+end
+
+function [value, found] = recordedSelection(sel, runCfg, selFields, runFields)
+    value = [];
+    found = false;
+    for i = 1:numel(selFields)
+        if isstruct(sel) && isfield(sel, selFields{i})
+            value = sel.(selFields{i});
+            found = true;
+            return;
+        end
+    end
+    for i = 1:numel(runFields)
+        if isstruct(runCfg) && isfield(runCfg, runFields{i})
+            value = runCfg.(runFields{i});
+            found = true;
+            return;
+        end
+    end
+end
+
+function row = scopeRow(label, value, found, interpretation)
+    if ~found
+        row = {label, 'Not recorded', 'This run record does not contain this selection.'};
+    elseif isempty(value)
+        row = {label, '(empty)', 'All items; no selection filter was applied.'};
+    else
+        row = {label, formatSelection(value), interpretation};
+    end
+end
+
+function txt = formatSelection(value)
+    if islogical(value)
+        value = find(value);
+    elseif iscell(value)
+        try
+            value = cell2mat(value(:));
+        catch
+            txt = valueToDisplay(value);
+            return;
+        end
+    end
+    if isnumeric(value)
+        values = double(value(:)');
+        values = values(isfinite(values));
+        if isempty(values)
+            txt = '(empty)';
+            return;
+        end
+        values = unique(values, 'stable');
+        txt = compressIndexList(values);
+        txt = sprintf('%s  (%d)', txt, numel(values));
+    else
+        txt = valueToDisplay(value);
+    end
+end
+
+function txt = compressIndexList(values)
+    values = sort(values);
+    starts = [1 find(diff(values) ~= 1) + 1];
+    ends = [starts(2:end) - 1 numel(values)];
+    parts = cell(1, numel(starts));
+    for i = 1:numel(starts)
+        first = values(starts(i));
+        last = values(ends(i));
+        if first == last
+            parts{i} = num2str(first);
+        else
+            parts{i} = sprintf('%g-%g', first, last);
+        end
+    end
+    txt = strjoin(parts, ', ');
+    if numel(txt) > 1200
+        txt = [txt(1:1197) '...'];
+    end
+end
+
 function rows = buildNodeRows(runObj)
     rows = cell(0, 7);
     try
@@ -340,7 +464,7 @@ function events = latestRunAttemptEventsLocal(events)
     events = events(starts(end):end);
 end
 
-function refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+function refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable)
     runObj = reloadRunObject(runObj);
     headerArea.Value = splitLinesLocal(buildHeaderText(runObj, shallowObj));
     summaryArea.Value = splitLinesLocal(readSummaryText(runObj));
@@ -348,22 +472,23 @@ function refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewAre
     eventTable.Data = buildEventRows(runObj);
     paramTable.Data = buildParamRows(runObj);
     nodeTable.Data = buildNodeRows(runObj);
+    scopeTable.Data = buildScopeRows(runObj);
 end
 
-function safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+function safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable)
     try
         if isempty(headerArea) || ~isvalid(headerArea)
             return;
         end
-        refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+        refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
     catch
     end
 end
 
-function toggleAutoRefresh(src, refreshTimer, runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+function toggleAutoRefresh(src, refreshTimer, runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable)
     try
         if logical(src.Value)
-            safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+            safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
             start(refreshTimer);
         else
             stop(refreshTimer);
@@ -387,10 +512,10 @@ function closeInspector(fig, refreshTimer)
     end
 end
 
-function writeReviewAndRefresh(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+function writeReviewAndRefresh(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable)
     runObj = reloadRunObject(runObj);
     reviewArea.Value = splitLinesLocal(readReviewText(runObj, true));
-    refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+    refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable, scopeTable);
 end
 
 function runObj = reloadRunObject(runObj)
