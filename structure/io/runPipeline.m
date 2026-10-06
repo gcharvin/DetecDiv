@@ -32,6 +32,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
         'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
     ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
+    ctx = pipelineRunCaptureFovInventory(ctx, 'run_start', '');
     ctx = normalizeCancellationContext(ctx);
     checkPipelineCancelled(ctx, 'before pipeline validation');
 
@@ -175,6 +176,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
                 'TotalNodes', total, 'RunPolicy', policy.runPolicy, ...
                 'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName);
             ctx = executeNode(node, ctx);
+            ctx = pipelineRunCaptureFovInventory(ctx, 'after_node', nodeId);
             afterStats = captureContextStats(ctx);
             [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
             report = appendNodeRun(report, node, policy, nodeStatus, ...
@@ -185,6 +187,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
                 'DurationSec', toc(tNode), 'Message', nodeMessage, ...
                 'Before', beforeStats, 'After', afterStats);
         catch ME
+            ctx = pipelineRunCaptureFovInventory(ctx, 'node_error', nodeId);
             afterStats = captureContextStats(ctx);
             failedStatus = 'failed';
             if isPipelineCancelledException(ME)
@@ -233,6 +236,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     report.summary = buildRunSummary(report);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', total, total, 1, 1, 'Pipeline completed.');
+    ctx = pipelineRunCaptureFovInventory(ctx, 'run_done', '');
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
     detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipeline');
@@ -1374,6 +1378,8 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                     'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName, ...
                     'ExecutionMode', 'roi_major', 'RoiIndex', r, 'TotalRois', nRoi);
                 roiCtx = executeNode(node, roiCtx);
+                roiCtx = pipelineRunCaptureFovInventory(roiCtx, ...
+                    'after_node', nodeId);
                 [nodeStatus, nodeMessage, roiCtx] = consumeNodeStatusOverride(roiCtx);
                 nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
                 if startsWith(string(nodeStatus), "skipped")
@@ -1390,6 +1396,8 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                     'ExecutionMode', 'roi_major', 'RoiIndex', r, 'TotalRois', nRoi, ...
                     'DurationSec', toc(tNode), 'Message', nodeMessage);
             catch ME
+                roiCtx = pipelineRunCaptureFovInventory(roiCtx, ...
+                    'node_error', nodeId);
                 nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
                 nodeStats(i).after = captureContextStats(roiCtx);
                 status = 'failed';
@@ -1471,6 +1479,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
     report.summary = buildRunSummary(report);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, 1, 1, 'Pipeline completed.');
+    ctx = pipelineRunCaptureFovInventory(ctx, 'run_done', '');
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
         'ExecutionMode', 'roi_major');

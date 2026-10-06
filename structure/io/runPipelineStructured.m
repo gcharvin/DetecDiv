@@ -32,6 +32,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
     ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
+    ctx = pipelineRunCaptureFovInventory(ctx, 'run_start', '');
     checkPipelineCancellation(ctx, 'initialize', '');
 
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
@@ -164,6 +165,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             fprintf('DETECDIV_PIPELINE_PROGRESS node_start id=%s type=%s index=%d total=%d\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total);
             ctx = executeNode(node, ctx);
+            ctx = pipelineRunCaptureFovInventory(ctx, 'after_node', nodeId);
             checkPipelineCancellation(ctx, 'after_execute', nodeId);
             fprintf('DETECDIV_PIPELINE_PROGRESS node_done id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
@@ -184,6 +186,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             end
             fprintf('DETECDIV_PIPELINE_PROGRESS %s id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
                 progressState, char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
+            ctx = pipelineRunCaptureFovInventory(ctx, 'node_error', nodeId);
             afterStats = captureContextStats(ctx);
             nodeStatus = 'failed';
             if wasCancelled
@@ -230,6 +233,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         pipe.runState.currentNode = '';
         pipe.log('Pipeline completed','Run');
     end
+    ctx = pipelineRunCaptureFovInventory(ctx, 'run_done', '');
     ctx = stripEphemeralExecutionFields(ctx);
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);

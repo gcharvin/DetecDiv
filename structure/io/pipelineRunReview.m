@@ -29,6 +29,12 @@ function [review, text] = pipelineRunReview(runOrPath, varargin)
     review.nodes = summarizeNodes(events, runObj);
     review.issues = summarizeIssues(events, runObj);
     review.artifacts = listRunArtifacts(runPath);
+    review.fovSelection = getNestedRunValue(runObj, ...
+        {'ctx','run','fovSelection'}, struct());
+    review.fovTrace = getNestedRunValue(runObj, ...
+        {'ctx','run','fovTrace'}, struct());
+    review.fovInventoryEvent = latestFovInventoryEvent(events);
+    review.runParametersPath = fullfile(runPath, 'run_params.json');
 
     text = formatReviewText(review);
 
@@ -348,6 +354,32 @@ function text = formatReviewText(review)
         review.summary.doneNodes, review.summary.skippedNodes, ...
         review.summary.failedNodes, review.summary.cancelledNodes); %#ok<AGROW>
     lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = 'Run inputs and FOVs'; %#ok<AGROW>
+    if isfile(review.runParametersPath)
+        lines{end+1} = ['- Full submitted parameters: ' review.runParametersPath]; %#ok<AGROW>
+    end
+    if isstruct(review.fovSelection) && ~isempty(fieldnames(review.fovSelection))
+        requested = valueText(getFieldOr(review.fovSelection, 'requestedText', ''));
+        if ~isempty(requested)
+            lines{end+1} = ['- FOV selector entered: ' requested]; %#ok<AGROW>
+        end
+        indices = getFieldOr(review.fovSelection, 'resolvedIndices', []);
+        if ~isempty(indices)
+            lines{end+1} = ['- Resolved FOV indices: ' valueText(indices)]; %#ok<AGROW>
+        end
+        ids = getFieldOr(review.fovSelection, 'resolvedIds', {});
+        if ~isempty(ids)
+            lines{end+1} = ['- Resolved project FOV IDs: ' valueText(ids)]; %#ok<AGROW>
+        end
+    end
+    [effectiveText, createdText] = reviewedFovInventoryText(review);
+    if ~isempty(effectiveText)
+        lines{end+1} = ['- Effective FOVs: ' effectiveText]; %#ok<AGROW>
+    end
+    if ~isempty(createdText)
+        lines{end+1} = ['- FOVs created during this run: ' createdText]; %#ok<AGROW>
+    end
+    lines{end+1} = ''; %#ok<AGROW>
     lines{end+1} = 'Nodes'; %#ok<AGROW>
     if isempty(review.nodes)
         lines{end+1} = '- No node execution data found.'; %#ok<AGROW>
@@ -384,6 +416,54 @@ function text = formatReviewText(review)
         end
     end
     text = [strjoin(lines, newline) newline];
+end
+
+function event = latestFovInventoryEvent(events)
+    event = struct();
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    idx = find(strcmp(string({events.type}), 'fov_inventory'), 1, 'last');
+    if ~isempty(idx)
+        event = events(idx);
+    end
+end
+
+function [effectiveText, createdText] = reviewedFovInventoryText(review)
+    effectiveText = '';
+    createdText = '';
+    effective = [];
+    created = [];
+    if isstruct(review.fovTrace)
+        effective = getFieldOr(review.fovTrace, 'effectiveFovs', []);
+        created = getFieldOr(review.fovTrace, 'createdFovs', []);
+    end
+    if isempty(effective) && isstruct(review.fovInventoryEvent)
+        effective = getFieldOr(review.fovInventoryEvent, 'EffectiveFovs', []);
+    end
+    if isempty(created) && isstruct(review.fovInventoryEvent)
+        created = getFieldOr(review.fovInventoryEvent, 'CreatedFovs', []);
+    end
+    effectiveText = fovRecordLabels(effective);
+    createdText = fovRecordLabels(created);
+end
+
+function txt = fovRecordLabels(records)
+    txt = '';
+    if isempty(records) || ~isstruct(records)
+        return;
+    end
+    labels = cell(1, numel(records));
+    for i = 1:numel(records)
+        fovId = valueText(getFieldOr(records(i), 'id', ''));
+        fovIndex = getFieldOr(records(i), 'index', i);
+        if isempty(fovId)
+            labels{i} = sprintf('#%s', valueText(fovIndex));
+        else
+            labels{i} = sprintf('%s (index %s)', fovId, valueText(fovIndex));
+        end
+    end
+    txt = strjoin(labels, ', ');
 end
 
 function writeTextFile(path, text)

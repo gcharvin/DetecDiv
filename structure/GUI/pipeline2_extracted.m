@@ -4904,11 +4904,20 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             channels = {};
             try
-                if ~isempty(shallowObj.fov) && iscell(shallowObj.fov(1).channel)
-                    channels = shallowObj.fov(1).channel;
+                fovs = shallowObj.fov;
+                for fovIndex = 1:numel(fovs)
+                    try
+                        if isprop(fovs(fovIndex), 'channel') && ...
+                                ~isempty(fovs(fovIndex).channel)
+                            channels = [channels normalizeChannelCellText( ...
+                                app, fovs(fovIndex).channel)]; %#ok<AGROW>
+                        end
+                    catch
+                    end
                 end
             catch
             end
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
             updateChannelDropdownItems(app, channels);
         end
 
@@ -5623,7 +5632,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 lines{end+1} = 'Raw data link: not found in project';
             end
             if isfield(projectInfo, 'fovCount') && projectInfo.fovCount > 0
-                lines{end+1} = sprintf('FOVs: 1:%d', projectInfo.fovCount);
+                fovSummary = sprintf('FOVs: 1:%d', projectInfo.fovCount);
+                if isfield(projectInfo, 'fovNames') && ~isempty(projectInfo.fovNames)
+                    names = projectInfo.fovNames;
+                    defaultNames = arrayfun(@(k)sprintf('FOV %d', k), ...
+                        1:numel(names), 'UniformOutput', false);
+                    if ~isequal(names, defaultNames)
+                        fovSummary = [fovSummary ' (IDs: ' strjoin(names, ', ') ')'];
+                    end
+                end
+                lines{end+1} = fovSummary;
             else
                 lines{end+1} = 'FOVs: none detected yet';
             end
@@ -5797,7 +5815,8 @@ classdef pipeline2 < matlab.apps.AppBase
         function prompt = runtimePromptForKey(app, key) %#ok<INUSD>
             switch char(string(key))
                 case 'fovs'
-                    prompt = 'FOV selection: all, 1,3,5, or 1:4';
+                    prompt = ['FOV selection: all or 1-based indices (1,3 or 1:4). ' ...
+                        'In project mode, explicit IDs such as Pos11_3 are also accepted.'];
                 case 'frames'
                     prompt = 'Frame selection: all, 1:50, or 1,5,9';
                 case 'rois'
@@ -9715,7 +9734,7 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.nodeParams = buildRunNodeParams(app);
             ctx.run.selectedNodes = selectedRunNodeIds(app);
             ctx.sel = struct();
-            ctx.sel.fovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+            ctx.sel.fovs = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
             ctx.sel.frames = parseIndexSelection(app, getRuntimeValue(app, 'frames'));
             ctx.sel.rois = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
             ctx.fovIndex = ctx.sel.fovs;
@@ -12732,7 +12751,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                fovIdx = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                fovIdx = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                 if isempty(fovIdx)
                     fovIdx = 1:numel(app.CurrentProject.fov);
                 end
@@ -12769,7 +12788,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                fovIdx = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                fovIdx = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                 if isempty(fovIdx)
                     fovIdx = 1:numel(app.CurrentProject.fov);
                 end
@@ -15182,13 +15201,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project JSON/legacy MAT file.');
                 end
                 if loadedProjectOk
-                    selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                    selectedFovs = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                     nProjectFov = numel(app.CurrentProject.fov);
                     if ~isempty(selectedFovs) && any(selectedFovs > nProjectFov)
-                        issues{end+1} = sprintf(['Selected FOVs request %s, but the existing project contains only %d FOV(s). ' ...
-                            'Switch Input mode to "Parse raw images into project" to import raw FOVs, or change FOVs to %s.'], ...
+                        issues{end+1} = sprintf(['Selected FOV indices %s exceed the %d FOV(s) in the project. ' ...
+                            'Numeric values are 1-based vector indices; use an explicit project FOV ID such as Pos11_3 to select by ID, or choose %s.'], ...
                             compactNumericSelectionText(app, selectedFovs), nProjectFov, boundedSelectionHint(app, nProjectFov)); %#ok<AGROW>
-                        markRuntimeField(app, 'fovs', 'blocked', 'Selected FOVs exceed the loaded project FOV count.');
+                        markRuntimeField(app, 'fovs', 'blocked', 'Numeric FOV selectors are vector indices; use an explicit project FOV ID to select by ID.');
                     end
                 end
                 if ~isempty(rawStartNodeIds) && ~projectHasImageSources
@@ -15245,7 +15264,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 if rawOk && rawParserIsCurrent(app, rawDataPath) && isfield(app.RuntimeParseInfo, 'fovCount') && app.RuntimeParseInfo.fovCount > 0
-                    selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                    selectedFovs = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                     nParsedFov = round(double(app.RuntimeParseInfo.fovCount));
                     if ~isempty(selectedFovs) && any(selectedFovs > nParsedFov)
                         issues{end+1} = sprintf('Selected FOVs request %s, but the raw parser detected only %d FOV(s). Change FOVs to %s or re-parse the raw folder.', ...
@@ -16770,12 +16789,17 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.store = struct('cacheMode', 'auto');
 
             ctx.sel = struct();
-            ctx.sel.fovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+            ctx.sel.fovs = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
             ctx.sel.frames = parseIndexSelection(app, getRuntimeValue(app, 'frames'));
             ctx.sel.rois = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
             ctx.run.fovIndex = ctx.sel.fovs;
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
+            ctx.run.fovSelection = struct( ...
+                'requestedText', getRuntimeValue(app, 'fovs'), ...
+                'resolvedIndices', runtimeFovSelectionIndices(app, ctx.sel.fovs), ...
+                'resolvedIds', {runtimeFovSelectionIds(app, ctx.sel.fovs)}, ...
+                'semantics', 'Numeric values are 1-based indices; explicit project FOV IDs resolve by exact ID.');
 
             if runtimeStartsFromExistingProject(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 try
@@ -16968,7 +16992,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     info.maxFrame = projectInfo.maxFrame;
                 end
             else
-                selectedFovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                selectedFovs = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                 if ~isempty(selectedFovs)
                     info.fovCount = max(selectedFovs(:));
                     info.fovNames = arrayfun(@(k)sprintf('FOV %d', k), 1:info.fovCount, 'UniformOutput', false);
@@ -18311,6 +18335,121 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function idx = parseRuntimeFovSelection(app, txt)
+            % Numeric selectors are always 1-based vector indices. Project
+            % FOV IDs are accepted only when written explicitly, avoiding
+            % guesses between an index and an acquisition position number.
+            idx = parseIndexSelection(app, txt);
+            if ~runtimeStartsFromExistingProject(app) || ...
+                    isempty(app.CurrentProject) || ...
+                    ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            textValue = strtrim(char(string(txt)));
+            if isempty(textValue) || strcmpi(textValue, 'all') || ...
+                    startsWith(lower(textValue), 'all ')
+                idx = [];
+                return;
+            end
+            fovs = app.CurrentProject.fov;
+            if isempty(fovs)
+                return;
+            end
+            if ~isempty(idx) && isempty(regexp(textValue, '[A-Za-z]', 'once'))
+                return;
+            end
+
+            % Parse mixed lists token by token, allowing forms such as
+            % "2,Pos11_3". Ranges remain numeric index selections.
+            parts = regexp(strrep(textValue, ';', ','), '[,\s]+', 'split');
+            selected = [];
+            for partIndex = 1:numel(parts)
+                token = strtrim(parts{partIndex});
+                if isempty(token)
+                    continue;
+                end
+                tokenValues = str2num(token); %#ok<ST2NM>
+                if ~isempty(tokenValues)
+                    selected = [selected tokenValues(:)']; %#ok<AGROW>
+                    continue;
+                end
+                match = findProjectFovPositionId(app, fovs, token);
+                if ~isempty(match)
+                    selected(end+1) = match; %#ok<AGROW>
+                else
+                    % Preserve an invalid selection so validation blocks the
+                    % run instead of treating an unknown ID as "all FOVs".
+                    selected(end+1) = numel(fovs) + 1; %#ok<AGROW>
+                end
+            end
+            if ~isempty(selected)
+                idx = unique(round(selected), 'stable');
+            end
+        end
+
+        function match = findProjectFovPositionId(app, fovs, selector) %#ok<INUSD>
+            match = [];
+            selector = strtrim(char(string(selector)));
+            if isempty(selector)
+                return;
+            end
+            names = cell(1, numel(fovs));
+            for fovIndex = 1:numel(fovs)
+                try
+                    names{fovIndex} = char(string(fovs(fovIndex).id));
+                catch
+                    names{fovIndex} = '';
+                end
+            end
+            match = find(strcmpi(names, selector), 1);
+        end
+
+        function indices = runtimeFovSelectionIndices(app, selected)
+            if runtimeStartsFromClassifier(app)
+                indices = [];
+                return;
+            end
+            indices = selected;
+            if isempty(selected)
+                count = 0;
+                if runtimeStartsFromExistingProject(app) && ...
+                        ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                    count = numel(app.CurrentProject.fov);
+                elseif isfield(app.RuntimeParseInfo, 'fovCount')
+                    count = max(0, round(double(app.RuntimeParseInfo.fovCount)));
+                end
+                if count > 0
+                    indices = 1:count;
+                end
+            end
+            indices = unique(round(double(indices(:)')), 'stable');
+        end
+
+        function ids = runtimeFovSelectionIds(app, selected)
+            ids = {};
+            if runtimeStartsFromClassifier(app)
+                return;
+            end
+            if runtimeStartsFromExistingProject(app) && ...
+                    ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                fovs = app.CurrentProject.fov;
+                indices = runtimeFovSelectionIndices(app, selected);
+                indices = indices(indices >= 1 & indices <= numel(fovs));
+                for i = 1:numel(indices)
+                    try
+                        ids{end+1} = char(string(fovs(indices(i)).id)); %#ok<AGROW>
+                    catch
+                        ids{end+1} = ''; %#ok<AGROW>
+                    end
+                end
+            elseif isfield(app.RuntimeParseInfo, 'fovNames')
+                names = app.RuntimeParseInfo.fovNames;
+                indices = runtimeFovSelectionIndices(app, selected);
+                indices = indices(indices >= 1 & indices <= numel(names));
+                ids = cellstr(string(names(indices)));
+            end
+        end
+
         function out = parseLooseSelection(app, txt) %#ok<INUSD>
             out = [];
             txt = strtrim(char(string(txt)));
@@ -18369,7 +18508,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function ref = buildTargetRef(app)
             ref = struct('type', 'shallow', 'projectPath', getRuntimeValue(app, 'projectPath'), ...
-                'projectName', '', 'fovIds', parseIndexSelection(app, getRuntimeValue(app, 'fovs')), ...
+                'projectName', '', 'fovIds', parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs')), ...
                 'roiIds', {{}}, 'classiPath', '', 'notes', '');
             ref.roiIds = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
             if runtimeStartsFromClassifier(app) && ~isempty(app.ExplicitRuntimeRoiList)
@@ -21764,7 +21903,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                fovIdx = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                fovIdx = parseRuntimeFovSelection(app, getRuntimeValue(app, 'fovs'));
                 if isempty(fovIdx)
                     fovIdx = 1:numel(app.CurrentProject.fov);
                 end
