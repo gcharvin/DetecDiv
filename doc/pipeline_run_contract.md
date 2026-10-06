@@ -354,3 +354,32 @@ That is the smallest step that unlocks both:
 
 - local/client reuse of the same run model
 - true server-side pipeline execution from the web UI
+
+## 16. ROI pattern library and run selection
+
+`pipeline2` exposes a compact **Pattern library...** popup on ROI pattern
+modules. Cards show the stored image, pixel dimensions, source FOV, frame and
+channel. The current run's motif is a separate card, including legacy motifs
+that have not yet been given a library name. Reviewing a locked run opens the
+same gallery without enabling changes.
+
+**Create / test on data...** opens `workflow2` for drawing and optional detection
+preview. **Keep draft** returns to the gallery. **Use for this run** changes
+runtime node overrides only. It does not save the draft as a reusable preset.
+The interactive Run button requests this explicit choice for each selected
+ROI pattern node before preparing/submitting the run.
+
+**Save current as new...** creates a named entry in the pipeline's
+`roi_pattern_library.json`. Duplicate names are rejected. **Replace selected
+preset...** explicitly confirms replacing that entry with the current motif,
+retains its ID, and increments its revision. Writes reload under a short file
+lock and reject replacement of a revision changed by another client.
+
+Each run embeds the exact patch and its source metadata, plus `patternPreset`
+ID/name/revision when applicable. Library replacement never changes these
+copies. Execution consumes the run snapshot and does not look up the current
+library entry. Channel, reference frame, threshold and FOV crop remain the
+run's detection settings; choosing a preset only supplies source channel/frame
+defaults when those bindings are absent. Old pipeline motifs remain available
+as the current card when they contain an image patch. Coordinate-only legacy
+motifs require capturing their source patch in the image editor.

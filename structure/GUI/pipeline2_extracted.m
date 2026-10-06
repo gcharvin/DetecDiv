@@ -9091,52 +9091,45 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
 
-            actions = uigridlayout(grid, [1 4]);
+            actions = uigridlayout(grid, [1 3]);
             actions.RowHeight = {28};
-            actions.ColumnWidth = {150, 105, 105, '1x'};
+            actions.ColumnWidth = {150, 160, '1x'};
             actions.Padding = [0 0 0 0];
             actions.ColumnSpacing = 8;
             actions.Layout.Row = 2;
 
-            nodePatternParams = getField(app, node, 'params', struct());
+            nodePatternParams = getRoiPatternParamsForDisplay(app, node);
             hasNodePattern = hasUsableRoiPattern(app, nodePatternParams);
-            editText = ternary(app, hasNodePattern, 'Review pattern', 'Generate pattern');
             hintText = ternary(app, hasNodePattern, ...
-                'Pattern is stored in this module; Review pattern opens it with image context.', ...
-                'Please generate pattern first. Raw data context is required.');
+                'Selection applies to this run. Library saves and replacements are explicit.', ...
+                'Choose a library pattern or create one on your images.');
 
-            editBtn = uibutton(actions, 'push', 'Text', editText, ...
-                'ButtonPushedFcn', @(~,~)openWorkflowRoiEditor(app, nodeId));
+            libraryBtn = uibutton(actions, 'push', 'Text', 'Pattern library...', ...
+                'Tag','OpenPatternLibrary', ...
+                'ButtonPushedFcn', @(~,~)openRoiPatternLibrary(app, nodeId, false));
+            libraryBtn.Layout.Row = 1;
+            libraryBtn.Layout.Column = 1;
+            libraryBtn.Tooltip = 'Choose a thumbnail for this run, save a new preset, or explicitly replace one.';
+
+            editBtn = uibutton(actions, 'push', 'Text', 'Create / test on data...', ...
+                'ButtonPushedFcn', @(~,~)openRoiPatternLibrary(app, nodeId, true));
             editBtn.Layout.Row = 1;
-            editBtn.Layout.Column = 1;
-            editBtn.Enable = ternary(app, hasRoiWorkflowImageContext(app), 'on', 'off');
-            editBtn.Tooltip = 'Open the ROI workflow to generate or review the module pattern from a raw image frame, FOV and channel.';
-
-            viewBtn = uibutton(actions, 'push', 'Text', 'View pattern', ...
-                'ButtonPushedFcn', @(~,~)viewRoiPatternArtifact(app, nodeId));
-            viewBtn.Layout.Row = 1;
-            viewBtn.Layout.Column = 2;
-            viewBtn.Enable = ternary(app, hasNodePattern, 'on', 'off');
-            viewBtn.Tooltip = 'Display the pattern artifact stored in this module.';
-
-            clearBtn = uibutton(actions, 'push', 'Text', 'Clear artifact', ...
-                'ButtonPushedFcn', @(~,~)clearRoiPatternNodeArtifact(app, nodeId));
-            clearBtn.Layout.Row = 1;
-            clearBtn.Layout.Column = 3;
-            clearBtn.Enable = ternary(app, hasNodePattern, 'on', 'off');
-            clearBtn.Tooltip = 'Remove the pattern artifact stored in this module.';
+            editBtn.Layout.Column = 2;
+            editBtn.Enable = ternary(app, hasRoiWorkflowImageContext(app) && app.RuntimeModeUnlocked, 'on', 'off');
+            editBtn.Tooltip = 'Draw or test a draft in workflow2, then choose whether to use it for this run or save it to the library.';
 
             hint = uilabel(actions, 'Text', hintText, ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 1;
-            hint.Layout.Column = 4;
+            hint.Layout.Column = 3;
 
             runtimeLabel = uilabel(grid, 'Text', 'Runtime parameters');
             runtimeLabel.FontWeight = 'bold';
             runtimeLabel.Layout.Row = 3;
 
             if isempty(runtimeData)
-                msg = uilabel(grid, 'Text', 'No runtime parameter is declared for this ROI pattern module.', ...
+                msg = uilabel(grid, 'Text', 'Confirm the motif above. Detection uses this run''s channel and reference frame; preview does not create ROIs.', ...
+                    'WordWrap','on', ...
                     'FontAngle', 'italic', 'FontColor', [0.35 0.35 0.35]);
                 msg.Layout.Row = 4;
             else
@@ -9370,6 +9363,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             node = app.Data.nodes(idx);
+            if any(strcmpi(node.type,{'roiPattern','roiIdentify'}))
+                openRoiPatternLibrary(app,nodeId,true);
+                return;
+            end
             [editorProject, ok, msg] = resolveRoiEditorProject(app, node);
             if ~ok
                 uialert(app.UIFigure, msg, 'ROI editor', 'Icon', 'warning');
@@ -9405,6 +9402,93 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function accepted = openRoiPatternLibrary(app, nodeId, startEdit)
+            accepted = false;
+            idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
+            if isempty(idx), return; end
+            draft = getRoiPatternParamsForDisplay(app, app.Data.nodes(idx));
+            try
+                if ~app.RuntimeModeUnlocked
+                    dlg = roiPatternLibraryDialog(roiPatternLibraryFolder(app),draft,nodeId,false,true);
+                    dialogCleanup = onCleanup(@()delete(dlg)); %#ok<NASGU>
+                    uiwait(dlg.UIFigure);
+                    return;
+                end
+                if startEdit
+                    [draft, edited] = editRoiPatternDraft(app, app.Data.nodes(idx), draft);
+                    if ~edited, return; end
+                end
+                while true
+                    dlg = roiPatternLibraryDialog(roiPatternLibraryFolder(app), draft, nodeId, hasRoiWorkflowImageContext(app));
+                    dialogCleanup = onCleanup(@()delete(dlg));
+                    uiwait(dlg.UIFigure);
+                    action = dlg.Action; result = dlg.Result;
+                    clear dialogCleanup;
+                    switch action
+                        case 'use'
+                            result = pipelineInvalidateRoiPatternPreview(result);
+                            setRuntimeNodeParams(app, nodeId, result);
+                            rebuildModuleTabForNode(app, idx);
+                            accepted = true;
+                            return;
+                        case 'edit'
+                            [editedParams, edited] = editRoiPatternDraft(app, app.Data.nodes(idx), result);
+                            if edited, draft = editedParams; end
+                        otherwise
+                            return;
+                    end
+                end
+            catch ME
+                uialert(app.UIFigure,ME.message,'Pattern library','Icon','error');
+            end
+        end
+
+        function folder = roiPatternLibraryFolder(app)
+            folder = app.CurrentPipelinePath;
+            if app.CurrentPipelineIsRunSnapshot && ~isempty(app.CurrentRun)
+                folder = getNestedRunField(app, app.CurrentRun, {'pipelineRef','path'}, folder);
+            end
+            folder = char(string(folder));
+            if endsWith(folder,'.json','IgnoreCase',true), folder = fileparts(folder); end
+        end
+
+        function [result, accepted] = editRoiPatternDraft(app, node, draft)
+            result = draft; accepted = false;
+            [editorProject, ok, msg] = resolveRoiEditorProject(app, node);
+            if ~ok
+                uialert(app.UIFigure,msg,'Create / test pattern','Icon','warning');
+                return;
+            end
+            wf = workflow2(editorProject,'FocusModule','roiPattern','Params',draft);
+            editorCleanup = onCleanup(@()delete(wf)); %#ok<NASGU>
+            wf.UIFigure.Name = 'Create / test pattern on data';
+            wf.ProceedButton.Text = 'Keep draft';
+            uiwait(wf.UIFigure);
+            if isvalid(wf) && ~wf.Cancelled
+                result = wf.Result;
+                if isfield(draft,'pattern') && isfield(result,'pattern') && ...
+                        ~isequaln(draft.pattern,result.pattern) && isfield(result,'patternPreset')
+                    result = rmfield(result,'patternPreset');
+                end
+                accepted = true;
+            end
+        end
+
+        function accepted = confirmRoiPatternsForRun(app)
+            accepted = true;
+            selected = selectedRunNodeIds(app);
+            for i = 1:numel(app.Data.nodes)
+                node = app.Data.nodes(i);
+                if ~ismember(node.id, selected) || ~any(strcmpi(node.type,{'roiPattern','roiIdentify'}))
+                    continue;
+                end
+                if ~openRoiPatternLibrary(app,node.id,false)
+                    accepted = false;
+                    return;
+                end
+            end
+        end
+
         function openWorkflowRoiEditor(app, nodeId)
             idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
             if isempty(idx)
@@ -9417,6 +9501,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
+            if any(strcmpi(node.type,{'roiPattern','roiIdentify'}))
+                openRoiPatternLibrary(app,nodeId,true);
+                return;
+            end
             focus = lower(char(string(getField(app, node, 'type', ''))));
             switch focus
                 case 'roiidentify'
@@ -10112,10 +10200,15 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function [lines, color] = roiPatternStatus(app, node)
-            params = getField(app, node, 'params', struct());
+            params = getRoiPatternParamsForDisplay(app, node);
             profile = roiDefinitionProfileFromProject(app, node);
             if hasUsableRoiPattern(app, params)
-                lines = {'Pattern is already defined within module.'};
+                lines = {'Pattern selected for this run.'};
+                if isfield(params,'patternPreset') && isfield(params.patternPreset,'name')
+                    lines{end+1} = sprintf('Library: %s | revision %d',params.patternPreset.name,params.patternPreset.revision);
+                else
+                    lines{end+1} = 'Current / legacy motif. Save it to the library to give it a reusable name.';
+                end
                 if roiPatternHasSourceContext(app, params)
                     lines{end+1} = 'Pattern was generated from existing raw data and stores its source context.';
                 end
@@ -10123,9 +10216,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 color = [0.10 0.42 0.20];
             else
                 lines = { ...
-                    'Please generate pattern first.', ...
-                    'This module has no stored pattern artifact yet.', ...
-                    'Use Generate pattern to create one from the current raw data context.'};
+                    'Choose a pattern for this run.', ...
+                    'Open Pattern library, or Create / test on data.'};
                 if hasUsableRoiPattern(app, profile)
                     lines{end+1} = 'A legacy project ROI profile exists, but it is not stored in this module.';
                 end
@@ -17154,6 +17246,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isfield(templateParams, key) || isempty(templateParams.(key))
                     continue;
                 end
+                % Placeholder cleanup concerns textual channel bindings.
+                % Image patches and other structured run settings are not
+                % empty bindings, even when they cannot be rendered as text.
+                value = params.(key);
+                if ~(ischar(value) || isstring(value) || iscellstr(value))
+                    continue;
+                end
                 if isZStackPlaceholderBinding(app, params.(key)) && ~isSymbolicStoredBinding(app, templateParams.(key))
                     params = rmfield(params, key);
                 end
@@ -21817,6 +21916,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             if ~ensureCurrentProjectForRun(app)
+                return;
+            end
+            if ~confirmRoiPatternsForRun(app)
+                setRuntimeStatus(app,'Pattern selection cancelled before launch.');
                 return;
             end
             runObj = [];

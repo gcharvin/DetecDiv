@@ -99,8 +99,9 @@ function contract = defaultContractForNode(node)
             selectors.channelParam = 'channel';
             selectors.channelIndexParam = 'channelIndex';
             selectors.framesParam = 'referenceFrame';
-            parameters.design = {'pattern','patternRect','patternImage','patternList','activePatternIndex','threshold'};
-            parameters.run = {'fovIndex','referenceFrame','channel','channelIndex'};
+            parameters.design = {'threshold'};
+            parameters.run = {'pattern','patternPreset','patternRect','patternImage','patternList','activePatternIndex', ...
+                'fovIndex','referenceFrame','channel','channelIndex'};
             requirements.images.required = true;
             requirements.images.channelsMin = 1;
             requirements.params.optional = {'threshold','referenceFrame','fovIndex'};

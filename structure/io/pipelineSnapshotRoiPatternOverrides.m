@@ -13,6 +13,9 @@ for i = 1:numel(nodes)
         end
     end
     pinned = pipelineRoiPatternPreviewConfig(params);
+    if isfield(params,'patternPreset')
+        pinned.patternPreset = params.patternPreset;
+    end
     if ~isfield(overrides, key)
         overrides.(key) = struct();
     end

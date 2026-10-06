@@ -6343,6 +6343,16 @@ classdef workflow2 < matlab.apps.AppBase
 
             pat.image = pattimg;
 
+            try
+                paths = app.Project.fov(app.SelectedFov).srcpath;
+                if iscell(paths) && ~isempty(paths), pat.sourcePath = char(string(paths{1})); end
+            catch
+            end
+            if isfield(params,'patternPreset') && ...
+                    (~isfield(params,'pattern') || ~isequaln(params.pattern,pat))
+                params = rmfield(params,'patternPreset');
+            end
+
 
 
             params.pattern = pat;
