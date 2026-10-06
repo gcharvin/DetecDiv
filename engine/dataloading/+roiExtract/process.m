@@ -51,6 +51,11 @@ function ctx = process(ctx)
     elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
         p = mergeStructOverride(p, ctx.params);
     end
+    % Robust registration always uses a fixed anchor. Persist the effective
+    % setting so saved runs cannot misleadingly report a previous-frame mode.
+    if isfield(p,'driftMethod') && strcmpi(p.driftMethod,'robust')
+        p.driftRefMode = 'fixed';
+    end
 
     hasRuntimeFovSelection = isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'fovs');
     runtimeFovSelection = [];

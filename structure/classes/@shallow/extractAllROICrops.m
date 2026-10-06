@@ -805,7 +805,7 @@ for kF = 1:numel(FOVIndex)
 
 
 
-            [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift( ...
+            [blockImg, driftBlk] = fovObj.computeDrift( ...
                 'images', blockImg, ...
                 'framesid', frameBatch, ...
                 driftArgs{:});
@@ -814,47 +814,10 @@ for kF = 1:numel(FOVIndex)
 
 
 
-            % ---- journalise dans fovObj.drift (frames ABS) ----
-            if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
-                fovObj.drift = struct('frames',[],'x',[],'y',[],'score',[]);
-            end
-
-            oldF = [];
-            if isfield(fovObj.drift,'frames') && ~isempty(fovObj.drift.frames)
-                oldF = fovObj.drift.frames(:)';
-            end
-            allF = union(oldF, frameBatch(:)');
-
-            xNew  = nan(1, numel(allF));
-            yNew  = nan(1, numel(allF));
-            scNew = nan(1, numel(allF));
-
-            if ~isempty(oldF)
-                [~,locOld] = ismember(oldF, allF);
-                if isfield(fovObj.drift,'x') && ~isempty(fovObj.drift.x), xNew(locOld) = fovObj.drift.x; end
-                if isfield(fovObj.drift,'y') && ~isempty(fovObj.drift.y), yNew(locOld) = fovObj.drift.y; end
-                if isfield(fovObj.drift,'score') && ~isempty(fovObj.drift.score), scNew(locOld) = fovObj.drift.score; end
-            end
-
-            [~,locNew] = ismember(frameBatch(:)', allF);
-
-            % driftBlk may be indexed by absolute frame id OR by local block index.
-            if numel(driftBlk.x) >= max(frameBatch)  % looks like absolute indexing
-                xNew(locNew) = driftBlk.x(frameBatch);
-                yNew(locNew) = driftBlk.y(frameBatch);
-            else                                     % local indexing 1..Tblock
-                xNew(locNew) = driftBlk.x(:)';
-                yNew(locNew) = driftBlk.y(:)';
-            end
-
-            if numel(scoreBlk) >= numel(frameBatch)
-                scNew(locNew) = scoreBlk(:)';
-            end
-
-            fovObj.drift.frames = allF;
-            fovObj.drift.x      = xNew;
-            fovObj.drift.y      = yNew;
-            fovObj.drift.score  = scNew;
+            % computeDrift owns the absolute-frame history, including scores.
+            % Do not compact it or test isfield(fovObj,...): fovObj is a handle
+            % object, so that test always reset the history after every block.
+            fovObj.drift = driftBlk;
         end
 
 

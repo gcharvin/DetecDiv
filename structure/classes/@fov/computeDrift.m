@@ -171,6 +171,22 @@ if isempty(obj) || ~isprop(obj,'drift') || isempty(obj.drift) || ...
     drift.y = zeros(1, max(framesid));
 else
     drift = obj.drift;
+    % Older extractors persisted compact arrays indexed by drift.frames.
+    % Normalize them before accessing absolute frame IDs or stitching blocks.
+    if isfield(drift,'frames') && numel(drift.frames) == numel(drift.x) && ...
+            ~isempty(drift.frames) && ~isequal(drift.frames(:)',1:numel(drift.x))
+        oldFrames = drift.frames(:)';
+        oldX = drift.x; oldY = drift.y;
+        drift.x = zeros(1,max([framesid(:)' oldFrames]));
+        drift.y = zeros(size(drift.x));
+        drift.x(oldFrames) = oldX;
+        drift.y(oldFrames) = oldY;
+        if isfield(drift,'score') && numel(drift.score) == numel(oldFrames)
+            oldScore = drift.score;
+            drift.score = nan(size(drift.x));
+            drift.score(oldFrames) = oldScore;
+        end
+    end
     if numel(drift.x) < max(framesid)
         drift.x(max(framesid)) = 0; drift.y(max(framesid)) = 0;
     end
@@ -225,18 +241,22 @@ tTotal = tic;
 % ---------- state ----------
 cumRow = 0; cumCol = 0;
 
-% ---- Seed cumRow/cumCol from obj.drift for block stitching ----
-% drift.x/y store cumulative *applied correction* (in old code: drift.x += -cumRow).
-% We invert: cumRow0 = -drift.x(prevAbsFrame), cumCol0 = -drift.y(prevAbsFrame)
-if stitchFromObjDrift && ~legacyMode && refMode == "previous" && ~isempty(obj) ...
-        && isprop(obj,'drift') && ~isempty(obj.drift) && isstruct(obj.drift) ...
-        && isfield(obj.drift,'x') && isfield(obj.drift,'y') ...
-        && ~isempty(framesid) && framesid(1) > 1
+% Seed the preceding correction for incremental stitching and for absolute
+% hold/jump rejection at a block boundary. Accepted absolute estimates still
+% replace this seed rather than accumulate it.
+hasPreviousFrame = false;
+if stitchFromObjDrift && ~legacyMode && framesid(1) > 1
 
     prevAbs = framesid(1) - 1;
-    if numel(obj.drift.x) >= prevAbs && numel(obj.drift.y) >= prevAbs
-        cumRow = -double(obj.drift.x(prevAbs));
-        cumCol = -double(obj.drift.y(prevAbs));
+    if isfield(drift,'frames') && ismember(prevAbs,drift.frames) && ...
+            numel(drift.x) >= prevAbs && numel(drift.y) >= prevAbs
+        cumRow = -double(drift.x(prevAbs));
+        cumCol = -double(drift.y(prevAbs));
+        hasPreviousFrame = true;
+    elseif ~absoluteMode && numel(drift.x) >= prevAbs && numel(drift.y) >= prevAbs
+        cumRow = -double(drift.x(prevAbs));
+        cumCol = -double(drift.y(prevAbs));
+        hasPreviousFrame = true;
     end
 end
 
@@ -377,7 +397,7 @@ for j = framesid
             decisionParts(end+1) = "absShiftReject|hold";
         end
 
-        if cc > 1 && ~isempty(maxStep) && maxStep > 0 && ...
+        if (cc > 1 || hasPreviousFrame) && ~isempty(maxStep) && maxStep > 0 && ...
                 hypot(targetRow-prevCumRow, targetCol-prevCumCol) > maxStep
             targetRow = prevCumRow;
             targetCol = prevCumCol;
@@ -540,6 +560,13 @@ for k = 1:nT
     drift.x(jj) = -cumRow_hist(k);
     drift.y(jj) = -cumCol_hist(k);
 end
+if ~isfield(drift,'frames'), drift.frames = []; end
+drift.frames = union(drift.frames(:)',framesid(:)');
+if ~isfield(drift,'score'), drift.score = nan(size(drift.x)); end
+drift.score(framesid) = score;
+drift.method = method;
+drift.refMode = char(refMode);
+drift.referenceFrame = refframeid;
 
 % ---------- footer timing ----------
 if doTiming
@@ -637,11 +664,9 @@ maskSB(r1:r2, c1:c2) = false;
 sb = r(maskSB);
 mu = mean(sb);
 sd = std(sb);
-if sd < 1e-6
-    score = 0;
-else
-    score = (peak - mu) / sd;
-end
+% Identical textured images have a delta correlation and zero sidelobes:
+% that is perfect confidence, rather than a reason to reject the anchor.
+score = (peak - mu) / max(sd,eps);
 
 [H,W] = size(r);
 dy = py - 1;

@@ -46,6 +46,79 @@ verifyLessThan(testCase, max(abs(drift.x-expectedRow)), 0.75);
 verifyLessThan(testCase, max(abs(drift.y-expectedCol)), 0.75);
 end
 
+function testPerfectAnchorHasHighConfidence(testCase)
+[~,~,~,ref] = syntheticTranslatedSequence();
+f = fov();
+[~,drift,score] = f.computeDrift('images',ref,'method','robust');
+verifyGreaterThan(testCase,score,10);
+verifyEqual(testCase,drift.x,0,'AbsTol',1e-8);
+verifyEqual(testCase,drift.y,0,'AbsTol',1e-8);
+verifyEqual(testCase,drift.method,'robust');
+verifyEqual(testCase,drift.refMode,'fixed');
+end
+
+function testRejectedFirstFrameOfNextBlockHoldsCorrection(testCase)
+[images,~,~,ref] = syntheticTranslatedSequence();
+f = fov();
+[~,first] = f.computeDrift('images',images(:,:,:,1:4), ...
+    'framesid',1:4,'refimage',ref,'method','robust');
+[~,next] = f.computeDrift('images',zeros(size(ref),'uint16'), ...
+    'framesid',5,'refimage',ref,'method','robust');
+verifyEqual(testCase,next.x(5),first.x(4));
+verifyEqual(testCase,next.y(5),first.y(4));
+verifyEqual(testCase,next.frames,1:5);
+verifyEqual(testCase,next.score(1:4),first.score(1:4));
+end
+
+function testAbsoluteJumpIsRejectedAtBlockBoundary(testCase)
+[~,~,~,ref] = syntheticTranslatedSequence();
+f = fov();
+f.computeDrift('images',ref,'refimage',ref,'method','robust');
+mov = imtranslate(ref,[8 8],'FillValues',median(ref(:)));
+[~,next] = f.computeDrift('images',mov,'framesid',2, ...
+    'refimage',ref,'method','robust','maxstep',3);
+verifyEqual(testCase,next.x(2),0,'AbsTol',1e-8);
+verifyEqual(testCase,next.y(2),0,'AbsTol',1e-8);
+end
+
+function testCompactLegacyHistoryIsNormalized(testCase)
+[~,~,~,ref] = syntheticTranslatedSequence();
+f = fov();
+f.drift = struct('frames',[11 12],'x',[-1 -2],'y',[-3 -4], ...
+    'score',[15 16]);
+[~,next] = f.computeDrift('images',zeros(size(ref),'uint16'), ...
+    'framesid',13,'refimage',ref,'method','robust');
+verifyEqual(testCase,next.frames,[11 12 13]);
+verifyEqual(testCase,next.x(11:13),[-1 -2 -2]);
+verifyEqual(testCase,next.y(11:13),[-3 -4 -4]);
+verifyEqual(testCase,next.score(11:12),[15 16]);
+end
+
+function testExtractorPreservesHistoryAcrossMemoryBlocks(testCase)
+[images,expectedRow,expectedCol] = syntheticTranslatedSequence();
+folder = tempname; mkdir(folder);
+cleanup = onCleanup(@()rmdir(folder,'s')); %#ok<NASGU>
+for k=1:size(images,4)
+    imwrite(images(:,:,1,k),fullfile(folder,sprintf('frame_%03d.tif',k)));
+end
+f = fov(); f.id='synthetic'; f.srcpath={folder};
+f.srclist={dir(fullfile(folder,'frame_*.tif'))};
+f.channel={'phase'}; f.frames=size(images,4); f.interval=1; f.binning=1;
+f.roi=roi('synthetic_1',[30 30 60 60]);
+s=shallow(); s.fov=f; s.io=struct('path',folder,'file','project');
+frameBytes=256*256*2; driftBytes=256*256*128;
+available=roiExtract.availableMemoryBytes();
+% Exercise the real streaming path with two frames per block, without large
+% synthetic TIFFs or modifying the process's actual RAM allocation.
+shareCount=max(1,floor(available/(driftBytes+4*2.5*frameBytes)));
+s.extractAllROICrops('MemoryOnly',true,'MemoryShareCount',shareCount, ...
+    'DriftMethod','robust','DriftDebug',false);
+verifyEqual(testCase,f.drift.frames,1:size(images,4));
+verifyEqual(testCase,numel(f.drift.score),size(images,4));
+verifyLessThan(testCase,max(abs(f.drift.x-expectedRow)),0.75);
+verifyLessThan(testCase,max(abs(f.drift.y-expectedCol)),0.75);
+end
+
 function [images, expectedRow, expectedCol, ref] = syntheticTranslatedSequence()
 rng(7);
 [x,y] = meshgrid(1:256,1:256);
