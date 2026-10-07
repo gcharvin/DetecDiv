@@ -7,6 +7,7 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
 %   RoiList     explicit roi handles
 %   RetryCount  H5 visibility attempts (default 1)
 %   RetryPause  seconds between attempts (default 0.5)
+%   ProgressCallback receives per-ROI refresh details.
 
     opts = localParse(varargin{:});
     report = struct('matchedRois', 0, 'refreshedRois', 0, ...
@@ -24,6 +25,8 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
     changes = manifest.rois;
     for i = 1:numel(changes)
         roiId = localText(changes(i), 'id');
+        localReportProgress(opts.ProgressCallback, (i - 1) / numel(changes), ...
+            sprintf('Finding loaded ROI %d/%d: %s', i, numel(changes), roiId), 'findRoi');
         idx = localFindRoi(loadedRois, roiId);
         if isempty(idx)
             continue;
@@ -34,12 +37,20 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
         reloadData = localLogical(changes(i), 'reloadData', false) || ...
             ~isempty(localCellText(changes(i), 'dataSeries'));
 
+        localReportProgress(opts.ProgressCallback, ...
+            ((i - 1) + 0.25) / numel(changes), ...
+            sprintf('Checking remote HDF5 channels and MAT results for ROI %d/%d: %s', ...
+            i, numel(changes), roiId), 'checkOutputFiles');
         readyChannels = localWaitForChannels(roiObj, channels, opts);
         dataReady = ~reloadData || localWaitForData(roiObj, opts);
         if numel(readyChannels) < numel(channels) || ~dataReady
             report.pendingRois{end+1} = roiId; %#ok<AGROW>
         end
         try
+            localReportProgress(opts.ProgressCallback, ...
+                ((i - 1) + 0.60) / numel(changes), ...
+                sprintf('Loading result channels/data into MATLAB for ROI %d/%d: %s', ...
+                i, numel(changes), roiId), 'loadRoiOutputs');
             if ~isempty(readyChannels)
                 roiObj.load('Channel', readyChannels, 'Data', dataReady && reloadData, 'Silent');
                 report.refreshedChannels = report.refreshedChannels + numel(readyChannels);
@@ -55,13 +66,18 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
         catch ME
             report.warnings{end+1} = sprintf('ROI %s refresh failed: %s', roiId, ME.message); %#ok<AGROW>
         end
+        localReportProgress(opts.ProgressCallback, i / numel(changes), ...
+            sprintf('Finished ROI output refresh %d/%d: %s', i, numel(changes), roiId), 'roiComplete');
     end
     report.pendingRois = unique(report.pendingRois, 'stable');
+    localReportProgress(opts.ProgressCallback, 1, ...
+        sprintf('Checked %d ROI output records; refreshed %d.', ...
+        report.matchedRois, report.refreshedRois), 'complete');
 end
 
 function opts = localParse(varargin)
     opts = struct('Classifier', [], 'Project', [], 'RoiList', [], ...
-        'RetryCount', 1, 'RetryPause', 0.5);
+        'RetryCount', 1, 'RetryPause', 0.5, 'ProgressCallback', []);
     i = 1;
     while i + 1 <= numel(varargin)
         key = char(string(varargin{i}));
@@ -76,6 +92,19 @@ function opts = localParse(varargin)
     end
     opts.RetryCount = max(1, round(double(opts.RetryCount)));
     opts.RetryPause = max(0, double(opts.RetryPause));
+end
+
+function localReportProgress(callback, fraction, message, stage)
+    if isempty(callback)
+        return;
+    end
+    payload = struct('fraction', min(1, max(0, double(fraction))), ...
+        'message', char(string(message)), 'stage', char(string(stage)));
+    try
+        callback(payload);
+    catch
+        % Progress reporting must not interrupt refreshing ROI data.
+    end
 end
 
 function rois = localLoadedRois(opts)

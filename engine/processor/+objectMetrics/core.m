@@ -44,13 +44,24 @@ ds.userData=struct('schema_version',uint16(1), ...
     'source_group',paramout.inputData,'join_report',joinReport, ...
     'growth_applied',growthApplied,'identity_semantics', ...
     'Each row is keyed by immutable ObjectId and references TrackId, Frame, and MaskLabel.');
-dataout=roiobj.data;
-hit=find(arrayfun(@(x)strcmp(char(string(x.groupid)),paramout.outputName),dataout),1);
-if isempty(hit)
-    if numel(dataout)==1&&isempty(dataout(1).data), dataout=ds; else, dataout(end+1)=ds; end
-else
-    dataout(hit)=ds;
+generationSeries=[];
+if paramout.averageByGeneration
+    [model,~]=roiobj.loadCellModel('MigrateLegacy',true);
+    [generationTable,generationReport]=cellMetrics.averageByGeneration( ...
+        model,tbl,'ExcludeCensored',paramout.excludeCensored);
+    generationSeries=dataseries(generationTable,generationTable.Properties.VariableNames, ...
+        'groupid',paramout.generationOutputName,'parentid',roiobj.id, ...
+        'groups',repmat({'generation_metric'},1,width(generationTable)), ...
+        'plot',repmat({false},1,width(generationTable)));
+    generationSeries.class="processing"; generationSeries.type="generation";
+    generationSeries.userData=struct('schema_version',uint16(1), ...
+        'source_group',paramout.outputName,'source_metrics_group',paramout.inputData, ...
+        'family_id',joinReport.family_id,'family_name',joinReport.family_name, ...
+        'mask_provider',joinReport.mask_provider,'generation_report',generationReport);
 end
+dataout=roiobj.data;
+dataout=storeSeries(dataout,ds);
+if ~isempty(generationSeries), dataout=storeSeries(dataout,generationSeries); end
 end
 
 function out=normalized(param)
@@ -59,9 +70,20 @@ if isstruct(param)
     names=fieldnames(param);
     for i=1:numel(names), out.(names{i})=param.(names{i}); end
 end
-textFields={'inputData','geometryData','maskIndexVariable','outputName','sizeVariable'};
+textFields={'inputData','geometryData','maskIndexVariable','outputName','sizeVariable','generationOutputName'};
 for i=1:numel(textFields), out.(textFields{i})=char(string(out.(textFields{i}))); end
 out.deriveGrowth=logical(out.deriveGrowth);
+validateattributes(out.averageByGeneration,{'logical','numeric'},{'scalar','binary'});
+validateattributes(out.excludeCensored,{'logical','numeric'},{'scalar','binary'});
+out.averageByGeneration=logical(out.averageByGeneration);
+out.excludeCensored=logical(out.excludeCensored);
+if out.averageByGeneration && (isempty(strtrim(out.generationOutputName)) || ...
+        strcmp(out.generationOutputName,out.outputName) || ...
+        strcmp(out.generationOutputName,out.inputData) || ...
+        strcmp(out.generationOutputName,out.geometryData))
+    error('objectMetrics:InvalidGenerationOutput', ...
+        'generationOutputName must be nonempty and distinct from temporal and input dataseries names.');
+end
 out.frameIntervalMinutes=double(out.frameIntervalMinutes);
 out.growthWindow=round(double(out.growthWindow));
 if out.frameIntervalMinutes<=0||~isfinite(out.frameIntervalMinutes)
@@ -69,6 +91,15 @@ if out.frameIntervalMinutes<=0||~isfinite(out.frameIntervalMinutes)
 end
 if out.growthWindow<2||~isfinite(out.growthWindow)
     error('objectMetrics:InvalidGrowthWindow','growthWindow must be at least 2.');
+end
+end
+
+function dataout=storeSeries(dataout,ds)
+hit=find(arrayfun(@(x)strcmp(char(string(x.groupid)),char(string(ds.groupid))),dataout),1);
+if isempty(hit)
+    if numel(dataout)==1&&isempty(dataout(1).data), dataout=ds; else, dataout(end+1)=ds; end
+else
+    dataout(hit)=ds;
 end
 end
 

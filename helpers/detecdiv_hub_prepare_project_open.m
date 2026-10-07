@@ -7,6 +7,8 @@ function [shallowObj, access] = detecdiv_hub_prepare_project_open(shallowObj, va
         'mode', 'local', 'reason', '', 'project_id', ref.project_id, 'lease', struct(), 'status', struct());
 
     if ~ref.hubManaged
+        localReportProgress(opts.progressCallback, 1, ...
+            'Project is not Hub-managed; no edit lease is needed.', 'hubAccess');
         shallowObj = localSetHubState(shallowObj, access);
         return;
     end
@@ -20,20 +22,30 @@ function [shallowObj, access] = detecdiv_hub_prepare_project_open(shallowObj, va
     end
 
     try
+        localReportProgress(opts.progressCallback, 0.10, ...
+            'Checking active project edit locks through the Hub...', 'hubLockCheck');
         status = detecdiv_hub_project_locks(ref, opts.hub);
         access.status = status;
+        localReportProgress(opts.progressCallback, 0.45, ...
+            'Hub lock status received; deciding whether this client can edit...', 'hubLockCheck');
         if isfield(status, 'editable') && logical(status.editable)
             access.editable = true;
             access.readOnly = false;
             access.mode = 'write_granted';
             access.reason = localFieldText(status, 'reason', 'No active project lock.');
             if opts.acquireLease
+                localReportProgress(opts.progressCallback, 0.58, ...
+                    'Requesting a local edit lease from the Hub...', 'leaseRequest');
                 lease = detecdiv_hub_acquire_project_lease(ref, 'Hub', opts.hub, ...
                     'TtlSeconds', opts.ttlSeconds, 'Reason', 'DetecDiv project open');
                 access.lease = lease;
                 access.mode = 'lease_active';
                 access.reason = 'Hub edit lease acquired.';
+                localReportProgress(opts.progressCallback, 0.86, ...
+                    'Edit lease granted; starting its heartbeat...', 'leaseHeartbeat');
                 detecdiv_hub_start_lease_heartbeat(ref, lease.id, 'Hub', opts.hub, 'TtlSeconds', opts.ttlSeconds);
+                localReportProgress(opts.progressCallback, 1, ...
+                    'Hub edit lease and heartbeat are active.', 'leaseReady');
             end
         else
             access.editable = false;
@@ -109,7 +121,8 @@ function localStopProjectHeartbeats(ref)
 end
 
 function opts = localParse(varargin)
-    opts = struct('hub', detecdiv_hub_settings_get(), 'acquireLease', true, 'ttlSeconds', 300);
+    opts = struct('hub', detecdiv_hub_settings_get(), 'acquireLease', true, ...
+        'ttlSeconds', 300, 'progressCallback', []);
     i = 1;
     while i <= numel(varargin)
         key = lower(char(string(varargin{i})));
@@ -122,8 +135,23 @@ function opts = localParse(varargin)
                 opts.acquireLease = logical(value);
             case 'ttlseconds'
                 opts.ttlSeconds = double(value);
+            case 'progresscallback'
+                opts.progressCallback = value;
         end
         i = i + 2;
+    end
+end
+
+function localReportProgress(callback, fraction, message, stage)
+    if isempty(callback)
+        return;
+    end
+    payload = struct('fraction', min(1, max(0, double(fraction))), ...
+        'message', char(string(message)), 'stage', char(string(stage)));
+    try
+        callback(payload);
+    catch
+        % UI reporting must not interrupt project access checks.
     end
 end
 

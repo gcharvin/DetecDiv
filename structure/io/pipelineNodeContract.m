@@ -1140,7 +1140,8 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.parameters.data = {};
                 contract.parameters.static = { ...
                     'geometryData','maskIndexVariable','deriveGrowth', ...
-                    'sizeVariable','frameIntervalMinutes','growthWindow'};
+                    'sizeVariable','frameIntervalMinutes','growthWindow', ...
+                    'averageByGeneration','generationOutputName','excludeCensored'};
                 contract.requirements.roi.channelsMin = 0;
                 contract.requirements.roi.dataSeries = true;
                 contract.binding.scope = 'roi';
@@ -1159,8 +1160,14 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.resources.out = resourceDef('dataSeries', ...
                     'object_metrics','object_metrics','outputName', ...
                     'dataSeries','outputName',false,'roiDataSeries');
+                if objectMetricsGenerationEnabled(node)
+                    contract.resources.out(end+1) = resourceDef('dataSeries', ...
+                        'object_metrics_generation','object_metrics_generation','generationOutputName', ...
+                        'dataSeries','generationOutputName',false,'roiDataSeries');
+                end
                 contract.summary = ['Joins computeMetrics measurements to a latent cell-object family, ' ...
-                    'then derives per-track and mother/bud growth metrics. It consumes no image channel directly.'];
+                    'then derives per-track and mother/bud growth metrics, with optional means between ' ...
+                    'observed bud emergences. It consumes no image channel directly.'];
             case 'computerls'
                 averageFluoByDivision = computeRLSAverageFluoByDivisionEnabled(node);
                 contract.in = [ ...
@@ -1679,6 +1686,18 @@ function resources = computeMetricsInputResources(maskCount, scoreCount)
     for i = 1:scoreCount
         key = sprintf('channel%d_name', i);
         resources(end+1) = resourceDef('channel', 'score_roi_image', key, key, 'channels', key, false, ''); %#ok<AGROW>
+    end
+end
+
+function tf = objectMetricsGenerationEnabled(node)
+    params = getField(node, 'params', struct());
+    tf = false;
+    if ~isstruct(params) || ~isfield(params, 'averageByGeneration'), return; end
+    value = params.averageByGeneration;
+    if islogical(value) || isnumeric(value)
+        tf = isscalar(value) && logical(value);
+    else
+        tf = any(strcmp(lower(strtrim(char(string(value)))), {'true','1','yes','on'}));
     end
 end
 

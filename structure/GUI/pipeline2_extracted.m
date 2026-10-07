@@ -7837,14 +7837,15 @@ classdef pipeline2 < matlab.apps.AppBase
             status.Layout.Row = 1;
             status.Layout.Column = [1 5];
 
-            hint = uilabel(section, 'Text', ['Linked classifier = artifact/defaults/training GUI. ' ...
-                'Pipeline execution parameters below are the values used by runs.'], ...
+            hint = uilabel(section, 'Text', ['Choose a classifier folder; execution parameters below ' ...
+                'are the values used by runs.'], ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 2;
             hint.Layout.Column = 1;
 
             linkButton = uibutton(section, 'push', 'Text', 'Link classifier...', ...
                 'ButtonPushedFcn', @(~,~)linkClassifierArtifact(app, node));
+            linkButton.Tooltip = 'Select a classifier folder or a cellLatentModel runtime bundle folder.';
             linkButton.Layout.Row = 2;
             linkButton.Layout.Column = 2;
 
@@ -8162,38 +8163,36 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
-            [file, pth] = uigetfile({ ...
-                'runtime_manifest.json','Latent-model runtime bundle manifest'; ...
-                '*classification*.mat','Classifier object (*classification*.mat)'; ...
-                '*.json','JSON manifests'; '*.mat','MAT files'}, ...
-                'Link existing classifier object', startPath);
-            if isequal(file, 0)
+            selectedFolder = uigetdir(startPath, 'Select classifier folder');
+            if isequal(selectedFolder, 0)
                 return;
             end
-            filePath = fullfile(pth, file);
+            selectedFolder = char(string(selectedFolder));
             linkProgress = [];
             try
-                [~, baseName, extName] = fileparts(filePath);
-                if strcmpi(extName, '.json')
-                    if ~strcmpi(baseName, 'runtime_manifest')
-                        error('pipeline2:UnsupportedClassifierManifest', ...
-                            'Select the runtime_manifest.json at the root of a latent-model runtime bundle.');
-                    end
+                if exist(selectedFolder, 'dir') ~= 7
+                    error('pipeline2:InvalidClassifierFolder', ...
+                        'The selected path is not an accessible folder: %s', selectedFolder);
+                end
+                manifestPath = fullfile(selectedFolder, 'runtime_manifest.json');
+                bundleReport = [];
+                if exist(manifestPath, 'file') == 2
                     if ~strcmpi(char(string(getField(app, app.Data.nodes(idx), 'pkg', ''))), ...
                             'cellLatentModel')
                         error('pipeline2:ClassifierPackageMismatch', ...
-                            'A latent-model runtime manifest can only be linked to a cellLatentModel node.');
+                            ['This folder contains a latent-model runtime bundle, which can only be ' ...
+                             'linked to a cellLatentModel node.']);
                     end
                     linkProgress = uiprogressdlg(app.UIFigure, ...
                         'Title', 'Link latent-model runtime', ...
                         'Message', 'Reading runtime manifest...', ...
                         'Value', 0, 'Cancelable', 'off');
                     drawnow limitrate nocallbacks;
-                    bundleReport = cellLatentModel.validateRuntimeManifest(pth, ...
+                    bundleReport = cellLatentModel.validateRuntimeManifest(selectedFolder, ...
                         @(fraction,message)updateClassifierLinkProgress( ...
                         app,linkProgress,fraction,message));
                     manifestClassiId = char(string(bundleReport.classifierId));
-                    filePath = fullfile(pth, 'classifier', manifestClassiId, ...
+                    filePath = fullfile(selectedFolder, 'classifier', manifestClassiId, ...
                         [manifestClassiId '_classification.mat']);
                     if exist(filePath, 'file') ~= 2
                         error('pipeline2:RuntimeClassifierSnapshotMissing', ...
@@ -8201,18 +8200,60 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                     updateClassifierLinkProgress(app,linkProgress,NaN, ...
                         'Loading the linked classifier snapshot...');
-                elseif ~strcmpi(extName, '.mat') || ...
-                        isempty(regexp(baseName, '_classification$', 'once')) || ...
-                        ~isempty(regexp(baseName, '_classification_\d+$', 'once'))
-                    error('pipeline2:ClassifierSnapshotOnly', ...
-                        'Select a current <classifierId>_classification.mat snapshot or a latent-model runtime_manifest.json. Numbered MAT backups are not supported.');
+                else
+                    snapshots = dir(fullfile(selectedFolder, '*_classification.mat'));
+                    validObjects = {};
+                    expectedPkg = char(string(getField(app, app.Data.nodes(idx), 'pkg', '')));
+                    matchingObjects = {};
+                    matchingFiles = {};
+                    for candidateIndex = 1:numel(snapshots)
+                        candidatePath = fullfile(snapshots(candidateIndex).folder, snapshots(candidateIndex).name);
+                        if ~isempty(regexp(snapshots(candidateIndex).name, ...
+                                '_classification_\d+\.mat$', 'once'))
+                            continue;
+                        end
+                        [candidateObj, ~] = loadClassifierSnapshotStrict(app, candidatePath);
+                        if isempty(candidateObj) || ~isa(candidateObj, 'classi')
+                            continue;
+                        end
+                        validObjects{end+1} = candidateObj; %#ok<AGROW>
+                        candidatePkg = classifierPackageName(app, candidateObj);
+                        if isempty(expectedPkg) || isempty(candidatePkg) || ...
+                                strcmpi(expectedPkg, candidatePkg)
+                            matchingObjects{end+1} = candidateObj; %#ok<AGROW>
+                            matchingFiles{end+1} = candidatePath; %#ok<AGROW>
+                        end
+                    end
+                    if isempty(validObjects)
+                        error('pipeline2:InvalidClassifierFolder', ...
+                            ['The selected folder is not a valid classifier folder. It must contain ' ...
+                             'a current *_classification.mat file with a classi object, or a valid ' ...
+                             'runtime_manifest.json for a cellLatentModel bundle.' newline newline ...
+                             'Folder: %s'], ...
+                            selectedFolder);
+                    end
+                    if isempty(matchingObjects)
+                        foundPackages = cellfun(@(obj)classifierPackageName(app, obj), ...
+                            validObjects, 'UniformOutput', false);
+                        foundPackages = unique(foundPackages(~cellfun(@isempty, foundPackages)));
+                        error('pipeline2:ClassifierPackageMismatch', ...
+                            'This node expects package "%s", but the selected folder contains classifier package(s): %s.', ...
+                            expectedPkg, strjoin(foundPackages, ', '));
+                    end
+                    if numel(matchingObjects) > 1
+                        error('pipeline2:AmbiguousClassifierFolder', ...
+                            ['The selected folder contains multiple matching classifier snapshots. ' ...
+                             'Choose the specific classifier folder. Candidates: %s'], ...
+                            strjoin(matchingFiles, newline));
+                    end
+                    filePath = matchingFiles{1};
                 end
                 [classiObj, msg] = loadClassifierSnapshotStrict(app, filePath);
                 if isempty(classiObj) || ~isa(classiObj, 'classi')
                     if isempty(msg), msg = 'Selected file is not a classi object.'; end
                     error('pipeline2:BadClassifierLink', '%s', msg);
                 end
-                if exist('bundleReport', 'var') && ...
+                if ~isempty(bundleReport) && ...
                         ~strcmp(char(string(classiObj.strid)), manifestClassiId)
                     error('pipeline2:RuntimeClassifierIdMismatch', ...
                         'The runtime manifest names classifier "%s", but the snapshot contains "%s".', ...
@@ -8227,7 +8268,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
                     app.Data.nodes(idx).params = struct();
                 end
-                [classiPath, classiId] = classiObj.getPath;
+                if ~isempty(bundleReport)
+                    classiPath = fileparts(filePath);
+                else
+                    classiPath = selectedFolder;
+                end
+                classiId = char(string(classiObj.strid));
                 app.Data.nodes(idx).params.modulePath = classiPath;
                 app.Data.nodes(idx).params.moduleId = classiId;
                 if ~isempty(actualPkg)
@@ -8991,7 +9037,10 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(moduleId)
                 [~, moduleId] = fileparts(modulePath);
             end
-            snap = fullfile(modulePath, [moduleId '_classification.mat']);
+            snap = localClassifierSnapshotPath(app, modulePath, moduleId);
+            if isempty(snap)
+                snap = fullfile(modulePath, [moduleId '_classification.mat']);
+            end
             if exist(snap, 'file') ~= 2
                 error('pipeline2:MissingLinkedClassifierFile', 'Linked classifier file not found: %s', snap);
             end
@@ -10970,9 +11019,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 useSymbolic = true;
             end
 
-            grid = uigridlayout(parent, [3 3]);
+            grid = uigridlayout(parent, [3 4]);
             grid.RowHeight = {28, 142, 22};
-            grid.ColumnWidth = {96, 170, '1x'};
+            grid.ColumnWidth = {96, 170, '1x', 116};
             grid.Padding = [0 0 0 0];
             grid.RowSpacing = 6;
             grid.ColumnSpacing = 8;
@@ -10994,17 +11043,27 @@ classdef pipeline2 < matlab.apps.AppBase
             mode.Layout.Row = 1;
             mode.Layout.Column = 3;
 
+            channelData = roiExtractChannelTableData(app, node, channels, useSymbolic);
             table = uitable(grid);
             table.ColumnName = {'Use','Channel'};
             table.ColumnEditable = [true false];
             table.ColumnWidth = {52, 'auto'};
             table.RowName = {};
-            table.Data = roiExtractChannelTableData(app, node, channels, useSymbolic);
+            table.Data = channelData;
             table.Enable = ternary(app, useSymbolic, 'off', 'on');
             table.Tooltip = 'Select one or more source channels to extract into ROI H5 files.';
             table.CellEditCallback = @(src,event)roiExtractChannelTableEdited(app, nodeId, src, event);
             table.Layout.Row = 2;
-            table.Layout.Column = [2 3];
+            table.Layout.Column = [2 4];
+
+            selectedCount = sum(cellfun(@(value)logical(value), channelData(:,1)));
+            selectAllButton = uibutton(grid, 'push', ...
+                'Text', ternary(app, selectedCount == size(channelData,1), 'Deselect all', 'Select all'), ...
+                'Enable', ternary(app, useSymbolic || ~hasInventory, 'off', 'on'), ...
+                'ButtonPushedFcn', @(src,~)roiExtractToggleAllChannels(app, nodeId, table, src));
+            selectAllButton.Layout.Row = 1;
+            selectAllButton.Layout.Column = 4;
+            table.UserData = selectAllButton;
 
             hint = uilabel(grid, 'Text', ternary(app, useSymbolic, ...
                 ternary(app, hasInventory, ...
@@ -11013,7 +11072,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 'Manual mode: checked channels are stored in extractChannels.'), ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 3;
-            hint.Layout.Column = [2 3];
+            hint.Layout.Column = [2 4];
         end
 
         function channels = roiExtractAvailableChannels(app)
@@ -11189,6 +11248,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
             end
+            updateRoiExtractSelectAllButton(app, table);
             idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
             if isempty(idx)
                 return;
@@ -11202,6 +11262,51 @@ classdef pipeline2 < matlab.apps.AppBase
             setRuntimeNodeParams(app, nodeId, runtimeParams);
             markPipelineDirty(app, true);
             refreshValidationReport(app, false);
+        end
+
+        function roiExtractToggleAllChannels(app, nodeId, table, button)
+            data = table.Data;
+            if isempty(data)
+                return;
+            end
+            checked = cellfun(@(value)logical(value), data(:,1));
+            selectAll = ~all(checked);
+            selected = {};
+            for i = 1:size(data,1)
+                data{i,1} = selectAll;
+                if selectAll
+                    selected{end+1} = char(string(data{i,2})); %#ok<AGROW>
+                end
+            end
+            table.Data = data;
+            button.Text = ternary(app, selectAll, 'Deselect all', 'Select all');
+
+            idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
+            if isempty(idx)
+                return;
+            end
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            app.Data.nodes(idx).params.extractChannels = selected;
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            runtimeParams.extractChannels = selected;
+            setRuntimeNodeParams(app, nodeId, runtimeParams);
+            markPipelineDirty(app, true);
+            refreshValidationReport(app, false);
+        end
+
+        function updateRoiExtractSelectAllButton(app, table)
+            data = table.Data;
+            if isempty(data)
+                return;
+            end
+            button = table.UserData;
+            if isempty(button) || ~isvalid(button)
+                return;
+            end
+            checked = cellfun(@(value)logical(value), data(:,1));
+            button.Text = ternary(app, all(checked), 'Deselect all', 'Select all');
         end
 
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
@@ -20076,7 +20181,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function report = refreshRunMutationHandles(app, manifest, oldProject, newProject, fromHub)
+        function report = refreshRunMutationHandles(app, manifest, oldProject, newProject, fromHub, progressCallback)
+            if nargin < 6
+                progressCallback = [];
+            end
             report = struct('matchedRois', 0, 'refreshedRois', 0, ...
                 'refreshedChannels', 0, 'refreshedDataRois', 0, ...
                 'pendingRois', {{}}, 'warnings', {{}});
@@ -20092,11 +20200,15 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             explicitRois = app.ExplicitRuntimeRoiList;
             classiObj = app.RuntimeClassifierSource;
+            callback = @(progress)reportHubProjectRefreshProgress(app, progressCallback, ...
+                0.96 + 0.03 * double(getField(app, progress, 'fraction', 0)), ...
+                char(string(getField(app, progress, 'message', 'Refreshing ROI outputs...'))), ...
+                char(string(getField(app, progress, 'stage', 'roiOutputRefresh'))));
             try
                 report = detecdiv_refresh_run_mutations(manifest, ...
                     'Classifier', classiObj, 'Project', oldProject, ...
                     'RoiList', explicitRois, 'RetryCount', retryCount, ...
-                    'RetryPause', retryPause);
+                    'RetryPause', retryPause, 'ProgressCallback', callback);
             catch ME
                 report.warnings{end+1} = ME.message;
             end
@@ -20104,7 +20216,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     (~isequal(oldProject, newProject))
                 try
                     second = detecdiv_refresh_run_mutations(manifest, ...
-                        'Project', newProject, 'RetryCount', 1, 'RetryPause', 0);
+                        'Project', newProject, 'RetryCount', 1, 'RetryPause', 0, ...
+                        'ProgressCallback', callback);
                     report = mergeMutationRefreshReports(app, report, second);
                 catch ME
                     report.warnings{end+1} = ME.message;
@@ -20230,10 +20343,11 @@ classdef pipeline2 < matlab.apps.AppBase
             appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
             resumeDialog = uiprogressdlg(app.UIFigure, ...
                 'Title', 'Refreshing Hub project', ...
-                'Message', 'Reloading project results and acquiring a local edit lease...', ...
-                'Indeterminate', 'on');
+                'Message', 'Preparing local project refresh...', ...
+                'Value', 0);
             drawnow;
-            emitLocalWorkspaceRefreshForHubRun(app, job);
+            progressCallback = @(progress)updateHubProjectRefreshProgress(app, resumeDialog, progress);
+            emitLocalWorkspaceRefreshForHubRun(app, job, progressCallback);
             try
                 close(resumeDialog);
             catch
@@ -20263,7 +20377,47 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function emitLocalWorkspaceRefreshForHubRun(app, job)
+        function updateHubProjectRefreshProgress(app, progressDialog, progress)
+            if ~isstruct(progress)
+                return;
+            end
+            try
+                if ~isvalid(progressDialog)
+                    return;
+                end
+                fraction = double(getField(app, progress, 'fraction', 0));
+                if ~isscalar(fraction) || ~isfinite(fraction)
+                    fraction = 0;
+                end
+                fraction = max(0, min(1, fraction));
+                fraction = max(fraction, double(progressDialog.Value));
+                message = char(string(getField(app, progress, 'message', ...
+                    getField(app, progress, 'stage', 'Refreshing project...'))));
+                progressDialog.Value = fraction;
+                progressDialog.Message = sprintf('%3.0f%% | %s', 100 * fraction, message);
+                drawnow limitrate;
+            catch
+            end
+        end
+
+        function reportHubProjectRefreshProgress(app, callback, fraction, message, stage)
+            if isempty(callback)
+                return;
+            end
+            progress = struct('fraction', fraction, 'message', message, 'stage', stage);
+            try
+                callback(progress);
+            catch
+                % UI progress reporting must not interrupt workspace refresh.
+            end
+        end
+
+        function emitLocalWorkspaceRefreshForHubRun(app, job, progressCallback)
+            if nargin < 3
+                progressCallback = [];
+            end
+            reportHubProjectRefreshProgress(app, progressCallback, 0.01, ...
+                'Resolving the client-side project path...', 'projectPath');
             payload = struct();
             payload.kind = 'pipelineRun';
             payload.action = 'completed';
@@ -20310,12 +20464,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
             end
+            reportHubProjectRefreshProgress(app, progressCallback, 0.03, ...
+                ['Project path resolved: ' payload.projectMatPath], 'projectPath');
             try
                 if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow') && ...
                         ~isempty(payload.projectMatPath)
                     [projectObj, access, resumeInfo] = detecdiv_hub_resume_project_editing( ...
                         app.CurrentProject, 'Hub', hubSettingsFromUi(app), ...
-                        'ProjectMatPath', payload.projectMatPath);
+                        'ProjectMatPath', payload.projectMatPath, ...
+                        'ProgressCallback', progressCallback);
                     app.CurrentProject = projectObj;
                     payload.projectObj = projectObj;
                     payload.summary.hubAccess = access;
@@ -20328,14 +20485,22 @@ classdef pipeline2 < matlab.apps.AppBase
             catch ME
                 payload.summary.resumeError = ME.message;
                 appendRunReport(app, ['Local project refresh after Hub run failed: ' ME.message], struct());
+                reportHubProjectRefreshProgress(app, progressCallback, 0.82, ...
+                    ['Project reload failed: ' ME.message], 'projectReloadFailed');
             end
+            reportHubProjectRefreshProgress(app, progressCallback, 0.96, ...
+                'Refreshing already-open ROI results produced by this run...', 'roiOutputRefresh');
             payload.refreshReport = refreshRunMutationHandles(app, ...
-                payload.mutationManifest, previousProject, payload.projectObj, true);
+                payload.mutationManifest, previousProject, payload.projectObj, true, progressCallback);
+            reportHubProjectRefreshProgress(app, progressCallback, 0.99, ...
+                'Notifying the other open DetecDiv views...', 'workspaceNotification');
             try
                 detecdiv_event('emit', 'pipelineRunCompleted', payload);
                 detecdiv_event('emit', 'workspaceChanged', payload);
             catch
             end
+            reportHubProjectRefreshProgress(app, progressCallback, 1, ...
+                'Project refresh finished.', 'complete');
         end
 
         function tf = isTransientHubStatusError(app, ME) %#ok<INUSD>
