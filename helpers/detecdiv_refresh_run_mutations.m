@@ -11,39 +11,66 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
 
     opts = localParse(varargin{:});
     report = struct('matchedRois', 0, 'refreshedRois', 0, ...
-        'refreshedChannels', 0, 'refreshedDataRois', 0, ...
+        'refreshedChannels', 0, 'refreshedDataRois', 0, 'skippedUnloadedRois', 0, ...
         'pendingRois', {{}}, 'warnings', {{}});
     if ~isstruct(manifest) || ~isfield(manifest, 'rois') || isempty(manifest.rois)
         return;
     end
 
+    localReportProgress(opts.ProgressCallback, 0, ...
+        'Indexing currently loaded ROI handles...', 'indexLoadedRois');
     loadedRois = localLoadedRois(opts);
     if isempty(loadedRois)
+        localReportProgress(opts.ProgressCallback, 1, ...
+            'No ROI output data is currently loaded in this client; nothing to reload.', 'complete');
         return;
     end
+    roiIndex = localBuildRoiIndex(loadedRois);
+    localReportProgress(opts.ProgressCallback, 0.02, ...
+        sprintf('Indexed %d loaded ROI handles; checking %d outputs from this run.', ...
+        numel(loadedRois), numel(manifest.rois)), 'indexLoadedRois');
 
     changes = manifest.rois;
+    progressStride = max(1, ceil(numel(changes) / 100));
     for i = 1:numel(changes)
         roiId = localText(changes(i), 'id');
-        localReportProgress(opts.ProgressCallback, (i - 1) / numel(changes), ...
-            sprintf('Finding loaded ROI %d/%d: %s', i, numel(changes), roiId), 'findRoi');
-        idx = localFindRoi(loadedRois, roiId);
-        if isempty(idx)
+        if isempty(roiId) || ~isKey(roiIndex, roiId)
+            if i == numel(changes) || mod(i, progressStride) == 0
+                localReportProgress(opts.ProgressCallback, i / numel(changes), ...
+                    sprintf('Scanned ROI outputs %d/%d; none loaded for %s.', ...
+                    i, numel(changes), roiId), 'scanRoiOutputs');
+            end
             continue;
         end
-        roiObj = loadedRois(idx(1));
+        roiObj = loadedRois(roiIndex(roiId));
         report.matchedRois = report.matchedRois + 1;
         channels = localCellText(changes(i), 'channels');
         reloadData = localLogical(changes(i), 'reloadData', false) || ...
             ~isempty(localCellText(changes(i), 'dataSeries'));
+        refreshChannels = ~isempty(channels) && localHasLoadedImage(roiObj);
+        refreshData = reloadData && localHasLoadedData(roiObj);
+        if ~refreshChannels && ~refreshData
+            report.skippedUnloadedRois = report.skippedUnloadedRois + 1;
+            if i == numel(changes) || mod(i, progressStride) == 0
+                localReportProgress(opts.ProgressCallback, i / numel(changes), ...
+                    sprintf(['Scanned ROI outputs %d/%d; %d unloaded ROI(s) will remain ' ...
+                    'on disk and load when opened.'], ...
+                    i, numel(changes), report.skippedUnloadedRois), 'skipUnloadedRoi');
+            end
+            continue;
+        end
 
         localReportProgress(opts.ProgressCallback, ...
             ((i - 1) + 0.25) / numel(changes), ...
             sprintf('Checking remote HDF5 channels and MAT results for ROI %d/%d: %s', ...
             i, numel(changes), roiId), 'checkOutputFiles');
-        readyChannels = localWaitForChannels(roiObj, channels, opts);
-        dataReady = ~reloadData || localWaitForData(roiObj, opts);
-        if numel(readyChannels) < numel(channels) || ~dataReady
+        channelsToRefresh = channels;
+        if ~refreshChannels
+            channelsToRefresh = {};
+        end
+        readyChannels = localWaitForChannels(roiObj, channelsToRefresh, opts);
+        dataReady = ~refreshData || localWaitForData(roiObj, opts);
+        if numel(readyChannels) < numel(channelsToRefresh) || ~dataReady
             report.pendingRois{end+1} = roiId; %#ok<AGROW>
         end
         try
@@ -52,13 +79,13 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
                 sprintf('Loading result channels/data into MATLAB for ROI %d/%d: %s', ...
                 i, numel(changes), roiId), 'loadRoiOutputs');
             if ~isempty(readyChannels)
-                roiObj.load('Channel', readyChannels, 'Data', dataReady && reloadData, 'Silent');
+                roiObj.load('Channel', readyChannels, 'Data', dataReady && refreshData, 'Silent');
                 report.refreshedChannels = report.refreshedChannels + numel(readyChannels);
                 report.refreshedRois = report.refreshedRois + 1;
-                if dataReady && reloadData
+                if dataReady && refreshData
                     report.refreshedDataRois = report.refreshedDataRois + 1;
                 end
-            elseif reloadData && dataReady
+            elseif refreshData && dataReady
                 roiObj.load('Data', 'Silent');
                 report.refreshedDataRois = report.refreshedDataRois + 1;
                 report.refreshedRois = report.refreshedRois + 1;
@@ -71,8 +98,8 @@ function report = detecdiv_refresh_run_mutations(manifest, varargin)
     end
     report.pendingRois = unique(report.pendingRois, 'stable');
     localReportProgress(opts.ProgressCallback, 1, ...
-        sprintf('Checked %d ROI output records; refreshed %d.', ...
-        report.matchedRois, report.refreshedRois), 'complete');
+        sprintf('Checked %d matching ROI records; refreshed %d; skipped %d unloaded ROI(s).', ...
+        report.matchedRois, report.refreshedRois, report.skippedUnloadedRois), 'complete');
 end
 
 function opts = localParse(varargin)
@@ -114,48 +141,64 @@ function rois = localLoadedRois(opts)
     end
     try
         if ~isempty(opts.Classifier) && isa(opts.Classifier, 'classi')
-            rois = localAppendUniqueHandles(rois, opts.Classifier.roi);
+            rois = localAppendRois(rois, opts.Classifier.roi);
         end
     catch
     end
     try
         if ~isempty(opts.Project) && isa(opts.Project, 'shallow')
             for i = 1:numel(opts.Project.fov)
-                rois = localAppendUniqueHandles(rois, opts.Project.fov(i).roi);
+                rois = localAppendRois(rois, opts.Project.fov(i).roi);
             end
         end
     catch
     end
 end
 
-function out = localAppendUniqueHandles(out, incoming)
+function out = localAppendRois(out, incoming)
     if isempty(incoming) || ~isa(incoming, 'roi')
         return;
     end
-    for i = 1:numel(incoming)
-        exists = false;
-        for j = 1:numel(out)
-            try
-                if out(j) == incoming(i), exists = true; break; end
-            catch
+    incoming = reshape(incoming, 1, []);
+    if isempty(out)
+        out = incoming;
+    else
+        out = [reshape(out, 1, []) incoming];
+    end
+end
+
+function index = localBuildRoiIndex(rois)
+    index = containers.Map('KeyType', 'char', 'ValueType', 'double');
+    for i = 1:numel(rois)
+        try
+            roiId = char(string(rois(i).id));
+            if ~isempty(roiId) && ~isKey(index, roiId)
+                index(roiId) = i;
             end
-        end
-        if ~exists
-            if isempty(out), out = incoming(i); else, out(end+1) = incoming(i); end %#ok<AGROW>
+        catch
         end
     end
 end
 
-function idx = localFindRoi(rois, roiId)
-    idx = [];
-    if isempty(roiId), return; end
-    for i = 1:numel(rois)
-        try
-            if strcmp(char(string(rois(i).id)), roiId)
-                idx(end+1) = i; %#ok<AGROW>
+function tf = localHasLoadedImage(roiObj)
+    tf = false;
+    try
+        tf = ~isempty(roiObj.image);
+    catch
+    end
+end
+
+function tf = localHasLoadedData(roiObj)
+    tf = false;
+    try
+        data = roiObj.data;
+        for i = 1:numel(data)
+            if isprop(data(i), 'data') && ~isempty(data(i).data)
+                tf = true;
+                return;
             end
-        catch
         end
+    catch
     end
 end
 
