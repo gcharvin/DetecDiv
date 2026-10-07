@@ -9038,6 +9038,7 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
 
             % Create isthedefautcolorCheckBox
             app.isthedefautcolorCheckBox = uicheckbox(app.AnnotationPanel);
+            app.isthedefautcolorCheckBox.Visible = 'off';
             app.isthedefautcolorCheckBox.ValueChangedFcn = createCallbackFcn(app, @isthedefautcolorCheckBoxValueChanged, true);
             app.isthedefautcolorCheckBox.Text = '''1'' is the defaut color';
             app.isthedefautcolorCheckBox.Position = [18 685 131 22];
