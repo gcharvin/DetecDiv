@@ -3,7 +3,13 @@ function [paramout,dataout,imageout] = core(param,roiobj,ctx,classif)
 if nargin < 3, ctx = struct(); end
 if nargin < 4, classif = []; end
 paramout = cellLatentModel.normalizeParam(param,ctx,classif);
-if isempty(roiobj.image), roiobj.load; end
+if isempty(roiobj.image), roiobj.load('Data',false); end
+% A classifier node can receive an ROI whose in-memory dataseries are empty
+% or stale even though data_<ROI>.mat already contains outputs from other
+% pipelines. Seed the model update from persisted data so the full-array
+% output contract below cannot erase those saved groups. Image-only loading
+% above deliberately does not replace this merged dataseries cache.
+roiobj.data = preserveSavedDataseries(roiobj);
 trackChannelName = paramout.trackChannelName;
 trackingRefs = struct();
 compositeImage = [];
@@ -188,6 +194,70 @@ if paramout.debug
         linked,review,familyId,paramout.backend,~isempty(observations.gfp), ...
         ~isempty(observations.brightfield), ...
         ~isempty(observations.nucleus),~isempty(observations.budneck));
+end
+
+function data = preserveSavedDataseries(roiobj)
+%PRESERVESAVEDDATASERIES Keep persisted ROI groups when applying the model.
+% Saved groups are authoritative on group-id collisions. In-memory groups
+% absent from the file are retained, which preserves unsaved annotations and
+% supports ROIs that have not yet been written to disk.
+data = roiobj.data;
+if isa(data,'handle')
+    data = data(isvalid(data));
+end
+
+try
+    roiPath = char(string(roiobj.path));
+    roiId = char(string(roiobj.id));
+catch
+    return;
+end
+if isempty(roiPath) || isempty(roiId)
+    return;
+end
+dataFile = fullfile(roiPath,['data_' roiId '.mat']);
+if ~isfile(dataFile)
+    return;
+end
+
+try
+    saved = load(dataFile,'data');
+catch ME
+    error('cellLatentModel:ExistingDataseriesUnreadable', ...
+        'Cannot read existing ROI dataseries from %s: %s', ...
+        dataFile,ME.message);
+end
+if ~isfield(saved,'data') || ~isa(saved.data,'dataseries')
+    error('cellLatentModel:ExistingDataseriesInvalid', ...
+        'Existing ROI file %s has no valid dataseries array.',dataFile);
+end
+persisted = saved.data;
+if isa(persisted,'handle')
+    persisted = persisted(isvalid(persisted));
+end
+persisted = persisted(:).';
+if isempty(persisted)
+    return;
+end
+if isempty(data)
+    data = persisted;
+    return;
+end
+if ~isa(data,'dataseries')
+    error('cellLatentModel:InMemoryDataseriesInvalid', ...
+        'ROI %s contains an unsupported in-memory data value.',roiId);
+end
+data = data(:).';
+
+savedGroupIds = string(arrayfun(@(ds)char(string(ds.groupid)), ...
+    persisted,'UniformOutput',false));
+memoryGroupIds = string(arrayfun(@(ds)char(string(ds.groupid)), ...
+    data,'UniformOutput',false));
+% Do not let stale in-memory copies replace persisted groups. Append only
+% groups that do not exist in the saved file.
+keepMemory = ~ismember(memoryGroupIds,savedGroupIds) & ...
+    strlength(memoryGroupIds)>0;
+data = [persisted data(keepMemory)];
 end
 end
 
