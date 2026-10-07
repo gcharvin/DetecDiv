@@ -781,6 +781,23 @@ function [img, warnMsg] = materializePatternPatchForExport(projectObj, pat, para
     img = [];
     warnMsg = '';
 
+    % Pipeline and library patterns can carry their patch pixels inline.
+    % Prefer that self-contained copy so exporting does not need to reopen
+    % the source FOV (which may be on a slow or unavailable network share).
+    embeddedKeys = {'image', 'patternImage', 'pattimg', 'patch'};
+    for k = 1:numel(embeddedKeys)
+        key = embeddedKeys{k};
+        if ~isfield(pat, key)
+            continue;
+        end
+        candidate = pat.(key);
+        if isnumeric(candidate) && ~isempty(candidate) && ismatrix(candidate) && ...
+                isreal(candidate) && all(isfinite(candidate(:)))
+            img = candidate;
+            return;
+        end
+    end
+
     if isfield(pat, 'patchFile') && ~isempty(pat.patchFile)
         existingPath = resolveExportRelativePath(char(string(pat.patchFile)), templatePath);
         [img, ok] = loadPatternPatchFile(existingPath);
