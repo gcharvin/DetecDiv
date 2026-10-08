@@ -386,6 +386,7 @@ classdef detector < matlab.apps.AppBase
                         app.PlotRLSButton.Enable="on";
                     elseif strcmp(groups(sel).Source.nodename{h}{2},'divduration')
                         app.PlotdivisiontimesButton.Enable="on";
+                        app.PlotselecteddatasourcesButton.Enable="on";
                     else
                         app.PlotselecteddatasourcesButton.Enable="on";
                     end
