@@ -396,6 +396,14 @@ listy=[];
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
+                keep=~cellfun(@isempty,xout) & ~cellfun(@isempty,yout);
+                xout=xout(keep);
+                yout=yout(keep);
+                if isempty(xout)
+                    disp('No finite generation points are available for this dataseries.');
+                    return;
+                end
+
                 valMin = cellfun(@(x) min(x), xout);
                 totMin=min(valMin)-1;
                 valMax = cellfun(@(x) max(x), xout);
@@ -443,6 +451,10 @@ listy=[];
                 scalarNonEmptyIndex = cellfun(isScalarNonEmpty, xout,yout);
                 xout = xout(scalarNonEmptyIndex);
                 yout=yout(scalarNonEmptyIndex);
+
+                keep=cellfun(@(x,y) any(isfinite(x(:)) & isfinite(y(:))),xout,yout);
+                xout=xout(keep);
+                yout=yout(keep);
 
 
                 if numel(yout)==0

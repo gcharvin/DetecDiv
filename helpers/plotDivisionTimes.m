@@ -209,6 +209,16 @@ for i=1:numel(datagroups)
     yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
     xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
+    valid=cellfun(@(x,y) ~isempty(x) && ~isempty(y),xout,yout);
+    xout=xout(valid);
+    yout=yout(valid);
+    if isempty(xout)
+        warning('plotDivisionTimes:NoDivisionIntervals', ...
+            'No division intervals with finite generation coordinates were found in group "%s".', ...
+            char(string(datagroups(i).Name)));
+        continue;
+    end
+
     valMin = cellfun(@(x) min(x), xout);
     totMin=min(valMin)-1;
     valMax = cellfun(@(x) max(x), xout);

@@ -9,19 +9,12 @@ function exportData(datagroup,rois,filename,varargin)
             disp('Please wait and do not access file until writing is complete....')
             disp('It may take a few minutes !')
 
-            for i=1:numel(dat)
-        
-                if numel(dat)>0
-
-                    d=dat{i};
-
-                    outfile=fullfile(p,[f '_' d{1} '.xlsx']); %write as xlsx is important , otherwise throw an error with large files 
-
-                    if exist(outfile)
-                        delete(outfile);
-                    end
-                end
+            if isempty(dat)
+                warning('exportData:NoDataSelected','No dataseries columns are selected for export.');
+                return;
             end
+
+            clearedGroups={};
 
             for i=1:numel(dat)
                 if numel(dat)>0
@@ -29,43 +22,52 @@ function exportData(datagroup,rois,filename,varargin)
                     d=dat{i};
 
                     strtot={};
-                    cc=1;
                     for j=1:numel(rois)
-                        
+                        if isempty(rois(j).data)
+                            continue;
+                        end
                         groups={rois(j).data.groupid};
                         pix=find(matches(groups,d{1}));
 
                         if numel(pix)
-                            out= rois(j).data(pix).getData(d{2});
-
-                            str={};
-                            str{1}=rois(j).id;
-
-                             if iscell(out)
-                                    str=[str out'];
-                            else
-                                    str2=num2cell(out');
-                                     ny=size(str2,1);
-                                     if ny>1
-                                         str(2:ny,1)={[]};
-                                     end
- 
-                                     str=[str str2];
-                             end
-
-
-                            strtot((cc-1)*size(str,1)+1:cc*size(str,1),1:size(str,2))=str;
-                            cc=cc+1;
-         
+                            out=rois(j).data(pix(1)).getData(d{2});
+                            values=toWriteCells(out);
+                            strtot(end+1,1)={char(string(rois(j).id))}; %#ok<AGROW>
+                            strtot(end,2:1+numel(values))=values(:)'; %#ok<AGROW>
                         end
                     end
 
-                    if cc>1
-                        tt=fullfile(p,[f '_' d{1} '.xlsx']);
-                        writecell(strtot,fullfile(p,[d{1} '_' f '.xlsx']),'sheet',d{2},'WriteMode','overwritesheet');
+                    if ~isempty(strtot)
+                        safeGroup=regexprep(char(string(d{1})),'[^A-Za-z0-9_-]','_');
+                        outfile=fullfile(p,[f '_' safeGroup '.xlsx']);
+                        if ~ismember(safeGroup,clearedGroups) && exist(outfile,'file')==2
+                            delete(outfile);
+                        end
+                        sheet=char(string(d{2}));
+                        sheet=regexprep(sheet,'[\\/\?\*\[\]:]','_');
+                        sheet=sheet(1:min(31,numel(sheet)));
+                        writecell(strtot,outfile,'Sheet',sheet,'WriteMode','overwritesheet');
+                        clearedGroups{end+1}=safeGroup; %#ok<AGROW>
                     end
                 end
             end
 
             disp('Export is done !')
+end
+
+function values=toWriteCells(out)
+if iscategorical(out)
+    values=cellstr(string(out(:)));
+elseif isstring(out)
+    values=cellstr(out(:));
+elseif ischar(out)
+    values=cellstr(out);
+elseif iscell(out)
+    values=out(:);
+elseif isnumeric(out) || islogical(out)
+    values=num2cell(out(:));
+else
+    values=cellstr(string(out(:)));
+end
+end
 
