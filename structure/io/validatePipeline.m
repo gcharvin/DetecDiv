@@ -1319,7 +1319,7 @@ end
 
 function tf = legacyChannelBindingApplies(binding)
     mode = lower(char(string(getField(binding, 'mode', ''))));
-    tf = ~any(strcmp(mode, {'inventory','dataseries','data_series','mask','masks','resource','resources','symbolic'}));
+    tf = ~any(strcmp(mode, {'none','inventory','dataseries','data_series','mask','masks','resource','resources','symbolic'}));
 end
 
 function nodeReport = attachResourceBindingReport(nodeReport, node, state)
