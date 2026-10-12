@@ -758,7 +758,14 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
     ctx.interactive = false;
     % Keep the worker's trusted host mappings available to module validation.
     % The run's client mappings alone may point at another user's X: drive.
-    ctx.execution = struct('requested_mode', 'server');
+    % Local batch jobs use this same entry point with requested_mode=local_process.
+    % Preserve that mode so validation checks their plugin paths on this host.
+    requestedMode = localGetText(payload, {'execution','requested_mode'}, ...
+        localGetText(payload, {'requested_mode'}, 'server'));
+    if isempty(strtrim(requestedMode))
+        requestedMode = 'server';
+    end
+    ctx.execution = struct('requested_mode', requestedMode);
     workerMappings = localGetField(localGetField(payload, 'execution', struct()), ...
         'worker_path_mappings', []);
     if isstruct(workerMappings)
