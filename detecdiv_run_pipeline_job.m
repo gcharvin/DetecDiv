@@ -118,6 +118,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         isCancelled = strcmp(ME.identifier, 'runPipeline:Cancelled') ...
             || contains(lower(ME.message), 'cancelled by user') ...
             || contains(lower(ME.message), 'canceled by user');
+        isNoRoiDetection = localHasCauseIdentifier(ME, 'roiPattern:NoDetections');
 
         try
             if exist('runObj', 'var') && ~isempty(runObj)
@@ -164,6 +165,9 @@ function result = detecdiv_run_pipeline_job(jobInput)
 
         if isCancelled
             result.status = 'cancelled';
+        elseif isNoRoiDetection
+            result.failure_kind = 'no_rois';
+            result.status = 'failed';
         else
             result.status = 'failed';
         end
@@ -183,13 +187,25 @@ function result = detecdiv_run_pipeline_job(jobInput)
             % report; keeping result.error empty prevents the UI from
             % presenting a successful cancellation as a failure stack.
             result.error = '';
+        elseif isNoRoiDetection
+            % Empty ROI detection is an expected stop condition for pipelines
+            % whose downstream nodes require ROIs. Preserve the failed run
+            % report, but let pipeline2 present it as an informational result.
+            result.error = 'No ROIs were detected. Review the saved pattern, reference frame, channel, and threshold.';
+            fprintf('[worker] Pipeline stopped: no ROIs were detected.\n');
         else
             result.error = getReport(ME, 'extended', 'hyperlinks', 'off');
         end
         result.summary = localBuildFailureSummary(report);
         localWriteResultIfRequested(resultPath, result);
-        if isCancelled
-            fprintf('[worker] Pipeline run cancelled: %s\n', ME.message);
+        if isCancelled || isNoRoiDetection
+            if isNoRoiDetection
+                fprintf('[worker] Pipeline stopped after node %s: no ROIs were detected.\n', ...
+                    localNoRoiNodeId(ME));
+                fprintf('[worker] Downstream nodes were not run because they require ROIs.\n');
+            else
+                fprintf('[worker] Pipeline run cancelled: %s\n', ME.message);
+            end
         else
             fprintf(2, '%s\n', result.error);
             error('detecdiv_run_pipeline_job:ExecutionFailed', '%s', ME.message);
@@ -198,6 +214,47 @@ function result = detecdiv_run_pipeline_job(jobInput)
 
     localWriteResultIfRequested(resultPath, result);
     fprintf('PIPELINE_RUN_RESULT_JSON %s\n', char(string(resultPath)));
+end
+
+function nodeId = localNoRoiNodeId(exception)
+    nodeId = 'ROI detection';
+    pending = {exception};
+    visited = 0;
+    while ~isempty(pending) && visited < 64
+        current = pending{1};
+        pending(1) = [];
+        visited = visited + 1;
+        if ~isa(current, 'MException')
+            continue;
+        end
+        if strcmp(current.identifier, 'runPipeline:NodeFailed')
+            token = regexp(current.message, '^Node\s+(.+?)\s+failed:', 'tokens', 'once');
+            if ~isempty(token)
+                nodeId = token{1};
+                return;
+            end
+        end
+        pending = [pending current.cause(:)']; %#ok<AGROW>
+    end
+end
+
+function tf = localHasCauseIdentifier(exception, identifier)
+    tf = false;
+    pending = {exception};
+    visited = 0;
+    while ~isempty(pending) && visited < 64
+        current = pending{1};
+        pending(1) = [];
+        visited = visited + 1;
+        if ~isa(current, 'MException')
+            continue;
+        end
+        if strcmp(current.identifier, identifier)
+            tf = true;
+            return;
+        end
+        pending = [pending current.cause(:)']; %#ok<AGROW>
+    end
 end
 
 function cleanup = localStartWorkerDiary(payload)

@@ -52,6 +52,22 @@ verifyFalse(testCase, report.pluginPackages.accessible);
 verifyTrue(testCase, any(contains(report.errors, 'Plugin package for node')));
 end
 
+function testNoRoisReturnsShortInformationalResult(testCase)
+[payload, cleanup] = localNoDetectionFixture(); %#ok<ASGLU>
+result = detecdiv_run_pipeline_job(payload);
+
+verifyEqual(testCase, result.status, 'failed');
+verifyEqual(testCase, result.failure_kind, 'no_rois');
+verifyTrue(testCase, contains(result.error, 'No ROIs were detected'));
+verifyFalse(testCase, contains(result.error, 'Error using'));
+verifyFalse(testCase, contains(result.error, 'runCore:172'));
+verifyNotEmpty(testCase, result.run_json_path);
+[runObj, message] = pipelineRunLoad(result.run_json_path);
+assert(~isempty(runObj), message);
+verifyEqual(testCase, runObj.status, 'failed');
+verifyEqual(testCase, runObj.outputs.report.nodeRuns.status, 'failed');
+end
+
 function [payload, cleanup] = localFixture(mode)
 root = tempname;
 mkdir(root);
@@ -91,6 +107,47 @@ payload = pipelineRunJobPayload(runObj, project, ...
 payload.project_ref.project_mat_path = projectFile;
 payload.execution.save_project = false;
 payload.execution.dry_run = true;
+end
+
+function [payload, cleanup] = localNoDetectionFixture()
+root = tempname;
+mkdir(root);
+originalPath = path;
+cleanup = onCleanup(@()localCleanup(root, originalPath));
+
+rawDir = fullfile(root, 'raw');
+mkdir(rawDir);
+img = uint16(reshape(mod(1:(64*64), 251), 64, 64));
+imwrite(img, fullfile(rawDir, 'frame1.tif'));
+project = shallow();
+project.io = struct('path', root, 'file', 'worker_project');
+project.fov.id = 'worker_fov';
+project.fov.channel = {'Channel 1'};
+project.fov.frames = 1;
+project.fov.srcpath = {rawDir};
+project.fov.srclist = {dir(fullfile(rawDir, 'frame*.tif'))};
+project.fov.roi = roi();
+project.fov.parent = project;
+projectFile = fullfile(root, 'worker_project.json');
+shallowProjectExportLight(project, projectFile);
+
+pattern = struct('rect', [12 12 8 8], 'image', img(12:19,12:19), ...
+    'fovId', 'worker_fov', 'fovIndex', 1, 'frame', 1, ...
+    'channel', 'Channel 1', 'channelIndex', 1);
+params = struct('referenceFrame', 1, 'threshold', 1, ...
+    'channel', 'Channel 1', 'channelIndex', 1, 'keepExisting', false, ...
+    'pattern', pattern);
+node = struct('id', 'roipattern_1', 'type', 'roiPattern', ...
+    'pkg', 'roiPattern', 'func', 'roiPattern.process', ...
+    'params', params, 'enabled', true);
+pipe = pipeline(root, 'worker_no_rois', 1);
+pipe.nodes = node;
+pipelineSave(pipe, 'Artifacts', false);
+runObj = pipelineRunNew(project, pipe.strid, pipe.path);
+payload = pipelineRunJobPayload(runObj, project, ...
+    fullfile(pipe.path, 'pipeline.json'), 'RequestedMode', 'local_process');
+payload.project_ref.project_mat_path = projectFile;
+payload.execution.save_project = false;
 end
 
 function localCleanup(root, originalPath)

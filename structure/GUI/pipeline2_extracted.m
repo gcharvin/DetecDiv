@@ -20112,6 +20112,20 @@ classdef pipeline2 < matlab.apps.AppBase
                         'The local process run stopped at a safe cancellation point.', ...
                         'Run cancelled', 'Icon', 'warning');
                 otherwise
+                    failureKind = char(string(getField(app, result, 'failure_kind', '')));
+                    if strcmpi(failureKind, 'no_rois')
+                        message = ['Aucune ROI n’a été détectée. Le pipeline s’est arrêté à l’étape ' ...
+                            'd’identification des ROI; les étapes suivantes n’ont pas été exécutées.' ...
+                            newline newline ...
+                            'Vérifiez le motif enregistré, l’image et le canal de référence, ainsi que le seuil.'];
+                        updateRunMonitorProgress(app, app.MonitorLastProgress, 'Aucune ROI détectée.');
+                        appendMonitorConsole(app, ['[result] ' strrep(message, newline, ' ')]);
+                        setRuntimeStatus(app, ['Pipeline arrêté : aucune ROI détectée (' runJsonPath ')']);
+                        appendRunReport(app, 'Local pipeline run: stopped (no ROIs detected)', ...
+                            getField(app, result, 'summary', struct()));
+                        uialert(app.UIFigure, message, 'Aucune ROI détectée', 'Icon', 'info');
+                        return;
+                    end
                     errorText = char(string(getField(app, result, 'error', 'Local process run failed.')));
                     if isempty(strtrim(errorText))
                         errorText = 'Local process run failed.';
