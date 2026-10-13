@@ -26,13 +26,8 @@ GUI/datapickerGUI.m
 *.pyc
 structure/cache/
 
-# Auto-generated GUI sync snapshots
-backups/mlapp_sync/
-backups/pipelineGUI_layout_sync/
-backups/*_layout_sync/
-backups/pipeline2_*/
-backups/mlapp_model_patch/
-backups/workflow2_*_sync/
+# Local backup snapshots (never publish with source code)
+/backups/
 
 # Local analysis and pipeline run artifacts
 analysis_outputs/
@@ -40,7 +35,6 @@ pipeline_classifier_*/
 _tmp_*/
 _tmp_*.zip
 .cache/
-backups/score_manual_recovery/
 structure/GUI/*.patched.mlapp
 structure/GUI/*_tmp.m
 structure/GUI/pipeline2_layouttest*.mlapp
