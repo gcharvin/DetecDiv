@@ -7897,6 +7897,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             clearButton = uibutton(section, 'push', 'Text', 'Clear link', ...
                 'ButtonPushedFcn', @(~,~)clearPluginPackageLink(app, node));
+            clearButton.Tooltip = 'Replace the linked copy with the installed DetecDiv-plugins module, keeping analysis settings.';
             clearButton.Layout.Row = 2;
             clearButton.Layout.Column = 4;
         end
@@ -8045,17 +8046,17 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(idx)
                 return;
             end
-            keys = {'customPackageRoot','customPackageDir','customPackageLoadedAt'};
-            for i = 1:numel(keys)
-                if isfield(app.Data.nodes(idx), keys{i})
-                    app.Data.nodes(idx).(keys{i}) = [];
-                end
-                if isfield(app.Data.nodes(idx), 'params') && isstruct(app.Data.nodes(idx).params) && ...
-                        isfield(app.Data.nodes(idx).params, keys{i})
-                    app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, keys{i});
-                end
+            try
+                [updatedNode, runtimeParams, info] = detecdiv_plugins_reset_link( ...
+                    app.Data.nodes(idx), getRuntimeNodeParams(app, nodeId));
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Clear plugin link', 'Icon', 'warning');
+                return;
             end
+            assignNodeForAssignment(app, idx, updatedNode);
+            setRuntimeNodeParams(app, nodeId, runtimeParams);
             refreshAfterModelChange(app);
+            setRuntimeStatus(app, ['Using installed plugin: ' info.packageDir]);
         end
 
         function txt = classifierReferenceSummary(app, node)
