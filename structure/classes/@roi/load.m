@@ -152,6 +152,7 @@ end
 h5File     = fullfile(obj.path, sprintf('im_%s.h5',  obj.id));
 legacyFile = fullfile(obj.path, sprintf('im_%s.mat', obj.id));
 dataFile   = fullfile(obj.path, sprintf('data_%s.mat', obj.id));
+resultsFile = fullfile(obj.path, sprintf('results_%s.mat', obj.id));
 
 % ================== CHARGEMENT DES IMAGES ==================
 
@@ -262,6 +263,18 @@ end
 % ================== CHARGEMENT DES DONNÉES ==================
 
 if wantData
+    % Legacy processors explicitly persist roi.results in a separate MAT.
+    % Keep this independent of dataseries and of the universal roi.save.
+    % With no sidecar, preserve the existing in-memory/legacy-MAT results.
+    if isfile(resultsFile)
+        Sr = load(resultsFile, 'results');
+        if ~isfield(Sr, 'results') || ...
+                ~(isempty(Sr.results) || (isstruct(Sr.results) && isscalar(Sr.results)))
+            error('loadROI:InvalidLegacyResults', ...
+                'Invalid legacy results sidecar for ROI %s: %s', obj.id, resultsFile);
+        end
+        obj.results = Sr.results;
+    end
     if isfile(dataFile)
         Sd = load(dataFile,'data');
         if isfield(Sd,'data')
