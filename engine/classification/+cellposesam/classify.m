@@ -538,7 +538,8 @@ end
 % would approach the legacy MAX_PATH limit; in that case, put only these
 % transient per-ROI files in a short, unique user-temp directory.
 if ispc && numel(workDir) + 1 + numel('classify_cellposesam_config.json') > 240
-    workDir = shortCellposeWorkDirLocal(ctx, nodeId, roiId);
+    workDir = cellposesam.utils.createShortWorkDir();
+    disp(['[INFO] CellposeSAM short local work directory: ' workDir]);
 end
 
 if exist(workDir, 'dir') ~= 7
@@ -549,41 +550,6 @@ if exist(workDir, 'dir') ~= 7
 end
 if ~isWritableDirLocal(workDir)
     error('cellposesam:WorkDirNotWritable', 'CellposeSAM work directory is not writable: %s', workDir);
-end
-end
-
-function workDir = shortCellposeWorkDirLocal(ctx, nodeId, roiId)
-runId = firstTextLocal( ...
-    nestedTextLocal(ctx, {'runId'}, ''), ...
-    nestedTextLocal(ctx, {'run','runId'}, ''), ...
-    nestedTextLocal(ctx, {'run','id'}, ''), ...
-    'run');
-runKey = safePathPartLocal(runId);
-nodeKey = safePathPartLocal(nodeId);
-roiKey = safePathPartLocal(roiId);
-
-% Bound each component so even a long Windows user profile remains well
-% below MAX_PATH. A fresh suffix prevents collisions between repeated runs.
-runKey = keepPathSuffixLocal(runKey, 12);
-nodeKey = keepPathSuffixLocal(nodeKey, 16);
-roiKey = keepPathSuffixLocal(roiKey, 24);
-[~, nonce] = fileparts(tempname);
-nonce = keepPathSuffixLocal(safePathPartLocal(nonce), 12);
-
-workDir = fullfile(tempdir, 'DetecDivCellpose', runKey, ...
-    [nodeKey '_' roiKey '_' nonce]);
-if numel(workDir) + 1 + numel('classify_cellposesam_config.json') > 240
-    error('cellposesam:ShortWorkDirTooLong', ...
-        'Windows temporary path is still too long for Cellpose: %s', workDir);
-end
-end
-
-function part = keepPathSuffixLocal(part, maxLength)
-if numel(part) > maxLength
-    part = part(end-maxLength+1:end);
-end
-if isempty(part)
-    part = 'x';
 end
 end
 
@@ -639,7 +605,8 @@ try
         return;
     end
     [~, tmpName] = fileparts(tempname);
-    testPath = fullfile(pathText, ['.detecdiv_write_test_' tmpName '.tmp']);
+    tmpName = tmpName(max(1, end-11):end);
+    testPath = fullfile(pathText, ['.ddcv_' tmpName '.tmp']);
     fid = fopen(testPath, 'w');
     if fid < 0
         return;
