@@ -2361,32 +2361,17 @@ end
     methods (Access = private)
 
         function  displayClassiImage(app,clas)
-
             selectedNode=app.Tree.SelectedNodes;
-
-
-            if numel(selectedNode.NodeData)==0
-                loade=1;
-
-                pth=clas.path;
-                sam=fullfile(pth,'sampleImage.png');
-
-                if exist(sam)
-                    im=imread(sam);
-
-                else
-
-                    [ k, himg]=clas.displayFormattedTrainingSet('Display','Nimages',9);
-                    %    himg
-                    im=himg;
-                    close
-
-                end
+            im=selectedNode.NodeData;
+            if isempty(im)||~(isnumeric(im)||islogical(im))
+                im=classifierSampleImage(clas);
                 selectedNode.NodeData=im;
-            else
-                im=selectedNode.NodeData;
             end
-
+            if isempty(im)
+                cla(app.UIAxes);
+                title(app.UIAxes,'No formatted training data');
+                return;
+            end
             imshow(im,'parent',app.UIAxes);
         end
 
