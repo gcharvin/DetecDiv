@@ -27,17 +27,14 @@ function [paramout,dataout,imageout] = core(param, roiobj, frames)
 %
 %       1) Channel [baseName '_cell'] (H×W×1×Tfull, uint8) :
 %          - 0   : fond
-%          - 255 : mère
-%          - 2–254 : bud, intensité ∝ aire du bud (normalisée sur toutes
-%                    les frames traitées)
+%          - 1   : mère uniquement
 %
 %       2) Channel [baseName '_bud'] (H×W×1×Tfull, uint8) :
 %          - 0   : fond / pas de bud
 %          - 1   : masque bud
 %
-% NOTE IMPLEMENTATION: despite older '_conf' comments and legacy
-% comments above, the active code currently writes a binary bud mask to
-% [baseName '_bud']; it does not write the internally computed confidence.
+%   DATA SERIES: [baseName '_areas'] exposes Area_Mother and Area_Bud in
+%   pixels. No assigned bud is 0; no tracked mother is NaN for both areas.
 %
 % INPUTS
 %   param   : struct de paramètres (géré par le GUI) contenant au minimum :
@@ -49,14 +46,14 @@ function [paramout,dataout,imageout] = core(param, roiobj, frames)
 %           * 'daughter_trap': lignée fille au fond (bas de la cavité)
 %       - param.outputChannelName : char
 %           Nom de base des canaux de sortie :
-%             * [baseName '_cell']  : mask mère+bud encodé taille (0,2–254,255)
+%             * [baseName '_cell']  : masque binaire de la mère.
 %             * [baseName '_bud']   : masque bud.
 %
 %   roiobj  : objet ROI, supposé contenir au moins :
 %       - roiobj.image : tableau [H x W x C x Tfull]
 %           Empilement d'images ou de masques, dont un canal avec les
 %           labels d'instance.
-%       - roiobj.data  : données associées (non modifiées ici).
+%       - roiobj.data  : données associées, complétées par les aires de sortie.
 %
 %   frames  : (optionnel) vecteur d'indices de frames à traiter (1-based).
 %             Exemples : [] (toutes les frames), 1:T, 30:35, [10 12 20].
@@ -124,7 +121,7 @@ if isempty(roiobj.image)
     roiobj.load();
 end
 
-dataout  = roiobj.data;
+dataout=roiobj.data;
 imageout = roiobj.image;
 
 % Récupération du canal d'instance
@@ -659,7 +656,10 @@ if ~isempty(pixBud)
     localSetIndexedOutputDisplay(roiobj, pixBud, [0 1 0]);
 end
 
-dataout  = roiobj.data;
+areas=trackMotherLineageViterbi.areaSeries(roiobj,frameIdx,baseName);
+dataout=roiobj.data;
+existing=find(strcmp(string({dataout.groupid}),string(areas.groupid)),1);
+if isempty(existing),dataout(end+1)=areas;else,dataout(existing)=areas;end
 imageout = roiobj.image;
 paramout.saveChannels = {cellName, budName};
 

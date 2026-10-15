@@ -150,9 +150,8 @@ if strcmp(mode,'frame')
         if isstruct(dialogs(i).UserData)&&isfield(dialogs(i).UserData,'bodyPanel'),dialog=dialogs(i);break;end
     end
     verifyNotEmpty(testCase,dialog);closeDialog=onCleanup(@()delete(dialog)); %#ok<NASGU>
-    control=parameterControl(dialog,'featureCount');assertNotEmpty(testCase,control);
-    control.Value=3;callback=control.ValueChangedFcn;callback(control,[]);drawnow;
-    verifyNotEmpty(testCase,parameterControl(dialog,'featureColumn3'));
+    verifyEmpty(testCase,parameterControl(dialog,'featureCount'));
+    verifyEmpty(testCase,parameterControl(dialog,'featureColumn2'));
 end
 end
 function control=parameterControl(fig,key)
@@ -177,7 +176,8 @@ verifyFalse(testCase,any(contains(string(choices.values),'id_training')));
 node=struct('type','classifier','pkg','lstm_timeseries','params',struct('featureCount',5));
 contract=pipelineNodeContract(node);verifyNumElements(testCase,contract.resources.in,5);
 verifyEqual(testCase,contract.requirements.roi.channelsMin,0);verifyTrue(testCase,contract.requirements.roi.dataSeries);
-verifyTrue(testCase,all(ismember({'featureCount','featureColumn5','executionEnvironment'},contract.parameters.static)));
+verifyFalse(testCase,any(ismember({'featureCount','featureColumn5'},contract.parameters.static)));
+verifyTrue(testCase,ismember('executionEnvironment',contract.parameters.static));
 node.contract=pipelineNodeContract(struct('type','classifier','pkg','lstm_timeseries','params',struct('featureCount',2)));
 contract=pipelineNodeContract(node);verifyNumElements(testCase,contract.resources.in,5);
 end
@@ -234,13 +234,42 @@ function testClassifierGUIDynamicFeatureBindings(testCase)
 [c,cleanup]=fixture(); %#ok<ASGLU>
 app=classifierGUI(c);finish=onCleanup(@()delete(app)); %#ok<NASGU>
 cb=app.SettrainingparametersTab.ButtonDownFcn;cb(app.SettrainingparametersTab,[]);drawnow;
-t=app.UITableParam.Data;verifyTrue(testCase,all(ismember({'feature1','feature2','featureColumn2'},t.Param)));
+t=app.UITableParam.Data;verifyFalse(testCase,any(startsWith(string(t.Param),'feature')));
 verifyTrue(testCase,any(contains(string(app.TypeDropDown.Items),'lstm_timeseries')));
-row=find(strcmp(t.Param,'featureCount'),1);
-event=struct('Indices',[row 2],'NewData','4','PreviousData','2');
-cb=app.UITableParam.CellEditCallback;cb(app.UITableParam,event);drawnow;
-verifyEqual(testCase,c.trainingParam.featureCount,4);
-verifyTrue(testCase,all(ismember({'feature4','featureColumn4'},app.UITableParam.Data.Param)));
+buttons=findall(app.ClassifierUIFigure,'Type','uibutton');
+verifyTrue(testCase,any(strcmp({buttons.Text},'Configure inputs in Pipeline2...')));
+editor=lstm_timeseries.openInputBindings(c);closeEditor=onCleanup(@()delete(editor)); %#ok<NASGU>
+verifyEmpty(testCase,findall(editor.UIFigure,'Tag','NumericComponent_feature1'));
+component=findall(editor.UIFigure,'Tag','NumericComponent_feature2');
+verifyNotEmpty(testCase,component);verifyEqual(testCase,component(1).Value,2);
+verifyFalse(testCase,contains(string(editor.PipelineandRuncheckreportLabel.Text),'Missing inputs'));
+variable=findall(editor.UIFigure,'Tag','NumericVariable_feature2');variable=variable(1);
+variable.Value='a';cb=variable.ValueChangedFcn;cb(variable,[]);drawnow;
+verifyEmpty(testCase,findall(editor.UIFigure,'Tag','NumericComponent_feature2'));
+variable=findall(editor.UIFigure,'Tag','NumericVariable_feature2');variable=variable(1);
+variable.Value='b';cb=variable.ValueChangedFcn;cb(variable,[]);drawnow;
+component=findall(editor.UIFigure,'Tag','NumericComponent_feature2');component=component(1);
+component.Value=2;cb=component.ValueChangedFcn;cb(component,[]);drawnow;
+remove=findall(editor.UIFigure,'Tag','RemoveInput_feature1');
+assertNotEmpty(testCase,remove);cb=remove(1).ButtonPushedFcn;cb(remove(1),[]);drawnow;
+component=findall(editor.UIFigure,'Tag','NumericComponent_feature1');verifyNotEmpty(testCase,component);
+cb=editor.NewRunButton.ButtonPushedFcn;cb(editor.NewRunButton,[]);drawnow;
+verifyEqual(testCase,numel(c.dataset.inputBindings),1);
+verifyEqual(testCase,c.dataset.inputBindings.selector,'input / b');
+verifyEqual(testCase,c.dataset.inputBindings.component,2);
+verifyFalse(testCase,isfield(c.trainingParam,'featureCount'));
+X=lstm_timeseries.features(c,c.roi(1));verifySize(testCase,X,[1 8]);
+verifyEqual(testCase,X,2*((1:8)+1));
+end
+function testSeparateBindingsPreserveFeaturesLabelsAndOptimizer(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+before=lstm_timeseries.features(c,c.roi(1));labels=c.roi(1).data(2).data;
+p=lstm_timeseries.parameters(c);lstm_timeseries.storeInputBindings(c,p);
+verifyEqual(testCase,lstm_timeseries.features(c,c.roi(1)),before);
+verifyEqual(testCase,c.roi(1).data(2).data,labels);
+verifyEqual(testCase,c.trainingParam.hiddenUnits,4);
+verifyFalse(testCase,any(startsWith(string(fieldnames(c.trainingParam)),'feature')));
+verifyNumElements(testCase,lstm_timeseries.inputBindingSummary(c),2);
 end
 function [c,cleanup]=fixture()
 root=tempname;mkdir(root);cleanup=onCleanup(@()rmdir(root,'s'));

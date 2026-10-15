@@ -118,6 +118,9 @@ classdef pipeline2 < matlab.apps.AppBase
         CurrentProject = []
         CurrentProjectVarName char = ''
         RuntimeDataSeriesCache struct = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
+        NumericTraceInventory = []
+        BindingEditorClassifier = []
+        BindingEditorCallback = []
         RuntimeInventoryRefreshSuspended logical = false
         RuntimeModeUnlocked logical = false
         RuntimeInputModeLocked logical = false
@@ -10953,14 +10956,19 @@ classdef pipeline2 < matlab.apps.AppBase
         function grid = buildBindingSection(app, parent, data, node, editable)
             n = max(1, size(data, 1));
             grid = uigridlayout(parent, [n 3]);
+            grid.Scrollable='on';
             rowHeights = repmat({28}, 1, n);
             for r = 1:size(data, 1)
                 if strcmpi(char(string(data{r,1})), 'Input') && isDataSeriesVariableBindingParamForUi(app, data{r,3})
-                    rowHeights{r} = 54;
+                    rowHeights{r} = numericBindingHeight(app,node,data{r,3},data{r,4});
                 end
             end
             grid.RowHeight = rowHeights;
-            grid.ColumnWidth = {96, 170, '1x'};
+            if strcmpi(node.pkg,'lstm_timeseries')
+                grid.ColumnWidth = {70, 105, '1x', 70};
+            else
+                grid.ColumnWidth = {70, 105, '1x'};
+            end
             grid.Padding = [0 0 0 0];
             grid.RowSpacing = 6;
             grid.ColumnSpacing = 8;
@@ -10986,6 +10994,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctrl = createBindingControl(app, grid, node, param, value, choices, direction, editable);
                 ctrl.Layout.Row = i;
                 ctrl.Layout.Column = 3;
+                if strcmpi(node.pkg,'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'))
+                    remove=uibutton(grid,'Text','Remove','Tag',['RemoveInput_' param], ...
+                        'Enable',ternary(app,editable&&node.params.featureCount>1,'on','off'), ...
+                        'ButtonPushedFcn',@(~,~)changeNumericInputList(app,node,param));
+                    remove.Layout.Row=i;remove.Layout.Column=4;
+                end
                 if isempty(ctrl.Tooltip)
                     ctrl.Tooltip = tooltip;
                 elseif ~isempty(tooltip)
@@ -11002,7 +11016,7 @@ classdef pipeline2 < matlab.apps.AppBase
             rowHeights = zeros(1, size(data, 1));
             for r = 1:size(data, 1)
                 if strcmpi(char(string(data{r,1})), 'Input') && isDataSeriesVariableBindingParamForUi(app, data{r,3})
-                    rowHeights(r) = 54;
+                    rowHeights(r) = 81;
                 else
                     rowHeights(r) = 28;
                 end
@@ -11312,6 +11326,13 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
             enableState = ternary(app, editable, 'on', 'off');
+            if strcmpi(node.pkg,'lstm_timeseries')&&strcmp(param,'featureCount')
+                ctrl=uigridlayout(parent,[1 2]);ctrl.RowHeight={24};ctrl.ColumnWidth={'1x',100};ctrl.Padding=[0 0 0 0];
+                uilabel(ctrl,'Text',sprintf('%d input traces',node.params.featureCount));
+                uibutton(ctrl,'Text','Add input','Tag','AddNumericInput','Enable',enableState, ...
+                    'ButtonPushedFcn',@(~,~)changeNumericInputList(app,node,''));
+                return;
+            end
             isInput = strcmpi(char(string(direction)), 'Input');
             if isInput && isDataSeriesVariableBindingParamForUi(app, param)
                 ctrl = createDataSeriesVariableBindingControl(app, parent, node, param, value, choices, direction, editable);
@@ -11427,6 +11448,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             seriesChoices = dataSeriesVariableSeriesChoicesForUi(app, choices, seriesName);
+            if strcmpi(node.pkg,'lstm_timeseries')
+                inventory=numericTraceInventory(app);
+                seriesChoices=unique([seriesChoices unique({inventory.group},'stable')],'stable');
+            end
             if isempty(seriesChoices)
                 seriesChoices = {seriesName};
             end
@@ -11447,6 +11472,12 @@ classdef pipeline2 < matlab.apps.AppBase
             seriesDrop.Layout.Column = 1;
 
             variableChoices = dataSeriesVariableDropdownChoicesForUi(app, seriesDrop.Value, variableName);
+            if strcmpi(node.pkg,'lstm_timeseries')
+                inventory=numericTraceInventory(app);group=concreteDataSeriesNameForVariableChoices(app,seriesDrop.Value);
+                keep=strcmp({inventory.group},group);
+                if any(keep),variableChoices=unique({inventory(keep).variable},'stable');end
+                if ~ismember(variableName,variableChoices),variableChoices=[{variableName} variableChoices];end
+            end
             varDrop = uidropdown(ctrl);
             varDrop.Items = variableChoices;
             if any(strcmp(variableChoices, variableName))
@@ -11460,6 +11491,25 @@ classdef pipeline2 < matlab.apps.AppBase
             varDrop.Tooltip = 'Variable declared inside the selected dataseries. Choices are sampled from existing ROI dataseries when available.';
             varDrop.Layout.Row = 2;
             varDrop.Layout.Column = 1;
+            if strcmpi(node.pkg,'lstm_timeseries')
+                seriesDrop.Tag=['NumericSeries_' param];varDrop.Tag=['NumericVariable_' param];
+                columns=numericBindingColumns(app,value);number=regexp(param,'\d+$','match','once');key=['featureColumn' number];
+                component=getField(app,getField(app,node,'params',struct()),key,1);
+                if columns>1
+                    ctrl.RowHeight={24 24 24};componentDrop=uidropdown(ctrl,'Tag',['NumericComponent_' param]);
+                    componentDrop.Items=arrayfun(@(i)sprintf('Component %d of %d',i,columns),1:columns,'UniformOutput',false);
+                    componentDrop.ItemsData=1:columns;
+                    if component>columns
+                        componentDrop.Items{end+1}=sprintf('Component %d (unavailable)',component);
+                        componentDrop.ItemsData(end+1)=component;
+                    end
+                    componentDrop.Value=component;componentDrop.Enable=enableState;
+                    componentDrop.Tooltip='This variable has several scalar values per frame. Choose the component used by this input.';
+                    componentDrop.Layout.Row=3;componentDrop.ValueChangedFcn=@(src,~)numericComponentChanged(app,node,key,src.Value);
+                elseif columns==0&&component>1
+                    ctrl.RowHeight={24 24 24};label=uilabel(ctrl,'Text',sprintf('Saved component %d (source unavailable)',component));label.Layout.Row=3;
+                end
+            end
 
             seriesDrop.ValueChangedFcn = @(src,~)dataSeriesVariableSeriesChanged(app, node, param, direction, src.Value, varDrop);
             varDrop.ValueChangedFcn = @(src,~)dataSeriesVariableNameChanged(app, node, param, direction, seriesDrop.Value, src.Value);
@@ -11608,6 +11658,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 pkg = lower(char(string(getField(app, sourceNode, 'pkg', ''))));
                 if strcmp(pkg, 'computemetrics')
                     choices = inferComputeMetricsVariableChoicesForUi(app, sourceNode);
+                elseif strcmp(pkg,'trackmotherlineageviterbi')
+                    choices={'Area_Mother','Area_Bud'};
                 elseif any(strcmp(pkg, {'cnn_lstm','cnn','lstm_timeseries'}))
                     choices = {'id','labels'};
                     p=getField(app,sourceNode,'params',struct());
@@ -11710,6 +11762,16 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             variableChoices = dataSeriesVariableDropdownChoicesForUi(app, seriesName, currentVariable);
+            if strcmpi(node.pkg,'lstm_timeseries')
+                inventory=numericTraceInventory(app);group=concreteDataSeriesNameForVariableChoices(app,seriesName);
+                keep=strcmp({inventory.group},group);
+                if any(keep)
+                    variableChoices=unique({inventory(keep).variable},'stable');
+                    if ~ismember(currentVariable,variableChoices)
+                        currentVariable='<variable>';variableChoices=[{'<variable>'} variableChoices];
+                    end
+                end
+            end
             variableDrop.Items = variableChoices;
             if any(strcmp(variableChoices, currentVariable))
                 variableName = currentVariable;
@@ -11995,6 +12057,99 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function rows = numericTraceInventory(app)
+            if ~isempty(app.NumericTraceInventory)
+                rows=app.NumericTraceInventory;return;
+            end
+            rows=struct('name',{},'group',{},'variable',{},'columns',{},'roiCount',{});
+            [rois,~]=runtimeSampledRoisForDataSeries(app);
+            if isempty(rois)&&~isempty(app.ExplicitRuntimeRoiList)
+                rois=app.ExplicitRuntimeRoiList;
+            end
+            for k=1:min(12,numel(rois))
+                found=classifierBinding.numericSeries(rois(k));
+                for j=1:numel(found)
+                    idx=find(strcmp({rows.name},found(j).name),1);
+                    if isempty(idx)
+                        rows(end+1)=found(j); %#ok<AGROW>
+                    else
+                        rows(idx).columns=min(rows(idx).columns,found(j).columns);
+                        rows(idx).roiCount=rows(idx).roiCount+1;
+                    end
+                end
+            end
+            app.NumericTraceInventory=rows;
+        end
+
+        function columns = numericBindingColumns(app,value)
+            [group,variable]=splitDataSeriesVariableBindingForUi(app,value);
+            group=concreteDataSeriesNameForVariableChoices(app,group);
+            rows=numericTraceInventory(app);
+            idx=find(strcmp({rows.group},group)&strcmp({rows.variable},variable),1);
+            columns=0;if ~isempty(idx),columns=rows(idx).columns;end
+        end
+
+        function height = numericBindingHeight(app,node,param,value)
+            height=54;
+            if strcmpi(node.pkg,'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'))
+                key=['featureColumn' regexp(param,'\d+$','match','once')];
+                component=getField(app,node.params,key,1);
+                columns=numericBindingColumns(app,value);
+                if columns>1||(columns==0&&component>1),height=81;end
+            end
+        end
+
+        function changeNumericInputList(app,node,removeParam)
+            idx=find(strcmp({app.Data.nodes.id},node.id),1);
+            if isempty(idx),return;end
+            old=app.Data.nodes(idx).params;p=lstm_timeseries.parameters([],old);
+            selectors=cell(1,p.featureCount);components=ones(1,p.featureCount);
+            for k=1:p.featureCount
+                selectors{k}=p.(sprintf('feature%d',k));components(k)=p.(sprintf('featureColumn%d',k));
+            end
+            if isempty(removeParam)
+                if numel(selectors)>=128,return;end
+                selectors{end+1}='';components(end+1)=1;
+            else
+                if numel(selectors)<=1,return;end
+                k=str2double(regexp(removeParam,'\d+$','match','once'));
+                selectors(k)=[];components(k)=[];
+            end
+            keys=fieldnames(old);
+            for k=1:numel(keys)
+                if ~isempty(regexp(keys{k},'^feature(?:Column)?\d+$','once'))
+                    old=rmfield(old,keys{k});clearRuntimeNodeParam(app,node.id,keys{k});
+                end
+            end
+            old.featureCount=numel(selectors);clearRuntimeNodeParam(app,node.id,'featureCount');
+            for k=1:numel(selectors)
+                old.(sprintf('feature%d',k))=selectors{k};old.(sprintf('featureColumn%d',k))=components(k);
+            end
+            app.Data.nodes(idx).params=old;
+            markPipelineDirty(app,true);refreshModuleTabs(app);refreshValidationReport(app,false);
+        end
+
+        function numericComponentChanged(app,node,key,value)
+            idx=find(strcmp({app.Data.nodes.id},node.id),1);
+            if isempty(idx),return;end
+            app.Data.nodes(idx).params.(key)=double(value);
+            clearRuntimeNodeParam(app,node.id,key);
+            markPipelineDirty(app,true);refreshValidationReport(app,false);
+        end
+
+        function applyClassifierInputBindings(app)
+            try
+                nodes=app.Data.nodes;idx=find(strcmpi({nodes.pkg},'lstm_timeseries'));
+                assert(numel(idx)==1,'Expected one numeric LSTM node.');
+                lstm_timeseries.storeInputBindings(app.BindingEditorClassifier,nodes(idx).params);
+                if ~isempty(app.BindingEditorCallback),app.BindingEditorCallback();end
+                markPipelineDirty(app,false);
+                app.ProgressionStatusLabel.Text='Inputs applied. Save the classifier; format and retrain after changing inputs.';
+            catch ME
+                uialert(app.UIFigure,ME.message,'Input bindings');
+            end
+        end
+
         function bindingControlChanged(app, node, param, direction, value)
             nodeId = char(string(getField(app, node, 'id', '')));
             idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
@@ -12043,7 +12198,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 clearRuntimeNodeParam(app, nodeId, param);
             end
 
-            if ~isInput
+            numericInput=isInput&&strcmpi(node.pkg,'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'));
+            if numericInput && numericBindingColumns(app,value)==1
+                key=['featureColumn' regexp(param,'\d+$','match','once')];
+                app.Data.nodes(idx).params.(key)=1;clearRuntimeNodeParam(app,nodeId,key);
+            end
+            if ~isInput || numericInput
                 updateRuntimeProgress(app, d, 'Refreshing dependent binding choices...');
                 refreshModuleTabs(app);
             end
@@ -12096,7 +12256,7 @@ classdef pipeline2 < matlab.apps.AppBase
             value = strtrim(char(string(value)));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
             if strcmp(pkg, 'trackmotherlineageviterbi') && strcmp(char(string(param)), 'outputChannelName')
-                value = regexprep(value, '(?i)_(cell|bud|conf)$', '');
+                value = regexprep(value, '(?i)_(cell|bud|conf|areas)$', '');
             end
         end
 
@@ -12111,6 +12271,10 @@ classdef pipeline2 < matlab.apps.AppBase
             resources = getField(app, contract, 'resources', struct());
             inputs = getField(app, resources, 'in', struct([]));
             outputs = getField(app, resources, 'out', struct([]));
+            if strcmpi(getField(app,node,'pkg',''),'lstm_timeseries')
+                p=lstm_timeseries.parameters(struct('trainingParam',node.params));
+                data(end+1,:)={'Inputs','Selected traces','featureCount',p.featureCount,{},'Add or remove input bindings; count follows this list.'};
+            end
 
             for i = 1:numel(inputs)
                 spec = inputs(i);
@@ -12812,6 +12976,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function clearRuntimeDataSeriesCache(app)
             app.RuntimeDataSeriesCache = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
+            app.NumericTraceInventory=[];
         end
 
         function name = dataSeriesDisplayName(app, item) %#ok<INUSD>
@@ -13323,6 +13488,9 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function label = bindingResourceLabel(app, node, spec, param)
             label = resourceSpecLabel(app, spec);
+            if strcmpi(getField(app,node,'pkg',''),'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'))
+                label=['Input ' regexp(param,'\d+$','match','once')];return;
+            end
             if ~strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 return;
             end
@@ -13480,6 +13648,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if ~isfield(ctx, 'dataSeriesNames') || isempty(ctx.dataSeriesNames)
                 runtimeDataSeries = runtimeDataSeriesNames(app);
+                if isempty(runtimeDataSeries)&&~isempty(app.BindingEditorClassifier)
+                    inventory=numericTraceInventory(app);
+                    runtimeDataSeries=unique({inventory.group},'stable');
+                end
                 if ~isempty(runtimeDataSeries)
                     ctx.dataSeriesNames = runtimeDataSeries;
                     ctx.dataSeries = runtimeDataSeries;
@@ -21761,6 +21933,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function SmokeTestButtonPushed(app, event) %#ok<INUSD>
+            if ~isempty(app.BindingEditorClassifier)
+                uialert(app.UIFigure,'Use Apply inputs, then save and train from Classifier GUI.','Input bindings only');return;
+            end
             if app.BatchPrototypeMode
                 uialert(app.UIFigure, 'Smoke test execution is disabled in batch prototype mode. Use this window only to configure runtime parameters.', ...
                     'Batch prototype', 'Icon', 'info');
@@ -22272,6 +22447,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function RunButtonPushed(app, event) %#ok<INUSD>
+            if ~isempty(app.BindingEditorClassifier)
+                uialert(app.UIFigure,'Use Apply inputs, then save and train from Classifier GUI.','Input bindings only');return;
+            end
             if app.BatchPrototypeMode
                 uialert(app.UIFigure, 'Direct run execution is disabled in batch prototype mode. Click Use Prototype to return parameters to the Batch Builder.', ...
                     'Batch prototype', 'Icon', 'info');
@@ -23210,6 +23388,17 @@ classdef pipeline2 < matlab.apps.AppBase
 
     % App creation and deletion
     methods (Access = public)
+
+        function configureClassifierInputBindings(app,classif,afterApply)
+            app.BindingEditorClassifier=classif;
+            app.BindingEditorCallback=afterApply;
+            refreshValidationReport(app,false);
+            app.UIFigure.Name=['Input bindings - ' classif.strid];
+            app.RunButton.Enable='off';app.SmokeTestButton.Enable='off';
+            app.NewRunButton.Text='Apply inputs';
+            app.NewRunButton.ButtonPushedFcn=@(~,~)applyClassifierInputBindings(app);
+            app.MainTabGroup.SelectedTab=app.BuildTab;
+        end
 
         % Construct app
         function app = pipeline2(varargin)

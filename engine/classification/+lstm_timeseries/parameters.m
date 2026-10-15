@@ -5,6 +5,19 @@ if nargin>=1&&~isempty(classif)
     try,s=classif.trainingParam;catch,s=struct();end
     if isstruct(s),names=fieldnames(s);for k=1:numel(names),p.(names{k})=s.(names{k});end,end
 end
+% New classifiers keep data bindings separately from optimizer parameters.
+% Read legacy trainingParam slots when no explicit binding set was saved.
+try
+    bindings=classif.dataset.inputBindings;
+    if isstruct(bindings)&&~isempty(bindings)
+        p.featureCount=numel(bindings);
+        for k=1:numel(bindings)
+            p.(sprintf('feature%d',k))=bindings(k).selector;
+            p.(sprintf('featureColumn%d',k))=bindings(k).component;
+        end
+    end
+catch
+end
 if nargin>=2&&isstruct(overrides)
     names=fieldnames(overrides);for k=1:numel(names),p.(names{k})=overrides.(names{k});end
 end

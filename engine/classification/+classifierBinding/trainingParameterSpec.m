@@ -17,6 +17,11 @@ try
                 isfield(rawPolicy,'showUnspecified')
             policy.showUnspecified = logical(rawPolicy.showUnspecified);
         end
+        if isstruct(rawPolicy)&&isscalar(rawPolicy)
+            for key={'showBindings','inputEditor','inputSummary'}
+                if isfield(rawPolicy,key{1}),policy.(key{1})=rawPolicy.(key{1});end
+            end
+        end
     else
         raw = feval(fun,classif);
     end

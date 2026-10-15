@@ -7,11 +7,21 @@ or any other numeric temporal ROI table variable.
 
 ## Classifier GUI
 
-Select the `lstm_timeseries` classifier type. In **Training parameters**:
+Select the `lstm_timeseries` classifier type. **Configure inputs in Pipeline2...**
+opens the normal binding editor, from either classifier parameters or the
+training tab. Add/remove inputs in its binding list, select the dataseries and
+variable, then **Apply inputs**. This edits the classifier in memory; save it
+in Classifier GUI. Applying bindings never submits a pipeline or training job.
 
-- Set `featureCount`, then select each `featureN` as `group / variable`.
-- Set `featureColumnN` to select a scalar component of a matrix-valued variable.
-  Scalar variables use column 1. Input order is significant.
+Scalar inputs have no component selector. Matrix-valued variables expose a
+component selector only when the ROI inventory reports several columns.
+Input order is significant. New selections are stored in
+`classif.dataset.inputBindings`, separately from optimizer parameters.
+Legacy `trainingParam.featureN`/`featureColumnN` files remain readable and are
+migrated only when bindings are applied. Input changes require reformatting
+and retraining; an existing trained network is never silently adapted.
+
+In **Training parameters**:
 - Choose `outputMode`: `frame`, `window`, or `video`.
 - `windowLength` is the fixed number of frames for `window`; in `frame` mode it
   is the maximum contiguous sequence length, with a state reset between chunks
@@ -43,7 +53,9 @@ subset. The exported dataset records the exact split and sequence frames.
 The node exposes `featureCount` input bindings of type `dataSeriesVariable`.
 Each binding has a series selector and a variable selector. Resources from
 preceding classification/metrics modules and existing ROI are available.
-`featureColumnN` chooses the component, and `outputName` names the prediction.
+The add/remove controls determine the count. The optional component selector
+writes `featureColumnN`; `outputName` names the prediction. These are bindings,
+not entries in the static/execution parameter dialog.
 For example:
 
 ```matlab
@@ -87,6 +99,14 @@ as missing rather than as measured zeros. Optional
 The same `transform` function standardizes training and inference using frozen
 training means/scales. Neither validation nor test features influence these
 statistics. No temporal interpolation or test-set threshold selection occurs.
+
+`trackMotherLineageViterbi` exposes `<outputChannelName>_areas / Area_Mother`
+and `Area_Bud`, measured in pixels from its separate assigned binary masks.
+Only the bud associated with the tracked mother contributes. When a tracked
+mother has no bud, bud area is zero; when the mother is missing, both areas are
+NaN. Selected-frame updates preserve existing areas outside the selection and
+leave never-processed frames missing. The read-only `areaSeries` helper can
+also measure previously computed masks without rerunning tracking.
 
 Training exposes `hiddenUnits`, `dropout`, `l2Regularization` and
 `classWeighting` (`none` or `inverse-frequency`). Class weights use only the

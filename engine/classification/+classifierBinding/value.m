@@ -4,6 +4,9 @@ function value = value(classif, binding)
 value = [];
 storage = lower(strtrim(char(string(binding.storage))));
 switch storage
+    case 'packageinputs'
+        hook=[char(string(classif.classifierPkg)) '.parameters'];
+        if ~isempty(which(hook)),p=feval(hook,classif);if isfield(p,binding.param),value=p.(binding.param);end,end
     case 'trainingparam'
         try
             tp = classif.trainingParam;

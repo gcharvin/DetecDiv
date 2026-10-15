@@ -122,6 +122,9 @@ trainingScopeTextArea = gobjects(0);
 typedBindingChoicesLoaded logical = false;
 roiTableInitialized logical = false;
 annotationInitialRows = struct([]);
+inputBindingPanel = gobjects(0);
+inputBindingSummary = gobjects(0);
+inputBindingTrainingButton = gobjects(0);
     end
 
     properties (Access = public)
@@ -157,10 +160,6 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingC
     parameterDisplayPolicy = struct('showUnspecified',true);
     try
         bindingSpec = classifierBinding.trainingSpec(classiObj);
-        if ~isempty(bindingSpec) && loadBindingCatalog
-            bindingCatalog = classifierBinding.catalog(classiObj, ...
-                'ProgressFcn', progressFcn);
-        end
     catch ME
         warning('classifierGUI:TrainingBindings', ...
             'Could not build typed training bindings: %s', ME.message);
@@ -172,6 +171,11 @@ function [spec, t] = buildParamTable(app, trainingParam, classiObj, loadBindingC
     catch ME
         warning('classifierGUI:TrainingParameterSpec', ...
             'Could not build training-parameter labels: %s',ME.message);
+    end
+    if isfield(parameterDisplayPolicy,'showBindings')&&~parameterDisplayPolicy.showBindings
+        bindingSpec=struct([]);
+    elseif ~isempty(bindingSpec)&&loadBindingCatalog
+        bindingCatalog=classifierBinding.catalog(classiObj,'ProgressFcn',progressFcn);
     end
 
     keys = fieldnames(tp);
@@ -533,6 +537,12 @@ end
 function refreshTypedTrainingBindingChoices(app)
     classiObj = app.Data.classiObj;
     if ~hasTypedTrainingBindings(app, classiObj)
+        return;
+    end
+    [~,policy]=classifierBinding.trainingParameterSpec(classiObj);
+    if isfield(policy,'showBindings')&&~policy.showBindings
+        [app.paramSpec,app.paramTableData]=buildParamTable(app,classiObj.trainingParam,classiObj,false);
+        app.UITableParam.Data=app.paramTableData;app.typedBindingChoicesLoaded=true;
         return;
     end
     selectedKey = app.paramSelectedKey;
@@ -1194,6 +1204,37 @@ end
 updateTrainingScopeLabels(app,classiObj);
 end
 
+function refreshSeparateInputBindings(app,classiObj)
+[~,policy]=classifierBinding.trainingParameterSpec(classiObj);
+separate=isfield(policy,'inputEditor')&&~isempty(policy.inputEditor);
+if ~separate
+    if ~isempty(app.inputBindingPanel)&&isvalid(app.inputBindingPanel),app.inputBindingPanel.Visible='off';end
+    if ~isempty(app.inputBindingTrainingButton)&&isvalid(app.inputBindingTrainingButton),app.inputBindingTrainingButton.Visible='off';end
+    return;
+end
+if isempty(app.inputBindingPanel)||~isvalid(app.inputBindingPanel)
+    app.inputBindingPanel=uipanel(app.SetclassifierparametersTab,'Title','Input data — Pipeline2 bindings','Position',[16 340 682 145]);
+    app.inputBindingSummary=uitextarea(app.inputBindingPanel,'Editable','off','Position',[10 45 660 74]);
+    uibutton(app.inputBindingPanel,'Text','Configure inputs in Pipeline2...', ...
+        'Position',[10 8 275 28],'ButtonPushedFcn',@(~,~)openSeparateInputBindings(app));
+    app.inputBindingTrainingButton=uibutton(app.SettrainingparametersTab, ...
+        'Text','Configure inputs in Pipeline2...','Position',[14 14 310 28], ...
+        'ButtonPushedFcn',@(~,~)openSeparateInputBindings(app));
+end
+app.inputBindingPanel.Visible='on';app.inputBindingTrainingButton.Visible='on';
+app.inputBindingSummary.Value=feval(policy.inputSummary,classiObj);
+end
+
+function openSeparateInputBindings(app)
+c=app.Data.classiObj;[~,policy]=classifierBinding.trainingParameterSpec(c);
+feval(policy.inputEditor,c,@()inputBindingsApplied(app));
+end
+
+function inputBindingsApplied(app)
+if ~isvalid(app),return;end
+app.refreshAll('RebuildTrainingParam',true);
+end
+
 
 function label = classifierDropdownLabel(app, classiObj)
 % Reuse the package entry already present in classlist instead of adding
@@ -1415,6 +1456,7 @@ end
 
             typedTrainingBindings = hasTypedTrainingBindings(app, classiObj);
             setLegacyChannelSelectorVisible(app, ~typedTrainingBindings);
+            refreshSeparateInputBindings(app,classiObj);
 
             if ~typedTrainingBindings
 

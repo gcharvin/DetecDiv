@@ -644,11 +644,13 @@ assert(any(strcmp({resolution.applied.nodeId}, 'max_bud_1') & strcmp({resolution
 assert(ok, 'Explicit Viterbi output validation failed: %s', strjoin(validation.errors, ' | '));
 key = matlab.lang.makeValidName('track_viterbi_1');
 outputs = validation.binding.nodes.(key).resources.outputs;
-assert(numel(outputs) == 2, 'trackMotherLineageViterbi should expose two output resources.');
+assert(numel(outputs) == 3, 'trackMotherLineageViterbi should expose two masks and assigned areas.');
 assert(any(strcmp({outputs.role}, 'lineage_mother_mask') & strcmp({outputs.concreteName}, 'MotherLineageViterbi_cell')), ...
     'Missing explicit Viterbi mother mask output.');
 assert(any(strcmp({outputs.role}, 'lineage_bud_mask') & strcmp({outputs.concreteName}, 'MotherLineageViterbi_bud')), ...
     'Missing explicit Viterbi bud mask output.');
+assert(any(strcmp({outputs.role},'lineage_areas')&strcmp({outputs.concreteName},'MotherLineageViterbi_areas')), ...
+    'Missing explicit Viterbi assigned-area dataseries.');
 end
 
 function testResourceBindingAddsExecutionDependency()

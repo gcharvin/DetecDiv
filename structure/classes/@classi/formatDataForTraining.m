@@ -370,6 +370,6 @@ end
                     target, ME.message);
             end
         end
-        mkdir(classifierPath, name);
+        mkdir(target);
     end
 end

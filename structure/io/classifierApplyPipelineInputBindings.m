@@ -27,6 +27,14 @@ if isempty(selectorKeys)
 end
 
 trainingParam = classifierStructProperty(classiObj, 'trainingParam');
+% Numeric LSTM bindings have separate persisted storage; retain the legacy
+% selector overlay behavior for other modules and older classifier files.
+try
+    if strcmp(classiObj.classifierPkg,'lstm_timeseries')
+        trainingParam=lstm_timeseries.parameters(classiObj);
+    end
+catch
+end
 executionParam = classifierStructProperty(classiObj, 'executionParam');
 intent = strtrim(char(string(intent)));
 

@@ -1,7 +1,8 @@
 function out = format(classif, rois, ctx)
 %FORMAT Build reviewed feature sequences; retain ROI-disjoint validation.
 if nargin<3,ctx=struct();end
-p=lstm_timeseries.parameters(classif);classes=cellstr(string(classif.classes(:).'));
+overrides=struct();if isfield(ctx,'params'),overrides=ctx.params;end
+p=lstm_timeseries.parameters(classif,overrides);classes=cellstr(string(classif.classes(:).'));
 assert(numel(classes)>=2&&numel(unique(classes))==numel(classes),'lstm_timeseries:Classes','Define at least two distinct state classes.');
 assert(all(strlength(strtrim(string(classes)))>0)&& ...
     ~any(ismember(lower(string(classes)),["undefined","unclassified","<undefined>"])), ...
