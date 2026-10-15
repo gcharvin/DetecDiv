@@ -29,7 +29,21 @@ if isfield(ctx,'cancel') && isstruct(ctx.cancel)
     end
 end
 
-[data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName, cancelPath, ctx);
+% The backend prepares output planes before calling Python. A failed run
+% must not leave those transient channels on the shared ROI handle: the Hub
+% saves project metadata after errors to retain earlier completed work.
+% MATLAB arrays/structs use copy-on-write, including a compact input cache.
+imageBefore = roiobj.image;
+channelidBefore = roiobj.channelid;
+displayBefore = roiobj.display;
+try
+    [data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName, cancelPath, ctx);
+catch ME
+    roiobj.image = imageBefore;
+    roiobj.channelid = channelidBefore;
+    roiobj.display = displayBefore;
+    rethrow(ME);
+end
 
 out.data = data;
 out.image = image;
