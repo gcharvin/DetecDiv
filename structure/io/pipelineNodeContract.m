@@ -536,7 +536,7 @@ end
 function contract = applyContractPostRules(contract, node)
     nodeType = lower(char(string(getField(node, 'type', ''))));
     pkgName = lower(char(string(getField(node, 'pkg', ''))));
-    if strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam')
+    if strcmp(nodeType, 'classifier') && any(strcmp(pkgName, {'cellposesam','lstm_timeseries'}))
         % CellposeSAM outputs are controlled by node.params.outputType. Some
         % saved templates carry an older node.contract; regenerate this
         % package-owned contract after merge so stale resources cannot mask
@@ -1405,7 +1405,11 @@ if isempty(which(specFun))
 end
 
 try
-    spec = feval(specFun);
+    if strcmp(pkgName,'lstm_timeseries')
+        spec = feval(specFun,struct('trainingParam',getField(node,'params',struct())));
+    else
+        spec = feval(specFun);
+    end
 catch
     return;
 end

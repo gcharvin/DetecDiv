@@ -58,6 +58,10 @@ for i = 1:numel(inputs)
     catch
     end
 end
+if isempty(channels) && ~isempty(inputs) && ...
+        all(~ismember(lower(string({inputs.type})),["channel","mask"]))
+    return;
+end
 if isempty(channels)
     for key = {'channels','channel','channelName'}
         if isfield(params, key{1})

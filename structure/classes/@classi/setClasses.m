@@ -157,6 +157,11 @@ function tf = isLSTMClassifier_(classif)
 % Example: {'LSTM + CNN workflow'} or similar.
     tf = false;
     try
+        category=classiNormalizeCategory(classif.category);
+        if strcmpi(category{1},'LSTM'),tf=true;return;end
+    catch
+    end
+    try
         d = classif.description;
         if numel(d) >= 3 && ~isempty(d{3}) && ~isempty(d{3}{1})
             tf = contains(lower(string(d{3}{1})), "lstm");

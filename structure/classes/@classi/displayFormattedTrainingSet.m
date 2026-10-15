@@ -27,6 +27,10 @@ function [output, himg] = displayFormattedTrainingSet(classif, varargin)
 % -------------------------------------------------------------------------
 % 1) Parsing des paramètres
 % -------------------------------------------------------------------------
+hook=[char(string(classif.classifierPkg)) '.formattedTrainingSet'];
+if ~isempty(classif.classifierPkg)&&~isempty(which(hook))
+    [output,himg]=feval(hook,classif,varargin{:});return;
+end
 display  = 0;
 n        = 10;
 mode     = 'raw';          % 'raw' ou 'Augmentation'

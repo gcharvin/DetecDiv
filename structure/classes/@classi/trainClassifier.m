@@ -98,7 +98,8 @@ else
     end
 
     % Backward compatibility: ensure transfer_learning exists
-    if ~isfield(classif.trainingParam,'transfer_learning')
+    if ~isfield(classif.trainingParam,'transfer_learning') && ...
+            (~usesPkg || any(strcmpi(classif.classifierPkg,{'cnn','cnn_lstm','deeplab_pixel_classification'})))
         [t,~] = classif.version;
         str = t(:,1);
         str = ['ImageNet', str', 'ImageNet'];

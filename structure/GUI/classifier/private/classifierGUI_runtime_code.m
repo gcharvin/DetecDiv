@@ -890,6 +890,16 @@ function applyParamEdit(app, key, newVal)
     end
 
     app.Data.classiObj = c;
+      if strcmpi(char(string(c.classifierPkg)),'lstm_timeseries') && strcmp(key,'featureCount')
+          cfg=lstm_timeseries.parameters(c);
+          for i=1:cfg.featureCount
+              for field={sprintf('feature%d',i),sprintf('featureColumn%d',i)}
+                  if ~isfield(c.trainingParam,field{1}),c.trainingParam.(field{1})=cfg.(field{1});end
+              end
+          end
+          app.typedBindingChoicesLoaded=false;
+          refreshTypedTrainingBindingChoices(app);
+      end
     refreshTrainingScopePanel(app);
     checkStatus(app,false);
 end
@@ -2512,10 +2522,12 @@ end
          tmpstr='';
          cc=0;
          for i=1:size(k,1)
-                tmpstr=[tmpstr 'Folder: "' k{i,1} '" : ' num2str(k{i,2}) ' images'  newline];
+                unit='images';if strcmpi(classiObj.classifierPkg,'lstm_timeseries'),unit='sequences';end
+                tmpstr=[tmpstr 'Folder: "' k{i,1} '" : ' num2str(k{i,2}) ' ' unit newline];
                 cc=cc+k{i,2};
          end
-      tmpstr=[tmpstr 'Total number of images: ' num2str(cc)];
+      unit='images';if strcmpi(classiObj.classifierPkg,'lstm_timeseries'),unit='sequences';end
+      tmpstr=[tmpstr 'Total number of ' unit ': ' num2str(cc)];
 
          app.formatLabel.Text=tmpstr;
      end

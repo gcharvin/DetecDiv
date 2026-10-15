@@ -194,8 +194,13 @@ try
 catch
     channel = classif.channelName;
 end
+if ischar(channel) || isstring(channel)
+    channel = cellstr(string(channel));
+end
 
-[boundsMode, boundsGlobal] = localGetBoundsPolicy(classif);
+[boundsGlobal, boundsInfo] = trainingBounds.resolve(classif, rois(1));
+boundsMode = boundsInfo.mode;
+if ~strcmpi(boundsMode, 'auto'), boundsGlobal = []; end
 switch lower(string(boundsMode))
     case "auto"
         if isempty(boundsGlobal)

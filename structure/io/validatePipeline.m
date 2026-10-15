@@ -4042,6 +4042,8 @@ function tf = dataSeriesVariableRoleCompatible(wantedRole, availableRole)
         return;
     end
     switch wantedRole
+        case 'numeric_trace'
+            tf = true;
         case {'metric_variable','metrics_variable'}
             tf = strcmp(availableRole, 'metrics');
         case {'classification_label','classification_variable'}

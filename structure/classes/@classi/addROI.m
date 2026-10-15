@@ -283,16 +283,17 @@ for ii = 1:length(rois)
 
             nT = size(classif.roi(cc+1).image,4);
 
-            % id vector for seq2seq; scalar for seq2one
+            % Annotation dataseries always span every frame, including
+            % seq2one windows. Keep the legacy scalar only in ROI.train.
             classif.roi(cc+1).train.(classif.strid).id = zeros(1, nT);
-            if isprop(classif,'output') && classif.output == 1
-                classif.roi(cc+1).train.(classif.strid).id = 0;
-            end
 
             classif.roi(cc+1).train.(classif.strid).classes = classif.classes;
 
             % Convert ROI.train to dataseries (must create something under roi.data)
             formatInDataSeries.core(classif.roi(cc+1));
+            if isprop(classif,'output') && classif.output == 1
+                classif.roi(cc+1).train.(classif.strid).id = 0;
+            end
         end
     end
 

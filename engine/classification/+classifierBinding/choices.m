@@ -22,6 +22,14 @@ end
 type = lower(char(string(binding.type)));
 role = lower(char(string(binding.role)));
 switch type
+    case 'dataseriesvariable'
+        if isfield(catalog,'seriesVariables')
+            rows=catalog.seriesVariables;
+            for i=1:numel(rows)
+                values{end+1}=rows(i).name; %#ok<AGROW>
+                labels{end+1}=coverageLabel(rows(i).name,rows(i).roiCount,total); %#ok<AGROW>
+            end
+        end
     case {'channel','mask'}
         rows = compatibleChannels(catalog.channels, role);
         for i = 1:numel(rows)

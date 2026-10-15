@@ -11455,6 +11455,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 varDrop.Value = variableChoices{1};
             end
             varDrop.Enable = enableState;
+            % Upstream modules can expose a series before its variables exist.
+            varDrop.Editable = 'on';
             varDrop.Tooltip = 'Variable declared inside the selected dataseries. Choices are sampled from existing ROI dataseries when available.';
             varDrop.Layout.Row = 2;
             varDrop.Layout.Column = 1;
@@ -11464,7 +11466,8 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function tf = isDataSeriesVariableBindingParamForUi(app, param) %#ok<INUSD>
-            tf = any(strcmpi(char(string(param)), {'labelVariable','fluorescenceVariable'}));
+            tf = any(strcmpi(char(string(param)), {'labelVariable','fluorescenceVariable'})) || ...
+                ~isempty(regexp(char(string(param)),'^feature\d+$','once'));
         end
 
         function [seriesName, variableName] = splitDataSeriesVariableBindingForUi(app, value) %#ok<INUSD>
@@ -11605,8 +11608,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 pkg = lower(char(string(getField(app, sourceNode, 'pkg', ''))));
                 if strcmp(pkg, 'computemetrics')
                     choices = inferComputeMetricsVariableChoicesForUi(app, sourceNode);
-                elseif strcmp(pkg, 'cnn_lstm')
+                elseif any(strcmp(pkg, {'cnn_lstm','cnn','lstm_timeseries'}))
                     choices = {'id','labels'};
+                    p=getField(app,sourceNode,'params',struct());
+                    classes=getField(app,p,'classes',{});
+                    for k=1:numel(classes)
+                        choices{end+1}=['prob_' char(string(classes{k}))]; %#ok<AGROW>
+                    end
                 end
             catch
                 choices = {};
@@ -13139,6 +13147,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             switch wantedRole
+                case 'numeric_trace'
+                    tf = true;
                 case {'metric_variable','metrics_variable'}
                     tf = strcmp(availableRole, 'metrics');
                 case {'classification_label','classification_variable'}
@@ -13763,6 +13773,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 ctrl.Enable = ctrlEnableState;
                 ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+                if strcmpi(char(string(getField(app,node,'pkg',''))),'lstm_timeseries')&&strcmp(key,'featureCount')
+                    ctrl.ValueChangedFcn=@(src,~)numericFeatureCountChanged(app,node,key,src,scope);
+                end
                 return;
             end
 
@@ -14094,6 +14107,17 @@ classdef pipeline2 < matlab.apps.AppBase
             choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
         end
 
+        function numericFeatureCountChanged(app,node,key,src,scope)
+            dialog=ancestor(src,'figure');
+            paramControlChanged(app,node,key,src.Value,scope);
+            if ~isequal(dialog,app.UIFigure)&&isvalid(dialog)&&isstruct(dialog.UserData)&&isfield(dialog.UserData,'bodyPanel')
+                nodeId=char(string(node.id));
+                populateStaticParametersDialogBody(app,dialog.UserData.bodyPanel,nodeId);
+                idx=find(strcmp({app.Data.nodes.id},nodeId),1);
+                if ~isempty(idx),resizeStaticParametersDialog(app,dialog,app.Data.nodes(idx));end
+            end
+        end
+
         function paramControlChanged(app, node, key, value, scope)
             if nargin < 6 || isempty(scope)
                 scope = 'static';
@@ -14144,6 +14168,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
 
+            if strcmpi(scope,'static')&&strcmp(pkg,'lstm_timeseries')&&strcmp(keyText,'featureCount')
+                value=normalizeCountValue(app,value,1,128);
+            end
             if strcmpi(scope, 'runtime')
                 runtimeParams = getRuntimeNodeParams(app, nodeId);
                 runtimeParams.(keyText) = value;
@@ -14156,6 +14183,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params = struct();
                 end
                 app.Data.nodes(idx).params.(keyText) = value;
+                if strcmp(pkg,'lstm_timeseries')&&strcmp(keyText,'featureCount')
+                    cfg=lstm_timeseries.parameters(struct('trainingParam',app.Data.nodes(idx).params));
+                    for i=1:cfg.featureCount
+                        for field={sprintf('feature%d',i),sprintf('featureColumn%d',i)}
+                            if ~isfield(app.Data.nodes(idx).params,field{1}),app.Data.nodes(idx).params.(field{1})=cfg.(field{1});end
+                        end
+                    end
+                end
                 if strcmpi(nodeType, 'processor') && strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'mode')
                     if any(strcmp(char(string(value)), {'subtraction','division'}))
                         app.Data.nodes(idx).params.requiredChannelCount = 2;
@@ -14235,6 +14270,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'deeplab_pixel_classification') && ...
                 strcmpi(keyText, 'outputType')) || ...
+                (strcmpi(nodeType,'classifier')&&strcmpi(pkg,'lstm_timeseries')&&strcmpi(keyText,'featureCount')) || ...
                 (strcmpi(nodeType, 'custom') && ...
                 any(strcmpi(keyText, {'inputPorts','outputPorts','argumentsJson','callMode','parametersJson'})));
         end
@@ -14287,7 +14323,12 @@ classdef pipeline2 < matlab.apps.AppBase
                         keys = processorStaticKeys(app, pkg, node);
                     case 'classifier'
                         app.ensureCustomPackagePathForNode(node);
-                        keys = classifierStaticKeys(app, pkgName);
+                        if strcmpi(pkgName,'lstm_timeseries')
+                            spec=lstm_timeseries.executionSpec(struct('trainingParam',getField(app,node,'params',struct())));
+                            keys=spec.staticKeys;
+                        else
+                            keys = classifierStaticKeys(app, pkgName);
+                        end
                     otherwise
                         keys = contractParamKeys(app, node, scope);
                 end

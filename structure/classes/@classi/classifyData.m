@@ -109,6 +109,14 @@ if isempty(classifyFun)
 end
 fhandle   = eval(['@' classifyFun]);
 isPipelineFun = usesPkg || any(strcmpi(classifyFun, {'classifyImageLSTMNetFun','cnn_lstm.classify'}));
+requiresRoiImages=true;
+if usesPkg
+    specFun=[char(string(classi.classifierPkg)) '.executionSpec'];
+    if ~isempty(which(specFun))
+        imageSpec=feval(specFun,classi);
+        if isfield(imageSpec,'requiresRoiImages'),requiresRoiImages=logical(imageSpec.requiresRoiImages);end
+    end
+end
 
 disp(['Classifying roi data using ' classifyFun]);
 if usesPkg
@@ -208,7 +216,11 @@ for i = 1:numel(roiobj)
     % mistakes it for caller-owned data and retains every image loaded by
     % this loop.
     hadDataInMemory = hasMaterializedRoiDataLocal(roiobj(i).data);
-    ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
+    if requiresRoiImages
+        ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
+    else
+        classifierBinding.numericSeries(roiobj(i));
+    end
     if para
         hadImageByIdx(i) = hadImageInMemory;
         hadDataByIdx(i) = hadDataInMemory;
@@ -267,11 +279,11 @@ for i = 1:numel(roiobj)
     % ---------------------------------------------------------
     % Load ROI image if needed
     % ---------------------------------------------------------
-    if isempty(roiobj(i).image)
+    if requiresRoiImages && isempty(roiobj(i).image)
         disp(['[DEBUG] classifyData: ROI ' roiIdStr ' has empty image -> loading']);
         loadRoiImageForClassificationLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
     end
-    if isempty(roiobj(i).image)
+    if requiresRoiImages && isempty(roiobj(i).image)
         warning(['ROI is empty; skipping... (ROI ' roiIdStr ')']);
         continue;
     end
@@ -283,9 +295,13 @@ for i = 1:numel(roiobj)
     % ---------------------------------------------------------
     % Prepare output channels (NEW: depends on outputName)
     % ---------------------------------------------------------
-    ROIpreprocessing(roiobj(i), classiobj, outputName);
-
-    fra = 1:size(roiobj(i).image,4);
+    if requiresRoiImages,ROIpreprocessing(roiobj(i),classiobj,outputName);end
+    if requiresRoiImages
+        roiFrameCount=size(roiobj(i).image,4);
+    else
+        roiFrameCount=annotationManager.frameCount(roiobj(i));
+    end
+    fra = 1:roiFrameCount;
     reqFraStr = 'all';
 
     if ~isempty(frames)
@@ -302,9 +318,9 @@ for i = 1:numel(roiobj)
 
     % Ensure requested frames are compatible
     if ~isequal(fra,-1)
-        fra = intersect(fra, 1:size(roiobj(i).image,4));
+        fra = intersect(fra, 1:roiFrameCount);
     else
-        fra = 1:size(roiobj(i).image,4);
+        fra = 1:roiFrameCount;
     end
     try
         disp(['[DEBUG] classifyData: ROI ' roiIdStr ' frames req=' reqFraStr ' -> using ' mat2str(fra)]);

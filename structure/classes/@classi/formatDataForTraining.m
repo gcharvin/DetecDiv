@@ -322,7 +322,7 @@ end
     function tf = localFormatterUsesValidationRois(classiObj, packageName, categoryName)
         tf = any(strcmpi(char(string(packageName)), ...
             {'cellLatentModel','cellLatentTracker','trackastra', ...
-             'sam31','budMotherLinker'}));
+             'sam31','budMotherLinker','lstm_timeseries'}));
         if tf || ~strcmpi(char(string(categoryName)), 'Pixel')
             return;
         end

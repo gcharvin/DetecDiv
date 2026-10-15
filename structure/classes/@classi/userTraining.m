@@ -16,6 +16,13 @@ end
 applyPackageClassMetadata(classif);
 [~, category] = classiNormalizeCategory(classif.category);
 category = string(category);
+% Packages may provide a dedicated editor for non-image annotation assets.
+editor=[char(string(classif.classifierPkg)) '.annotationEditor'];
+if ~isempty(classif.classifierPkg)&&~isempty(which(editor))
+    if isempty(classitype),classitype=1;end
+    feval(editor,classif,classitype,annotationSession);
+    return;
+end
 
 % disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
 %     for j=1:numel(classif.classes)

@@ -2047,6 +2047,51 @@ end
             app.selectPanelTab('annotation');
         end
 
+        function [frames, isWindow, classif] = trainingClassFrames(app, roi)
+            classif = [];
+            if ~isempty(app.AnnotationSession) && isvalid(app.AnnotationSession)
+                classif = app.AnnotationSession.Classifier;
+            elseif isa(roi.parent, 'classi')
+                classif = roi.parent;
+            end
+            frameSelector='cnn_lstm.annotationFrames';
+            if ~isempty(classif)
+                candidate=[char(string(classif.classifierPkg)) '.annotationFrames'];
+                if ~isempty(which(candidate)),frameSelector=candidate;end
+            end
+            [frames, isWindow] = feval(frameSelector,classif,roi, ...
+                roi.display.frame,annotationManager.frameCount(roi));
+        end
+
+        function assignSelectedTrainingClass(app, label, extendToEnd)
+            if nargin < 3, extendToEnd = false; end
+            roi = app.getSelectedROI();
+            if isempty(roi) || isempty(app.UIDataTable.Selection) || ...
+                    isempty(app.UISubDataTable.Selection), return; end
+            dsIndex = app.UIDataTable.Selection(1);
+            subIndex = app.UISubDataTable.Selection(1);
+            field = string(app.UISubDataTable.Data{subIndex, 2});
+            if ~any(field == ["labels_training", "id_training"]), return; end
+            ds = roi.data(dsIndex);
+            [frames, isWindow, classif] = app.trainingClassFrames(roi);
+            if ~isempty(classif) && strcmp(ds.groupid, classif.strid)
+                classes = classif.classes;
+            else
+                isWindow = false;
+                frames = roi.display.frame;
+                classes = app.ClassDropDown.Items;
+                classes = classes(~ismember(lower(string(classes)), ...
+                    ["undefined", "unclassified", "<undefined>", ""]));
+            end
+            if ~isWindow && extendToEnd
+                frames = roi.display.frame:size(roi.image, 4);
+            end
+            if isempty(frames), return; end
+            annotationManager.assignFrameLabel(roi, ds.groupid, classes, label, frames);
+            app.notifyAnnotationChanged('labels_training', frames);
+            score_display(app, 'refresh');
+        end
+
         function notifyAnnotationChanged(app, source, frames, varargin)
             % Called by painting, lineage and keyboard editors after a write.
             if nargin < 3, frames = []; end
@@ -2247,6 +2292,19 @@ end
             end
             app.NextIncompleteButton.Enable = app.onOff( ...
                 hasDraft && summary.coverage.reviewed < summary.coverage.total);
+            if strcmp(app.AnnotationSession.Spec.defaultEditor, 'class_palette')
+                [labelFrames, windowLabels] = app.trainingClassFrames( ...
+                    app.AnnotationSession.Roi);
+                if windowLabels && ~isempty(labelFrames)
+                    app.MarkFrameReviewedButton.Text = 'Review window + next';
+                    app.MarkFrameReviewedButton.Tooltip = sprintf( ...
+                        'Mark frames %d:%d reviewed and open the next incomplete window.', ...
+                        labelFrames(1), labelFrames(end));
+                    app.MarkFrameUnreviewedButton.Text = 'Unreview window';
+                    app.MarkFrameUnreviewedButton.Tooltip = ...
+                        'Clear review coverage for the current class window.';
+                end
+            end
             try
                 hintCount = app.AnnotationSession.reviewHintCount();
                 app.ReviewFindingsButton.Text = sprintf( ...
@@ -3869,8 +3927,13 @@ userClasses = {};
 isLabelLike = ~isnumeric(val);  % logique cohérente avec ton UI plus bas
 
 if isLabelLike
-    % 1) priorité: userData.classes si dispo
-    if isprop(selectedData,'userData') && isstruct(selectedData.userData) ...
+    % The owning classifier is authoritative after classes are defined or
+    % renamed; imported dataseries may still carry empty/older class metadata.
+    [~, ~, labelClassifier] = app.trainingClassFrames(roi);
+    if ~isempty(labelClassifier) && strcmp(selectedData.groupid, labelClassifier.strid) ...
+            && ~isempty(labelClassifier.classes)
+        userClasses = labelClassifier.classes;
+    elseif isprop(selectedData,'userData') && isstruct(selectedData.userData) ...
             && isfield(selectedData.userData,'classes') && ~isempty(selectedData.userData.classes)
         userClasses = selectedData.userData.classes;
 
@@ -3900,6 +3963,19 @@ if isLabelLike
     end
 
     app.ClassDropDown.Items = userClasses;
+    app.ClassDropDown.Tooltip = 'Assign a class to the current frame.';
+    if strcmp(varName, 'labels_training')
+        [labelFrames, windowLabels] = app.trainingClassFrames(roi);
+        if windowLabels && ~isempty(labelFrames)
+            app.ClassDropDown.Tooltip = sprintf( ...
+                'Assign one class to window %d:%d. Keyboard shortcuts use the same window.', ...
+                labelFrames(1), labelFrames(end));
+            app.SelecteddataLabel.Text = sprintf('Class window: %d:%d', ...
+                labelFrames(1), labelFrames(end));
+        elseif windowLabels
+            app.ClassDropDown.Tooltip = 'This frame is outside the training range.';
+        end
+    end
 end
 
 
@@ -5163,8 +5239,12 @@ end
                     if strcmp(choice, 'Cancel'), return; end
                     app.AnnotationSession.markReviewed('Components', roiComponents);
                 else
+                    reviewFrames = roi.display.frame;
+                    if strcmp(app.AnnotationSession.Spec.defaultEditor, 'class_palette')
+                        [reviewFrames, ~] = app.trainingClassFrames(roi);
+                    end
                     app.AnnotationSession.markReviewed( ...
-                        'Frames', roi.display.frame, ...
+                        'Frames', reviewFrames, ...
                         'Components', frameComponents);
                 end
                 app.AnnotationLastValidationValid = false;
@@ -5191,8 +5271,12 @@ end
                 frameComponents = components(required & strcmp( ...
                     {components.coverageUnit}, 'frame'));
                 if ~isempty(frameComponents)
+                    reviewFrames = round(double(roi.display.frame));
+                    if strcmp(app.AnnotationSession.Spec.defaultEditor, 'class_palette')
+                        [reviewFrames, ~] = app.trainingClassFrames(roi);
+                    end
                     app.AnnotationSession.markUnreviewed( ...
-                        'Frames', round(double(roi.display.frame)), ...
+                        'Frames', reviewFrames, ...
                         'Components', {frameComponents.id});
                 else
                     roiComponents = components(required & strcmp( ...
@@ -6414,51 +6498,11 @@ end
     end
 
   
-    % --- valeur à affecter en fonction de la variable ciblée ---
-    switch string(varName)
-        case "id_training"
-            newValue = selectedClassIndex;
-        case "labels_training"
-            newValue = classList{selectedClassIndex};
-        otherwise
-            % on ne modifie que id_training ou labels_training
-            return;
-    end
-
-    % --- calcul de la portée (frame courante ou jusqu'à la fin si Shift) ---
-    numFrames = size(selectedROI.image, 4);
-    currentFrame = selectedROI.display.frame;
-
-   
-
-    isShift = isprop(event,'Modifier') && ~isempty(event.Modifier) ...
-              && any(strcmpi(event.Modifier, 'shift'));
-    if isShift
-        frameRange = currentFrame:numFrames;   % appliquer à toute la suite
-    else
-        frameRange = currentFrame;             % seulement à la frame courante
-    end
-
-
-    % --- écriture de la/les valeurs sur la/les frame(s) ciblée(s) ---
-    for f = frameRange
-        % si la variable est catégorielle, convertir proprement
-        if iscategorical(selectedData.data{f, varName})
-            if ischar(newValue)
-                nv = cellstr(newValue);
-            else
-                nv = newValue;
-            end
-            selectedData.data{f, varName} = categorical(nv);
-        else
-            selectedData.data{f, varName} = newValue;
-        end
-    end
-
-    % --- sauver dans la ROI et rafraîchir l'affichage ---
-    selectedROI.data(dsIndex) = selectedData;
-    app.notifyAnnotationChanged(varName, frameRange);
-    score_display(app, 'refresh');  % met aussi à jour l'affichage des données
+    if ~any(string(varName) == ["id_training", "labels_training"]), return; end
+    hasModifier = (isstruct(event) && isfield(event, 'Modifier')) || ...
+        (isobject(event) && isprop(event, 'Modifier'));
+    isShift = hasModifier && any(strcmpi(event.Modifier, 'shift'));
+    app.assignSelectedTrainingClass(classList{selectedClassIndex}, isShift);
             %'ok'
           %   profile viewer
             end
@@ -7605,6 +7649,11 @@ end
             subSel = app.UISubDataTable.Selection(1);
             varName = app.UISubDataTable.Data{subSel,2};
             currentFrame = roi.display.frame;
+
+            if any(string(varName) == ["labels_training", "id_training"])
+                app.assignSelectedTrainingClass(newValue);
+                return;
+            end
 
             % Mettre à jour le dataset
             selectedData = roi.data(dsIndex);

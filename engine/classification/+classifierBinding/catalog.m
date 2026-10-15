@@ -20,11 +20,18 @@ indices = indices(arrayfun(@(i) hasRoiId(rois(i)), indices));
 catalog = struct( ...
     'roiCount', numel(indices), ...
     'channels', repmat(channelDef(), 0, 1), ...
-    'families', repmat(familyDef(), 0, 1));
+    'families', repmat(familyDef(), 0, 1), ...
+    'seriesVariables',struct('name',{},'group',{},'variable',{},'columns',{},'roiCount',{}));
 for position = 1:numel(indices)
     roiObj = rois(indices(position));
     catalog.channels = mergeChannels(catalog.channels, roiObj);
     catalog.families = mergeFamilies(catalog.families, roiObj);
+    variables=classifierBinding.numericSeries(roiObj);
+    for v=1:numel(variables)
+        index=find(strcmp({catalog.seriesVariables.name},variables(v).name),1);
+        if isempty(index),catalog.seriesVariables(end+1)=variables(v);
+        else,catalog.seriesVariables(index).roiCount=catalog.seriesVariables(index).roiCount+1;end
+    end
     if ~isempty(p.Results.ProgressFcn)
         p.Results.ProgressFcn(position, numel(indices));
     end
