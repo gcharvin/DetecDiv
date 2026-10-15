@@ -864,7 +864,7 @@ function state = applyNodeSemanticCapabilities(node, state)
     if logical(getField(capabilities, 'roiChannels', false))
         state.hasRoiList = true;
         nodeChannels = resolveNodeConfiguredChannels(node, selectors);
-        if isempty(nodeChannels) && strcmpi(char(string(getField(node, 'type', ''))), 'roiextract')
+        if isempty(nodeChannels) && transfersImagesToRoi(node)
             nodeChannels = state.imageChannels;
         end
         outName = resolveNodeProducedChannelName(node, binding);
@@ -883,7 +883,7 @@ function state = applyNodeSemanticCapabilities(node, state)
     end
     if logical(getField(capabilities, 'outputsChannels', false))
         nodeChannels = resolveNodeConfiguredChannels(node, selectors);
-        if isempty(nodeChannels) && strcmpi(char(string(getField(node, 'type', ''))), 'roiextract')
+        if isempty(nodeChannels) && transfersImagesToRoi(node)
             nodeChannels = state.imageChannels;
         end
         outName = resolveNodeProducedChannelName(node, binding);
@@ -1406,11 +1406,11 @@ function nodeReport = reconcileLegacyChannelReportWithResources(nodeReport, inpu
 end
 
 function outputs = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputs)
-    if ~strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract')
+    if ~transfersImagesToRoi(node)
         return;
     end
-    % roiExtract deliberately has no static resources.out declaration: its
-    % concrete ROI channels are the source channels selected for this run.
+    % Extraction modules may be processor plugins. Their imagesToRoi contract
+    % projects the run's source channels without hardcoding microscope names.
     % Materialize them even when the declared output list is empty.
     channels = projectedRoiExtractChannels(node, nodeReport, state);
     channels = normalizeChannelList(channels);
@@ -1763,7 +1763,7 @@ function state = applyConstraintOutputs(node, state, nodeReport)
     catch
         producedResourceChannels = {};
     end
-    if strcmp(nodeType, 'roiextract')
+    if transfersImagesToRoi(node)
         chosen = projectedRoiExtractChannels(node, nodeReport, state);
         if isempty(chosen)
             chosen = getField(nodeReport, 'availableChannels', {});
@@ -1785,7 +1785,8 @@ end
 
 function channels = projectedRoiExtractChannels(node, nodeReport, state)
     channels = {};
-    if validationStartsFromExistingProject(getField(state, 'ctx', struct())) && ...
+    if strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract') && ...
+            validationStartsFromExistingProject(getField(state, 'ctx', struct())) && ...
             roiExtractUsesProjectRoiChannelInventory(node)
         channels = normalizeChannelList(getField(state, 'roiChannels', {}));
         channels = channels(~isAllChannelSelectionCell(channels));
@@ -1804,6 +1805,13 @@ function channels = projectedRoiExtractChannels(node, nodeReport, state)
 
     channels = normalizeChannelList(getField(state, 'imageChannels', {}));
     channels = channels(~isAllChannelSelectionCell(channels));
+end
+
+function tf = transfersImagesToRoi(node)
+    contract = getField(node, 'contract', struct());
+    binding = getField(contract, 'binding', struct());
+    tf = strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract') || ...
+        strcmpi(char(string(getField(binding, 'transfer', ''))), 'imagesToRoi');
 end
 
 function channels = removeAbstractChannelCollectionNames(channels, resources)
