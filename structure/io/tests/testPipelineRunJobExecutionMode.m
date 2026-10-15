@@ -39,11 +39,14 @@ end
 function testServerWorkerStillRejectsUnmappedWindowsPlugin(testCase)
 assumeTrue(testCase, ispc);
 [payload, cleanup] = localFixture('server'); %#ok<ASGLU>
+payload.execution.local_fov_pool = struct('poolWorkers',99);
 result = detecdiv_run_pipeline_job(payload);
 [runObj, message] = pipelineRunLoad(result.run_json_path);
 assert(~isempty(runObj), message);
 
 verifyEqual(testCase, runObj.ctx.execution.requested_mode, 'server');
+verifyFalse(testCase,isfield(runObj.ctx.execution,'localFovPool'));
+verifyEqual(testCase,runObj.ctx.parallelFovWorkers,10);
 report = runObj.outputs.report;
 verifyFalse(testCase, report.okStrict);
 verifyEqual(testCase, report.pluginPackages.target, 'Hub/server execution');

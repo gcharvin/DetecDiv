@@ -327,6 +327,19 @@ for i = 1:numel(candidates)
 end
 % The memory planner below can reduce this existing CPU/task ceiling.
 workerCount = min(workerCount, 10);
+% A local batch worker may use its submission-time pool, but cannot create
+% one itself. Hub/client runs keep their existing pool and memory policy.
+isLocal = isfield(ctx,'execution') && isstruct(ctx.execution) && ...
+    isfield(ctx.execution,'requested_mode') && strcmpi(ctx.execution.requested_mode,'local_process');
+if isLocal && workerCount > 1
+    pool = gcp('nocreate');
+    if isempty(pool)
+        fprintf('[roiExtract] Local batch has no reserved FOV pool; extracting FOVs sequentially.\n');
+        workerCount = 1;
+    else
+        workerCount = min(workerCount,pool.NumWorkers);
+    end
+end
 if workerCount > 1 && (exist('parpool', 'file') ~= 2 || ...
         ~license('test', 'Distrib_Computing_Toolbox'))
     warning('roiExtract:ParallelUnavailable', ...

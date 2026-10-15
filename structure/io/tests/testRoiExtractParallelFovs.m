@@ -43,6 +43,48 @@ end
 verifyEqual(testCase, numel(out.roiList), 3);
 end
 
+function testWorkerPipelineExtractsEveryFovWithoutNestedPool(testCase)
+root = tempname;
+mkdir(root);
+addTeardown(testCase, @() removeFolder(root));
+pool = gcp('nocreate');
+if isempty(pool)
+    pool = parpool('Processes', 1);
+    addTeardown(testCase, @() closeOwnedPool());
+end
+poolSize = pool.NumWorkers;
+future = parfeval(pool, @extractInsideWorker, 1, root);
+result = fetchOutputs(future);
+verifyTrue(testCase, result.insideWorker);
+verifySubstring(testCase, result.log, 'Local batch has no reserved FOV pool');
+verifyEqual(testCase, result.roiCount, 3);
+for i = 1:3
+    id = sprintf('Pos%d_%d', i, i);
+    h5File = fullfile(root, 'worker_project', id, ['im_' id '_roi_1.h5']);
+    verifyTrue(testCase, isfile(h5File));
+    images = squeeze(h5read(h5File, '/raw'));
+    verifySize(testCase, images, [4 5 2]);
+    verifyEqual(testCase, images(:,:,1), uint16((10*i+1)*ones(4,5)));
+    verifyEqual(testCase, images(:,:,2), uint16((10*i+2)*ones(4,5)));
+end
+verifyEqual(testCase, pool.NumWorkers, poolSize);
+end
+
+function result = extractInsideWorker(root)
+project = shallow();
+project.io = struct('path', root, 'file', 'worker_project.mat');
+project.projectId = 'worker-extraction-test';
+project.fov = [makeFov(root, 'Pos1_1', 10), makeFov(root, 'Pos2_2', 20), ...
+    makeFov(root, 'Pos3_3', 30)];
+ctx = struct('shallow', project, 'resume', false, 'saveProgress', false, ...
+    'execution', struct('requested_mode','local_process'), ...
+    'io', struct('persistOutputs', true, 'cachePolicy', 'disk'), ...
+    'roiExtract', struct('correctDrift', false, 'executionMode', 'parallel', 'parallelFovWorkers', 2));
+insideWorker = ~isempty(getCurrentTask());
+log = evalc('out = roiExtract.process(ctx);');
+result = struct('insideWorker', insideWorker, 'log', log, 'roiCount', numel(out.roiList));
+end
+
 function f = makeFov(root, id, baseValue)
 rawDir = fullfile(root, ['raw_' id]);
 mkdir(rawDir);
@@ -72,5 +114,10 @@ end
 end
 
 function removeFolder(folder)
-if isfolder(folder), rmdir(folder, 's'); end
+if isfolder(folder)
+    resolved = char(java.io.File(folder).getCanonicalPath());
+    safeRoot = char(java.io.File(tempdir).getCanonicalPath());
+    assert(startsWith(resolved, [safeRoot filesep], 'IgnoreCase', true));
+    rmdir(resolved, 's');
+end
 end

@@ -823,6 +823,15 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         requestedMode = 'server';
     end
     ctx.execution = struct('requested_mode', requestedMode);
+    if strcmpi(requestedMode,'local_process') && ...
+            isfield(payload.execution,'local_fov_pool')
+        ctx.execution.localFovPool = payload.execution.local_fov_pool;
+        pool = gcp('nocreate');
+        actualWorkers = 0;
+        if ~isempty(pool),actualWorkers=pool.NumWorkers;end
+        ctx.execution.localFovPool.actualPoolWorkers = actualWorkers;
+        fprintf('[local run] Batch FOV pool available: %d worker(s).\n',actualWorkers);
+    end
     workerMappings = localGetField(localGetField(payload, 'execution', struct()), ...
         'worker_path_mappings', []);
     if isstruct(workerMappings)

@@ -1,4 +1,4 @@
-function count = planFovWorkers(fovs, params, requested)
+function [count, estimate] = planFovWorkers(fovs, params, requested)
 %PLANFOVWORKERS Estimate process + raw/crop/drift peak before creating a pool.
 % Raw blocks are capped at 512 MiB in extractAllROICrops. Reserve four block
 % copies plus double/complex drift workspaces and a measured MATLAB baseline.
@@ -17,6 +17,8 @@ try
 catch
 end
 peak = baseline + 4*512*2^20;
+estimate = struct('peakBytes',peak,'baselineBytes',baseline, ...
+    'availableBytes',available,'known',true,'note',note);
 for i = 1:numel(fovs)
     try
         im = fovs(i).readImage(1,1);
@@ -31,11 +33,13 @@ for i = 1:numel(fovs)
         end
         peak = max(peak,baseline + 4*max(512*2^20,frameBytes) + driftBytes);
     catch
+        estimate.known = false;
         count = 1;
         fprintf('[roiExtract] Cannot estimate FOV footprint: using one extraction task.\n');
         return;
     end
 end
+estimate.peakBytes = peak;
 count = max(1,min(requested,floor(available/peak)));
 fprintf('[roiExtract] RAM plan: %.2f GiB estimated peak/FOV, requested %d, admitted %d. %s\n', ...
     peak/2^30, requested, count, note);
