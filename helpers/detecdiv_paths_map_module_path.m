@@ -20,11 +20,22 @@ function [mappedPath, mapped, status] = detecdiv_paths_map_module_path(pathIn, c
         return;
     end
 
-    mappings = detecdiv_paths_module_mappings(ctx);
-    if isempty(mappings)
-        return;
+    % Host mappings are authoritative even when a submitting client's mapping
+    % names a more specific subdirectory. Otherwise a valid worker UNC path
+    % can be remapped to an unavailable drive from another workstation.
+    workerMappings = workerMappingsFromContext(ctx);
+    if ~isempty(workerMappings)
+        [mappedPath, mapped, status] = mapUsingMappings(pathIn, workerMappings, direction);
+        if mapped, return; end
     end
+    mappings = detecdiv_paths_module_mappings(ctx);
+    [mappedPath, mapped, status] = mapUsingMappings(pathIn, mappings, direction);
+end
 
+function [mappedPath, mapped, status] = mapUsingMappings(pathIn, mappings, direction)
+    mappedPath = char(string(pathIn));
+    mapped = false;
+    status = 'unmapped';
     switch lower(char(string(direction)))
         case {'server','remote'}
             [mappedPath, mapped] = mapLocalToRemote(mappedPath, mappings);
@@ -43,6 +54,23 @@ function [mappedPath, mapped, status] = detecdiv_paths_map_module_path(pathIn, c
         otherwise
             error('detecdiv_paths_map_module_path:BadDirection', ...
                 'Unknown mapping direction: %s.', char(string(direction)));
+    end
+end
+
+function mappings = workerMappingsFromContext(ctx)
+    mappings = struct('remoteRoot', {}, 'localRoot', {});
+    if ~isfield(ctx, 'execution') || ~isstruct(ctx.execution) || ...
+            ~isfield(ctx.execution, 'worker_path_mappings') || ...
+            ~isstruct(ctx.execution.worker_path_mappings)
+        return;
+    end
+    workers = ctx.execution.worker_path_mappings;
+    for i = 1:numel(workers)
+        if isfield(workers(i), 'source') && isfield(workers(i), 'target') && ...
+                ~isempty(workers(i).source) && ~isempty(workers(i).target)
+            mappings(end+1) = struct('remoteRoot', char(string(workers(i).source)), ...
+                'localRoot', char(string(workers(i).target))); %#ok<AGROW>
+        end
     end
 end
 
