@@ -15,6 +15,9 @@ if isempty(selectedROIIndex)
 end
 
 selectedROI = app.content.ROIList{selectedROIIndex};
+if score_refreshCellModelCache(selectedROI, app)
+    score_refreshObjectDisplayUI(app);
+end
 roiId = string(selectedROI.id);
 score_applyDefaultChannelSelection(selectedROI);
 

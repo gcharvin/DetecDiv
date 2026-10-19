@@ -20,7 +20,7 @@ model.provenance.updated_at=char(datetime('now','Format','yyyy-MM-dd''T''HH:mm:s
 report=cellModel.writeH5(filename,model,varargin{:});
 obj.cellModel=model;
 d=dir(filename);
-obj.cellModelInfo=struct('loaded',true,'filename',filename,'datenum',d.datenum);
+obj.cellModelInfo=struct('loaded',true,'filename',filename,'datenum',d.datenum,'bytes',d.bytes);
 
 displayState=obj.display;
 displayState.objectModel=struct('format','detecdiv_cell_model', ...

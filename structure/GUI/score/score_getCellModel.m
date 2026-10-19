@@ -8,7 +8,8 @@ try
     % family colors, track/state colors, lineage). A model stored in the ROI
     % cache has already been normalized and validated by loadCellModel or
     % saveCellModel; do not stat the H5 file and revalidate every table on
-    % each display refresh.
+    % each display refresh. score_refreshCellModelCache checks for external
+    % writes at the display/UI boundary, at most once per second per ROI.
     if isprop(roiobj, 'cellModel') && isstruct(roiobj.cellModel) && ...
             isfield(roiobj.cellModel, 'schema_version') && ...
             isprop(roiobj, 'cellModelInfo') && isstruct(roiobj.cellModelInfo) && ...

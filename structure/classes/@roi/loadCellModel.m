@@ -55,12 +55,17 @@ try
     info=dir(filename);
     tf=strcmp(char(string(obj.cellModelInfo.filename)),filename)&& ...
         isfield(obj.cellModelInfo,'datenum')&&obj.cellModelInfo.datenum==info.datenum;
+    if tf && isfield(obj.cellModelInfo,'bytes')
+        tf=isequal(obj.cellModelInfo.bytes,info.bytes);
+    end
 catch
     tf=false;
 end
 end
 
 function info=cacheInfo(filename)
-info=struct('loaded',false,'filename',filename,'datenum',NaN);
-if ~isempty(filename)&&isfile(filename), d=dir(filename); info.datenum=d.datenum; end
+info=struct('loaded',false,'filename',filename,'datenum',NaN,'bytes',NaN);
+if ~isempty(filename)&&isfile(filename)
+    d=dir(filename); info.datenum=d.datenum; info.bytes=d.bytes;
+end
 end

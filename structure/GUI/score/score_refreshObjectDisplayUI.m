@@ -2,6 +2,7 @@ function score_refreshObjectDisplayUI(app)
 %SCORE_REFRESHOBJECTDISPLAYUI Load the selected channel's compact preset.
 
 [roiobj, channelName] = score_selectedObjectChannel(app);
+score_refreshCellModelCache(roiobj, app);
 hasChannel = ~isempty(roiobj) && ~isempty(channelName);
 setObjectControlsEnabled(app, hasChannel);
 if ~hasChannel
