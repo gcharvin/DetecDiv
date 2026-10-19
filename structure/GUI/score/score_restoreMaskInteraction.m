@@ -14,7 +14,7 @@ try
     end
 
     fig = app.ImageFigure;
-    if localPanIsEnabled(fig)
+    if localPanIsEnabled(app,fig)
         % Pan legitimately owns the callbacks until the user turns it off.
         return;
     end
@@ -36,8 +36,19 @@ catch ME
 end
 end
 
-function tf = localPanIsEnabled(fig)
+function tf = localPanIsEnabled(app,fig)
 tf = false;
+% Browser-based Pan in R2026a can be active while the legacy pan(fig)
+% accessor reports off. Score's own toggle must take precedence so mouse
+% recovery does not try to replace callbacks still owned by that mode.
+try
+    if isprop(app,'PanButton') && ~isempty(app.PanButton) && ...
+            isvalid(app.PanButton) && app.PanButton.Value
+        tf = true;
+        return;
+    end
+catch
+end
 try
     panMode = pan(fig);
     tf = strcmpi(char(string(panMode.Enable)), 'on');

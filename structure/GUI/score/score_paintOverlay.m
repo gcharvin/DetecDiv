@@ -1891,43 +1891,9 @@ end
 
 %% ==== Overlay handle helpers (compatibles containers.Map / cell / struct / array) ====
 function h = getOverlayImageHandle(app)
-oh = app.graphicsHandles.overlayHandles;
-h = [];
-if isa(oh,'containers.Map')
-    ks = oh.keys;
-    if isfield(app.graphicsHandles, 'comparisonPanels')
-        sel = app.UIAnnotationTable.Selection;
-        if isempty(sel), return; end
-        annot = string(app.UIAnnotationTable.Data{sel(1),2});
-        cls = string(app.UIAnnotationTable.Data{sel(1),3});
-        name = annot;
-        if strlength(cls) > 0, name = annot + "_" + cls; end
-        clickedAxes = ancestor(hittest(app.ImageFigure), 'axes');
-        for p = app.graphicsHandles.comparisonPanels
-            candidate = oh(p.tile);
-            if string(candidate.UserData.annotationChannel) ~= name, continue; end
-            if isempty(h), h = candidate; end
-            base = app.graphicsHandles.imgHandles(p.tile);
-            if isequal(clickedAxes, candidate.Parent) || isequal(clickedAxes, base.Parent)
-                h = candidate;
-                return;
-            end
-        end
-        return;
-    end
-    if ~isempty(ks)
-        h = oh(ks{1});                 % valeur associée à la 1ère clé
-        if iscell(h) && ~isempty(h), h = h{1}; end
-        if ~isempty(h) && numel(h)>1 && ~iscell(h), h = h(1); end
-    end
-elseif iscell(oh)
-    if ~isempty(oh), h = oh{1}; end
-elseif isstruct(oh)
-    f = fieldnames(oh);
-    if ~isempty(f), h = oh.(f{1}); end
-else
-    if ~isempty(oh), h = oh(1); end
-end
+[~,channelName] = score_selectedObjectChannel(app);
+clickedAxes = ancestor(hittest(app.ImageFigure),'axes');
+h = score_getObjectOverlay(app,channelName,clickedAxes);
 end
 
 function ax = getOverlayAxes(app)

@@ -5651,6 +5651,14 @@ end
 
         function focusAnnotationValidationIssue(app, issue)
             totalTimer = tic;
+            % Tree/findings navigation can stay on the current frame and
+            % skip score_display. Restore image callbacks on every exit,
+            % after all graphics updates, without taking over active pan.
+            interactionCleanup = onCleanup(@() ...
+                score_restoreMaskInteraction(app)); %#ok<NASGU>
+            % Clear abandoned drag callbacks before drawnow can dispatch
+            % them against the newly selected track/frame.
+            score_restoreMaskInteraction(app);
             roi = app.getSelectedROI();
             if isempty(roi) || isempty(issue), return; end
             frame = double(issue.focus_frame);
@@ -5779,10 +5787,7 @@ end
                         isgraphics(app.SelectedObjectRectangle)
                     delete(app.SelectedObjectRectangle);
                 end
-                overlay = findobj(app.ImageFigure, 'Tag', 'IndexedOverlay');
-                if isempty(overlay)
-                    overlay = findobj(app.ImageFigure, 'Type', 'image');
-                end
+                overlay = score_getObjectOverlay(app,provider);
                 if ~isempty(overlay)
                     axesHandle = ancestor(overlay(1), 'axes');
                     bounds = [min(columns)-0.5 min(rows)-0.5 ...
