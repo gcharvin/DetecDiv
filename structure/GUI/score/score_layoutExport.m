@@ -15,11 +15,13 @@ if opts.overlay, nChannels = 1; end
 nColumns = nChannels;
 if isSequence, nColumns = numel(opts.frames); end
 nROI = min(numel(rois), opts.Nrow*opts.Ncol);
+compactMovie = ~isSequence && nROI > 1 && gh.dataAxes.Count == 0;
 imageW = max(160, round(opts.tileW*opts.Nbrick));
 imageH = max(80, round(imageW*opts.tileH/max(1,opts.tileW)));
 font = max(11, min(round(opts.fontSize*96/72), floor(imageW/12)));
 tickFont = max(10, font-1);
 gap = max(12, round(font));
+if compactMovie, gap = max(6,ceil(0.6*font)); end
 maskGutter = 0;
 if ~isempty(maskIndices), maskGutter = 3*font + gap; end
 channelGutter = 0;
@@ -62,13 +64,59 @@ for r = 1:nROI
     end
 end
 
+% Image-only grids need neither a plot-width minimum nor a tick-label gutter.
+% Keep microscopy pixels at their requested size and remove only blank space.
+hasPlots = ~isempty(plots);
+if compactMovie && ~hasPlots, tickGutter = 0; end
+if compactMovie
+    measureAxes = localTextAxes(fig,[0 0 400 400]);
+    maskGutter = 0;
+    for mask = reshape(maskIndices,1,[])
+        textSize = localTextSize(measureAxes,localChannelLabel(opts,mask),font,[imageH-12 3*font]);
+        maskGutter = max(maskGutter,textSize(2)+gap);
+    end
+end
 left = max(maskGutter+channelGutter,tickGutter) + gap;
 plotW = max(imageWidth,320);
+if compactMovie && ~hasPlots, plotW = imageWidth; end
 imageLeft = left+(plotW-imageWidth)/2;
 blockW = left + plotW + gap;
 % The title and the column labels have separate vertical bands, including
 % when either wraps onto several lines.
 headerH = 7*font;
+titleBandH = 0;
+channelBandH = 0;
+globalHeaderH = 0;
+if compactMovie
+    if opts.ROITitle
+        for r = 1:nROI
+            textSize = localTextSize(measureAxes,string(rois(r).id),font+1,[plotW 2*font]);
+            titleBandH = max(titleBandH,textSize(2)+gap);
+        end
+    end
+    if ~opts.overlay && hasPhysicalChannels
+        for ch = 1:nColumns
+            textSize = localTextSize(measureAxes,localChannelLabel(opts,ch),font,[imageW-8 2.5*font]);
+            channelBandH = max(channelBandH,textSize(2)+gap);
+        end
+    end
+    headerH = max(1,titleBandH+channelBandH);
+    if ~isempty(opts.title) || ~opts.hideStamp
+        titleW = opts.Ncol*blockW-2*gap;
+        if ~opts.hideStamp, titleW = max(1,titleW-96-gap); end
+        textSize = localTextSize(measureAxes,string(opts.title),font+1,[titleW 2*font]);
+        globalHeaderH = textSize(2)+gap;
+        if ~opts.hideStamp
+            frames = opts.frames;
+            if opts.timeOffset, frames = frames-opts.frames(1); end
+            for frame = frames
+                textSize = localTextSize(measureAxes,sprintf('%g min',frame*opts.framerate),font,[96 2*font]);
+                globalHeaderH = max(globalHeaderH,textSize(2)+gap);
+            end
+        end
+    end
+    delete(measureAxes);
+end
 imageBlockH = nMasks*imageH + (nMasks-1)*gap;
 maskBlockH = imageH;
 if isSequence
@@ -82,8 +130,9 @@ for p = plots
     plotHeights(p.index) = max(plotHeights(p.index), p.height + 3.4*font + legendH + gap);
 end
 bottomH = 3*font + gap;
+if compactMovie && ~hasPlots, bottomH = 0; end
 blockH = headerH + imageBlockH + gap + sum(plotHeights) + bottomH;
-canvas = ceil([opts.Ncol*blockW,opts.Nrow*blockH]/2)*2;
+canvas = ceil([opts.Ncol*blockW,opts.Nrow*blockH+globalHeaderH]/2)*2;
 fig.Units = 'pixels';
 fig.WindowState = 'normal';
 pos = fig.Position; pos(3:4) = canvas; fig.Position = pos;
@@ -92,19 +141,36 @@ opts.movieTextPixels = font;
 layout = struct('timeHandles',gobjects(0),'plots',plots, ...
     'canvasSize',canvas,'hideStamp',logical(opts.hideStamp),'fontPixels',font);
 
+if globalHeaderH > 0
+    globalWidth = canvas(1)-2*gap;
+    header = localTextAxes(fig,[gap canvas(2)-globalHeaderH globalWidth globalHeaderH]);
+    titleW = globalWidth;
+    if ~opts.hideStamp, titleW = max(1,globalWidth-96-gap); end
+    localText(header,[0 globalHeaderH-gap/2],string(opts.title),font+1,[titleW 2*font], ...
+        'HorizontalAlignment','left','VerticalAlignment','top','Tag','ScoreMovieGlobalHeader');
+    if ~opts.hideStamp
+        h = localText(header,[globalWidth globalHeaderH-gap/2],'',font,[96 2*font], ...
+            'HorizontalAlignment','right','VerticalAlignment','top','Tag','ScoreMovieTimestamp');
+        layout.timeHandles(end+1) = h;
+    end
+end
 for r = 1:nROI
     x0 = mod(r-1,opts.Ncol)*blockW;
-    yTop = canvas(2)-floor((r-1)/opts.Ncol)*blockH;
+    yTop = canvas(2)-globalHeaderH-floor((r-1)/opts.Ncol)*blockH;
     header = localTextAxes(fig,[x0+left yTop-headerH plotW headerH]);
     titleParts = strings(0);
-    if ~isempty(opts.title), titleParts(end+1) = string(opts.title); end %#ok<AGROW>
+    if ~compactMovie && ~isempty(opts.title), titleParts(end+1) = string(opts.title); end %#ok<AGROW>
     if opts.ROITitle, titleParts(end+1) = string(rois(r).id); end %#ok<AGROW>
     titleText = strjoin(titleParts,' | ');
     titleW = plotW;
-    if ~isSequence && ~opts.hideStamp, titleW = max(80,plotW-100); end
-    localText(header,[0 headerH-font],titleText,font+1,[titleW 2*font], ...
-        'HorizontalAlignment','left','VerticalAlignment','top','Tag',[prefix 'Header']);
-    if ~isSequence && ~opts.hideStamp
+    titleY = headerH-font;
+    if compactMovie, titleY = headerH-gap/2; end
+    if ~compactMovie && ~isSequence && ~opts.hideStamp, titleW = max(80,plotW-100); end
+    if ~compactMovie || opts.ROITitle
+        localText(header,[0 titleY],titleText,font+1,[titleW 2*font], ...
+            'HorizontalAlignment','left','VerticalAlignment','top','Tag',[prefix 'Header']);
+    end
+    if ~compactMovie && ~isSequence && ~opts.hideStamp
         h = localText(header,[plotW headerH-font],'',font,[96 2*font], ...
             'HorizontalAlignment','right','VerticalAlignment','top','Tag','ScoreMovieTimestamp');
         layout.timeHandles(end+1) = h;
@@ -122,9 +188,13 @@ for r = 1:nROI
         end
         columnTag = 'ScoreMovieChannelLabel';
         if isSequence, columnTag = 'ScoreSequenceTimestamp'; end
-        localText(header,[imageLeft-left+(col-1)*(imageW+gap)+imageW/2 font],label,font, ...
-            [imageW-8 2.5*font],'HorizontalAlignment','center', ...
-            'VerticalAlignment','bottom','Tag',columnTag);
+        labelY = font;
+        if compactMovie, labelY = gap/2; end
+        if ~compactMovie || channelBandH > 0
+            localText(header,[imageLeft-left+(col-1)*(imageW+gap)+imageW/2 labelY],label,font, ...
+                [imageW-8 2.5*font],'HorizontalAlignment','center', ...
+                'VerticalAlignment','bottom','Tag',columnTag);
+        end
     end
     for row = 1:nMasks
         maskGap = gap;
@@ -301,6 +371,14 @@ while (extent(3) > limits(1) || extent(4) > limits(2)) && h.FontSize > 8
     h.FontSize = h.FontSize-0.5;
     extent = h.Extent;
 end
+end
+
+function textSize = localTextSize(ax,label,font,box)
+h = localText(ax,[0 0],label,font,box, ...
+    'HorizontalAlignment','left','VerticalAlignment','bottom');
+extent = h.Extent;
+textSize = extent(3:4);
+delete(h);
 end
 
 function localClearImageText(gh,tile,ax,font)

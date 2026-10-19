@@ -170,6 +170,57 @@ for variant = 1:3
 end
 end
 
+function testImageOnlyMovieGridUsesSpaceForImages(testCase)
+for overlay = [false true]
+    [r,opts] = fixture('movie',overlay);
+    opts.channel = opts.channel([1 3]); opts.levels = opts.levels([1 3]);
+    opts.RGB = {[1 1 1],opts.RGB{3}};
+    opts.Nchannel = 1; opts.Nrow = 2; opts.Ncol = 2;
+    opts.tileW = 180; opts.tileH = 180;
+    opts.title = ''; opts.ROITitle = false; opts.hideStamp = false;
+    opts.background = [1 1 1]; opts.textColor = [0 0 0];
+    opts.channelLabel = {'Channel1_z2','results_hoct_multidomain_null_20261012_v001'};
+    rois = r;
+    levels = [10000 22000 38000 55000];
+    for k = 1:4
+        [rois(k),~] = fixture('movie',overlay);
+        rois(k).image(:,:,1,:) = levels(k);
+    end
+    opts.name = [tempname '.avi']; opts.movieProfile = 'Motion JPEG AVI';
+    cleanupFile = onCleanup(@() deleteIfPresent(opts.name)); %#ok<NASGU>
+    dh = score_createDisplayHandles(opts);
+    cleanup = onCleanup(@() close(dh.Figure)); %#ok<NASGU>
+    gh = score_renderFinalFrame(dh,rois,opts);
+    canvas = gh.movieLayout.canvasSize;
+    % Tighten the canvas by removing whitespace, while keeping every image
+    % at the same resolution and preserving its complete field of view.
+    verifyLessThan(testCase,prod(canvas),4*opts.tileW*opts.tileH/0.55);
+    verifyEmpty(testCase,gh.movieLayout.plots);
+    verifyNumElements(testCase,gh.movieLayout.timeHandles,1);
+    verifyEqual(testCase,gh.movieLayout.timeHandles.String,'10 min');
+    reader = VideoReader(opts.name);
+    rgb = readFrame(reader);
+    clear reader;
+    keys = sort(cell2mat(gh.imgHandles.keys));
+    for k = 1:numel(keys)
+        ax = gh.imgHandles(keys(k)).Parent;
+        verifyEqual(testCase,ax.Position(3:4).*canvas,[180 180],'AbsTol',1e-8);
+        verifyEqual(testCase,ax.XLim,[0.5 24.5]);
+        verifyEqual(testCase,ax.YLim,[0.5 24.5]);
+        verifyImageCenter(testCase,rgb,ax,repmat(255*levels(k)/65535,1,3));
+    end
+    for tag = {'AnnotationRowLabel','ScoreMovieChannelLabel','ScoreMovieGlobalHeader','ScoreMovieTimestamp'}
+        for h = reshape(findall(dh.Figure,'Tag',tag{1}),1,[])
+            if strlength(strjoin(string(h.String))) == 0, continue; end
+            extent = h.Extent;
+            verifyGreaterThanOrEqual(testCase,extent(1:2),[-1 -1]);
+            verifyLessThanOrEqual(testCase,extent(1:2)+extent(3:4), ...
+                [h.Parent.XLim(2) h.Parent.YLim(2)]+1);
+        end
+    end
+end
+end
+
 function testMaskOnlyAndLegacyRowCounts(testCase)
 [r,opts] = fixture('display',false);
 opts.channel = opts.channel(3:4); opts.levels = opts.levels(3:4);

@@ -6,11 +6,6 @@ if ~showGenealogy && ~showBudPairing
     return;
 end
 
-if ~hasAnyVisibleLineageSource(roiobj, layoutOptions)
-    clearLineageAllTiles(graphicsHandles);
-    return;
-end
-
 if nargin >= 5 && ~isempty(currentFrames)
     framesToDraw = currentFrames(:).';
 else
@@ -29,10 +24,24 @@ end
 mode = lower(layoutOptions.mode);
 if isfield(graphicsHandles, 'comparisonPanels')
     clearLineageAllTiles(graphicsHandles);
+    previousROI = 0;
+    previousRow = 0;
     for panel = graphicsHandles.comparisonPanels
         roi = roiobj(panel.roi);
-        rowOptions = score_annotationRowOptions(layoutOptions, panel.row);
-        pix = resolvePixWithoutApp(roi, rowOptions);
+        if panel.roi ~= previousROI || panel.row ~= previousRow
+            rowOptions = score_annotationRowOptions(layoutOptions, panel.row);
+            name = rowOptions.annotationChannel;
+            preset = score_getObjectDisplayConfig(roi,name);
+            [rowOptions.lineageDisplayConfig, ~] = score_resolveLineageDisplayConfig( ...
+                roi,name,roi.findChannelID(char(name)),preset,showBudPairing,showGenealogy,false);
+            rowOptions.BudLinkColor = preset.budLinkColor;
+            rowOptions.GenealogyLinkColor = preset.genealogyLinkColor;
+            rowOptions.LineageLinkWidthPx = preset.linkWidthPx;
+            pix = resolvePixWithoutApp(roi,rowOptions);
+            previousROI = panel.roi;
+            previousRow = panel.row;
+        end
+        if ~rowOptions.lineageDisplayConfig.enabled, continue; end
         if isempty(pix), continue; end
         frameIndex = 1;
         if strcmpi(mode, 'sequence'), frameIndex = panel.frame; end
@@ -42,6 +51,10 @@ if isfield(graphicsHandles, 'comparisonPanels')
         drawOrUpdateLineageOnAxes(graphicsHandles, panel.tile, ax, roi, pix, ...
             frm, resolveLineageColor(roi, rowOptions), rowOptions);
     end
+    return;
+end
+if ~hasAnyVisibleLineageSource(roiobj, layoutOptions)
+    clearLineageAllTiles(graphicsHandles);
     return;
 end
 switch mode
@@ -241,7 +254,7 @@ end
 end
 
 function pix = resolvePixWithoutApp(roi, layoutOptions)
-cfg = getLineageDisplayConfig(roi);
+cfg = getLineageDisplayConfig(roi,layoutOptions);
 if cfg.enabled && strlength(cfg.channelName) > 0
     try
         pix = roi.findChannelID(char(cfg.channelName));
@@ -779,7 +792,7 @@ end
 function [geoms, configured] = getCellModelLineageGeometries( ...
         roi, fallbackPix, frm, fallbackColor, layoutOptions, geoms)
 configured = false;
-cfg = getLineageDisplayConfig(roi);
+cfg = getLineageDisplayConfig(roi,layoutOptions);
 if ~startsWith(string(cfg.sourceKey), "cell_model:")
     return;
 end
@@ -967,8 +980,8 @@ sources = struct('key',{},'motherOf',{},'channelName',{},'events',{}, ...
 if nargin < 3
     layoutOptions = struct();
 end
-cfg = getLineageDisplayConfig(roi);
-if ~cfg.enabled
+cfg = getLineageDisplayConfig(roi,layoutOptions);
+if ~cfg.enabled && ~isfield(layoutOptions,'lineageDisplayConfig')
     cfg = getLineageDisplayConfigFromUserData(ds);
 end
 cfg = applyLineageOverlayToggles(cfg, layoutOptions);
@@ -977,10 +990,14 @@ if ~cfg.enabled
 end
 
 [key, src] = resolveDisplayLineageSource(ds, cfg);
-if strlength(key) == 0 || isempty(src) || ~isfield(src, 'motherOf') || ...
-        ~isa(src.motherOf, 'containers.Map') || src.motherOf.Count == 0
+if strlength(key) == 0 || isempty(src)
     return;
 end
+hasMap = isfield(src,'motherOf') && isa(src.motherOf,'containers.Map') && src.motherOf.Count > 0;
+hasEvents = isfield(src,'events') && ~isempty(src.events);
+if ~(cfg.showGenealogy && hasMap) && ~(cfg.showBudPairing && hasEvents), return; end
+motherOf = containers.Map('KeyType','int32','ValueType','double');
+if hasMap, motherOf = src.motherOf; end
 
 channelName = cfg.channelName;
 if strlength(channelName) == 0 && isfield(src, 'channelName') && ~isempty(src.channelName)
@@ -992,7 +1009,7 @@ if isfield(src, 'events')
 end
 
 sources = struct('key', string(key), ...
-    'motherOf', src.motherOf, ...
+    'motherOf', motherOf, ...
     'channelName', channelName, ...
     'events', events, ...
     'showBudPairing', logical(cfg.showBudPairing), ...
@@ -1041,18 +1058,21 @@ for i = 1:numel(sources)
 end
 end
 
-function cfg = getLineageDisplayConfig(roi)
+function cfg = getLineageDisplayConfig(roi,layoutOptions)
 cfg = struct('enabled', false, 'channelName', "", 'channelPix', [], ...
     'sourceKey', "", 'showBudPairing', false, 'showGenealogy', false, ...
     'budWindowBefore', 0, 'budWindowAfter', 6, 'modelFamilyId', 0, ...
     'explicit', false);
 try
-    if ~isprop(roi, 'display') || ~isstruct(roi.display) || ...
-            ~isfield(roi.display, 'lineage') || isempty(roi.display.lineage)
+    if nargin > 1 && isfield(layoutOptions,'lineageDisplayConfig')
+        in = layoutOptions.lineageDisplayConfig;
+    elseif isprop(roi, 'display') && isstruct(roi.display) && ...
+            isfield(roi.display, 'lineage') && ~isempty(roi.display.lineage)
+        in = roi.display.lineage;
+    else
         return;
     end
     cfg.explicit = true;
-    in = roi.display.lineage;
     if isfield(in, 'enabled'), cfg.enabled = logical(in.enabled); end
     if isfield(in, 'channelName'), cfg.channelName = string(in.channelName); end
     if isfield(in, 'channelPix'), cfg.channelPix = double(in.channelPix); end
@@ -1327,7 +1347,7 @@ function cfg = applyLineageOverlayToggles(cfg, layoutOptions)
 cfg.showGenealogy = logical(cfg.showGenealogy) && showGenealogy;
 cfg.showBudPairing = logical(cfg.showBudPairing) && showBudPairing;
 cfg.enabled = logical(cfg.enabled) && (cfg.showGenealogy || cfg.showBudPairing) && strlength(string(cfg.channelName)) > 0;
-if isfield(layoutOptions, 'annotationChannel')
+if isfield(layoutOptions, 'annotationChannel') && ~isfield(layoutOptions,'lineageDisplayConfig')
     cfg.enabled = cfg.enabled && strcmp(string(cfg.channelName), string(layoutOptions.annotationChannel));
 end
 end

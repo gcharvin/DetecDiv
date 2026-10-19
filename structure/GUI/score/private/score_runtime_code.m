@@ -7965,6 +7965,11 @@ end
             return;
              end
 
+             % Apply the UI mode to every mask row even if the selected mask
+             % has no lineage relations of its own.
+             lineageUI = score_lineageDisplayOptions(app);
+             opts.ShowBudPairingOverlay = lineageUI.showBudPairing;
+             opts.ShowLineageOverlay = lineageUI.showGenealogy;
              app.layoutOptions=opts;
 
              if strcmpi(target, 'hub')
