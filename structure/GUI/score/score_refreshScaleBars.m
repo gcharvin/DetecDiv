@@ -12,6 +12,21 @@ if ~isfield(graphicsHandles, 'imgHandles') || isempty(graphicsHandles.imgHandles
     return;
 end
 
+if isfield(graphicsHandles, 'comparisonPanels')
+    for panel = graphicsHandles.comparisonPanels
+        ax = localAxesForTile(graphicsHandles, panel.tile);
+        if isempty(ax), continue; end
+        localDeleteScale(graphicsHandles, panel.tile);
+        if layoutOptions.overlay
+            h = localDrawAllScales(ax, layoutOptions);
+        else
+            h = score_drawChannelScaleBar(ax, layoutOptions, panel.channel);
+        end
+        if ~isempty(h), graphicsHandles.scaleBarHandles(panel.tile) = h; end
+    end
+    return;
+end
+
 if isfield(layoutOptions, 'overlay') && logical(layoutOptions.overlay)
     localRefreshOverlayScale(graphicsHandles, layoutOptions);
 else

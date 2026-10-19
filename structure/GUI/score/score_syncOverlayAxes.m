@@ -16,27 +16,36 @@ if isempty(graphicsHandles.imgHandles) || isempty(graphicsHandles.overlayHandles
 end
 
 keys = localOverlayKeys(graphicsHandles.overlayHandles);
-for i = 1:numel(keys)
-    key = keys{i};
-    hOverlay = localMapValue(graphicsHandles.overlayHandles, key);
-    hImage = localMapValue(graphicsHandles.imgHandles, key);
+for pass = 1:2
+    layoutChanged = false;
+    for i = 1:numel(keys)
+        key = keys{i};
+        hOverlay = localMapValue(graphicsHandles.overlayHandles, key);
+        hImage = localMapValue(graphicsHandles.imgHandles, key);
 
-    hOverlay = localFirstImage(hOverlay);
-    hImage = localFirstImage(hImage);
-    if isempty(hOverlay) || isempty(hImage)
-        continue;
-    end
-    if ~isgraphics(hOverlay) || ~isgraphics(hImage)
-        continue;
-    end
+        hOverlay = localFirstImage(hOverlay);
+        hImage = localFirstImage(hImage);
+        if isempty(hOverlay) || isempty(hImage)
+            continue;
+        end
+        if ~isgraphics(hOverlay) || ~isgraphics(hImage)
+            continue;
+        end
 
-    axOverlay = ancestor(hOverlay, 'axes');
-    axImage = ancestor(hImage, 'axes');
-    if isempty(axOverlay) || isempty(axImage) || ~isgraphics(axOverlay) || ~isgraphics(axImage)
-        continue;
-    end
+        axOverlay = ancestor(hOverlay, 'axes');
+        axImage = ancestor(hImage, 'axes');
+        if isempty(axOverlay) || isempty(axImage) || ~isgraphics(axOverlay) || ~isgraphics(axImage)
+            continue;
+        end
 
-    localSyncAxes(axImage, axOverlay);
+        layoutChanged = localSyncAxes(axImage, axOverlay) || layoutChanged;
+    end
+    if ~layoutChanged || pass == 2
+        break;
+    end
+    % MATLAB settles tiled-layout geometry lazily after zoom, resize or a
+    % stacking repair. Resync once after that update, only when geometry changed.
+    drawnow nocallbacks;
 end
 end
 
@@ -102,86 +111,60 @@ catch
 end
 end
 
-function localSyncAxes(axImage, axOverlay)
-oldUnitsImage = '';
-oldUnitsOverlay = '';
+function layoutChanged = localSyncAxes(axImage, axOverlay)
+layoutChanged = false;
+% uistack rebuilds MATLAB graphics controllers even if the overlay already
+% covers its image. Only repair stacking when their relative order is wrong.
+% A tiled image axes has the layout as its parent; compare the layout's
+% position among the figure children with the unmanaged overlay axes.
 try
-    oldUnitsImage = axImage.Units;
-catch
-end
-try
-    oldUnitsOverlay = axOverlay.Units;
-catch
-end
-
-try
-    axImage.Units = 'normalized';
-catch
-end
-try
-    axOverlay.Units = 'normalized';
-catch
-end
-
-try
-    axOverlay.Position = axImage.Position;
-catch
-end
-try
-    axOverlay.InnerPosition = axImage.InnerPosition;
-catch
-end
-try
-    axOverlay.XLim = axImage.XLim;
-catch
-end
-try
-    axOverlay.YLim = axImage.YLim;
-catch
-end
-try
-    axOverlay.XDir = axImage.XDir;
-catch
-end
-try
-    axOverlay.YDir = axImage.YDir;
-catch
-end
-try
-    axOverlay.DataAspectRatio = axImage.DataAspectRatio;
-catch
-end
-try
-    axOverlay.PlotBoxAspectRatio = axImage.PlotBoxAspectRatio;
-catch
-end
-try
-    axOverlay.Visible = 'off';
-catch
-end
-try
-    axOverlay.Color = 'none';
-catch
-end
-try
-    axOverlay.HitTest = 'off';
-catch
-end
-try
-    uistack(axOverlay, 'top');
-catch
-end
-
-if ~isempty(oldUnitsImage)
-    try
-        axImage.Units = oldUnitsImage;
-    catch
+    imageChild = axImage;
+    parent = axOverlay.Parent;
+    while ~isempty(imageChild.Parent) && ~isequal(imageChild.Parent, parent)
+        imageChild = imageChild.Parent;
     end
-end
-if ~isempty(oldUnitsOverlay)
-    try
-        axOverlay.Units = oldUnitsOverlay;
-    catch
+    children = parent.Children;
+    overlayIndex = find(children == axOverlay, 1);
+    imageIndex = find(children == imageChild, 1);
+    if isempty(overlayIndex) || isempty(imageIndex) || overlayIndex > imageIndex
+        uistack(axOverlay, 'top');
+        layoutChanged = true;
     end
+catch
+end
+
+oldUnitsImage = axImage.Units;
+oldUnitsOverlay = axOverlay.Units;
+localSetIfDifferent(axImage, 'Units', 'normalized');
+localSetIfDifferent(axOverlay, 'Units', 'normalized');
+
+% Writing unchanged limits/aspect ratios triggers listeners on every linked
+% axes. In comparison mode this work otherwise grows with all image tiles.
+geometryProperties = {'Position','InnerPosition','XLim','YLim','XDir','YDir', ...
+    'DataAspectRatio','PlotBoxAspectRatio'};
+for k = 1:numel(geometryProperties)
+    name = geometryProperties{k};
+    layoutChanged = localSetIfDifferent(axOverlay, name, axImage.(name)) || layoutChanged;
+end
+localSetIfDifferent(axOverlay, 'Visible', 'off');
+localSetIfDifferent(axOverlay, 'Color', 'none');
+localSetIfDifferent(axOverlay, 'HitTest', 'off');
+
+localSetIfDifferent(axImage, 'Units', oldUnitsImage);
+localSetIfDifferent(axOverlay, 'Units', oldUnitsOverlay);
+end
+
+function changed = localSetIfDifferent(obj, name, value)
+changed = false;
+try
+    % Setting a numeric axes property also selects manual mode. Preserve
+    % that effect once, even if its automatic value currently matches.
+    modeName = [name 'Mode'];
+    autoMode = isprop(obj, modeName) && strcmp(obj.(modeName), 'auto');
+    if autoMode || ~isequaln(obj.(name), value)
+        obj.(name) = value;
+        changed = true;
+    end
+catch
 end
 end

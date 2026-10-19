@@ -21,6 +21,18 @@ function graphicsHandles = score_renderFinalFrame(displayHandles, roiobj, layout
 %
 % Le master tiledlayout a été créé avec 'TileSpacing','none' et 'Padding','none'.
 
+[annotationRows, ~] = score_annotationRows(layoutOptions);
+if annotationRows > 1
+    graphicsHandles = score_renderAnnotationComparison(displayHandles, roiobj, layoutOptions);
+    switch lower(string(layoutOptions.mode))
+        case "sequence"
+            graphicsHandles = score_exportSequence(displayHandles,graphicsHandles,roiobj,layoutOptions);
+        case "movie"
+            graphicsHandles = localWriteMovie(displayHandles, graphicsHandles, roiobj, layoutOptions);
+    end
+    return;
+end
+
 masterTL = displayHandles.masterTiledLayout;
 % Initialisation des containers pour stocker les handles
 graphicsHandles.imgHandles     = containers.Map('KeyType','double','ValueType','any');
@@ -94,8 +106,9 @@ switch lower(displayHandles.mode)
                         graphicsHandles.imgHandles(tileIndex) = hImg;
 
                         if frame==1
-                                [reviewLabel, reviewColor] = ...
-                                    score_annotationFrameReviewStatus(app, roiData, curframe);
+                                % Exports have no live annotation-session app.
+                                reviewLabel = '';
+                                reviewColor = textColor;
                                 if isempty(reviewLabel)
                                     reviewColor = textColor;
                                 end
@@ -185,14 +198,7 @@ switch lower(displayHandles.mode)
         
         % Export en PDF
         % on décompose en dossier, nom et extension
-[folder, name, ~] = fileparts(outputname);
-% on reconstruit le chemin avec la nouvelle extension
-newPath = fullfile(folder, [name '.pdf']);
-
-    %    outputPath = fullfile(pwd,newPath);
-        drawnow;
-        exportgraphics(displayHandles.Figure, newPath, 'ContentType', 'vector');
-        fprintf('Sequence saved as PDF: %s\n', newPath);
+        graphicsHandles = score_exportSequence(displayHandles,graphicsHandles,roiobj,layoutOptions);
 
     case 'display'
     
@@ -501,115 +507,8 @@ end
             end
         end
 
-[folder, name, ~] = fileparts(outputname);
+graphicsHandles = localWriteMovie(displayHandles, graphicsHandles, roiobj, layoutOptions);
 
-% 1) Profil demandé par l'appli (optionnel)
-if isfield(layoutOptions, 'movieProfile') && ~isempty(layoutOptions.movieProfile)
-    requestedProfile = layoutOptions.movieProfile;  % ex: 'MPEG-4', 'Motion JPEG AVI', ...
-else
-    requestedProfile = 'MPEG-4';  % préférence: MP4 si dispo (Windows)
-end
-
-% 2) Profils disponibles sur cette installation
-profiles = VideoWriter.getProfiles;
-validProfiles = {profiles.Name};
-
-% 3) Si le profil demandé n'est pas dispo, on choisit un fallback
-if ~ismember(requestedProfile, validProfiles)
-    % Ordre de préférence selon ce qui est généralement utile
-    preferenceList = {'MPEG-4', 'Motion JPEG AVI', 'Uncompressed AVI', ...
-                      'Archival', 'Motion JPEG 2000', 'Grayscale AVI', 'Indexed AVI'};
-    fallbackProfile = '';
-
-    for k = 1:numel(preferenceList)
-        if ismember(preferenceList{k}, validProfiles)
-            fallbackProfile = preferenceList{k};
-            break;
-        end
-    end
-
-    if isempty(fallbackProfile)
-        % Au cas très improbable où rien ne match (devrait pas arriver)
-        fallbackProfile = validProfiles{1};
-    end
-
-    warning('Requested movie profile "%s" not available. Using "%s" instead.', ...
-        requestedProfile, fallbackProfile);
-    requestedProfile = fallbackProfile;
-end
-
-% 4) Choix de l'extension en fonction du profil
-switch requestedProfile
-    case 'MPEG-4'
-        fileExt = '.mp4';
-    case {'Motion JPEG 2000','Archival'}
-        % Ceux-là sont souvent stockés en .mj2, mais .avi peut aussi marcher
-        fileExt = '.mj2';  % à adapter si tu préfères .avi
-    otherwise
-        % Motion JPEG AVI, Uncompressed AVI, Grayscale AVI, Indexed AVI, ...
-        fileExt = '.avi';
-end
-
-newPath = fullfile(folder, [name fileExt]);
-
-% 5) Création du VideoWriter avec un profil valide
-v = VideoWriter(newPath, requestedProfile);
-fps = 10;
-try
-    fps = double(layoutOptions.IPS);
-catch
-end
-if ~isscalar(fps) || ~isfinite(fps) || fps <= 0
-    fps = 10;
-end
-v.FrameRate = fps;
-
-open(v);
-fig = get(masterTL, 'Parent');
-set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
-
-
-        % for frame = 1:numel(layoutOptions.frames)
-        %     score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
-        %     rgbImage = print(fig, '-RGBImage');
-        %     disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
-        %     writeVideo(v, im2frame(rgbImage));
-        % end
-
-        targetHW = [];  % [H W] fixé à la première frame
-
-for frame = 1:numel(layoutOptions.frames)
-    score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles, frame);
-    drawnow;  % important pour stabiliser le rendu avant capture
-
-    rgb = print(fig, '-RGBImage');   % uint8 HxWx3
-
-    % --- fixer taille de référence à la 1ère frame ---
-    if isempty(targetHW)
-        targetHW = size(rgb, [1 2]);
-        % force dimensions paires pour H.264
-        targetHW = targetHW - mod(targetHW, 2);
-    end
-
-    Ht = targetHW(1); Wt = targetHW(2);
-    H  = size(rgb,1);  W  = size(rgb,2);
-
-    % --- pad ou crop pour obtenir exactement Ht x Wt ---
-    if H < Ht || W < Wt
-        tmp = zeros(Ht, Wt, 3, 'uint8');
-        tmp(1:min(H,Ht), 1:min(W,Wt), :) = rgb(1:min(H,Ht), 1:min(W,Wt), :);
-        rgb = tmp;
-    else
-        rgb = rgb(1:Ht, 1:Wt, :);
-    end
-
-    fprintf('Rendering frame %d / %d\n', frame, numel(layoutOptions.frames));
-    writeVideo(v, rgb);  % <-- direct, pas im2frame
-end
-
-
-        close(v);
-        fprintf('Movie saved as MP4: %s\n', newPath);
 end
 
 
@@ -728,4 +627,98 @@ try
 catch
     label = layoutOptions.channel{ch};
 end
+end
+
+function graphicsHandles = localWriteMovie(displayHandles, graphicsHandles, roiobj, layoutOptions)
+masterTL = displayHandles.masterTiledLayout;
+[graphicsHandles, layoutOptions] = score_layoutMovie(graphicsHandles, displayHandles, roiobj, layoutOptions);
+outputname = layoutOptions.name;
+[folder, name, ~] = fileparts(outputname);
+
+% 1) Profil demandé par l'appli (optionnel)
+if isfield(layoutOptions, 'movieProfile') && ~isempty(layoutOptions.movieProfile)
+    requestedProfile = layoutOptions.movieProfile;  % ex: 'MPEG-4', 'Motion JPEG AVI', ...
+else
+    requestedProfile = 'MPEG-4';  % préférence: MP4 si dispo (Windows)
+end
+
+% 2) Profils disponibles sur cette installation
+profiles = VideoWriter.getProfiles;
+validProfiles = {profiles.Name};
+
+% 3) Si le profil demandé n'est pas dispo, on choisit un fallback
+if ~ismember(requestedProfile, validProfiles)
+    % Ordre de préférence selon ce qui est généralement utile
+    preferenceList = {'MPEG-4', 'Motion JPEG AVI', 'Uncompressed AVI', ...
+                      'Archival', 'Motion JPEG 2000', 'Grayscale AVI', 'Indexed AVI'};
+    fallbackProfile = '';
+
+    for k = 1:numel(preferenceList)
+        if ismember(preferenceList{k}, validProfiles)
+            fallbackProfile = preferenceList{k};
+            break;
+        end
+    end
+
+    if isempty(fallbackProfile)
+        % Au cas très improbable où rien ne match (devrait pas arriver)
+        fallbackProfile = validProfiles{1};
+    end
+
+    warning('Requested movie profile "%s" not available. Using "%s" instead.', ...
+        requestedProfile, fallbackProfile);
+    requestedProfile = fallbackProfile;
+end
+
+% 4) Choix de l'extension en fonction du profil
+switch requestedProfile
+    case 'MPEG-4'
+        fileExt = '.mp4';
+    case {'Motion JPEG 2000','Archival'}
+        % Ceux-là sont souvent stockés en .mj2, mais .avi peut aussi marcher
+        fileExt = '.mj2';  % à adapter si tu préfères .avi
+    otherwise
+        % Motion JPEG AVI, Uncompressed AVI, Grayscale AVI, Indexed AVI, ...
+        fileExt = '.avi';
+end
+
+newPath = fullfile(folder, [name fileExt]);
+
+% 5) Création du VideoWriter avec un profil valide
+v = VideoWriter(newPath, requestedProfile);
+fps = 10;
+try
+    fps = double(layoutOptions.IPS);
+catch
+end
+if ~isscalar(fps) || ~isfinite(fps) || fps <= 0
+    fps = 10;
+end
+v.FrameRate = fps;
+
+open(v);
+fig = get(masterTL, 'Parent');
+set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
+
+
+        % for frame = 1:numel(layoutOptions.frames)
+        %     score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
+        %     rgbImage = print(fig, '-RGBImage');
+        %     disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
+        %     writeVideo(v, im2frame(rgbImage));
+        % end
+
+for frame = 1:numel(layoutOptions.frames)
+    score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles, frame);
+    drawnow;  % important pour stabiliser le rendu avant capture
+
+    rgb = score_captureMovieFrame(fig,graphicsHandles);
+
+    fprintf('Rendering frame %d / %d\n', frame, numel(layoutOptions.frames));
+    writeVideo(v, rgb);  % <-- direct, pas im2frame
+end
+
+
+        close(v);
+        fprintf('Movie saved: %s\n', newPath);
 end

@@ -108,6 +108,11 @@ vContours = [];
 % 2) Boucle sur les canaux demandés
 % -------------------------------------------------------------------------
 for ch = 1:numel(channel)
+    % Filter masks without changing intensity order or paint identity.
+    if iscell(levels{ch}) && isfield(param, 'annotationChannel') && ...
+            string(channel{ch}) ~= string(param.annotationChannel)
+        continue;
+    end
 
     % --- index(es) du canal réel dans roitmp.image ---
     if iscell(channel)

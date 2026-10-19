@@ -36,6 +36,17 @@ end
 if isempty(channelIdx), disp('Selected mask provider channel not found'); return; end
 if isempty(pix) || pix<1, disp('Invalid pix for annotation channel'); return; end
 
+% Comparison rows retain the annotation-table editing target. A click on a
+% different row must never edit that selected mask at unrelated coordinates.
+if isfield(app.graphicsHandles, 'comparisonPanels')
+    clickedAxes = ancestor(hittest(src), 'axes');
+    if isempty(clickedAxes) || ~isstruct(clickedAxes.UserData) || ...
+            ~isfield(clickedAxes.UserData, 'annotationChannel') || ...
+            string(clickedAxes.UserData.annotationChannel) ~= string(fullChannelName)
+        return;
+    end
+end
+
 % Masque courant & overlay handles (compatibles containers.Map, struct, cell, array)
 currentMask = roi.image(:,:,pix,frm);
 axOverlay   = getOverlayAxes(app);
@@ -1884,6 +1895,26 @@ oh = app.graphicsHandles.overlayHandles;
 h = [];
 if isa(oh,'containers.Map')
     ks = oh.keys;
+    if isfield(app.graphicsHandles, 'comparisonPanels')
+        sel = app.UIAnnotationTable.Selection;
+        if isempty(sel), return; end
+        annot = string(app.UIAnnotationTable.Data{sel(1),2});
+        cls = string(app.UIAnnotationTable.Data{sel(1),3});
+        name = annot;
+        if strlength(cls) > 0, name = annot + "_" + cls; end
+        clickedAxes = ancestor(hittest(app.ImageFigure), 'axes');
+        for p = app.graphicsHandles.comparisonPanels
+            candidate = oh(p.tile);
+            if string(candidate.UserData.annotationChannel) ~= name, continue; end
+            if isempty(h), h = candidate; end
+            base = app.graphicsHandles.imgHandles(p.tile);
+            if isequal(clickedAxes, candidate.Parent) || isequal(clickedAxes, base.Parent)
+                h = candidate;
+                return;
+            end
+        end
+        return;
+    end
     if ~isempty(ks)
         h = oh(ks{1});                 % valeur associée à la 1ère clé
         if iscell(h) && ~isempty(h), h = h{1}; end

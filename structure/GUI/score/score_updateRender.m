@@ -13,6 +13,15 @@ function score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandl
 % La fonction met à jour 'CData' pour les images et 'YData' pour les courbes.
 masterTL = displayHandles.masterTiledLayout;
 mode = lower(layoutOptions.mode);
+if strcmpi(mode,'movie') && isfield(graphicsHandles,'movieLayout')
+    layoutOptions.hideStamp = true;
+    layoutOptions.movieTextPixels = graphicsHandles.movieLayout.fontPixels;
+end
+isComparison = isfield(graphicsHandles, 'comparisonPanels');
+[~, ~, imageRows] = score_annotationRows(layoutOptions);
+if isComparison && ~strcmpi(mode, 'sequence')
+    score_updateAnnotationComparison(graphicsHandles, roiobj, layoutOptions, newframe);
+end
 switch mode
     case 'display'
 
@@ -22,6 +31,7 @@ switch mode
 
         layoutOptions.frames=newframe;
 
+        if ~isComparison
         % displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
         [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiobj(1),1,layoutOptions);
 
@@ -55,11 +65,13 @@ switch mode
             end
         end
 
+        end
+
         % Mise à jour des dataseries
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
 
             for ds = 1:layoutOptions.Ndataseries
-                local_row = layoutOptions.Nbrick + ds;
+                local_row = imageRows + ds;
                 local_col = 1;
                 tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
 
@@ -101,12 +113,15 @@ switch mode
         %   ROI_rows = Nbrick + Ndataseries
         %   Si overlay=true, ROI_cols = Nbrick, sinon ROI_cols = Nchannel * Nbrick.
 
+        if ~isComparison
         keysToDelete = graphicsHandles.vectorHandles.keys;
         for k = 1:length(keysToDelete)
             h = graphicsHandles.vectorHandles(keysToDelete{k});
             delete(h);
         end
         remove(graphicsHandles.vectorHandles, keysToDelete);
+
+        end
 
         nROI = numel(roiobj);
 
@@ -124,6 +139,9 @@ switch mode
                 
                 roiData = roiobj(roiIndex);
 
+                ROI_row_offset = (i-1) * displayHandles.ROI_rows;
+                ROI_col_offset = (j-1) * displayHandles.ROI_cols;
+                if ~isComparison
                 [displayImage, vContours]=score_makeComposite(roiData,newframe,layoutOptions);
 
                 ROI_row_offset = (i-1) * (layoutOptions.Nbrick + layoutOptions.Ndataseries);
@@ -177,9 +195,11 @@ switch mode
 
                
 
+                end
+
                 if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
                     for ds = 1:layoutOptions.Ndataseries
-                        local_row = layoutOptions.Nbrick + ds;
+                        local_row = imageRows + ds;
                         local_col = 1;
                         global_row = ROI_row_offset + local_row;
                         global_col = ROI_col_offset + local_col;
@@ -295,6 +315,8 @@ end
 
 if strcmp(mode, 'display')
     score_syncOverlayAxes(graphicsHandles);
+elseif strcmp(mode,'movie')
+    score_updateMovieLayout(graphicsHandles,layoutOptions,newframe);
 end
 
 end

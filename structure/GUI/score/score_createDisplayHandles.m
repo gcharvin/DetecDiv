@@ -14,6 +14,9 @@ function displayHandles = score_createDisplayHandles(layoutOptions,hfig)
 %    MasterRows = Nrow * (Nbrick + Ndataseries), MasterCols = Ncol * (Nchannel * Nbrick).
 %
 % Le master tiledlayout est créé avec 'TileSpacing' et 'Padding' réglés sur 'none'.
+% With several indexed channels, multiply the image rows above by their
+% count. Data panels remain below the whole comparison block; sequence
+% columns continue to represent time.
 
 margin = 0;
 extraMargin = 0;
@@ -22,14 +25,12 @@ background=layoutOptions.background;
 
 %layoutOptions.Nbrick=2;
 
+[~, ~, imageRows] = score_annotationRows(layoutOptions);
+
 %% build layout
     switch lower(layoutOptions.mode)
         case 'sequence'
-            if layoutOptions.overlay
-                ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
-            else
-                ROI_rows = layoutOptions.Nchannel * layoutOptions.Nbrick + layoutOptions.Ndataseries;
-            end
+            ROI_rows = imageRows + layoutOptions.Ndataseries;
 
             ROI_cols = numel(layoutOptions.frames) * layoutOptions.Nbrick;
             MasterRows = layoutOptions.Nrow * ROI_rows;
@@ -60,14 +61,14 @@ background=layoutOptions.background;
         case 'display'
             % Pour display, une seule ROI est utilisée.
               if layoutOptions.overlay
-                ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
+                ROI_rows = imageRows + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nbrick;
             else
-                ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
+                ROI_rows = imageRows + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nchannel * layoutOptions.Nbrick;
               end
 
-            %ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
+            %ROI_rows = imageRows + layoutOptions.Ndataseries;
             %ROI_cols = layoutOptions.Nchannel * layoutOptions.Nbrick
 
              figWidth = ROI_cols  * layoutOptions.tileW + (ROI_cols +1)*margin;
@@ -97,10 +98,10 @@ background=layoutOptions.background;
             % Pour movie, plusieurs ROI sont affichées, mais le layout interne de chaque ROI
             % est identique à celui du mode display.
             if layoutOptions.overlay
-                ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
+                ROI_rows = imageRows + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nbrick;
             else
-                ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
+                ROI_rows = imageRows + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nchannel * layoutOptions.Nbrick;
             end
 
@@ -131,6 +132,8 @@ background=layoutOptions.background;
             
     end
 
+    displayHandles.ROI_rows = ROI_rows;
+    displayHandles.ROI_cols = ROI_cols;
     displayHandles.Figure=fig;
 
 end

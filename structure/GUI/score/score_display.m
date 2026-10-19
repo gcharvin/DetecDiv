@@ -120,6 +120,13 @@ else
     end
 end
 
+% Mask selection changes can also arrive through a fast refresh.
+if ~refresh && isfield(app.displayHandles, 'layoutSignature')
+    refresh = ~isequal(app.displayHandles.layoutSignature, localLayoutSignature(opts));
+elseif ~refresh
+    refresh = true;
+end
+
 if strcmp(mode, 'slow')
  refresh=true;
 end
@@ -129,6 +136,7 @@ figureState = captureScoreFigureState(app);
 %tmp=app.graphicsHandles.imgHandles
    if refresh
 displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
+displayHandles.layoutSignature = localLayoutSignature(opts);
 
 %nexttile([3 3])
 %h=gcf
@@ -143,6 +151,7 @@ restoreScoreFigureState(app, figureState);
  catch ME
      if strcmp(ME.identifier, 'score_updateRender:InvalidImageHandle')
          displayHandles = score_createDisplayHandles(opts,app.ImageFigure);
+         displayHandles.layoutSignature = localLayoutSignature(opts);
          app.graphicsHandles = score_renderFinalFrame(displayHandles , selectedROI, opts);
          app.displayHandles = displayHandles;
          restoreScoreFigureState(app, figureState);
@@ -411,4 +420,9 @@ try
     app.ShowLineageOverlay = lineageUI.showGenealogy;
 catch
 end
+end
+
+function signature = localLayoutSignature(opts)
+signature = {opts.mode, opts.overlay, opts.channel, cellfun(@iscell,opts.levels), ...
+    opts.Nchannel, opts.Ndataseries, opts.Nbrick, opts.tileH, opts.tileW};
 end

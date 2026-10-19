@@ -27,6 +27,23 @@ end
 
 
 mode = lower(layoutOptions.mode);
+if isfield(graphicsHandles, 'comparisonPanels')
+    clearLineageAllTiles(graphicsHandles);
+    for panel = graphicsHandles.comparisonPanels
+        roi = roiobj(panel.roi);
+        rowOptions = score_annotationRowOptions(layoutOptions, panel.row);
+        pix = resolvePixWithoutApp(roi, rowOptions);
+        if isempty(pix), continue; end
+        frameIndex = 1;
+        if strcmpi(mode, 'sequence'), frameIndex = panel.frame; end
+        frm = framesToDraw(min(frameIndex, numel(framesToDraw)));
+        ax = getTileAxesFromHandles(graphicsHandles, panel.tile);
+        if isempty(ax) || ~isgraphics(ax), continue; end
+        drawOrUpdateLineageOnAxes(graphicsHandles, panel.tile, ax, roi, pix, ...
+            frm, resolveLineageColor(roi, rowOptions), rowOptions);
+    end
+    return;
+end
 switch mode
     case 'display'
         if isempty(roiobj), return; end
@@ -1310,6 +1327,9 @@ function cfg = applyLineageOverlayToggles(cfg, layoutOptions)
 cfg.showGenealogy = logical(cfg.showGenealogy) && showGenealogy;
 cfg.showBudPairing = logical(cfg.showBudPairing) && showBudPairing;
 cfg.enabled = logical(cfg.enabled) && (cfg.showGenealogy || cfg.showBudPairing) && strlength(string(cfg.channelName)) > 0;
+if isfield(layoutOptions, 'annotationChannel')
+    cfg.enabled = cfg.enabled && strcmp(string(cfg.channelName), string(layoutOptions.annotationChannel));
+end
 end
 
 function [showGenealogy, showBudPairing] = lineageOverlayToggles(layoutOptions)
