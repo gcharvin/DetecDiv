@@ -35,6 +35,16 @@ a label also clears its review coverage. **Reviewed**, **Unreview** and
 **Validate** use the shared annotation lifecycle. No image store is required.
 Score also dispatches to the package's window selector when images are present.
 
+The numeric editor shares Score's class-key preferences (by default `a z e r t
+y u i`, in class order). Left/right arrows move to the previous/next complete
+annotation unit, staying inside the ROI's training bounds; frame mode advances
+one frame. The current unit is shaded gray in every visible trace and the label
+plot. Click a trace to select it, then press its class key to assign/save the
+whole current unit. Numeric input fields retain their ordinary editing keys;
+Ctrl/Alt/Command shortcuts never assign labels. Checkboxes show/hide individual
+input traces, with Show all/Hide all controls; visibility survives ROI changes
+and never changes the input bindings, training features, or annotations.
+
 Set classes and ROI bounds before annotation. GT is stored under the classifier
 ID as `labels_training` plus `id_training`, independently from input series.
 Annotation of selected windows is allowed; only reviewed, known labels are

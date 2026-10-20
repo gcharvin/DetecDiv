@@ -230,6 +230,68 @@ handles=fig.UserData;handles.Frame.Value=6;cb=handles.Frame.ValueChangedFcn;cb(h
 handles.Label.Value='dead';cb=handles.AssignButton.ButtonPushedFcn;cb(handles.AssignButton,[]);
 verifyEqual(testCase,c.roi(1).data(2).data.id_training(5:8),2*ones(4,1));
 end
+function testAnnotationNavigationRespectsBoundsAndCompleteUnits(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.bounds.Type='Auto';c.bounds.Values=[2 8];
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=3;r=c.roi(1);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,3,1,8),5);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,5,1,8),5);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,5,-1,8),2);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,2,-1,8),2);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,8,-1,8),5);
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,1,1,8),2);
+c.trainingParam.outputMode='frame';verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,3,1,8),4);
+c.trainingParam.outputMode='video';verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,6,1,8),2);
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=10;
+verifyEqual(testCase,lstm_timeseries.adjacentAnnotationFrame(c,r,3,1,8),3);
+end
+function testNumericAnnotationHotkeysShadingAndTraceVisibility(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+fig=dataseriesLSTMAnnotation(c,1,[],'Visible','off');finish=onCleanup(@()delete(fig)); %#ok<NASGU>
+key=fig.WindowKeyPressFcn;key(fig,struct('Key','rightarrow','Modifier',{{}}));
+verifyEqual(testCase,fig.UserData.Frame.Value,5);
+bands=findall(fig,'Tag','CurrentAnnotationInterval');verifyNumElements(testCase,bands,3);
+for k=1:numel(bands),verifyEqual(testCase,bands(k).XData(:)',[4.5 8.5 8.5 4.5]);end
+[keys,~]=detecdiv_prefs_get_shortcuts();
+key(fig,struct('Key',keys{1},'Modifier',{{'control'}}));
+verifyEqual(testCase,c.roi(1).data(2).data.id_training(5:8),2*ones(4,1));
+key(fig,struct('Key',keys{1},'Modifier',{{}}));
+verifyEqual(testCase,c.roi(1).data(2).data.id_training(1:8),ones(8,1));
+checkbox=findall(fig,'Tag','VisibleTrace1');checkbox.Value=false;
+cb=checkbox.ValueChangedFcn;cb(checkbox,[]);drawnow;
+visibleAxes=findall(fig,'Type','axes','Visible','on');verifyNumElements(testCase,visibleAxes,2);
+key(fig,struct('Key','leftarrow','Modifier',{{}}));verifyEqual(testCase,fig.UserData.Frame.Value,1);
+key(fig,struct('Key',keys{2},'Modifier',{{}}));
+verifyEqual(testCase,c.roi(1).data(2).data.id_training(1:4),2*ones(4,1));
+checkbox=findall(fig,'Tag','VisibleTrace1');verifyFalse(testCase,checkbox.Value);
+sourceData=c.roi(1).data(1).data;
+roiChoice=findall(fig,'Tag','RoiSelector');roiChoice.Value='2';cb=roiChoice.ValueChangedFcn;cb(roiChoice,[]);
+checkbox=findall(fig,'Tag','VisibleTrace1');verifyFalse(testCase,checkbox.Value);
+verifyEqual(testCase,c.roi(1).data(1).data,sourceData);
+button=findall(fig,'Tag','HideAllTraces');cb=button.ButtonPushedFcn;cb(button,[]);
+verifyNumElements(testCase,findall(fig,'Type','axes','Visible','on'),1);
+button=findall(fig,'Tag','ShowAllTraces');cb=button.ButtonPushedFcn;cb(button,[]);
+verifyNumElements(testCase,findall(fig,'Type','axes','Visible','on'),3);
+ax=findall(fig,'Tag','NumericStateLabels');ax.YLim=[-2 5];drawnow;
+band=findall(ax,'Tag','CurrentAnnotationInterval');verifyEqual(testCase,band.YData(:)',[-2 -2 5 5]);
+end
+function testSixScoreClassKeysAssignWholeWindows(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.classes={'budding','arrested','dead','state4','state5','state6'};
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+t=c.roi(1).data(2).data;t.id_training(:)=1;
+t.labels_training=categorical(repmat("budding",8,1),c.classes,c.classes);c.roi(1).data(2).data=t;
+fig=dataseriesLSTMAnnotation(c,1,[],'Visible','off');finish=onCleanup(@()delete(fig)); %#ok<NASGU>
+[keys,~]=detecdiv_prefs_get_shortcuts();key=fig.WindowKeyPressFcn;
+for index=1:6
+    key(fig,struct('Key',keys{index},'Modifier',{{}}));
+    t=c.roi(1).data(2).data;
+    verifyEqual(testCase,t.id_training(1:4),index*ones(4,1));
+    verifyEqual(testCase,string(t.labels_training(1:4)),repmat(string(c.classes{index}),4,1));
+    verifyEqual(testCase,t.id_training(5:8),ones(4,1));
+end
+end
 function testClassifierGUIDynamicFeatureBindings(testCase)
 [c,cleanup]=fixture(); %#ok<ASGLU>
 app=classifierGUI(c);finish=onCleanup(@()delete(app)); %#ok<NASGU>
