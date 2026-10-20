@@ -2567,6 +2567,12 @@ function [modulePath, status, targetLabel] = resolveClassifierModulePathForValid
         return;
     end
 
+    if ispc && isNativeWorkerPathContext(ctx) && looksLikeWindowsAbsPathLocal(configuredPath)
+        modulePath = configuredPath;
+        status = 'worker_local';
+        return;
+    end
+
     if ~ispc && looksLikeWindowsAbsPathLocal(configuredPath)
         [mappedPath, mapped] = mapLocalPathToHubServerPath(configuredPath, ctx);
         if mapped
@@ -2641,6 +2647,12 @@ if isempty(configuredPath)
 end
 
 pathText = char(string(configuredPath));
+if ispc && isNativeWorkerPathContext(ctx) && looksLikeWindowsAbsPathLocal(pathText)
+    checkPath = pathText;
+    serverPath = pathText;
+    status = 'worker_local';
+    return;
+end
 if isHubValidationTarget(ctx)
     if ispc
         if looksLikeWindowsAbsPathLocal(pathText)
@@ -2705,6 +2717,12 @@ function [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(pathIn, ctx)
         end
         return;
     end
+end
+
+function tf = isNativeWorkerPathContext(ctx)
+    % Set by the batch entrypoint, not inferred from the submitting client OS.
+    tf = isstruct(ctx) && isfield(ctx,'execution') && isstruct(ctx.execution) && ...
+        isfield(ctx.execution,'worker_local_paths') && isequal(ctx.execution.worker_local_paths,true);
 end
 
 function tf = isHubValidationTarget(ctx)

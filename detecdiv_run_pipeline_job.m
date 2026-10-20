@@ -822,7 +822,9 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
     if isempty(strtrim(requestedMode))
         requestedMode = 'server';
     end
-    ctx.execution = struct('requested_mode', requestedMode);
+    % This entrypoint is already executing on the selected host. Its native
+    % paths do not need a fictional Linux/server mirror for validation.
+    ctx.execution = struct('requested_mode', requestedMode, 'worker_local_paths', true);
     if strcmpi(requestedMode,'local_process') && ...
             isfield(payload.execution,'local_fov_pool')
         ctx.execution.localFovPool = payload.execution.local_fov_pool;

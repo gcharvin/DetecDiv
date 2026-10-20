@@ -36,7 +36,7 @@ verifyTrue(testCase, runObj.outputs.report.okStrict, ...
     char(strjoin(string(runObj.outputs.report.errors), ' | ')));
 end
 
-function testServerWorkerStillRejectsUnmappedWindowsPlugin(testCase)
+function testServerWorkerAcceptsItsNativeWindowsPlugin(testCase)
 assumeTrue(testCase, ispc);
 [payload, cleanup] = localFixture('server'); %#ok<ASGLU>
 payload.execution.local_fov_pool = struct('poolWorkers',99);
@@ -48,11 +48,21 @@ verifyEqual(testCase, runObj.ctx.execution.requested_mode, 'server');
 verifyFalse(testCase,isfield(runObj.ctx.execution,'localFovPool'));
 verifyEqual(testCase,runObj.ctx.parallelFovWorkers,10);
 report = runObj.outputs.report;
-verifyFalse(testCase, report.okStrict);
+verifyTrue(testCase, runObj.ctx.execution.worker_local_paths);
+verifyTrue(testCase, report.okStrict, strjoin(string(report.errors),' | '));
 verifyEqual(testCase, report.pluginPackages.target, 'Hub/server execution');
-verifyEqual(testCase, report.pluginPackages.status, 'unmapped_windows_path');
-verifyFalse(testCase, report.pluginPackages.accessible);
-verifyTrue(testCase, any(contains(report.errors, 'Plugin package for node')));
+verifyEqual(testCase, report.pluginPackages.status, 'worker_local');
+verifyTrue(testCase, report.pluginPackages.accessible);
+end
+
+function testClientPreflightStillRejectsUnmappedWindowsPlugin(testCase)
+assumeTrue(testCase,ispc);
+[payload, cleanup] = localFixture('server'); %#ok<ASGLU>
+pipe = pipelineLoad(payload.pipeline_ref.pipeline_json_path);
+ctx = struct('execution',struct('requested_mode','server'));
+[~,report] = validatePipeline(pipe,ctx,struct('allowGui',false));
+verifyEqual(testCase,report.pluginPackages.status,'unmapped_windows_path');
+verifyFalse(testCase,report.pluginPackages.accessible);
 end
 
 function testNoRoisReturnsShortInformationalResult(testCase)
