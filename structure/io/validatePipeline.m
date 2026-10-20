@@ -162,7 +162,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             if ~isempty(artifactWarnings)
                 report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
             end
-            [pluginErrors, pluginWarnings, pluginReport] = pluginPackageIssues(node, ctx);
+            [pluginErrors, pluginWarnings, pluginReport] = pluginPackageIssues(node, ctx, opts);
             if ~isempty(pluginReport)
                 report.pluginPackages = appendStructArray(report.pluginPackages, pluginReport);
             end
@@ -1972,6 +1972,11 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
 
     hasLinkedPath = isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath);
     hasLinkedVar = isstruct(p) && isfield(p, 'moduleVar') && ~isempty(p.moduleVar);
+    referencePolicy = pipelineClassifierReferencePolicy(node);
+    if ~referencePolicy.hasReference && ~referencePolicy.required
+        artifactReport = classifierArtifactReport(node, '', '', '', 'not_required', '', '', false);
+        return;
+    end
     requiresLocalArtifacts = classifierRequiresLocalArtifacts(pkgName);
     if ~(hasLinkedPath || hasLinkedVar)
         warnings{end+1} = ['Classifier node ' nodeId ...
@@ -2312,7 +2317,7 @@ end
 tf = ~isempty(regexp(txt, '^[A-Za-z_]\w*$', 'once'));
 end
 
-function [errors, warnings, report] = pluginPackageIssues(node, ctx)
+function [errors, warnings, report] = pluginPackageIssues(node, ctx, opts)
 errors = {};
 warnings = {};
 report = struct([]);
@@ -2333,7 +2338,7 @@ end
 
 [customRoot, customDir] = customPackagePathsForValidation(node, p, pkgName);
 hasCustomLink = ~isempty(customRoot) || ~isempty(customDir);
-registeredDir = registeredPluginPackageDirForValidation(pkgName, nodeType);
+registeredDir = '';
 nodeId = char(string(getField(node, 'id', '')));
 
 if isempty(customDir) && ~isempty(customRoot)
@@ -2358,6 +2363,8 @@ if hasCustomLink
         return;
     end
 
+    registeredDir = registeredPluginPackageDirForValidation(pkgName, nodeType, opts);
+    report.registeredDir = registeredDir;
     msg = sprintf(['Plugin package for node %s is not accessible for %s. ' ...
         'Configured package path: %s.'], nodeId, targetLabel, configuredPath);
     if ~isempty(registeredDir)
@@ -2370,8 +2377,22 @@ if hasCustomLink
     return;
 end
 
+registeredDir = registeredPluginPackageDirForValidation(pkgName, nodeType, opts);
 if ~isempty(registeredDir)
     report = pluginPackageReport(node, customRoot, customDir, registeredDir, '', 'registered_unlinked', validationExecutionTargetLabel(ctx), registeredDir, true);
+    entrypoint = [pkgName '.process'];
+    if strcmpi(nodeType,'classifier'), entrypoint = [pkgName '.classify']; end
+    selected = which(entrypoint);
+    if ~isempty(selected)
+        selectedDir = char(java.io.File(fileparts(selected)).getCanonicalPath());
+        installedDir = char(java.io.File(registeredDir).getCanonicalPath());
+        same = strcmp(selectedDir,installedDir);
+        if ispc, same = strcmpi(selectedDir,installedDir); end
+        if same
+            report.status = 'installed_selected';
+            return;
+        end
+    end
     warnings{end+1} = sprintf(['Plugin package "%s" for node %s is available in the plugin registry (%s), ' ...
         'but this pipeline node does not store a customPackageDir/customPackageRoot link. Relink it in pipeline2 before exporting a portable bundle.'], ...
         pkgName, nodeId, registeredDir); %#ok<AGROW>
@@ -2426,8 +2447,34 @@ catch
 end
 end
 
-function packageDir = registeredPluginPackageDirForValidation(pkgName, nodeType)
+function packageDir = registeredPluginPackageDirForValidation(pkgName, nodeType, opts)
 packageDir = '';
+if isfield(opts,'readOnlyModuleDiscovery') && opts.readOnlyModuleDiscovery
+    % UI checks inspect the currently selected adapter; opening a pipeline
+    % must not promote a registered release or save plugin preferences.
+    modules = getField(opts,'moduleCatalogue',struct([]));
+    if isempty(modules)
+        [~,items] = detecdiv_modules_ui();
+        modules = [items.module];
+    end
+    entrypoint = [char(string(pkgName)) '.process'];
+    if strcmpi(nodeType,'classifier'), entrypoint = [char(string(pkgName)) '.classify']; end
+    resolved = which(entrypoint);
+    if isempty(resolved), return; end
+    selected = char(java.io.File(fileparts(resolved)).getCanonicalPath());
+    for i=1:numel(modules)
+        module = modules(i);
+        if ~strcmpi(module.pkg,pkgName)||~strcmpi(module.type,nodeType)|| ...
+                ~strcmp(module.distribution,'external')
+            continue;
+        end
+        candidate = char(java.io.File(module.path).getCanonicalPath());
+        same = strcmp(candidate,selected);
+        if ispc, same = strcmpi(candidate,selected); end
+        if same, packageDir=candidate; return; end
+    end
+    return;
+end
 try
     if exist('detecdiv_plugins_addpath', 'file') == 2
         detecdiv_plugins_addpath();

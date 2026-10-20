@@ -1575,8 +1575,31 @@ if isempty(root) || exist(root, 'dir') ~= 7
     return;
 end
 try
-    if ~contains(path, root)
-        addpath(root);
+    roots = strsplit(path, pathsep);
+    present = any(strcmp(roots, root));
+    if ispc, present = any(strcmpi(roots, root)); end
+    selectRoot = ~present;
+    pkg = char(string(getField(node, 'pkg', getField(params, 'pkg', ''))));
+    if present && ~isempty(pkg)
+        execute = char(string(getField(node, 'func', '')));
+        if isempty(execute)
+            execute = [pkg '.process'];
+            if strcmpi(char(string(getField(node, 'type', ''))), 'classifier')
+                execute = [pkg '.classify'];
+            end
+        end
+        selected = which(execute);
+        expected = char(java.io.File(fullfile(root, ['+' pkg])).getCanonicalPath());
+        if isempty(selected)
+            selectRoot = true;
+        else
+            actual = char(java.io.File(fileparts(selected)).getCanonicalPath());
+            selectRoot = ~strcmp(actual, expected);
+            if ispc, selectRoot = ~strcmpi(actual, expected); end
+        end
+    end
+    if selectRoot
+        addpath(root, '-begin');
         rehash;
     end
 catch

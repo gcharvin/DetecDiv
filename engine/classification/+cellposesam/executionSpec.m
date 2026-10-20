@@ -17,6 +17,8 @@ spec.defaultClasses = {'cell'};
 spec.segmentationKind = 'instance';
 spec.instanceSegmentation = true;
 spec.summary = 'CellposeSAM execution parameters used by pipeline nodes.';
+% The default SAM model is package-managed; existing fine-tuned links remain usable.
+spec.requiresClassifierReference = false;
 spec.staticKeys = {'outputType','diameter','min_size','flow_threshold', ...
     'cell_prob_threshold','trackInstances'};
 spec.outputKeys = {'outputName','probabilityOutputName'};

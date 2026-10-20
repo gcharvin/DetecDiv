@@ -43,6 +43,13 @@ c.dataset.channels = {'BF'};
 app = classifierGUI(c);
 appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
 drawnow;
+catalogueMenu = findall(app.ClassifierMenu, ...
+    'Tag', 'DetecdivModuleCatalogueMenu');
+verifyNumElements(testCase, catalogueMenu, 1);
+verifyEqual(testCase, catalogueMenu.Text, 'Module catalogue...');
+verifyNotEmpty(testCase, catalogueMenu.MenuSelectedFcn);
+verifyEqual(testCase, c.classifierPkg, 'cnn', ...
+    'Adding catalogue access must preserve the selected classifier package.');
 editors = findall(app.SettrainingparametersTab, 'Type', 'uilistbox');
 verifyNumElements(testCase, editors, 1);
 verifyEqual(testCase, char(editors(1).Enable), 'off', ...

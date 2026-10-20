@@ -90,6 +90,9 @@ classdef pipeline2 < matlab.apps.AppBase
         OpenDocumentationMenu matlab.ui.container.Menu
         DynamicModuleTabs = gobjects(0)
         AvailableModules cell = {}
+        ModuleCatalogueItems struct = struct([])
+        ModuleCatalogueDiagnostics struct = struct([])
+        ModuleCataloguePackagePaths cell = {}
         IsRefreshingTabs logical = false
         ModuleTabRefreshSuspended logical = false
         ModuleTabRefreshBatchDepth double = 0
@@ -1072,7 +1075,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.AdvancedmodeCheckBox.ValueChangedFcn = createCallbackFcn(app, @AdvancedmodeCheckBoxValueChanged, true);
             app.TabGroup.SelectionChangedFcn = createCallbackFcn(app, @TabGroupSelectionChanged, true);
 
-            app.UIWorkspacePipelineTable.ColumnName = {'Module','Type','Package','Status'};
+            app.UIWorkspacePipelineTable.ColumnName = {'Module','Type','Package','Description'};
             app.UIWorkspacePipelineTable.ColumnEditable = false(1,4);
             app.UIWorkspacePipelineTable.ColumnWidth = {82 82 62 'auto'};
             app.UIWorkspacePipelineTable.Selection = [];
@@ -1129,18 +1132,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline error.';
 
             app.ModuleContextMenu = uicontextmenu(app.UIFigure);
-            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module after...', 'insert_after');
-            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module before...', 'insert_before');
-            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Change module type...', 'change_type');
-            uimenu(app.ModuleContextMenu, 'Text', 'Fork graph', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextForkSelected, true));
-            uimenu(app.ModuleContextMenu, 'Text', 'Merge graph', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextMergeSelected, true));
-            uimenu(app.ModuleContextMenu, 'Text', 'Delete module', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextDeleteSelected, true));
-
             app.GraphContextMenu = uicontextmenu(app.UIFigure);
-            addModuleLibraryMenu(app, app.GraphContextMenu, 'Add module...', 'add');
+            rebuildModuleContextMenus(app);
             try
                 app.UIGraphAxes.ContextMenu = app.GraphContextMenu;
             catch
@@ -1214,54 +1207,16 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function modules = defaultModuleLibrary(app)
-            rootDir = repoRoot(app);
-            modules = {};
-
-            modules = appendModuleRows(app, modules, dataloadingModuleRows(app, rootDir));
-            modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'processor'), 'processor'));
-            modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'classification'), 'classifier'));
-            modules = appendModuleRows(app, modules, pluginModuleRows(app));
-            modules = appendModuleRows(app, modules, ...
-                {'Custom function', 'custom', 'customModule', 'Call a user MATLAB function with declared inputs, outputs and parameters'});
-            modules = appendModuleRows(app, modules, customPackageModuleRow(app));
-
-            if isempty(modules)
-                modules = { ...
-                    'dataLoader', 'dataLoader', '', 'Load raw image data'; ...
-                    'roiPattern', 'roiPattern', '', 'Pattern-based ROI definition'; ...
-                    'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
-                    };
-            end
+            [modules, app.ModuleCatalogueItems, app.ModuleCatalogueDiagnostics] = ...
+                detecdiv_modules_ui('Root', repoRoot(app), ...
+                'PackagePaths', app.ModuleCataloguePackagePaths);
+            modules(end+1,:) = {'Custom function', 'custom', 'customModule', ...
+                'Call a user MATLAB function with declared inputs, outputs and parameters'};
+            modules(end+1,:) = customPackageModuleRow(app);
         end
 
         function rows = customPackageModuleRow(app) %#ok<INUSD>
             rows = {'<custom pkg>', 'customPackage', '', 'Load an external processor/classifier package'};
-        end
-
-        function rows = pluginModuleRows(app) %#ok<INUSD>
-            rows = {};
-            if exist('detecdiv_plugins_addpath', 'file') == 2
-                try
-                    detecdiv_plugins_addpath();
-                catch
-                end
-            end
-            if exist('detecdiv_plugins_list', 'file') ~= 2
-                return;
-            end
-            try
-                plugins = detecdiv_plugins_list();
-            catch
-                plugins = struct([]);
-            end
-            for i = 1:numel(plugins)
-                pluginType = char(string(plugins(i).type));
-                if ~any(strcmpi(pluginType, {'processor','classifier'}))
-                    continue;
-                end
-                pkg = char(string(plugins(i).name));
-                rows(end+1,:) = {['plugin:' pkg], pluginType, pkg, char(string(plugins(i).summary))}; %#ok<AGROW>
-            end
         end
 
         function rootDir = repoRoot(app) %#ok<INUSD>
@@ -1278,109 +1233,111 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function rows = dataloadingModuleRows(app, rootDir) %#ok<INUSD>
-            rows = {};
-            dlDir = fullfile(rootDir, 'engine', 'dataloading');
-            preferred = { ...
-                'dataLoader', 'dataLoader', '', 'Load raw image data'; ...
-                'roiPattern', 'roiPattern', '', 'Pattern-based ROI definition'; ...
-                'roiManual',  'roiManual',  '', 'Manual ROI definition'; ...
-                'roiGrid',    'roiGrid',    '', 'Grid/full-frame ROI definition'; ...
-                'roiTracked', 'roiTracked', '', 'Tracked/mobile ROI definition'; ...
-                'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
-                };
-            seen = {};
-            for i = 1:size(preferred, 1)
-                pkgDir = fullfile(dlDir, ['+' preferred{i,1}]);
-                if isfolder(pkgDir)
-                    rows(end+1,:) = preferred(i,:); %#ok<AGROW>
-                    seen{end+1} = preferred{i,1}; %#ok<AGROW>
-                end
-            end
-            if isfolder(dlDir)
-                dirs = packageDirs(app, dlDir);
-                for i = 1:numel(dirs)
-                    name = dirs{i};
-                    if any(strcmpi(seen, name))
-                        continue;
-                    end
-                    nodeType = dataloadingNodeTypeForPackage(app, name);
-                    rows(end+1,:) = {name, nodeType, name, moduleDescription(app, nodeType, name)}; %#ok<AGROW>
-                end
-            end
-        end
-
-        function nodeType = dataloadingNodeTypeForPackage(app, pkg) %#ok<INUSD>
-            switch lower(char(string(pkg)))
-                case {'dataloader','phylocellloader'}
-                    nodeType = 'dataLoader';
-                case {'roipattern','roiidentify'}
-                    nodeType = 'roiPattern';
-                case 'roimanual'
-                    nodeType = 'roiManual';
-                case 'roigrid'
-                    nodeType = 'roiGrid';
-                case 'roitracked'
-                    nodeType = 'roiTracked';
-                case 'roiextract'
-                    nodeType = 'roiExtract';
-                otherwise
-                    nodeType = char(string(pkg));
-            end
-        end
-
-        function rows = packageModuleRows(app, parentDir, nodeType)
-            rows = {};
-            dirs = packageDirs(app, parentDir);
-            for i = 1:numel(dirs)
-                pkg = dirs{i};
-                rows(end+1,:) = {pkg, nodeType, pkg, moduleDescription(app, nodeType, pkg)}; %#ok<AGROW>
-            end
-        end
-
-        function names = packageDirs(app, parentDir) %#ok<INUSD>
-            names = {};
-            if ~isfolder(parentDir)
-                return;
-            end
-            d = dir(parentDir);
-            for i = 1:numel(d)
-                if ~d(i).isdir || ~startsWith(d(i).name, '+')
-                    continue;
-                end
-                name = erase(d(i).name, '+');
-                if isempty(name)
-                    continue;
-                end
-                names{end+1} = name; %#ok<AGROW>
-            end
-            names = sort(unique(names, 'stable'));
-        end
-
-        function txt = moduleDescription(app, nodeType, pkg) %#ok<INUSD>
-            switch lower(char(string(nodeType)))
-                case 'processor'
-                    txt = ['Processor package: ' char(string(pkg))];
-                case 'classifier'
-                    txt = ['Classifier package: ' char(string(pkg))];
-                otherwise
-                    txt = ['Pipeline module: ' char(string(pkg))];
-            end
-        end
-
-        function out = appendModuleRows(app, out, rows) %#ok<INUSD>
-            if isempty(rows)
-                return;
-            end
-            if isempty(out)
-                out = rows;
-            else
-                out = [out; rows]; %#ok<AGROW>
-            end
-        end
-
         function refreshAvailableModuleTable(app)
             app.UIWorkspacePipelineTable.Data = app.AvailableModules;
+        end
+
+        function tf = moduleCatalogueRowCanAdd(app, row)
+            tf = false;
+            if row < 1 || row > size(app.AvailableModules, 1)
+                return;
+            end
+            if row > numel(app.ModuleCatalogueItems)
+                tf = any(strcmpi(app.AvailableModules{row,2}, {'custom','customPackage'}));
+                return;
+            end
+            item = app.ModuleCatalogueItems(row);
+            if ~item.canAdd
+                return;
+            end
+            resolved = which(item.module.entrypoint);
+            if isempty(resolved) || ...
+                    ~sameModuleCataloguePath(app, fileparts(resolved), item.module.path)
+                return;
+            end
+            entrypoints = struct2cell(item.module.entrypoints);
+            for i = 1:numel(entrypoints)
+                if isempty(entrypoints{i}), continue; end
+                resolved = which(entrypoints{i});
+                if isempty(resolved) || ...
+                        ~sameModuleCataloguePath(app, fileparts(resolved), item.module.path)
+                    return;
+                end
+            end
+            tf = true;
+        end
+
+        function showModuleCatalogueDetails(app, row)
+            if row <= numel(app.ModuleCatalogueItems)
+                item = app.ModuleCatalogueItems(row);
+                details = item.details;
+                if ~moduleCatalogueRowCanAdd(app, row) && ~isempty(item.reason)
+                    details = [details(:); {item.reason}];
+                end
+                setRuntimeStatus(app, strjoin(details, ' | '));
+                app.UIWorkspacePipelineTable.Tooltip = strjoin(details, newline);
+            else
+                summary = char(string(app.AvailableModules{row,4}));
+                setRuntimeStatus(app, summary);
+                app.UIWorkspacePipelineTable.Tooltip = summary;
+            end
+        end
+
+        function tf = moduleCatalogueAllowsMutation(app, nodeType, pkg, paramsPatch)
+            % This gate is used only when adding or changing a module. Saved
+            % nodes keep their existing packages, links and parameter data.
+            tf = false;
+            if isstruct(paramsPatch) && ...
+                    ((isfield(paramsPatch, 'customPackageDir') && ~isempty(paramsPatch.customPackageDir)) || ...
+                    (isfield(paramsPatch, 'customPackageRoot') && ~isempty(paramsPatch.customPackageRoot)))
+                tf = true; % The user explicitly selected this package.
+                return;
+            end
+            if strcmpi(nodeType, 'custom') && strcmpi(pkg, 'customModule')
+                tf = true;
+                return;
+            end
+            % The legacy type controls intentionally serialize an empty pkg
+            % for built-in data/ROI nodes. Normalize only this comparison.
+            comparisonType = char(string(nodeType));
+            comparisonPkg = char(string(pkg));
+            if strcmpi(comparisonType, 'roiIdentify')
+                comparisonType = 'roiPattern';
+            end
+            if isempty(comparisonPkg) && any(strcmpi(comparisonType, ...
+                    {'dataLoader','roiPattern','roiManual','roiGrid','roiTracked','roiExtract'}))
+                comparisonPkg = comparisonType;
+            end
+            reason = 'This module is unavailable or ambiguous in the current catalogue.';
+            for row = 1:numel(app.ModuleCatalogueItems)
+                if ~strcmpi(app.AvailableModules{row,2}, comparisonType) || ...
+                        ~strcmpi(app.AvailableModules{row,3}, comparisonPkg)
+                    continue;
+                end
+                if moduleCatalogueRowCanAdd(app, row)
+                    tf = true;
+                    return;
+                end
+                item = app.ModuleCatalogueItems(row);
+                if ~isempty(item.reason)
+                    reason = item.reason;
+                else
+                    reason = 'The active MATLAB package differs from the catalogue copy. Refresh the catalogue before adding it.';
+                end
+            end
+            message = sprintf('%s (%s): %s', char(string(pkg)), char(string(nodeType)), reason);
+            setRuntimeStatus(app, message);
+            uialert(app.UIFigure, message, 'Module unavailable', 'Icon', 'warning');
+        end
+
+        function tf = sameModuleCataloguePath(app, first, second) %#ok<INUSD>
+            first = char(java.io.File(char(string(first))).getCanonicalPath());
+            second = char(java.io.File(char(string(second))).getCanonicalPath());
+            if ispc
+                tf = strcmpi(first, second);
+            else
+                tf = strcmp(first, second);
+            end
         end
 
         function refreshSelectedModuleTable(app, preservePrevious)
@@ -1590,6 +1547,10 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmp(char(string(getField(app, node, 'type', ''))), nodeType) && strcmp(char(string(getField(app, node, 'pkg', ''))), pkg)
                 return;
             end
+            if ~moduleCatalogueAllowsMutation(app, nodeType, pkg, struct())
+                selectTypeControlsForNode(app, node);
+                return;
+            end
             node = clearModuleDerivedFields(app, node);
             node.type = nodeType;
             node.pkg = pkg;
@@ -1632,6 +1593,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             types = cellstr(string(types(:)));
             for i = 1:size(app.AvailableModules, 1)
+                if ~moduleCatalogueRowCanAdd(app, i)
+                    continue;
+                end
                 nodeType = char(string(app.AvailableModules{i,2}));
                 pkg = char(string(app.AvailableModules{i,3}));
                 if ~any(strcmpi(types, nodeType))
@@ -1661,6 +1625,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             row = sel(1,1);
             if row < 1 || row > size(app.AvailableModules, 1)
+                return;
+            end
+            showModuleCatalogueDetails(app, row);
+            if ~moduleCatalogueRowCanAdd(app, row)
                 return;
             end
             moduleType = app.AvailableModules{row,2};
@@ -1694,7 +1662,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.TypeDropDown.Value = moduleType;
                 updateSubtypeChoices(app);
             end
-            setRuntimeStatus(app, ['Next module to add: ' app.AvailableModules{row,1}]);
+            showModuleCatalogueDetails(app, row);
         end
 
         function changeSelectedModuleType(app, nodeType, pkg, paramsPatch)
@@ -1706,6 +1674,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             node = app.Data.nodes(app.SelectedNodeIndex);
             if strcmp(char(string(getField(app, node, 'type', ''))), nodeType) && strcmp(char(string(getField(app, node, 'pkg', ''))), pkg)
+                return;
+            end
+            if ~moduleCatalogueAllowsMutation(app, nodeType, pkg, paramsPatch)
                 return;
             end
             node = clearModuleDerivedFields(app, node);
@@ -1748,6 +1719,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 4
                 paramsPatch = struct();
             end
+            if ~moduleCatalogueAllowsMutation(app, nodeType, pkg, paramsPatch)
+                return;
+            end
             app.NodeCounter = app.NodeCounter + 1;
             node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
             node.params = mergeStructOverride(app, node.params, paramsPatch);
@@ -1770,6 +1744,9 @@ classdef pipeline2 < matlab.apps.AppBase
         function addModuleAfterSelected(app, nodeType, pkg, paramsPatch)
             if nargin < 4
                 paramsPatch = struct();
+            end
+            if ~moduleCatalogueAllowsMutation(app, nodeType, pkg, paramsPatch)
+                return;
             end
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
                 addModuleOfType(app, nodeType, pkg, paramsPatch);
@@ -1808,6 +1785,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 nodeType = choice.type;
                 pkg = choice.pkg;
                 paramsPatch = getField(app, choice, 'paramsPatch', struct());
+            end
+            if ~moduleCatalogueAllowsMutation(app, nodeType, pkg, paramsPatch)
+                return;
             end
             targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex));
             targetRow = getLayoutRow(app, app.Data.nodes(app.SelectedNodeIndex));
@@ -1906,6 +1886,12 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(row) || row < 1 || row > size(modules, 1)
                 row = 1;
             end
+            if ~moduleCatalogueRowCanAdd(app, row)
+                showModuleCatalogueDetails(app, row);
+                nodeType = '';
+                pkg = '';
+                return;
+            end
             nodeType = char(string(modules{row,2}));
             pkg = char(string(modules{row,3}));
             if strcmpi(nodeType, 'customPackage')
@@ -1918,6 +1904,25 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = choice.pkg;
                 end
             end
+        end
+
+        function rebuildModuleContextMenus(app)
+            if isempty(app.ModuleContextMenu) || ~isvalid(app.ModuleContextMenu) || ...
+                    isempty(app.GraphContextMenu) || ~isvalid(app.GraphContextMenu)
+                return;
+            end
+            delete(app.ModuleContextMenu.Children);
+            delete(app.GraphContextMenu.Children);
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module after...', 'insert_after');
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module before...', 'insert_before');
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Change module type...', 'change_type');
+            uimenu(app.ModuleContextMenu, 'Text', 'Fork graph', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextForkSelected, true));
+            uimenu(app.ModuleContextMenu, 'Text', 'Merge graph', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextMergeSelected, true));
+            uimenu(app.ModuleContextMenu, 'Text', 'Delete module', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @ModuleContextDeleteSelected, true));
+            addModuleLibraryMenu(app, app.GraphContextMenu, 'Add module...', 'add');
         end
 
         function addModuleLibraryMenu(app, parentMenu, titleText, action)
@@ -1933,7 +1938,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     item = uimenu(typeMenu, 'Text', label, ...
                         'MenuSelectedFcn', createCallbackFcn(app, @ModuleLibraryMenuSelected, true));
                     item.UserData = struct('action', char(string(action)), ...
-                        'nodeType', nodeType, 'pkg', pkg);
+                        'nodeType', nodeType, 'pkg', pkg, 'catalogueRow', idx);
+                    if ~moduleCatalogueRowCanAdd(app, idx)
+                        item.Enable = 'off';
+                    end
                 end
             end
         end
@@ -1944,6 +1952,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             data = src.UserData;
+            catalogueRow = getField(app, data, 'catalogueRow', []);
+            if ~isempty(catalogueRow) && ~moduleCatalogueRowCanAdd(app, catalogueRow)
+                showModuleCatalogueDetails(app, catalogueRow);
+                return;
+            end
             action = char(string(getField(app, data, 'action', '')));
             nodeType = char(string(getField(app, data, 'nodeType', '')));
             pkg = char(string(getField(app, data, 'pkg', '')));
@@ -1982,33 +1995,15 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function openPluginBrowser(app)
-            try
-                if exist('detecdiv_plugins_addpath', 'file') == 2
-                    detecdiv_plugins_addpath();
-                end
-                if exist('detecdiv_plugins_browser', 'file') ~= 2
-                    uialert(app.UIFigure, ...
-                        'No plugin browser was found. Register or place DetecDiv-plugins next to DetecDiv.', ...
-                        'Plugin browser', 'Icon', 'warning');
-                    return;
-                end
-                detecdiv_plugins_browser();
-            catch ME
-                uialert(app.UIFigure, ME.message, 'Plugin browser', 'Icon', 'error');
-            end
+            openBuiltinModuleBrowser(app);
         end
 
         function openBuiltinModuleBrowser(app)
             try
-                if exist('detecdiv_modules_browser', 'file') ~= 2
-                    uialert(app.UIFigure, ...
-                        'No built-in module browser was found on the DetecDiv path.', ...
-                        'Module browser', 'Icon', 'warning');
-                    return;
-                end
-                detecdiv_modules_browser('Root', repoRoot(app));
+                detecdiv_modules_browser('Root', repoRoot(app), ...
+                    'PackagePaths', app.ModuleCataloguePackagePaths);
             catch ME
-                uialert(app.UIFigure, ME.message, 'Module browser', 'Icon', 'error');
+                uialert(app.UIFigure, ME.message, 'Module catalogue', 'Icon', 'error');
             end
         end
 
@@ -2020,19 +2015,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 delete(app.ModulesMenu.Children);
             catch
             end
-
-            addModuleLibraryMenuFiltered(app, app.ModulesMenu, 'Add built-in module', 'add', false);
-            addModuleLibraryMenuFiltered(app, app.ModulesMenu, 'Add plugin module', 'add', true);
+            addModuleLibraryMenu(app, app.ModulesMenu, 'Add module...', 'add');
             uimenu(app.ModulesMenu, 'Text', 'Add custom package...', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~)addCustomPackageFromModulesMenu(app));
-            uimenu(app.ModulesMenu, 'Text', 'Built-in module browser...', 'Separator', 'on', ...
+            uimenu(app.ModulesMenu, 'Text', 'Module catalogue...', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~,~)openBuiltinModuleBrowser(app));
+            uimenu(app.ModulesMenu, 'Text', 'Refresh module catalogue', ...
+                'MenuSelectedFcn', @(~,~)refreshModuleCatalogue(app));
+        end
 
-            pluginItem = uimenu(app.ModulesMenu, 'Text', 'External plugin browser...', ...
-                'MenuSelectedFcn', @(~,~)openPluginBrowser(app));
-            if ~any(moduleLibraryPluginMask(app)) && exist('detecdiv_plugins_browser', 'file') ~= 2
-                pluginItem.Enable = 'off';
-            end
+        function refreshModuleCatalogue(app)
+            app.AvailableModules = defaultModuleLibrary(app);
+            refreshAvailableModuleTable(app);
+            rebuildModulesMenu(app);
+            rebuildModuleContextMenus(app);
+            setRuntimeStatus(app, sprintf('Module catalogue refreshed: %d candidate(s), %d diagnostic(s).', ...
+                numel(app.ModuleCatalogueItems), numel(app.ModuleCatalogueDiagnostics)));
         end
 
         function addCustomPackageFromModulesMenu(app)
@@ -2045,63 +2043,11 @@ classdef pipeline2 < matlab.apps.AppBase
             rebuildModulesMenu(app);
         end
 
-        function addModuleLibraryMenuFiltered(app, parentMenu, titleText, action, pluginsOnly)
-            root = uimenu(parentMenu, 'Text', titleText);
-            groups = moduleMenuGroupsFiltered(app, logical(pluginsOnly));
-            if isempty(groups)
-                item = uimenu(root, 'Text', '(none)');
-                item.Enable = 'off';
-                return;
-            end
-            for g = 1:numel(groups)
-                typeMenu = uimenu(root, 'Text', groups(g).label);
-                for j = 1:numel(groups(g).rows)
-                    idx = groups(g).rows(j);
-                    nodeType = char(string(app.AvailableModules{idx,2}));
-                    pkg = char(string(app.AvailableModules{idx,3}));
-                    label = moduleSubtypeLabel(app, idx);
-                    item = uimenu(typeMenu, 'Text', label, ...
-                        'MenuSelectedFcn', createCallbackFcn(app, @ModuleLibraryMenuSelected, true));
-                    item.UserData = struct('action', char(string(action)), ...
-                        'nodeType', nodeType, 'pkg', pkg);
-                end
-            end
-        end
-
-        function groups = moduleMenuGroupsFiltered(app, pluginsOnly)
-            groups = struct('key', {}, 'label', {}, 'rows', {});
-            pluginMask = moduleLibraryPluginMask(app);
-            for i = 1:size(app.AvailableModules, 1)
-                if pluginMask(i) ~= logical(pluginsOnly)
-                    continue;
-                end
-                nodeType = char(string(app.AvailableModules{i,2}));
-                if strcmpi(nodeType, 'customPackage')
-                    continue;
-                end
-                [key, label] = moduleTypeMenuGroup(app, nodeType, pluginMask(i));
-                idx = find(strcmp({groups.key}, key), 1);
-                if isempty(idx)
-                    groups(end+1) = struct('key', key, 'label', label, 'rows', i); %#ok<AGROW>
-                else
-                    groups(idx).rows(end+1) = i;
-                end
-            end
-        end
-
-        function mask = moduleLibraryPluginMask(app)
-            mask = false(size(app.AvailableModules, 1), 1);
-            for i = 1:size(app.AvailableModules, 1)
-                mask(i) = moduleLibraryRowIsPlugin(app, i);
-            end
-        end
-
         function groups = moduleMenuGroups(app)
             groups = struct('key', {}, 'label', {}, 'rows', {});
             for i = 1:size(app.AvailableModules, 1)
                 nodeType = char(string(app.AvailableModules{i,2}));
-                isPlugin = moduleLibraryRowIsPlugin(app, i);
-                [key, label] = moduleTypeMenuGroup(app, nodeType, isPlugin);
+                [key, label] = moduleTypeMenuGroup(app, nodeType);
                 idx = find(strcmp({groups.key}, key), 1);
                 if isempty(idx)
                     groups(end+1) = struct('key', key, 'label', label, 'rows', i); %#ok<AGROW>
@@ -2111,10 +2057,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function [key, label] = moduleTypeMenuGroup(app, nodeType, isPlugin) %#ok<INUSD>
-            if nargin < 3
-                isPlugin = false;
-            end
+        function [key, label] = moduleTypeMenuGroup(app, nodeType) %#ok<INUSD>
             switch lower(char(string(nodeType)))
                 case 'dataloader'
                     key = 'dataLoader';
@@ -2126,21 +2069,11 @@ classdef pipeline2 < matlab.apps.AppBase
                     key = 'roiExtract';
                     label = 'ROI extract';
                 case 'processor'
-                    if isPlugin
-                        key = 'plugin_processor';
-                        label = 'Plugin / Processor';
-                    else
-                        key = 'processor';
-                        label = 'Builtin / Processor';
-                    end
+                    key = 'processor';
+                    label = 'Processor';
                 case 'classifier'
-                    if isPlugin
-                        key = 'plugin_classifier';
-                        label = 'Plugin / Classifier';
-                    else
-                        key = 'classifier';
-                        label = 'Builtin / Classifier';
-                    end
+                    key = 'classifier';
+                    label = 'Classifier';
                 case {'custom','custompackage'}
                     key = 'custom';
                     label = 'Custom';
@@ -2150,30 +2083,8 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function tf = moduleLibraryRowIsPlugin(app, idx) %#ok<INUSD>
-            tf = false;
-            try
-                name = char(string(app.AvailableModules{idx,1}));
-                tf = startsWith(lower(name), 'plugin:');
-            catch
-            end
-        end
-
-        function label = moduleSubtypeLabel(app, idx) %#ok<INUSD>
-            nodeType = char(string(app.AvailableModules{idx,2}));
-            pkg = char(string(app.AvailableModules{idx,3}));
-            name = char(string(app.AvailableModules{idx,1}));
-            if any(strcmpi(nodeType, {'custom','customPackage'}))
-                label = name;
-            elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
-                label = nodeType;
-            elseif startsWith(lower(name), 'plugin:')
-                label = name;
-            elseif isempty(pkg)
-                label = name;
-            else
-                label = pkg;
-            end
+        function label = moduleSubtypeLabel(app, idx)
+            label = char(string(app.AvailableModules{idx,1}));
         end
 
         function choice = chooseModuleFromLibrary(app, titleText)
@@ -2190,6 +2101,12 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~ok || isempty(idx)
                 return;
             end
+            if ~moduleCatalogueRowCanAdd(app, idx)
+                showModuleCatalogueDetails(app, idx);
+                uialert(app.UIFigure, 'This catalogue entry cannot be added. See its status and diagnostics in the module catalogue.', ...
+                    'Module unavailable', 'Icon', 'warning');
+                return;
+            end
             if strcmpi(char(string(app.AvailableModules{idx,2})), 'customPackage')
                 choice = resolveCustomPackageChoice(app, titleText);
                 return;
@@ -2199,14 +2116,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 'pkg', char(string(app.AvailableModules{idx,3})));
         end
 
-        function label = moduleLibraryLabel(app, idx) %#ok<INUSD>
+        function label = moduleLibraryLabel(app, idx)
+            name = moduleSubtypeLabel(app, idx);
             nodeType = char(string(app.AvailableModules{idx,2}));
             pkg = char(string(app.AvailableModules{idx,3}));
-            name = char(string(app.AvailableModules{idx,1}));
             if any(strcmpi(nodeType, {'custom','customPackage'}))
                 label = name;
-            elseif startsWith(lower(name), 'plugin:')
-                label = [name ' (' nodeType ' / ' pkg ')'];
             elseif isempty(pkg)
                 label = [name ' (' nodeType ')'];
             else
@@ -2278,9 +2193,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
 
-            app.AvailableModules = appendCustomModuleIfMissing(app, app.AvailableModules, info);
+            app.ModuleCataloguePackagePaths = unique( ...
+                [app.ModuleCataloguePackagePaths {info.packageDir}], 'stable');
+            app.AvailableModules = defaultModuleLibrary(app);
             refreshAvailableModuleTable(app);
             rebuildModulesMenu(app);
+            rebuildModuleContextMenus(app);
 
             paramsPatch = struct( ...
                 'customPackageRoot', info.root, ...
@@ -3315,29 +3233,36 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(nodeType, 'dataLoader')
                 app.TypeDropDown.Value = 'dataLoader';
                 updateSubtypeChoices(app);
-                if any(strcmp(app.SubtypeDropDown.Items, pkg))
-                    app.SubtypeDropDown.Value = pkg;
-                end
+                if isempty(pkg), pkg = nodeType; end
+                selectExistingNodeSubtype(app, pkg);
             elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 app.TypeDropDown.Value = 'ROI definition';
                 updateSubtypeChoices(app);
-                app.SubtypeDropDown.Value = nodeType;
+                selectExistingNodeSubtype(app, nodeType);
             elseif strcmpi(nodeType, 'processor')
                 app.TypeDropDown.Value = 'processor';
                 updateSubtypeChoices(app);
-                if any(strcmp(app.SubtypeDropDown.Items, pkg))
-                    app.SubtypeDropDown.Value = pkg;
-                end
+                selectExistingNodeSubtype(app, pkg);
             elseif strcmpi(nodeType, 'classifier')
                 app.TypeDropDown.Value = 'classifier';
                 updateSubtypeChoices(app);
-                if any(strcmp(app.SubtypeDropDown.Items, pkg))
-                    app.SubtypeDropDown.Value = pkg;
-                end
+                selectExistingNodeSubtype(app, pkg);
             elseif any(strcmp(app.TypeDropDown.Items, nodeType))
                 app.TypeDropDown.Value = nodeType;
                 updateSubtypeChoices(app);
             end
+        end
+
+        function selectExistingNodeSubtype(app, subtype)
+            % Keep an existing node visible even if its adapter is currently
+            % missing or ambiguous. This does not enable a new module choice.
+            if isempty(subtype), return; end
+            if ~any(strcmp(app.SubtypeDropDown.Items, subtype))
+                items = app.SubtypeDropDown.Items;
+                items{end+1} = subtype;
+                app.SubtypeDropDown.Items = items;
+            end
+            app.SubtypeDropDown.Value = subtype;
         end
 
         function ForkgraphButtonPushed(app, event) %#ok<INUSD>
@@ -7025,13 +6950,18 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             staticData = paramsToTableData(app, node, 'static');
             runtimeData = paramsToTableData(app, node, 'runtime');
-            showClassifierReference = isClassifierNode(app, node);
+            referencePolicy = pipelineClassifierReferencePolicy(node);
+            showClassifierReference = isClassifierNode(app, node) && referencePolicy.showReference;
             showPluginReference = isPluginPackageNode(app, node);
+            showContractNotice = isClassifierNode(app, node) && referencePolicy.declared && ...
+                ~referencePolicy.required && ~referencePolicy.semanticContractDeclared && ...
+                referencePolicy.specAvailable && isfield(referencePolicy.spec, 'inputKeys') && ...
+                ~isempty(referencePolicy.spec.inputKeys);
             showBindings = isRoiExtractNode || ~isempty(bindingData);
             showStatic = ~isempty(staticData);
             showRuntime = ~isempty(runtimeData);
 
-            if ~showClassifierReference && ~showPluginReference && ~showBindings && ~showStatic && ~showRuntime
+            if ~showClassifierReference && ~showPluginReference && ~showContractNotice && ~showBindings && ~showStatic && ~showRuntime
                 grid = uigridlayout(parentTab, [1 1]);
                 grid.Padding = [12 10 12 12];
                 uilabel(grid, 'Text', 'No module-specific parameters for this module.', ...
@@ -7040,7 +6970,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             colCount = 1;
-            rowCount = 2 * double(showClassifierReference) + 2 * double(showPluginReference) + 2 * double(showBindings) + ...
+            rowCount = 2 * double(showClassifierReference) + 2 * double(showPluginReference) + double(showContractNotice) + 2 * double(showBindings) + ...
                 2 * double(showRuntime) + double(showStatic);
             grid = uigridlayout(parentTab, [rowCount colCount]);
             rowHeights = {};
@@ -7049,6 +6979,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if showPluginReference
                 rowHeights = [rowHeights {24, 76}]; %#ok<AGROW>
+            end
+            if showContractNotice
+                rowHeights = [rowHeights {52}]; %#ok<AGROW>
             end
             if showBindings
                 if isRoiExtractNode
@@ -7071,7 +7004,11 @@ classdef pipeline2 < matlab.apps.AppBase
 
             row = 1;
             if showClassifierReference
-                refLabel = uilabel(grid, 'Text', 'Classifier artifact');
+                referenceTitle = 'Trained classifier';
+                if ~referencePolicy.required
+                    referenceTitle = 'Trained classifier (optional)';
+                end
+                refLabel = uilabel(grid, 'Text', referenceTitle);
                 refLabel.FontWeight = 'bold';
                 refLabel.Layout.Row = row;
                 refLabel.Layout.Column = layoutSpan(app, 1, colCount);
@@ -7083,7 +7020,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             if showPluginReference
-                pluginLabel = uilabel(grid, 'Text', 'Plugin package');
+                pluginLabel = uilabel(grid, 'Text', 'Module package');
                 pluginLabel.FontWeight = 'bold';
                 pluginLabel.Layout.Row = row;
                 pluginLabel.Layout.Column = layoutSpan(app, 1, colCount);
@@ -7092,6 +7029,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 section.Layout.Row = row + 1;
                 section.Layout.Column = layoutSpan(app, 1, colCount);
                 row = row + 2;
+            end
+
+            if showContractNotice
+                notice = uilabel(grid, 'Text', ...
+                    ['This legacy adapter does not declare its detailed pipeline inputs and outputs. ' ...
+                     'The generic bindings below are compatibility placeholders. Choose an adapter with ' ...
+                     'a pipeline contract to configure the module inputs and outputs.'], ...
+                    'WordWrap', 'on', 'FontColor', [0.62 0.32 0.08], ...
+                    'Tag', 'PipelineModuleContractNotice');
+                notice.Layout.Row = row;
+                row = row + 1;
             end
 
             if showBindings
@@ -7320,26 +7268,8 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function tf = pluginPackageExists(app, pkg, nodeType) %#ok<INUSD>
-            tf = false;
-            try
-                if exist('detecdiv_plugins_addpath', 'file') == 2
-                    detecdiv_plugins_addpath();
-                end
-                if exist('detecdiv_plugins_list', 'file') ~= 2
-                    return;
-                end
-                plugins = detecdiv_plugins_list();
-                for i = 1:numel(plugins)
-                    if strcmp(char(string(plugins(i).name)), char(string(pkg))) && ...
-                            strcmpi(char(string(plugins(i).type)), char(string(nodeType)))
-                        tf = true;
-                        return;
-                    end
-                end
-            catch
-                tf = false;
-            end
+        function tf = pluginPackageExists(app, pkg, nodeType)
+            tf = ~isempty(registeredPluginPackageDir(app, pkg, nodeType));
         end
 
         function txt = staticParamSectionTitle(app, node) %#ok<INUSD>
@@ -7447,8 +7377,13 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function txt = staticParametersDialogHint(app, node)
             if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
-                txt = ['These values are the effective run-time settings saved in the pipeline. ' ...
-                    'The linked classifier GUI remains the place for training data, training defaults and model artifacts.'];
+                policy = pipelineClassifierReferencePolicy(node);
+                if policy.declared && ~policy.required
+                    txt = 'Module settings, model releases and environment paths are saved in this pipeline; no trained classifier object is required.';
+                else
+                    txt = ['These values are the effective run-time settings saved in the pipeline. ' ...
+                        'The linked classifier GUI remains the place for training data, training defaults and model artifacts.'];
+                end
             else
                 txt = 'Changes are saved in the pipeline template.';
             end
@@ -7872,35 +7807,37 @@ classdef pipeline2 < matlab.apps.AppBase
         function section = buildPluginReferenceSection(app, parent, node)
             section = uigridlayout(parent, [2 4]);
             section.RowHeight = {24, 28};
-            section.ColumnWidth = {'1x', 150, 130, 110};
+            section.ColumnWidth = {'1x', 150, 150, 150};
             section.Padding = [0 0 0 0];
             section.RowSpacing = 6;
             section.ColumnSpacing = 8;
 
             status = uilabel(section, 'Text', pluginReferenceSummary(app, node), ...
                 'FontColor', pluginReferenceColor(app, node), 'Interpreter', 'none');
+            status.Tooltip = status.Text;
             status.Layout.Row = 1;
             status.Layout.Column = [1 4];
 
             hint = uilabel(section, 'Text', ...
-                'External package used for this module. It is copied into exported bundles when the link is valid.', ...
+                'Code package used by this module.', ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 2;
             hint.Layout.Column = 1;
 
-            relinkButton = uibutton(section, 'push', 'Text', 'Relink plugin...', ...
+            relinkButton = uibutton(section, 'push', 'Text', 'Choose module...', ...
                 'ButtonPushedFcn', @(~,~)relinkPluginPackage(app, node));
             relinkButton.Layout.Row = 2;
             relinkButton.Layout.Column = 2;
 
-            browseButton = uibutton(section, 'push', 'Text', 'Browse plugins...', ...
+            browseButton = uibutton(section, 'push', 'Text', 'Module catalogue...', ...
                 'ButtonPushedFcn', @(~,~)openPluginBrowser(app));
             browseButton.Layout.Row = 2;
             browseButton.Layout.Column = 3;
 
-            clearButton = uibutton(section, 'push', 'Text', 'Clear link', ...
+            clearButton = uibutton(section, 'push', 'Text', 'Use installed module', ...
                 'ButtonPushedFcn', @(~,~)clearPluginPackageLink(app, node));
             clearButton.Tooltip = 'Replace the linked copy with the installed DetecDiv-plugins module, keeping analysis settings.';
+            clearButton.Enable = ternary(app, hasCustomPackageReference(app, node), 'on', 'off');
             clearButton.Layout.Row = 2;
             clearButton.Layout.Column = 4;
         end
@@ -7922,15 +7859,15 @@ classdef pipeline2 < matlab.apps.AppBase
             [packageRoot, packageDir] = customPackagePathsForNode(app, node);
             if ~isempty(packageDir)
                 if exist(packageDir, 'dir') == 7
-                    info.summary = ['Linked plugin: ' pkg '  |  ' packageDir];
+                    info.summary = ['Pipeline module: ' pkg '  |  ' packageDir];
                     info.color = [0.10 0.42 0.20];
                 else
                     recovered = registeredPluginPackageDir(app, pkg, nodeType);
                     if ~isempty(recovered)
-                        info.summary = ['Stored plugin path is unavailable; registered copy found: ' recovered];
+                        info.summary = ['Stored module path is unavailable; installed copy found: ' recovered];
                         info.color = [0.72 0.38 0.08];
                     else
-                        info.summary = ['Linked plugin folder not accessible: ' packageDir];
+                        info.summary = ['Pipeline module folder not accessible: ' packageDir];
                         info.color = [0.75 0.18 0.18];
                     end
                 end
@@ -7938,10 +7875,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             recovered = registeredPluginPackageDir(app, pkg, nodeType);
             if ~isempty(recovered)
-                info.summary = ['Plugin available from registry but not linked in this node: ' recovered];
-                info.color = [0.72 0.38 0.08];
+                info.summary = ['Selected installed module: ' pkg '  |  ' recovered];
+                info.color = [0.10 0.42 0.20];
             else
-                info.summary = ['No linked plugin package. Expected package: ' pkg];
+                info.summary = ['Module package unavailable: ' pkg];
                 info.color = [0.75 0.18 0.18];
             end
             if ~isempty(packageRoot) && isempty(packageDir)
@@ -7980,31 +7917,32 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function packageDir = registeredPluginPackageDir(app, pkg, nodeType) %#ok<INUSD>
+        function packageDir = registeredPluginPackageDir(app, pkg, nodeType)
             packageDir = '';
             if isempty(pkg)
                 return;
             end
-            try
-                if exist('detecdiv_plugins_addpath', 'file') == 2
-                    detecdiv_plugins_addpath();
-                end
-                if exist('detecdiv_plugins_list', 'file') ~= 2
+            % Only report the copy actually selected by MATLAB. Catalogue
+            % inspection must not promote another adapter onto the path.
+            if strcmpi(nodeType, 'classifier')
+                entrypoint = [char(string(pkg)) '.classify'];
+            else
+                entrypoint = [char(string(pkg)) '.process'];
+            end
+            resolved = which(entrypoint);
+            if isempty(resolved)
+                return;
+            end
+            selectedDir = fileparts(resolved);
+            for i = 1:numel(app.ModuleCatalogueItems)
+                module = app.ModuleCatalogueItems(i).module;
+                if strcmp(module.pkg, char(string(pkg))) && ...
+                        strcmpi(module.type, char(string(nodeType))) && ...
+                        strcmp(module.distribution, 'external') && ...
+                        sameModuleCataloguePath(app, module.path, selectedDir)
+                    packageDir = module.path;
                     return;
                 end
-                plugins = detecdiv_plugins_list();
-                for i = 1:numel(plugins)
-                    if strcmp(char(string(plugins(i).name)), char(string(pkg))) && ...
-                            strcmpi(char(string(plugins(i).type)), char(string(nodeType)))
-                        candidate = char(string(plugins(i).path));
-                        if exist(candidate, 'dir') == 7
-                            packageDir = candidate;
-                            return;
-                        end
-                    end
-                end
-            catch
-                packageDir = '';
             end
         end
 
@@ -14499,7 +14437,7 @@ classdef pipeline2 < matlab.apps.AppBase
                             spec=lstm_timeseries.executionSpec(struct('trainingParam',getField(app,node,'params',struct())));
                             keys=spec.staticKeys;
                         else
-                            keys = classifierStaticKeys(app, pkgName);
+                            keys = classifierStaticKeys(app, pkgName, node);
                         end
                     otherwise
                         keys = contractParamKeys(app, node, scope);
@@ -14756,10 +14694,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function keys = classifierStaticKeys(app, pkg)
+        function keys = classifierStaticKeys(app, pkg, node)
             [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg);
             if hasExecutionSpec
-                keys = spec.staticKeys;
+                keys = unique([spec.staticKeys classifierPipelineArtifactKeys(app, node)], 'stable');
                 return;
             end
             switch lower(char(string(pkg)))
@@ -14780,6 +14718,34 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = spec.staticKeys;
                 otherwise
                     keys = {};
+            end
+        end
+
+        function keys = classifierPipelineArtifactKeys(app, node)
+            % Only a module's explicit contract may grant pipeline ownership
+            % of model/environment paths. Runtime loading and path ownership
+            % are independent; private classifier settings stay private.
+            keys = {};
+            policy = pipelineClassifierReferencePolicy(node);
+            if ~policy.specAvailable || ~policy.semanticContractDeclared
+                return;
+            end
+            try
+                if startsWith(policy.semanticContractSource, 'executionSpec.')
+                    field = extractAfter(policy.semanticContractSource, 'executionSpec.');
+                    declaration = policy.spec.(char(field));
+                else
+                    manifest = jsondecode(fileread(policy.semanticContractSource));
+                    declaration = feval(manifest.entrypoints.contract, getField(app, node, 'params', struct()));
+                end
+                parameters = getField(app, declaration, 'parameters', struct());
+                paths = normalizeClassifierSpecKeys(app, getField(app, parameters, 'paths', {}));
+                artifacts = normalizeClassifierSpecKeys(app, getField(app, policy.spec, 'artifactKeys', {}));
+                environment = normalizeClassifierSpecKeys(app, getField(app, policy.spec, 'environmentKeys', {}));
+                candidates = [artifacts environment];
+                keys = intersect(candidates, paths, 'stable');
+            catch
+                % Failed metadata cannot grant ownership to hidden paths.
             end
         end
 
@@ -15336,9 +15302,13 @@ classdef pipeline2 < matlab.apps.AppBase
 
             try
                 updateRuntimeProgress(app, d, 'Resolving pipeline bindings...');
-                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, ...
+                    struct('allowGui', false, 'readOnlyModuleDiscovery', true, ...
+                    'moduleCatalogue', [app.ModuleCatalogueItems.module]));
                 updateRuntimeProgress(app, d, 'Validating pipeline...');
-                [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
+                [ok, report] = validatePipeline(pipeResolved, ctx, ...
+                    struct('allowGui', false, 'readOnlyModuleDiscovery', true, ...
+                    'moduleCatalogue', [app.ModuleCatalogueItems.module]));
                 report.bindingResolution = bindingResolution;
             catch ME
                 ok = false;
@@ -15405,8 +15375,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, struct('allowGui', false));
-                [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, ...
+                    struct('allowGui', false, 'readOnlyModuleDiscovery', true, ...
+                    'moduleCatalogue', [app.ModuleCatalogueItems.module]));
+                [ok, report] = validatePipeline(pipeResolved, ctx, ...
+                    struct('allowGui', false, 'readOnlyModuleDiscovery', true, ...
+                    'moduleCatalogue', [app.ModuleCatalogueItems.module]));
                 report.bindingResolution = bindingResolution;
             catch ME
                 ok = false;
@@ -16217,6 +16191,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodes(i).params = applyClassifierExecutionDefaults(app, ...
                         nodes(i).params, pkgName, [], 'missing');
                     privateKeys = unique([spec.artifactKeys spec.environmentKeys], 'stable');
+                    privateKeys = setdiff(privateKeys, classifierPipelineArtifactKeys(app, nodes(i)), 'stable');
                     privateKeys = privateKeys(isfield(nodes(i).params, privateKeys));
                     if ~isempty(privateKeys)
                         nodes(i).params = rmfield(nodes(i).params, privateKeys);
@@ -16327,7 +16302,9 @@ classdef pipeline2 < matlab.apps.AppBase
             pipeObj.nodes = applyRuntimeDerivedNodePolicies(app, pipeObj.nodes);
             pipeObj.nodes = sanitizeNodeParamsForPipeline(app, pipeObj.nodes);
             try
-                [pipeObj, bindingResolution] = pipelineResolveBindings(pipeObj, ctx, struct('allowGui', false));
+                [pipeObj, bindingResolution] = pipelineResolveBindings(pipeObj, ctx, ...
+                    struct('allowGui', false, 'readOnlyModuleDiscovery', true, ...
+                    'moduleCatalogue', [app.ModuleCatalogueItems.module]));
                 app.Data.lastBindingResolution = bindingResolution;
             catch
             end

@@ -211,6 +211,78 @@ catalog identity, origin, versions, discovery status, paths and diagnostics.
 inspection skips invalid, conflicting, shadowed or unavailable packages rather
 than inspecting metadata from a different installation.
 
+## Interface catalogue
+
+The pipeline editor uses `detecdiv_modules_ui`, a read-only presentation of
+`detecdiv_modules_list`, for its module library and add/insert/change menus.
+Modules are grouped by function (classifier, processor, ROI definition, etc.).
+Bundled/external distribution is metadata rather than a separate module type.
+CellposeSAM, CellLatentModel and an external HOCT adapter use the same rows,
+status rules and details. The existing `type`, `pkg`, `func` and parameter
+fields continue to define saved pipeline nodes.
+
+`Modules > Module catalogue...` opens the common browser. It is also available
+from the classifier window's `Classifier` menu. The browser shows identity,
+distribution, adapter version, declared capabilities, executable paths and
+diagnostics without calling `executionSpec`, `setparam`, contracts, Python or
+model preparation. An unspecified adapter version remains unspecified; an
+adapter version is not a model release or a scientific validation status.
+The classifier window keeps its existing trainable-classifier selection;
+inference-only adapters such as HOCT remain available through the pipeline.
+
+The presentation includes an already selected MATLAB copy when it differs
+from a discovered installation. For example, a registered HOCT release and
+an older release on the active path remain two visible candidates. Conflicting,
+invalid or unselected candidates cannot be added as new nodes through the
+library; browsing does not pick one, reorder paths or change preferences.
+Existing saved nodes can still be loaded, edited and saved with their original
+execution identities and bindings. Their execution checks remain authoritative.
+
+`Modules > Refresh module catalogue` rebuilds the editor's library and menus
+without changing its nodes. The existing explicit custom-package chooser is
+preserved: choosing a folder is still an explicit registration/activation
+action, separate from browsing. Such session package folders are included in
+subsequent editor catalogue refreshes.
+
+The editor passes `readOnlyModuleDiscovery=true` and its catalogue snapshot
+to `validatePipeline` for its automatic checks. This avoids the historical
+plugin bootstrap while inspecting a template. Callers that omit this option
+retain the existing execution-time plugin discovery behavior.
+
+For scripted inspection without displaying a window:
+
+```matlab
+[rows, items, diagnostics] = detecdiv_modules_ui('Root', detecdivRoot);
+fig = detecdiv_modules_browser('Root', detecdivRoot, 'Visible', 'off');
+```
+
+Both helpers accept `PluginRoots` and `PackagePaths`; explicit
+`PluginRoots={}` disables registered roots. `IncludeActivePackages=false`
+disables the additional lookup of already selected copies, useful for isolated
+tests. The browser retains all diagnostic candidates for inspection.
+
+The node's **Module package** section identifies its MATLAB implementation.
+An installed copy already selected by MATLAB is available without another
+link; an explicit pipeline copy remains separately identifiable. Model release
+and environment paths declared by `executionSpec` appear in execution
+parameters, alongside static settings.
+
+**Trained classifier** is shown when the selected implementation requires a
+`classi` snapshot, or when the node already stores a historical reference.
+`pipelineClassifierReferencePolicy` reads `requiresClassifierReference` from
+metadata beside the actual executable. Historical adapters fall back to
+`requiresRuntimeClassifier`. The former controls the configuration reference;
+the latter controls loading a MATLAB model. CellLatentModel explicitly keeps
+its configuration reference while managing model loading itself. An unlinked HOCT node
+does not request a dummy classifier object or emit a missing-snapshot warning.
+Existing references remain visible and validated, including broken ones.
+Model/environment keys are editable and retained only when the package's raw
+contract explicitly declares those paths. Inferred path names do not grant
+ownership, so private CellLatentModel runtime paths remain prohibited.
+Historical adapters without a detailed pipeline contract are identified in
+the interface; their generic fallback bindings do not establish support for
+new model parameters or division modes.
+
 ## Migration boundary
 
 The catalog provides identity, discovery and audit; the three pilot packages

@@ -105,12 +105,20 @@ block = regexp(source, ...
 
 verifyNotEmpty(testCase, block);
 verifyTrue(testCase, contains(block, 'runtime_manifest.json'));
-verifyTrue(testCase, contains(block, 'cellLatentModel.validateRuntimeManifest(pth,'));
+verifyNotEmpty(testCase, regexp(block, ...
+    'cellLatentModel\.validateRuntimeManifest\(\s*selectedFolder\s*,', 'once'));
 verifyTrue(testCase, contains(block, "'Title', 'Link latent-model runtime'"));
 verifyTrue(testCase, contains(block, 'updateClassifierLinkProgress('));
 verifyTrue(testCase, contains(block, '''classifier'', manifestClassiId'));
 verifyTrue(testCase, contains(block, '[manifestClassiId ''_classification.mat'']'));
-verifyTrue(testCase, contains(block, 'ClassifierSnapshotOnly'));
+verifyTrue(testCase, contains(block, 'loadClassifierSnapshotStrict(app, filePath)'));
+snapshotLoader = regexp(source, ...
+    'function \[classiObj, msg\] = loadClassifierSnapshotStrict\(app, filePath\).*?(?=\n\s*function )', ...
+    'match', 'once');
+verifyNotEmpty(testCase, snapshotLoader);
+verifyTrue(testCase, contains(snapshotLoader, 'S = load(filePath)'));
+verifyFalse(testCase, contains(snapshotLoader, '.loadClassifier('), ...
+    'Linking a runtime snapshot must not load the trained model.');
 end
 
 function testRuntimeManifestValidatorNormalizesPickerFolder(testCase)

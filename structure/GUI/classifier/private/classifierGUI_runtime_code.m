@@ -915,6 +915,24 @@ function applyParamEdit(app, key, newVal)
 end
 
 
+function ensureModuleCatalogueMenu(app)
+% Keep module discovery separate from the trainable classifier selection.
+    if isempty(findall(app.ClassifierMenu, 'Type', 'uimenu', ...
+            'Tag', 'DetecdivModuleCatalogueMenu'))
+        uimenu(app.ClassifierMenu, 'Text', 'Module catalogue...', ...
+            'Tag', 'DetecdivModuleCatalogueMenu', ...
+            'MenuSelectedFcn', @(~,~)openModuleCatalogue(app));
+    end
+end
+
+function openModuleCatalogue(app)
+    try
+        detecdiv_modules_browser();
+    catch ME
+        uialert(app.ClassifierUIFigure, ME.message, 'Module catalogue');
+    end
+end
+
 function classlist = loadClasslist(app)
 % loadClasslist  Build classlist from engine/classification/+* packages.
 % Fallback to classlist.mat if needed.
@@ -2730,6 +2748,7 @@ end
     end
 
     app.ClassifierUIFigure.Name = [classiObj.strid];
+    ensureModuleCatalogueMenu(app);
     app.Data.classiObj = classiObj;
     app.typedBindingChoicesLoaded = false;
     app.roiTableInitialized = false;
