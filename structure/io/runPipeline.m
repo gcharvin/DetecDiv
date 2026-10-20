@@ -27,6 +27,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
     ctx = normalizeRunEventLedger(ctx);
+    ctx.moduleRuntimeCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+    ctx.moduleRuntime = struct([]);
     pipelineRunEvent(ctx, 'run_start', 'Runner', 'runPipeline', ...
         'RunPolicy', getfielddefault(ctx.run, 'runPolicy', ''), ...
         'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
@@ -201,6 +203,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
                 'DurationSec', toc(tNode), 'Message', formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
+            report.moduleRuntime = pipelineModuleRuntimeRecords(ctx);
             stashRunReport(report);
             if strcmp(failedStatus, 'cancelled')
                 pipelineRunEvent(ctx, 'run_cancelled', 'Summary', report.summary, ...
@@ -234,12 +237,15 @@ function [ctx, report] = runPipeline(pipe, ctx)
     end
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
+    report.moduleRuntime = pipelineModuleRuntimeRecords(ctx);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', total, total, 1, 1, 'Pipeline completed.');
     ctx = pipelineRunCaptureFovInventory(ctx, 'run_done', '');
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
     detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipeline');
+    ctx.moduleRuntime = report.moduleRuntime;
+    ctx = rmfield(ctx, 'moduleRuntimeCache');
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
@@ -1413,6 +1419,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                     'DurationSec', nodeStats(i).durationSec, 'Message', formatNodeError(ME));
                 report.endedAt = char(datetime('now'));
                 report.summary = buildRunSummary(report);
+                report.moduleRuntime = pipelineModuleRuntimeRecords(roiCtx);
                 stashRunReport(report);
                 if strcmp(status, 'cancelled')
                     pipelineRunEvent(roiCtx, 'run_cancelled', 'Summary', report.summary, ...
@@ -1477,6 +1484,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
     end
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
+    report.moduleRuntime = pipelineModuleRuntimeRecords(ctx);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, 1, 1, 'Pipeline completed.');
     ctx = pipelineRunCaptureFovInventory(ctx, 'run_done', '');
@@ -1484,6 +1492,8 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
         'ExecutionMode', 'roi_major');
     detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipeline');
+    ctx.moduleRuntime = report.moduleRuntime;
+    ctx = rmfield(ctx, 'moduleRuntimeCache');
 end
 
 function saveFinalizedRoiLocal(roiobj, ctx)

@@ -214,13 +214,86 @@ than inspecting metadata from a different installation.
 ## Migration boundary
 
 The catalog provides identity, discovery and audit; the three pilot packages
-now also own their semantic contracts. Existing `classify` signatures,
+now also own their semantic contracts and optional runtime hooks. Existing `classify` signatures,
 `executionSpec`, pipeline node serialization, GUI menus, plugin registration
 and runtime policies remain in place. Historical adapters remain discoverable
-and keep their existing contract fallback. The runner and scientific execution
-functions are unchanged.
+and keep their existing contract fallback. Preparation runs at the common
+`classifyData` boundary, before ROI preprocessing. Both pipeline runners use
+the same validation and record the same additive runtime provenance.
 
 The catalog does not alter model release pointers, classifier sources or
 runtime bundles. In particular, the latent model retains its separate
 [`MODEL_RUNTIME_CONTRACT_V1.md`](MODEL_RUNTIME_CONTRACT_V1.md); adding a module
 descriptor does not authorize runtime export or copying model/data trees.
+
+## Validation and run provenance
+
+Descriptors may declare `entrypoints.validate`, `entrypoints.prepare` and
+`compatibility.runtimeContract = "detecdiv.module_runtime.v1"`. Both hooks must
+belong to the selected executable's physical package. An installed historical
+adapter without these declarations retains its native checks; DetecDiv never
+borrows hooks from a source checkout later on the path.
+
+`validateModule(params)` returns pure configuration diagnostics. It does not
+read a classifier snapshot, a model or Python. `validatePipeline` and dry-run
+expose these in `report.moduleValidation`, alongside the existing binding,
+path and artifact checks. Missing values that a linked classifier may supply
+remain deferred to execution preparation.
+
+`prepareRuntime(classif, ctx)` resolves the effective classifier settings and
+reads explicitly selected model artifacts without installation, Python
+imports, model loading or inference. A diagnostic has `severity`
+(`error`, `warning`, `info`), stable `code`, `message` and `parameter` fields.
+The common layer adds `nodeId`. A prepared payload has:
+
+```matlab
+struct('format','detecdiv.module_runtime.v1', ...
+    'parameters', preparedParameters, 'diagnostics', diagnostics, ...
+    'provenance', provenance, 'context', infrastructureSelection)
+```
+
+`pipelineModulePrepare(pkg, classif, ctx)` checks this contract, pins the
+selection once per node/classifier/run and returns a runtime record. The
+temporary shared cache covers ROI-major execution and is removed before a
+successful runner returns. The serializable records are retained in
+`ctx.moduleRuntime` and `report.moduleRuntime`, including failed preparations.
+Each new preparation also appends a `module_prepared` event to the existing
+JSONL event ledger when configured. `pipelineModuleRuntimeRecords(ctx)` reads
+the current records without preparing or executing anything.
+
+`record.parameters` contains the prepared deployment settings. Each pilot also
+records the values normalized for an individual ROI immediately before
+inference, through `pipelineModuleTraceParameters`. They are retained in
+`record.executionParameters` and `module_execution_parameters` JSONL events.
+This distinguishes deployment selection from automatic input-channel choices,
+numeric normalization and run-specific Python config paths. An event records
+the parameters about to be used; it does not by itself indicate success.
+
+The record distinguishes DetecDiv, selected MATLAB adapter, Python engine,
+model and environment. Code identities include the actual entrypoint file's
+SHA-256, Git commit and tracked working-tree dirty state when Git is available.
+The descriptor and hooks have their own hashes: a commit alone cannot describe
+uncommitted adapter changes. Model identities include explicit artifact file
+hashes and native release identity/checksums where available. These are
+technical execution checks; `ready` does not claim scientific validation.
+
+The pilot modules preserve their native deployment formats:
+
+- CellposeSAM keeps its existing local filename priority and `sam` fallback.
+  Local weight paths and controls are pinned. The backend-managed `sam` alias
+  remains explicitly unverified at preparation because resolving it can load
+  or download weights.
+- CellLatentModel uses its existing checksum-verifying promoted-release
+  resolver. A prepared snapshot takes priority over subsequent mutable-channel
+  changes within that run. Annotation prediction keeps its existing snapshot
+  priority, and saved pipeline artifact overrides remain prohibited.
+- HOCT verifies its immutable release's declared `generated_files` and weight
+  references and records its actual launcher selection, including the distinct
+  code source for opt-in fission. A changed manifest is rejected before ROI
+  observation export.
+
+Python selection and package versions that cannot be confirmed without
+starting/importing a runtime are labelled deferred or unverified. Preparation
+does not certify their availability; the existing execution checks remain
+authoritative. It does not change installed releases, preferences, stable
+pointers, exported bundles or output policies.

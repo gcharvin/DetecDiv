@@ -10,11 +10,14 @@
   "entrypoints": {
     "execute": "cellposesam.classify",
     "parameters": "cellposesam.executionSpec",
-    "contract": "cellposesam.moduleContract"
+    "contract": "cellposesam.moduleContract",
+    "validate": "cellposesam.validateModule",
+    "prepare": "cellposesam.prepareRuntime"
   },
   "compatibility": {
     "detecdiv": null,
-    "pipelineContract": "detecdiv.module_contract.v1"
+    "pipelineContract": "detecdiv.module_contract.v1",
+    "runtimeContract": "detecdiv.module_runtime.v1"
   },
   "provenance": {
     "repository": "https://github.com/gcharvin/DetecDiv.git",

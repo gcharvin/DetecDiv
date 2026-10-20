@@ -71,6 +71,35 @@ for packagePath = {bundled, external, explicit}
 end
 end
 
+function testRuntimeHooksRemainStaticAndRequireCompleteContract(tc)
+package=makeDeclaredPackage(fullfile(tc.TestData.root,'engine','classification'), ...
+    'catalogRuntime','test.Runtime','classifier');
+file=fullfile(package,'module.json');
+descriptor=jsondecode(fileread(file));
+descriptor.compatibility.detecdiv=NaN; % Preserve JSON null after decoding.
+descriptor.entrypoints.validate='catalogRuntime.validateModule';
+descriptor.entrypoints.prepare='catalogRuntime.prepareRuntime';
+descriptor.compatibility.runtimeContract='detecdiv.module_runtime.v1';
+for name={'validateModule','prepareRuntime'}
+    writeText(fullfile(package,[name{1} '.m']),sprintf( ...
+        'function out=%s(varargin), error(''fixture:MustNotExecute'',''Metadata only''); end',name{1}));
+end
+writeText(file,jsonencode(descriptor));
+[modules,diagnostics]=detecdiv_modules_list('Root',tc.TestData.root,'PluginRoots',{});
+verifyNoErrors(tc,diagnostics);
+verifyEqual(tc,modules.entrypoints.prepare,'catalogRuntime.prepareRuntime');
+verifyEqual(tc,modules.compatibility.runtimeContract,'detecdiv.module_runtime.v1');
+descriptor.entrypoints=rmfield(descriptor.entrypoints,'prepare');
+writeText(file,jsonencode(descriptor));
+[~,diagnostics]=detecdiv_modules_list('Root',tc.TestData.root,'PluginRoots',{});
+verifyHasErrorForPath(tc,diagnostics,package);
+descriptor.entrypoints.prepare='catalogRuntime.prepareRuntime';
+descriptor.compatibility=rmfield(descriptor.compatibility,'runtimeContract');
+writeText(file,jsonencode(descriptor));
+[~,diagnostics]=detecdiv_modules_list('Root',tc.TestData.root,'PluginRoots',{});
+verifyHasErrorForPath(tc,diagnostics,package);
+end
+
 function testDeclaredProcessorUsesSameDescriptor(tc)
 makeDeclaredPackage(fullfile(tc.TestData.root, 'engine', 'processor'), ...
     'catalogMetrics', 'test.metrics', 'processor');

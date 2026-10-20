@@ -20,6 +20,15 @@ if requested
     return;
 end
 
+% The common runner resolves deployment once for the complete node/run.
+% A pinned view is internal runtime state, never an artifact-path override
+% supplied by a saved pipeline's ctx.params.
+[pinned, requested] = pinnedModuleRuntime(ctx,classif);
+if requested
+    p = cellLatentModel.utils.applyOverrides(defaults,pinned.parameters);
+    return;
+end
+
 p = defaults;
 try
     p = cellLatentModel.utils.applyOverrides(p, classif.executionParam);
@@ -27,7 +36,7 @@ catch
 end
 execution = cellLatentModel.executionSpec(classif);
 p = classifierApplyTrainingExecutionDefaults( ...
-    p, classif, execution, 'pipeline');
+    p, classif, execution, 'pipeline', 'ResolveDeployment', false);
 if isfield(ctx, 'params') && isstruct(ctx.params)
     runtime = ctx.params;
     % Empty values saved by older Pipeline2 templates mean "not
@@ -55,9 +64,35 @@ end
 % An older pipeline may still carry stale execution choices such as
 % backend=legacy.  When the classifier follows the promoted channel, the
 % immutable release is authoritative for every deployment field it
-% declares.  Resolve once more after pipeline overrides so those stale
+% declares.  Resolve once after pipeline overrides so those stale
 % values cannot silently downgrade the selected model generation.
 p = cellLatentModel.resolvePromotedRelease(classif, p);
+end
+
+function [record,requested] = pinnedModuleRuntime(ctx,classif)
+record = struct();
+requested = false;
+if ~isstruct(ctx) || ~isfield(ctx,'moduleRuntime') || ...
+        ~isstruct(ctx.moduleRuntime) || ~isscalar(ctx.moduleRuntime)
+    return;
+end
+record = ctx.moduleRuntime;
+if ~strcmp(textField(record,'package'),'cellLatentModel'), return; end
+requested = true;
+classifierId = '';
+try, classifierId = char(string(classif.strid)); catch, end
+runId = textField(ctx,'runId');
+if ~strcmp(textField(record,'format'),'detecdiv.module_runtime.v1') || ...
+        ~strcmp(textField(record,'status'),'ready') || ...
+        ~strcmp(textField(record,'classifierId'),classifierId) || ...
+        ~strcmp(textField(record,'runId'),runId) || ...
+        ~isfield(record,'parameters') || ~isstruct(record.parameters) || ...
+        ~isscalar(record.parameters) || ...
+        ~isfield(record,'context') || ~isstruct(record.context) || ~isscalar(record.context) || ...
+        ~isfield(record,'provenance') || ~isstruct(record.provenance) || ~isscalar(record.provenance)
+    error('cellLatentModel:InvalidPinnedModuleRuntime', ...
+        'The prepared latent-model runtime does not match this classifier/run.');
+end
 end
 
 function [snapshot, requested] = pinnedAnnotationSnapshot(ctx)

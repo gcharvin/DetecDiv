@@ -3,6 +3,11 @@ function [paramout,dataout,imageout] = core(param,roiobj,ctx,classif)
 if nargin < 3, ctx = struct(); end
 if nargin < 4, classif = []; end
 paramout = cellLatentModel.normalizeParam(param,ctx,classif);
+if exist('pipelineModuleTraceParameters','file') == 2
+    roiIdentity = '';
+    try, roiIdentity = char(string(roiobj.id)); catch, end
+    pipelineModuleTraceParameters(ctx,paramout,roiIdentity);
+end
 if isempty(roiobj.image), roiobj.load('Data',false); end
 % A classifier node can receive an ROI whose in-memory dataseries are empty
 % or stale even though data_<ROI>.mat already contains outputs from other

@@ -2,7 +2,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
-    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'pluginPackages', [], 'pathChecks', [], 'solver', struct());
+    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'pluginPackages', [], 'pathChecks', [], 'moduleValidation', [], 'solver', struct());
 
     if nargin < 2 || isempty(ctx)
         ctx = struct();
@@ -49,6 +49,20 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     report.missingParams = {};
     report.deferredParams = {};
     report.needsGui = {};
+
+    % Module checks are static and share diagnostics with runtime preparation.
+    % Keep them outside the best-effort semantic catch below: a failed
+    % declared validation must not silently become a generic warning.
+    [moduleDiagnostics, report.moduleValidation] = pipelineModuleValidation(nodes, ctx);
+    for iDiagnostic = 1:numel(moduleDiagnostics)
+        issue = moduleDiagnostics(iDiagnostic);
+        if strcmpi(issue.severity, 'error')
+            ok = false;
+            report.errors{end+1} = issue.message;
+        elseif strcmpi(issue.severity, 'warning')
+            report.warnings{end+1} = issue.message;
+        end
+    end
 
     if isempty(nodes)
         ok = false;

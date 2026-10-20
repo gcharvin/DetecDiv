@@ -1,19 +1,43 @@
-function runtime = resolvePythonRuntime(ctx)
+function runtime = resolvePythonRuntime(ctx,varargin)
 %CELLLATENTMODEL.UTILS.RESOLVEPYTHONRUNTIME Discover external model runtime.
 %
 % Python and repository locations are infrastructure and are never exposed
 % as classifier static parameters.
 
 if nargin < 1, ctx = struct(); end
+readOnly = false;
+if ~isempty(varargin)
+    if numel(varargin) ~= 2 || ~strcmpi(char(string(varargin{1})),'ReadOnly')
+        error('cellLatentModel:InvalidRuntimeOption','Expected ReadOnly, true/false.');
+    end
+    readOnly = logical(varargin{2});
+end
 try
     resolved = ctx.resolvedPythonRuntime;
     if isstruct(resolved) && isfield(resolved,'pythonExecutable')
         pythonExecutable = char(string(resolved.pythonExecutable));
+        if readOnly && ~isempty(pythonExecutable) && ...
+                isempty(regexp(pythonExecutable,'[\\/:]','once')) && ...
+                ~isfile(pythonExecutable)
+            % An explicit PATH command owns its supplied source roots.
+            % Preserve that request without probing PATH or replacing it
+            % with the workstation's canonical environment. The ordinary
+            % execution resolver will perform its native availability check.
+            runtime = resolved;
+            runtime.packageSource = 'requested_unverified';
+            defaults = struct('repositoryRoot','','lineageRepositoryRoot','', ...
+                'backend','local');
+            keys = fieldnames(defaults);
+            for i = 1:numel(keys)
+                if ~isfield(runtime,keys{i}), runtime.(keys{i}) = defaults.(keys{i}); end
+            end
+            return;
+        end
         % An executable selected from PATH is still a valid pinned runtime.
         % Dropping it here also drops the release's pinned repositoryRoot,
         % so the following Python process cannot import cell_latent_model.
         if isfile(pythonExecutable) || ...
-                (~contains(pythonExecutable,filesep) && ...
+                (~readOnly && ~contains(pythonExecutable,filesep) && ...
                 commandAvailable(pythonExecutable))
             runtime = resolved;
             return;
@@ -59,7 +83,7 @@ if isempty(runtime.pythonExecutable)
         runtime.packageSource = 'detecdiv_python_existing';
     end
 end
-if isempty(runtime.pythonExecutable)
+if isempty(runtime.pythonExecutable) && ~readOnly
     try
         args = pythonSelectionArgs(ctx);
         select_and_load_conda_env(args{:});
@@ -72,7 +96,7 @@ if isempty(runtime.pythonExecutable)
     catch
     end
 end
-if isempty(runtime.pythonExecutable)
+if isempty(runtime.pythonExecutable) && ~readOnly
     candidates = { ...
         'python3','python'};
     for i = 1:numel(candidates)
@@ -85,9 +109,13 @@ if isempty(runtime.pythonExecutable)
     end
 end
 if isempty(runtime.pythonExecutable)
-    error('cellLatentModel:PythonRuntimeUnavailable', ...
-        ['No Python runtime is available for cell_latent_model. Install ' ...
-         'the repository in the DetecDiv Python environment.']);
+    if readOnly
+        runtime.packageSource = 'deferred';
+    else
+        error('cellLatentModel:PythonRuntimeUnavailable', ...
+            ['No Python runtime is available for cell_latent_model. Install ' ...
+             'the repository in the DetecDiv Python environment.']);
+    end
 end
 
 repo = strtrim(getenv('CELL_LATENT_MODEL_REPO_ROOT'));

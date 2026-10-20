@@ -222,6 +222,11 @@ if isfile(descriptor)
         if isfield(manifest.entrypoints, 'contract')
             m.entrypoints.contract = manifest.entrypoints.contract;
         end
+        for hook = {'validate','prepare'}
+            if isfield(manifest.entrypoints, hook{1})
+                m.entrypoints.(hook{1}) = manifest.entrypoints.(hook{1});
+            end
+        end
         if ~strcmp(manifest.package, pkg)
             error('Declared package %s differs from package directory %s.', manifest.package, pkg);
         end

@@ -48,7 +48,9 @@
       "properties": {
         "execute": { "$ref": "#/$defs/packageFunction" },
         "parameters": { "$ref": "#/$defs/packageFunction" },
-        "contract": { "$ref": "#/$defs/packageFunction" }
+        "contract": { "$ref": "#/$defs/packageFunction" },
+        "validate": { "$ref": "#/$defs/packageFunction" },
+        "prepare": { "$ref": "#/$defs/packageFunction" }
       }
     },
     "compatibility": {
@@ -64,6 +66,10 @@
         "pipelineContract": {
           "enum": ["legacy", "detecdiv.module_contract.v1"],
           "description": "Legacy resolution or a package-owned semantic declaration; neither changes the execution interface."
+        },
+        "runtimeContract": {
+          "enum": ["legacy", "detecdiv.module_runtime.v1"],
+          "description": "Optional read-only configuration validation, runtime preparation and provenance contract."
         }
       }
     },
@@ -85,6 +91,18 @@
     {
       "if": {"properties": {"entrypoints": {"required": ["contract"]}}},
       "then": {"properties": {"compatibility": {"properties": {"pipelineContract": {"const": "detecdiv.module_contract.v1"}}}}}
+    },
+    {
+      "if": {"properties": {"compatibility": {"required": ["runtimeContract"], "properties": {"runtimeContract": {"const": "detecdiv.module_runtime.v1"}}}}},
+      "then": {"properties": {"entrypoints": {"required": ["validate", "prepare"]}}}
+    },
+    {
+      "if": {"properties": {"entrypoints": {"required": ["validate"]}}},
+      "then": {"properties": {"compatibility": {"required": ["runtimeContract"], "properties": {"runtimeContract": {"const": "detecdiv.module_runtime.v1"}}}}}
+    },
+    {
+      "if": {"properties": {"entrypoints": {"required": ["prepare"]}}},
+      "then": {"properties": {"compatibility": {"required": ["runtimeContract"], "properties": {"runtimeContract": {"const": "detecdiv.module_runtime.v1"}}}}}
     }
   ],
   "$defs": {

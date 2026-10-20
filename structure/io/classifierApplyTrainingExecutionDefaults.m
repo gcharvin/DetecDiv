@@ -1,6 +1,8 @@
 function params = classifierApplyTrainingExecutionDefaults( ...
-        params, classiObj, spec, intent)
+        params, classiObj, spec, intent, varargin)
 %classifierApplyTrainingExecutionDefaults Apply training-compatible runtime defaults.
+% ResolveDeployment=false lets a package apply node controls before resolving
+% its mutable deployment channel exactly once at the end of preparation.
 
 if nargin < 1 || isempty(params) || ~isstruct(params)
     params = struct();
@@ -11,6 +13,20 @@ end
 intent = lower(strtrim(char(string(intent))));
 if ~any(strcmp(intent, {'validate','pipeline','annotation','active_model'}))
     return;
+end
+resolveDeployment = true;
+if mod(numel(varargin),2) ~= 0
+    error('classifierApplyTrainingExecutionDefaults:InvalidOption', ...
+        'Optional arguments must be name/value pairs.');
+end
+for option = 1:2:numel(varargin)
+    if ~strcmpi(char(string(varargin{option})),'ResolveDeployment') || ...
+            ~isscalar(varargin{option+1}) || ...
+            ~(islogical(varargin{option+1}) || isnumeric(varargin{option+1}))
+        error('classifierApplyTrainingExecutionDefaults:InvalidOption', ...
+            'ResolveDeployment must be a logical scalar.');
+    end
+    resolveDeployment = logical(varargin{option+1});
 end
 defaults = classifierTrainingExecutionDefaults(classiObj, spec);
 if isempty(defaults) || ~isstruct(defaults),defaults=struct();end
@@ -45,7 +61,9 @@ keys = intersect(declared, fieldnames(defaults), 'stable');
 for i = 1:numel(keys)
     params.(keys{i}) = defaults.(keys{i});
 end
-params = resolvePackageDeployment(classiObj, params, intent);
+if resolveDeployment
+    params = resolvePackageDeployment(classiObj, params, intent);
+end
 end
 
 function params = resolvePackageDeployment(classiObj,params,intent)

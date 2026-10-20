@@ -27,6 +27,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
     ctx = normalizeRunEventLedger(ctx);
+    ctx.moduleRuntimeCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+    ctx.moduleRuntime = struct([]);
     pipelineRunEvent(ctx, 'run_start', 'Runner', 'runPipelineStructured', ...
         'RunPolicy', getfielddefault(ctx.run, 'runPolicy', ''), ...
         'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
@@ -200,6 +202,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
                 'DurationSec', toc(tNode), 'Message', formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
+            report.moduleRuntime = pipelineModuleRuntimeRecords(ctx);
             stashRunReport(report);
             if strcmp(nodeStatus, 'cancelled')
                 pipelineRunEvent(ctx, 'run_cancelled', 'Summary', report.summary, ...
@@ -237,10 +240,13 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     ctx = stripEphemeralExecutionFields(ctx);
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
+    report.moduleRuntime = pipelineModuleRuntimeRecords(ctx);
     stashRunReport(report);
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
     detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipelineStructured');
+    ctx.moduleRuntime = report.moduleRuntime;
+    ctx = rmfield(ctx, 'moduleRuntimeCache');
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)

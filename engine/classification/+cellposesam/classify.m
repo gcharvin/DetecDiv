@@ -4,6 +4,14 @@ function out = classify(roiobj, classif, ctx)
 if nargin < 3 || isempty(ctx)
     ctx = struct();
 end
+[~,hasPreparedRuntime] = pinnedCellposeModelLocal(ctx,classif);
+if hasPreparedRuntime
+    % Keep the caller's context unchanged while using this run's effective
+    % controls for every ROI (including outputType and class-name overrides).
+    ctx.params = ctx.moduleRuntime.parameters;
+    if ~isfield(ctx,'names') || ~isstruct(ctx.names), ctx.names = struct(); end
+    ctx.names.outputName = ctx.params.outputName;
+end
 
 out = cellposesam.utils.outInitSafe('cellposesam.classify');
 
@@ -231,7 +239,8 @@ flow_threshold = getCellposeParamLocal(ctx, classif, 'flow_threshold', 0.4);
 min_size = getCellposeParamLocal(ctx, classif, 'min_size', 10);
 cellprob_threshold = getCellposeParamLocal(ctx, classif, 'cell_prob_threshold', 0);
 
-% Model selection
+% Model selection. A common-runner preparation freezes the selected file or
+% the backend-managed sam alias before the first ROI.
 classifPath = getClassifierPathLocal(classif);
 model_dir          = fullfile(classifPath, 'models');
 model_path_to_use  = 'sam';
@@ -244,6 +253,8 @@ if exist(model_dir, 'dir')
         model_path_to_use = candidate2;
     end
 end
+[pinnedModelPath,hasPinnedModel] = pinnedCellposeModelLocal(ctx,classif);
+if hasPinnedModel, model_path_to_use = pinnedModelPath; end
 
 if strcmp(model_path_to_use, 'sam')
     disp('[INFO] Aucun modele local trouve, utilisation du modele CellposeSAM par defaut.');
@@ -296,6 +307,11 @@ catch
     cfg.progress_span = 1;
 end
 
+if exist('pipelineModuleTraceParameters','file') == 2
+    pipelineModuleTraceParameters(ctx,struct('configuration',cfg, ...
+        'trackInstances',doTracking,'outputType',outputType, ...
+        'outputName',outputName),safeRoiIdLocal(roiobj));
+end
 configPath = fullfile(workDir, 'classify_cellposesam_config.json');
 fid = fopen(configPath, 'w');
 if fid == -1
@@ -499,11 +515,46 @@ try
 catch
     value = defaultValue;
 end
+
 try
     if isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, name) && ~isempty(ctx.params.(name))
         value = ctx.params.(name);
     end
 catch
+end
+end
+
+function [modelPath,requested] = pinnedCellposeModelLocal(ctx,classif)
+modelPath = '';
+requested = false;
+if ~isstruct(ctx) || ~isfield(ctx,'moduleRuntime') || ...
+        ~isstruct(ctx.moduleRuntime) || ~isscalar(ctx.moduleRuntime)
+    return;
+end
+record = ctx.moduleRuntime;
+if ~isfield(record,'package') || ~strcmp(char(string(record.package)),'cellposesam')
+    return;
+end
+requested = true;
+runId = '';
+if isfield(ctx,'runId'), runId = char(string(ctx.runId)); end
+classifierId = '';
+try, classifierId = char(string(classif.strid)); catch, end
+valid = isfield(record,'format') && strcmp(char(string(record.format)),'detecdiv.module_runtime.v1') && ...
+    isfield(record,'status') && strcmp(char(string(record.status)),'ready') && ...
+    isfield(record,'classifierId') && strcmp(char(string(record.classifierId)),classifierId) && ...
+    isfield(record,'runId') && strcmp(char(string(record.runId)),runId) && ...
+    isfield(record,'parameters') && isstruct(record.parameters) && isscalar(record.parameters) && ...
+    isfield(record.parameters,'outputName') && ...
+    isfield(record,'context') && isstruct(record.context) && isscalar(record.context) && ...
+    isfield(record.context,'cellposeModelPath');
+if ~valid
+    error('cellposesam:InvalidPinnedModuleRuntime', ...
+        'The prepared CellposeSAM runtime does not match this classifier/run.');
+end
+modelPath = char(string(record.context.cellposeModelPath));
+if isempty(modelPath) || (~strcmp(modelPath,'sam') && ~isfile(modelPath))
+    error('cellposesam:MissingPinnedModel','The prepared CellposeSAM model file is missing.');
 end
 end
 

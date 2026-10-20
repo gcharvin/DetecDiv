@@ -107,6 +107,18 @@ classi     = classiobj;
 if isempty(classifyFun)
     error('classifyData:NoClassifyFun','No classification function available for this classifier.');
 end
+% Prepare once per invocation before model loading or ROI output changes.
+% The shared handle cache also pins the selected runtime across ROI-major
+% pipeline calls, while direct classifier callers retain the same boundary.
+if usesPkg && exist('pipelineModulePrepare', 'file') == 2
+    if ~isfield(ctxBase, 'names') || ~isstruct(ctxBase.names) || ~isscalar(ctxBase.names)
+        ctxBase.names = struct();
+    end
+    % This option is authoritative for the later ROI call as well. Include
+    % it in preparation so a pinned output stem preserves standalone names.
+    ctxBase.names.outputName = char(outputName);
+    [ctxBase, ~] = pipelineModulePrepare(localInferPkg(classifyFun), classiobj, ctxBase);
+end
 fhandle   = eval(['@' classifyFun]);
 isPipelineFun = usesPkg || any(strcmpi(classifyFun, {'classifyImageLSTMNetFun','cnn_lstm.classify'}));
 requiresRoiImages=true;
