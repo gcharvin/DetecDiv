@@ -985,7 +985,9 @@ files = files(keep);
 if isempty(files)
     return;
 end
-[~, idx] = sort(lower({files.name}));
+% Match the natural file order used by the image-series importers. Legacy
+% acquisitions can cross from three to four frame digits (999 -> 1000).
+[~, idx] = natsortfiles(lower({files.name}));
 files = files(idx);
 end
 
