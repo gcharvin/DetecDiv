@@ -4,6 +4,74 @@ This note defines the baseline contract for new DetecDiv pipeline modules. It
 applies to dataloading, ROI identification, ROI extraction, processors,
 classifiers, exporters, and Python-backed modules.
 
+## Semantic contract API
+
+CellposeSAM, CellLatentModel and HOCT own their semantic contract in their
+adapter packages. The entrypoint has one common signature:
+
+```matlab
+contract = package.moduleContract(params);
+```
+
+`params` is the effective node parameter struct; omitting it is equivalent to
+passing `struct()`. The result is a scalar struct with
+`format = 'detecdiv.module_contract.v1'`. This function only describes the
+configuration. It must not initialize a Python environment, resolve or load
+model artifacts, inspect or modify ROI data, change the MATLAB path, or execute
+processing. It may reuse its own pure `executionSpec` metadata.
+
+`executionSpec` retains ownership of parameter keys, defaults, choices, labels
+and editor metadata. `moduleContract(params)` declares the effective semantic
+ports, resources, requirements, capabilities, selectors and bindings. Existing
+classifier execution signatures are unchanged.
+
+The returned struct patches the generic classifier contract:
+
+| Field | Composition rule |
+| --- | --- |
+| `in`, `out` | Complete port arrays replace the generic arrays |
+| `resources.in`, `resources.out` | Complete resource arrays replace the generic arrays |
+| `selectors`, `parameters`, `requirements`, `capabilities`, `binding` | Optional scalar sections recursively overlay inherited fields |
+| Explicit empty scalar-section field | Clears the inherited value |
+| Omitted scalar-section field | Inherits the generic value |
+| `summary` | Package-owned descriptive text |
+| `format` | Validated API marker, removed from the normalized pipeline contract |
+| `semantics` | Optional additive, informational metadata |
+
+A port has `name`, `type`, `required` and `source`. A resource has `type`,
+`role`, `symbol`, `param`, `port`, `nameParam`, `required` and `transfer`.
+These shapes retain the existing pipeline vocabulary. Packages return complete
+arrays for the ports/resources they declare rather than relying on merging
+individual generic elements.
+
+The package's `module.json` must set
+`compatibility.pipelineContract` to `detecdiv.module_contract.v1` and
+`entrypoints.contract` to its package-owned function, for example
+`cellLatentModel.moduleContract`. Static descriptor capabilities describe the
+available module modes; this function describes the selected mode.
+
+`pipelineNodeContract` uses the descriptor beside the resolved execution
+function. The declared contract must resolve in that same package directory,
+so an adapter loaded from an older release cannot accidentally use another
+checkout's metadata. Releases without the new declaration retain the existing
+historical fallback. A broken declaration fails explicitly instead of silently
+using a fallback contract.
+
+For known modules, the effective selected parameters remain authoritative:
+saved pipeline contract metadata is recalculated rather than merged over the
+package's current declaration. Existing pipeline `pkg`, `func`, parameters and
+classifier references remain readable. CellLatentModel retains the historical
+`legacy` contract when no backend is specified.
+
+The pilot modules add `semantics.inputIdentity` and
+`semantics.outputIdentity` to distinguish frame-local instances from stable
+track identities where applicable. This metadata is informational: it does not
+reinterpret an existing mask channel or change connection validation or
+execution. Runner behavior, GUI menus and scientific inference are unchanged
+by this API migration.
+
+See [`MODULE_CATALOG.md`](../docs/MODULE_CATALOG.md) for discovery and audit.
+
 ## Execution interface
 
 Modules should be callable without GUI from a pipeline context `ctx`.

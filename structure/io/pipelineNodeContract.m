@@ -534,6 +534,14 @@ end
 end
 
 function contract = applyContractPostRules(contract, node)
+    [owned, usesModuleContract] = applyModuleOwnedContract(contract, node);
+    if usesModuleContract
+        % Saved node.inputs/outputs are compatibility hints. Reassert the
+        % package's actual resources, then restore selector-derived minima.
+        contract = backfillSelectorsFromNodeParams(owned, node);
+        contract.parameters.paths = unique([contract.parameters.paths inferPathKeysFromNodeParams(node)], 'stable');
+        return;
+    end
     nodeType = lower(char(string(getField(node, 'type', ''))));
     pkgName = lower(char(string(getField(node, 'pkg', ''))));
     if strcmp(nodeType, 'classifier') && any(strcmp(pkgName, {'cellposesam','lstm_timeseries'}))
@@ -749,6 +757,16 @@ function contract = enrichContractFromPackage(contract, node)
     funcName = lower(char(string(getField(node, 'func', ''))));
     nodeType = lower(char(string(getField(node, 'type', ''))));
     ensureCustomPackagePath(node);
+
+    [contract, usesModuleContract] = applyModuleOwnedContract(contract, node);
+    if usesModuleContract
+        contract.parameters.paths = unique([contract.parameters.paths inferPathKeysFromNodeParams(node)], 'stable');
+        return;
+    end
+
+    % Frozen compatibility rules for adapters predating moduleContract.
+    % Declared packages above own their semantic rules; new modules must not
+    % add package-specific branches to this historical fallback.
 
     if strcmp(nodeType, 'classifier')
         switch pkgName
@@ -1367,6 +1385,179 @@ function contract = enrichContractFromPackage(contract, node)
 
     contract = applyExecutionSpecContract(contract, node);
     contract.parameters.paths = unique([contract.parameters.paths inferPathKeysFromNodeParams(node)], 'stable');
+end
+
+function [contract, used] = applyModuleOwnedContract(contract, node)
+% Resolve metadata beside the selected executable, never from another copy
+% of the same package later on the MATLAB path (e.g. a development checkout
+% next to an older, frozen inference release).
+used = false;
+nodeType = lower(char(string(getField(node,'type',''))));
+if ~any(strcmp(nodeType,{'classifier','processor'})), return; end
+pkg = char(string(getField(node,'pkg','')));
+if isempty(pkg), return; end
+execute = [pkg '.process'];
+if strcmp(nodeType,'classifier'), execute=[pkg '.classify']; end
+resolved = which(execute);
+if isempty(resolved), return; end
+packageDir = fileparts(resolved);
+manifestFile = fullfile(packageDir,'module.json');
+if ~isfile(manifestFile), return; end
+try
+    fid=fopen(manifestFile,'rb');
+    if fid<0, error('Cannot read module descriptor.'); end
+    cleanup=onCleanup(@()fclose(fid));
+    bytes=fread(fid,Inf,'*uint8');
+    source=native2unicode(bytes(:)','UTF-8');
+    if ~isempty(source) && double(source(1))==65279, source=source(2:end); end
+    manifest=jsondecode(source);
+    clear cleanup;
+catch ME
+    error('pipelineNodeContract:InvalidModuleDescriptor', ...
+        'Cannot read contract declaration in %s: %s',manifestFile,ME.message);
+end
+if ~isstruct(manifest) || ~isscalar(manifest) || ...
+        ~isfield(manifest,'format') || ~isequal(manifest.format,'detecdiv.module.v1')
+    error('pipelineNodeContract:InvalidModuleDescriptor','Expected a detecdiv.module.v1 descriptor in %s.',manifestFile);
+end
+entrypoints=getField(manifest,'entrypoints',struct());
+compatibility=getField(manifest,'compatibility',struct());
+if ~isstruct(entrypoints) || ~isscalar(entrypoints) || ~isstruct(compatibility) || ~isscalar(compatibility)
+    error('pipelineNodeContract:InvalidModuleDescriptor','Invalid metadata sections in %s.',manifestFile);
+end
+contractVersion=getField(compatibility,'pipelineContract','legacy');
+contractFunction=getField(entrypoints,'contract','');
+if isempty(contractFunction) && isequal(contractVersion,'legacy'), return; end
+if ~isequal(contractVersion,'detecdiv.module_contract.v1')
+    error('pipelineNodeContract:UnsupportedModuleContract', ...
+        'Unsupported pipeline contract declaration in %s.',manifestFile);
+end
+declaredPackage=getField(manifest,'package','');
+samePackage=ischar(declaredPackage) && strcmp(declaredPackage,pkg);
+if ispc && ischar(declaredPackage), samePackage=strcmpi(declaredPackage,pkg); end
+declaredExecute=getField(entrypoints,'execute','');
+if ~samePackage || ~validModuleEntrypoint(declaredExecute,pkg) || ...
+        ~isfield(manifest,'type') || ~strcmpi(manifest.type,nodeType)
+    error('pipelineNodeContract:InvalidModuleDescriptor','Package/execution identity mismatch in %s.',manifestFile);
+end
+declaredExecutePath=which(declaredExecute);
+sameExecute=strcmp(declaredExecutePath,resolved);
+if ispc, sameExecute=strcmpi(declaredExecutePath,resolved); end
+if ~sameExecute
+    error('pipelineNodeContract:InvalidModuleDescriptor','Execution entrypoint mismatch in %s.',manifestFile);
+end
+if ~validModuleEntrypoint(contractFunction,pkg)
+    error('pipelineNodeContract:InvalidModuleContract', ...
+        'Declare a contract function belonging to package %s in %s.',pkg,manifestFile);
+end
+contractPath=which(contractFunction);
+if isempty(contractPath)
+    error('pipelineNodeContract:ModuleContractMissing', ...
+        'Declared contract %s is unavailable for %s.',contractFunction,manifestFile);
+end
+actualFolder=char(java.io.File(fileparts(contractPath)).getCanonicalPath());
+expectedFolder=char(java.io.File(packageDir).getCanonicalPath());
+sameFolder=strcmp(actualFolder,expectedFolder);
+if ispc, sameFolder=strcmpi(actualFolder,expectedFolder); end
+if ~sameFolder
+    error('pipelineNodeContract:ModuleContractShadowed', ...
+        'Contract %s resolves to %s, outside selected package %s.', ...
+        contractFunction,contractPath,expectedFolder);
+end
+metadataFunction=getField(entrypoints,'parameters','');
+if ~isempty(metadataFunction)
+    if ~validModuleEntrypoint(metadataFunction,pkg)
+        error('pipelineNodeContract:InvalidModuleDescriptor','Invalid parameter metadata declaration in %s.',manifestFile);
+    end
+    metadataPath=which(metadataFunction);
+    if isempty(metadataPath)
+        error('pipelineNodeContract:ModuleMetadataMissing', ...
+            'Declared parameter metadata %s is unavailable for %s.',metadataFunction,manifestFile);
+    end
+    metadataFolder=char(java.io.File(fileparts(metadataPath)).getCanonicalPath());
+    sameMetadataFolder=strcmp(metadataFolder,expectedFolder);
+    if ispc, sameMetadataFolder=strcmpi(metadataFolder,expectedFolder); end
+    if ~sameMetadataFolder
+        error('pipelineNodeContract:ModuleMetadataShadowed', ...
+            'Parameter metadata %s resolves outside selected package %s.',metadataFunction,expectedFolder);
+    end
+end
+try
+    patch=feval(contractFunction,getField(node,'params',struct()));
+catch ME
+    failure=MException('pipelineNodeContract:ModuleContractFailed', ...
+        'Module contract %s failed: %s',contractFunction,ME.message);
+    throw(addCause(failure,ME));
+end
+validateModuleContractPatch(patch,contractFunction);
+% An explicit array replaces the generic one: union would retain stale masks
+% in probability-only nodes, or generic dataSeries not produced by a module.
+contract.in=patch.in;
+contract.out=patch.out;
+for section={'selectors','parameters','requirements','capabilities','binding'}
+    key=section{1};
+    if isfield(patch,key), contract.(key)=mergeScalarStruct(contract.(key),patch.(key)); end
+end
+contract.resources=mergeResourceStruct(contract.resources,patch.resources);
+contract.summary=char(string(patch.summary));
+if isfield(patch,'semantics'), contract.semantics=patch.semantics; end
+used=true;
+end
+
+function valid = validModuleEntrypoint(value,pkg)
+valid=ischar(value) && isrow(value) && startsWith(value,[pkg '.'],'IgnoreCase',ispc) && ...
+    isvarname(value(numel(pkg)+2:end));
+end
+
+function validateModuleContractPatch(patch, entrypoint)
+required={'format','in','out','resources','summary'};
+if ~isstruct(patch) || ~isscalar(patch) || ~all(isfield(patch,required)) || ...
+        ~isequal(patch.format,'detecdiv.module_contract.v1')
+    error('pipelineNodeContract:InvalidModuleContract', ...
+        '%s must return a scalar detecdiv.module_contract.v1 declaration.',entrypoint);
+end
+allowed=[required {'selectors','parameters','requirements','capabilities','binding','semantics'}];
+if any(~ismember(fieldnames(patch),allowed))
+    error('pipelineNodeContract:InvalidModuleContract','Unknown contract fields returned by %s.',entrypoint);
+end
+for section={'resources','selectors','parameters','requirements','capabilities','binding','semantics'}
+    key=section{1};
+    if isfield(patch,key) && (~isstruct(patch.(key)) || ~isscalar(patch.(key)))
+        error('pipelineNodeContract:InvalidModuleContract','%s.%s must be a scalar structure.',entrypoint,key);
+    end
+end
+if ~ischar(patch.summary) && ~(isstring(patch.summary) && isscalar(patch.summary))
+    error('pipelineNodeContract:InvalidModuleContract','%s.summary must be text.',entrypoint);
+end
+for section={'in','out'}
+    key=section{1};
+    validateDeclaredArray(patch.(key),{'name','type','required','source'},[entrypoint '.' key]);
+    if ~isfield(patch.resources,key)
+        error('pipelineNodeContract:InvalidModuleContract','%s.resources.%s is required.',entrypoint,key);
+    end
+    validateDeclaredArray(patch.resources.(key), ...
+        {'type','role','symbol','param','port','nameParam','required','transfer'}, ...
+        [entrypoint '.resources.' key]);
+end
+end
+
+function validateDeclaredArray(items, fields, location)
+if ~isstruct(items) || ~all(isfield(items,fields))
+    error('pipelineNodeContract:InvalidModuleContract','Invalid port/resource declaration at %s.',location);
+end
+for i=1:numel(items)
+    for k=1:numel(fields)
+        value=items(i).(fields{k});
+        if strcmp(fields{k},'required')
+            valid=isscalar(value) && (islogical(value) || (isnumeric(value) && any(value==[0 1])));
+        else
+            valid=(ischar(value) && (isrow(value) || isempty(value))) || (isstring(value) && isscalar(value));
+        end
+        if ~valid
+            error('pipelineNodeContract:InvalidModuleContract','Invalid %s field at %s.',fields{k},location);
+        end
+    end
+end
 end
 
 function ensureCustomPackagePath(node)

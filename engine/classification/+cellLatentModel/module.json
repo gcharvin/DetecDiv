@@ -9,11 +9,12 @@
   "capabilities": ["tracking", "parentage", "cell-state-inference"],
   "entrypoints": {
     "execute": "cellLatentModel.classify",
-    "parameters": "cellLatentModel.executionSpec"
+    "parameters": "cellLatentModel.executionSpec",
+    "contract": "cellLatentModel.moduleContract"
   },
   "compatibility": {
     "detecdiv": null,
-    "pipelineContract": "legacy"
+    "pipelineContract": "detecdiv.module_contract.v1"
   },
   "provenance": {
     "repository": "https://github.com/gcharvin/DetecDiv.git",

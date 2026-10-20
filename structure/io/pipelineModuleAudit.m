@@ -11,7 +11,7 @@ function [T, diagnostics] = pipelineModuleAudit(varargin)
 
     [inspectContracts, catalogueOptions] = auditOptions(varargin);
     [modules, diagnostics] = detecdiv_modules_list(catalogueOptions{:});
-    rows = cell(numel(modules), 25);
+    rows = cell(numel(modules), 26);
 
     for i = 1:numel(modules)
         module = modules(i);
@@ -66,6 +66,7 @@ function [T, diagnostics] = pipelineModuleAudit(varargin)
         rows{i,23} = module.onPath;
         rows{i,24} = module.resolvedEntrypoint;
         rows{i,25} = strjoin(toCellstr(module.issues), ' | ');
+        rows{i,26} = metadataSummary(module.extensions);
     end
 
     T = cell2table(rows, 'VariableNames', { ...
@@ -75,7 +76,7 @@ function [T, diagnostics] = pipelineModuleAudit(varargin)
         'ModuleId', 'Name', 'Distribution', 'AdapterVersion', ...
         'DescriptorStatus', 'CatalogueStatus', 'SourcePath', 'Root', ...
         'ManifestPath', 'Capabilities', 'Provenance', 'Compatibility', ...
-        'OnPath', 'ResolvedEntrypoint', 'Issues'});
+        'OnPath', 'ResolvedEntrypoint', 'Issues', 'Extensions'});
 end
 
 function [inspectContracts, options] = auditOptions(args)

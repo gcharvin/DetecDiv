@@ -82,6 +82,27 @@ verifyEqual(tc, modules.entrypoint, 'catalogMetrics.process');
 verifyEqual(tc, modules.status, 'ok');
 end
 
+function testNamespacedExtensionsPreserveModuleMetadata(tc)
+packagePath=makeDeclaredPackage(fullfile(tc.TestData.root,'engine','classification'), ...
+    'catalogExtensionProbe','test.extensions','classifier');
+filename=fullfile(packagePath,'module.json');
+manifest=jsondecode(fileread(filename));
+manifest.compatibility.detecdiv=NaN;
+extension=struct('divisionModes',{{'budding','binary_fission'}},'defaultDivisionMode','budding');
+manifest.extensions=struct('hoctModel',extension);
+writeText(filename,jsonencode(manifest));
+[modules,diagnostics]=listFixture(tc);
+verifyNoErrors(tc,diagnostics);
+verifyEqual(tc,modules.extensions.hoctModel.defaultDivisionMode,'budding');
+verifyEqual(tc,modules.extensions.hoctModel.divisionModes(:),{'budding';'binary_fission'});
+verifyEqual(tc,modules.extensions,modules.manifest.extensions);
+manifest.extensions.hoctModel=42;
+writeText(filename,jsonencode(manifest));
+[modules,diagnostics]=listFixture(tc);
+verifyEqual(tc,modules.status,'invalid');
+verifyHasErrorForPath(tc,diagnostics,packagePath);
+end
+
 function testNullAdapterVersionRemainsUnknown(tc)
 packagePath = makeDeclaredPackage(fullfile(tc.TestData.root, 'engine', ...
     'classification'), 'catalogUnversioned', 'test.unversioned', 'classifier');

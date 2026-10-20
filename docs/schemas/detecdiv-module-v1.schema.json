@@ -36,13 +36,19 @@
       "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
       "description": "Discoverable possible capabilities. Effective inputs and outputs depend on node parameters and remain governed by the execution contract."
     },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": {"type": "object"},
+      "description": "Opaque module-specific metadata in named object namespaces, for example extensions.hoctModel. It does not modify execution or the common contract."
+    },
     "entrypoints": {
       "type": "object",
       "additionalProperties": false,
       "required": ["execute"],
       "properties": {
         "execute": { "$ref": "#/$defs/packageFunction" },
-        "parameters": { "$ref": "#/$defs/packageFunction" }
+        "parameters": { "$ref": "#/$defs/packageFunction" },
+        "contract": { "$ref": "#/$defs/packageFunction" }
       }
     },
     "compatibility": {
@@ -56,8 +62,8 @@
           "description": "Declared DetecDiv compatibility constraint. Null means unspecified, not tested compatible with every release."
         },
         "pipelineContract": {
-          "const": "legacy",
-          "description": "v1 pilots retain the existing execution and pipeline contract. A future explicit contract requires a schema update."
+          "enum": ["legacy", "detecdiv.module_contract.v1"],
+          "description": "Legacy resolution or a package-owned semantic declaration; neither changes the execution interface."
         }
       }
     },
@@ -71,6 +77,16 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {"properties": {"compatibility": {"properties": {"pipelineContract": {"const": "detecdiv.module_contract.v1"}}}}},
+      "then": {"properties": {"entrypoints": {"required": ["contract"]}}}
+    },
+    {
+      "if": {"properties": {"entrypoints": {"required": ["contract"]}}},
+      "then": {"properties": {"compatibility": {"properties": {"pipelineContract": {"const": "detecdiv.module_contract.v1"}}}}}
+    }
+  ],
   "$defs": {
     "packageFunction": {
       "type": "string",

@@ -32,10 +32,12 @@ The descriptor fields have the following meanings:
 | `id`, `name`, `type`, `package` | Stable module identity, display name, technical family and canonical MATLAB package |
 | `adapterVersion` | Independently released adapter version, or `null` when versioned with its repository |
 | `summary`, `capabilities` | Description and searchable possible abilities |
+| `extensions.<namespace>` | Optional opaque metadata owned by a module, outside the common interface |
 | `entrypoints.execute` | Existing execution function, declared as text |
 | `entrypoints.parameters` | Optional existing parameter metadata function, declared as text |
+| `entrypoints.contract` | Optional package-owned semantic contract function, declared as text |
 | `compatibility.detecdiv` | Declared compatibility constraint; `null` means unspecified |
-| `compatibility.pipelineContract` | `legacy` while existing execution contracts are retained |
+| `compatibility.pipelineContract` | `detecdiv.module_contract.v1` for the package-owned API below; `legacy` for historical adapters |
 | `provenance.repository`, `provenance.maintainer` | Adapter source repository and optional maintainer |
 
 The two bundled adapters have `adapterVersion: null`: a backend or trained-model
@@ -53,6 +55,76 @@ Distribution and resolved installation paths are determined by the catalog,
 not stored in the descriptor. Moving an installation or using a plugin root
 does not change the module's ID. A plugin mechanism and inclusion in a DetecDiv
 distribution describe different properties.
+
+Module-specific metadata belongs in `extensions`, with an object namespace
+such as `extensions.hoctModel`. HOCT records `divisionModes` and
+`defaultDivisionMode` there. The catalog preserves these values in both
+`modules.extensions` and the original manifest; the audit exposes an
+`Extensions` column. Each namespace must be an object, and unknown top-level
+fields remain invalid. Extension metadata does not configure an execution or
+change the shared semantic contract.
+
+## Package-owned semantic contracts
+
+CellposeSAM, CellLatentModel and HOCT declare their semantic contracts in their
+own packages, alongside their existing execution functions:
+
+```matlab
+contract = cellposesam.moduleContract(params);
+contract = cellLatentModel.moduleContract(params);
+contract = hoctModel.moduleContract(params);
+```
+
+Each API accepts the effective node parameter struct, with an omitted argument
+equivalent to `struct()`, and returns a scalar struct whose `format` is
+`detecdiv.module_contract.v1`. It is a metadata-only operation: it must not
+initialize Python, resolve or load models, inspect or modify ROIs, change the
+MATLAB path, or run inference. `executionSpec` continues to own parameter
+metadata such as keys, defaults, choices and labels; `moduleContract(params)`
+owns the parameter-dependent semantic inputs, outputs and binding rules.
+
+The return value is a patch over the generic classifier contract. Its `in`,
+`out`, `resources.in` and `resources.out` arrays are complete replacement
+arrays, rather than additions to the generic ports/resources. Optional scalar
+sections (`selectors`, `parameters`, `requirements`, `capabilities`, `binding`)
+overlay inherited sections recursively. An explicit empty value clears the
+inherited value; an omitted field inherits it. `format` identifies the API and
+is removed from the normalized pipeline contract.
+
+The manifest declares both the compatibility marker and the function:
+
+```json
+{
+  "entrypoints": {
+    "execute": "cellLatentModel.classify",
+    "parameters": "cellLatentModel.executionSpec",
+    "contract": "cellLatentModel.moduleContract"
+  },
+  "compatibility": {
+    "pipelineContract": "detecdiv.module_contract.v1"
+  }
+}
+```
+
+`pipelineNodeContract` reads the declaration beside the resolved execution
+function, and requires the declared contract to resolve in that same package
+directory. A different checkout's contract cannot supply metadata for the
+selected adapter. Older releases without the declaration retain the existing
+historical fallback. A declared but missing, invalid or shadowed contract raises
+a diagnostic rather than falling back silently.
+
+Known modules recalculate their effective contract from the selected parameters;
+saved pipeline contract metadata does not override it. This preserves existing
+pipeline fields and classifier references without requiring a serialization
+migration. In particular, a missing CellLatentModel backend retains the
+historical `legacy` contract.
+
+The additive `semantics.inputIdentity` and `semantics.outputIdentity` fields
+describe frame-local instance labels or stable track identities. They are
+informational metadata in this revision: they do not reinterpret mask channels
+or add new connection/execution enforcement. The detailed API and compatibility
+rules are also documented in
+[`pipeline_module_contract.md`](../doc/pipeline_module_contract.md).
 
 ## Discovery API
 
@@ -141,11 +213,12 @@ than inspecting metadata from a different installation.
 
 ## Migration boundary
 
-This first catalog revision adds identity, discovery and audit only. The
-existing `classify` signatures, `executionSpec`, pipeline node serialization,
-GUI menus, plugin registration and runtime policies remain in place. The
-`legacy` flag intentionally preserves the current execution-contract status
-until module-owned semantic contracts are introduced separately.
+The catalog provides identity, discovery and audit; the three pilot packages
+now also own their semantic contracts. Existing `classify` signatures,
+`executionSpec`, pipeline node serialization, GUI menus, plugin registration
+and runtime policies remain in place. Historical adapters remain discoverable
+and keep their existing contract fallback. The runner and scientific execution
+functions are unchanged.
 
 The catalog does not alter model release pointers, classifier sources or
 runtime bundles. In particular, the latent model retains its separate

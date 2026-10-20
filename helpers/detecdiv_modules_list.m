@@ -162,7 +162,7 @@ item = struct('id', '', 'name', '', 'type', '', 'pkg', '', 'path', '', ...
     'root', '', 'distribution', '', 'entrypoint', '', ...
     'entrypoints', struct('execute','','parameters',''), 'adapterVersion', '', ...
     'descriptorStatus', 'legacy', 'compatibility', struct(), ...
-    'capabilities', {{}}, 'provenance', struct(), 'manifest', struct(), ...
+    'capabilities', {{}}, 'provenance', struct(), 'extensions', struct(), 'manifest', struct(), ...
     'manifestPath', '', 'summary', '', 'status', 'ok', 'issues', {{}}, ...
     'resolvedEntrypoint', '', 'onPath', false);
 end
@@ -213,10 +213,14 @@ if isfile(descriptor)
         m.compatibility = manifest.compatibility;
         m.capabilities = localPaths(manifest.capabilities);
         m.provenance = manifest.provenance;
+        if isfield(manifest,'extensions'), m.extensions=manifest.extensions; end
         m.entrypoint = manifest.entrypoints.execute;
         m.entrypoints.execute = m.entrypoint;
         if isfield(manifest.entrypoints, 'parameters')
             m.entrypoints.parameters = manifest.entrypoints.parameters;
+        end
+        if isfield(manifest.entrypoints, 'contract')
+            m.entrypoints.contract = manifest.entrypoints.contract;
         end
         if ~strcmp(manifest.package, pkg)
             error('Declared package %s differs from package directory %s.', manifest.package, pkg);
@@ -308,13 +312,16 @@ function problems = localValidate(value, rule, schema, location, shape)
 % No module code or external JSON/Python runtime is needed for this check.
 problems = {};
 refKey = matlab.lang.makeValidName('$ref');
+if isfield(rule,'$ref'), refKey='$ref'; end
 if isfield(rule, refKey)
     pointer = rule.(refKey);
     if ~startsWith(pointer, '#/'), error('Only local descriptor schema references are supported.'); end
     keys = strsplit(pointer(3:end), '/');
     resolvedRule = schema;
     for i=1:numel(keys)
-        resolvedRule = resolvedRule.(matlab.lang.makeValidName(keys{i}));
+        key=keys{i};
+        if ~isfield(resolvedRule,key), key=matlab.lang.makeValidName(key); end
+        resolvedRule = resolvedRule.(key);
     end
     problems = localValidate(value, resolvedRule, schema, location, shape);
     return;
@@ -326,6 +333,20 @@ if isfield(rule, 'type')
 end
 if isfield(rule, 'const') && ~isequal(value, rule.const)
     problems{end+1} = [location ': unsupported value'];
+end
+if isfield(rule,'enum') && ~any(cellfun(@(choice)isequal(value,choice),localPaths(rule.enum)))
+    problems{end+1} = [location ': unsupported value'];
+end
+if isfield(rule,'allOf')
+    for i=1:numel(rule.allOf)
+        if iscell(rule.allOf), subrule=rule.allOf{i}; else, subrule=rule.allOf(i); end
+        problems=[problems localValidate(value,subrule,schema,location,shape)]; %#ok<AGROW>
+    end
+end
+ifKey=matlab.lang.makeValidName('if');
+if isfield(rule,'if'), ifKey='if'; end
+if isfield(rule,ifKey) && isempty(localValidate(value,rule.(ifKey),schema,location,shape)) && isfield(rule,'then')
+    problems=[problems localValidate(value,rule.then,schema,location,shape)];
 end
 if ischar(value)
     if isfield(rule, 'minLength') && numel(value)<rule.minLength
@@ -353,6 +374,11 @@ if strcmp(shape.kind, 'object')
                 [location '.' key],shape.children{i})]; %#ok<AGROW>
         elseif isfield(rule,'additionalProperties') && isequal(rule.additionalProperties,false)
             problems{end+1} = [location '.' key ': unknown field']; %#ok<AGROW>
+        elseif isfield(rule,'additionalProperties') && isstruct(rule.additionalProperties)
+            valueKey=key;
+            if ~isfield(value,valueKey), valueKey=matlab.lang.makeValidName(key); end
+            problems=[problems localValidate(value.(valueKey),rule.additionalProperties,schema, ...
+                [location '.' key],shape.children{i})]; %#ok<AGROW>
         end
     end
 elseif strcmp(shape.kind, 'array')
