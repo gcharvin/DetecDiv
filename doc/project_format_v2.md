@@ -1,5 +1,10 @@
 # DetecDiv project format v2
 
+Related architecture proposal: [DetecDiv Python and per-project database storage](python_project_storage_architecture.md)
+(16 October 2026). It evaluates database-backed metadata and quantitative
+results, external image arrays, and automatic persistence. It does not change
+the current v2 format or its compatibility rules.
+
 ## Motivation
 
 The legacy DetecDiv project file is a MATLAB `.mat` file containing a serialized
