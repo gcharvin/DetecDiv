@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://detecdiv.local/schemas/detecdiv-module-v1.schema.json",
+  "title": "DetecDiv module descriptor v1",
+  "description": "Static identity and discovery metadata for a DetecDiv MATLAB adapter. It does not describe backend installation, weights or scientific validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "id", "name", "type", "package", "adapterVersion", "summary", "capabilities", "entrypoints", "compatibility", "provenance"],
+  "properties": {
+    "format": { "const": "detecdiv.module.v1" },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z][A-Za-z0-9_-]*)+$",
+      "description": "Stable, case-sensitive module identity, independent of installation path."
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "type": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+      "description": "Technical module family, for example classifier or processor."
+    },
+    "package": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "description": "Canonical MATLAB package name, preserving its letter case."
+    },
+    "adapterVersion": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Adapter release version, or null when the adapter is versioned with its containing repository. This is not a backend or weight version."
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+      "description": "Discoverable possible capabilities. Effective inputs and outputs depend on node parameters and remain governed by the execution contract."
+    },
+    "entrypoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execute"],
+      "properties": {
+        "execute": { "$ref": "#/$defs/packageFunction" },
+        "parameters": { "$ref": "#/$defs/packageFunction" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detecdiv", "pipelineContract"],
+      "properties": {
+        "detecdiv": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "description": "Declared DetecDiv compatibility constraint. Null means unspecified, not tested compatible with every release."
+        },
+        "pipelineContract": {
+          "const": "legacy",
+          "description": "v1 pilots retain the existing execution and pipeline contract. A future explicit contract requires a schema update."
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "maintainer": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "packageFunction": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+    }
+  }
+}

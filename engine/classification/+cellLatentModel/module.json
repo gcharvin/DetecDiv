@@ -1,0 +1,22 @@
+{
+  "format": "detecdiv.module.v1",
+  "id": "detecdiv.cellLatentModel",
+  "name": "CellLatentModel",
+  "type": "classifier",
+  "package": "cellLatentModel",
+  "adapterVersion": null,
+  "summary": "Composite latent-cell inference for tracking, mother/NULL parentage and biological states, with legacy backends retained for saved classifiers.",
+  "capabilities": ["tracking", "parentage", "cell-state-inference"],
+  "entrypoints": {
+    "execute": "cellLatentModel.classify",
+    "parameters": "cellLatentModel.executionSpec"
+  },
+  "compatibility": {
+    "detecdiv": null,
+    "pipelineContract": "legacy"
+  },
+  "provenance": {
+    "repository": "https://github.com/gcharvin/DetecDiv.git",
+    "maintainer": "Gilles Charvin"
+  }
+}

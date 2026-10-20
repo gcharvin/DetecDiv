@@ -5,8 +5,9 @@ function report = pipelineModuleSmokeTest()
 % discovered module can expose a contract, defaults can be inspected, and
 % minimal synthetic nodes validate against a representative runtime context.
 
-    audit = pipelineModuleAudit();
-    bad = audit(strcmp(audit.ContractStatus, 'ERROR') | strcmp(audit.SetparamStatus, 'ERROR'), :);
+    audit = pipelineModuleAudit('InspectContracts', true, 'PluginRoots', {});
+    bad = audit(~strcmp(audit.ContractStatus, 'OK') | ...
+        ~ismember(audit.SetparamStatus, {'OK','MISSING'}), :);
     if ~isempty(bad)
         error('pipelineModuleSmokeTest:AuditFailed', ...
             'Module audit failed before smoke validation.');

@@ -1,0 +1,22 @@
+{
+  "format": "detecdiv.module.v1",
+  "id": "detecdiv.cellposesam",
+  "name": "CellposeSAM",
+  "type": "classifier",
+  "package": "cellposesam",
+  "adapterVersion": null,
+  "summary": "CellposeSAM segmentation and cell-probability inference for DetecDiv ROI images, with optional instance-ID propagation.",
+  "capabilities": ["segmentation", "probability-mapping", "instance-id-propagation"],
+  "entrypoints": {
+    "execute": "cellposesam.classify",
+    "parameters": "cellposesam.executionSpec"
+  },
+  "compatibility": {
+    "detecdiv": null,
+    "pipelineContract": "legacy"
+  },
+  "provenance": {
+    "repository": "https://github.com/gcharvin/DetecDiv.git",
+    "maintainer": "Gilles Charvin"
+  }
+}
