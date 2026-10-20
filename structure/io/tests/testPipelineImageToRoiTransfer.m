@@ -48,6 +48,41 @@ verifyFalse(t,ok);
 verifyTrue(t,any(contains(r.errors,'expects at least 6 channel(s)')));
 end
 
+function testDeclaredSourceChannelCellListProjectsWithoutProject(t)
+names = {'ch1--','ch2--','ch3--','ch4--','ch5--','ch6--'};
+assertDeclaredSourceInventory(t,names);
+end
+
+function testDeclaredSourceChannelStringArrayProjectsWithoutProject(t)
+names = ["ch1--" "ch2--" "ch3--" "ch4--" "ch5--" "ch6--"];
+assertDeclaredSourceInventory(t,names);
+end
+
+function assertDeclaredSourceInventory(t,names)
+loader = node('load','dataLoader'); loader.type = 'dataLoader';
+loader.params = struct('channelFilter',{names});
+identify = node('identify','roiManual'); identify.type = 'roiManual';
+extract = node('extract','ddTestExtractionTransfer');
+analysis = node('analysis','ddTestSixChannelConsumer');
+edges(1) = struct('from','load','to','identify', ...
+    'fromPort','images','toPort','images','condition','');
+edges(2) = struct('from','identify','to','extract', ...
+    'fromPort','roiList','toPort','roiList','condition','');
+edges(3) = struct('from','extract','to','analysis', ...
+    'fromPort','roiList','toPort','roiList','condition','');
+pipe = struct('nodes',[loader identify extract analysis],'edges',edges);
+[ok,r] = validatePipeline(pipe,struct(),struct('allowGui',false));
+verifyTrue(t,ok,strjoin(r.errors,' | '));
+expected = cellstr(string(names));
+outputs = r.binding.nodes.load.resources.outputs;
+verifyEqual(t,{outputs.concreteName},expected);
+verifyEqual(t,{outputs.symbol},repmat({'load.channels'},size(expected)));
+verifyTrue(t,all(strcmp({outputs.sourceKind},'sourceInventory')));
+outputs = r.binding.nodes.extract.resources.outputs;
+verifyTrue(t,all(ismember(expected,{outputs.concreteName})));
+verifyTrue(t,all(ismember(expected,r.binding.nodes.analysis.availableChannels)));
+end
+
 function [pipe,ctx] = fixture(producer,count)
 a = node('extract',producer); b = node('analysis','ddTestSixChannelConsumer');
 pipe = struct('nodes',[a b],'edges',struct('from','extract','to','analysis', ...

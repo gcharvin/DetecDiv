@@ -1364,7 +1364,7 @@ function nodeReport = attachResourceBindingReport(nodeReport, node, state)
         if isempty(getField(r, 'type', ''))
             continue;
         end
-        outputReports(end+1) = makeResourceOutput(node, r); %#ok<AGROW>
+        outputReports = [outputReports makeResourceOutput(node, r)]; %#ok<AGROW>
     end
     outputReports = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputReports);
 
@@ -3822,6 +3822,32 @@ end
 
 function out = makeResourceOutput(node, spec)
     nodeId = char(string(getField(node, 'id', '')));
+    % Source inventories declare a collection, not a scalar GUI choice whose
+    % last element is selected. Publish every declared source channel so a
+    % template can project them into ROI channels without a loaded project.
+    if strcmpi(char(string(getField(spec, 'type', ''))), 'channel') && ...
+            strcmpi(char(string(getField(spec, 'port', ''))), 'channels') && ...
+            strcmpi(char(string(getField(spec, 'transfer', ''))), 'sourceInventory')
+        [hasRaw, raw] = resolveResourceRawValue(node, spec);
+        if hasRaw
+            names = unique(normalizeChannelList(raw), 'stable');
+            if ~isempty(names)
+                out = resourceBindingDef();
+                symbol = char(string(getField(spec, 'symbol', 'channels')));
+                if ~contains(symbol, '.'), symbol = [nodeId '.' symbol]; end
+                for i = 1:numel(names)
+                    item = resourceBindingDef('channel', char(string(spec.role)), ...
+                        symbol, names{i}, nodeId, 'channels', ...
+                        char(string(spec.transfer)));
+                    item.param = char(string(getField(spec, 'param', '')));
+                    item.message = sprintf('Node %s provides channel/%s resource "%s".', ...
+                        nodeId, item.role, names{i});
+                    out(end+1) = item; %#ok<AGROW>
+                end
+                return;
+            end
+        end
+    end
     concreteName = resolveResourceOutputName(node, spec);
     symbol = char(string(getField(spec, 'symbol', '')));
     if isempty(symbol)
