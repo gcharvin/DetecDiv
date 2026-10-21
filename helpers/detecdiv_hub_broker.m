@@ -45,10 +45,17 @@ function out = detecdiv_hub_broker(action, varargin)
             if isfield(broker.callbacks, key)
                 callback = broker.callbacks.(key);
                 try
-                    callback(payload);
+                    alive = detecdiv_hub_invoke_callback(callback, payload);
+                    if ~alive
+                        detecdiv_hub_broker('unregister', payload.token);
+                    end
                 catch ME
+                    % A broken/deleted UI must not flood every later UI event.
+                    % Unregister monitoring only; never cancel the Hub job.
+                    detecdiv_hub_broker('unregister', payload.token);
                     warning('detecdiv_hub:brokerCallback', ...
-                        'Hub background callback failed: %s', ME.message);
+                        ['Hub UI monitoring stopped after a callback failure: %s. ' ...
+                         'The server job is unaffected; reopen its run monitor.'], ME.message);
                 end
                 if isfield(payload, 'stop') && logical(payload.stop) && ...
                         isfield(broker.callbacks, key)

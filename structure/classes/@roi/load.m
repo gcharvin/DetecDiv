@@ -498,14 +498,14 @@ for i = 1:N
 
     % Nom logique
     try
-        names{i} = h5readatt(h5File, p, 'channel_name');
+        names{i} = datasetAttribute(dsets(i), 'channel_name', dsets(i).Name);
     catch
         names{i} = dsets(i).Name; % fallback : nom de dataset
     end
 
     % channel_indices attendu (peut être vide/absent/mauvais)
     try
-        ci = h5readatt(h5File, p, 'channel_indices'); ci = ci(:).';
+        ci = datasetAttribute(dsets(i), 'channel_indices', []); ci = ci(:).';
     catch
         ci = [];
     end
@@ -516,12 +516,12 @@ for i = 1:N
 
     rawSz  = size(blkRaw);
     expK   = numel(ci);
-    frameAttr = readAttOrDefault(h5File, p, 'frames', []);
+    frameAttr = datasetAttribute(dsets(i), 'frames', []);
     expT = numel(frameAttr);
     if isempty(expT) || expT < 1
         expT = 1;
     end
-    kAttr = readAttOrDefault(h5File, p, 'num_subchannels', []);
+    kAttr = datasetAttribute(dsets(i), 'num_subchannels', []);
     if isempty(expK) || expK < 1
         if ~isempty(kAttr)
             expK = double(kAttr(1));
@@ -557,21 +557,21 @@ for i = 1:N
 
     % Attributs display
     attrs(i).k         = k;
-    attrs(i).intensity = readAttOrDefault(h5File,p,'display_intensity',[1 1 1]);
-    attrs(i).rgb       = readAttOrDefault(h5File,p,'display_rgb',      [1 1 1]);
-    attrs(i).colorMode = readAttOrDefault(h5File,p,'display_color_mode','rgb');
-    attrs(i).colormapName = readAttOrDefault(h5File,p,'display_colormap_name','');
-    attrs(i).displaylim       = readAttOrDefault(h5File,p,'display_displaylim',      [1 ; 1]);
-    attrs(i).indexed   = readAttOrDefault(h5File,p,'display_indexed',  uint8(0));
-    attrs(i).alpha     = readAttOrDefault(h5File,p,'display_alpha',    1);
-    attrs(i).contour   = readAttOrDefault(h5File,p,'display_contour',  uint8(0));
-    attrs(i).width     = readAttOrDefault(h5File,p,'display_contourwidth', 1);
-    attrs(i).log       = readAttOrDefault(h5File,p,'display_log', uint8(0));
-    attrs(i).frame     = readAttOrDefault(h5File,p,'display_frame', 1);
-    attrs(i).binning   = readAttOrDefault(h5File,p,'display_binning', 1);
-    % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
-    attrs(i).selectedchannel = readAttOrDefault(h5File,p,'display_selectedchannel',1);
-    attrs(i).valueTransform = readValueTransformOrDefault(h5File, p);
+    attrs(i).intensity = datasetAttribute(dsets(i),'display_intensity',[1 1 1]);
+    attrs(i).rgb       = datasetAttribute(dsets(i),'display_rgb',      [1 1 1]);
+    attrs(i).colorMode = datasetAttribute(dsets(i),'display_color_mode','rgb');
+    attrs(i).colormapName = datasetAttribute(dsets(i),'display_colormap_name','');
+    attrs(i).displaylim       = datasetAttribute(dsets(i),'display_displaylim',      [1 ; 1]);
+    attrs(i).indexed   = datasetAttribute(dsets(i),'display_indexed',  uint8(0));
+    attrs(i).alpha     = datasetAttribute(dsets(i),'display_alpha',    1);
+    attrs(i).contour   = datasetAttribute(dsets(i),'display_contour',  uint8(0));
+    attrs(i).width     = datasetAttribute(dsets(i),'display_contourwidth', 1);
+    attrs(i).log       = datasetAttribute(dsets(i),'display_log', uint8(0));
+    attrs(i).frame     = datasetAttribute(dsets(i),'display_frame', 1);
+    attrs(i).binning   = datasetAttribute(dsets(i),'display_binning', 1);
+    % aa=datasetAttribute(dsets(i),'display_selectedchannel',1)
+    attrs(i).selectedchannel = datasetAttribute(dsets(i),'display_selectedchannel',1);
+    attrs(i).valueTransform = readValueTransformOrDefault(dsets(i));
 end
 
 % --- Ordonner : d'abord ceux qui ont un premier index connu, puis les autres (stable) ---
@@ -744,7 +744,7 @@ for i = 1:numel(dsets)
     nm = dsets(i).Name;
     chn = nm;
     try
-        chn = h5readatt(h5File, p, 'channel_name');
+        chn = datasetAttribute(dsets(i), 'channel_name', nm);
     catch
     end
     if strcmpi(chn, chanName) || strcmpi(nm, chanName)
@@ -760,7 +760,7 @@ end
 pTarget = ['/' target.Name];
 
 % --- Lire le bloc + normaliser [H W k T]
-frameAttr = readAttOrDefault(h5File, pTarget, 'frames', []);
+frameAttr = datasetAttribute(target, 'frames', []);
 expT = numel(frameAttr);
 if isempty(expT) || expT < 1
     expT = 1;
@@ -885,20 +885,20 @@ else
 end
 
 % --- Lire les attributs display pour ce canal
-att.intensity  = readAttOrDefault(h5File, pTarget, 'display_intensity',  [1 1 1]);
-att.rgb        = readAttOrDefault(h5File, pTarget, 'display_rgb',        [1 1 1]);
-att.colorMode  = readAttOrDefault(h5File, pTarget, 'display_color_mode', 'rgb');
-att.colormapName = readAttOrDefault(h5File, pTarget, 'display_colormap_name', '');
-att.displaylim = readAttOrDefault(h5File, pTarget, 'display_displaylim', [0; 1]);
-att.indexed    = readAttOrDefault(h5File, pTarget, 'display_indexed',    uint8(0));
-att.alpha      = readAttOrDefault(h5File, pTarget, 'display_alpha',      1);
-att.contour    = readAttOrDefault(h5File, pTarget, 'display_contour',    uint8(0));
-att.width      = readAttOrDefault(h5File, pTarget, 'display_contourwidth', 1);
-att.log        = readAttOrDefault(h5File, pTarget, 'display_log',         uint8(0));
-att.frame      = readAttOrDefault(h5File, pTarget, 'display_frame',      1);
-att.binning    = readAttOrDefault(h5File, pTarget, 'display_binning',    1);
-att.selectedchannel = readAttOrDefault(h5File, pTarget, 'display_selectedchannel', 1);
-att.valueTransform = readValueTransformOrDefault(h5File, pTarget);
+att.intensity  = datasetAttribute(target, 'display_intensity',  [1 1 1]);
+att.rgb        = datasetAttribute(target, 'display_rgb',        [1 1 1]);
+att.colorMode  = datasetAttribute(target, 'display_color_mode', 'rgb');
+att.colormapName = datasetAttribute(target, 'display_colormap_name', '');
+att.displaylim = datasetAttribute(target, 'display_displaylim', [0; 1]);
+att.indexed    = datasetAttribute(target, 'display_indexed',    uint8(0));
+att.alpha      = datasetAttribute(target, 'display_alpha',      1);
+att.contour    = datasetAttribute(target, 'display_contour',    uint8(0));
+att.width      = datasetAttribute(target, 'display_contourwidth', 1);
+att.log        = datasetAttribute(target, 'display_log',         uint8(0));
+att.frame      = datasetAttribute(target, 'display_frame',      1);
+att.binning    = datasetAttribute(target, 'display_binning',    1);
+att.selectedchannel = datasetAttribute(target, 'display_selectedchannel', 1);
+att.valueTransform = readValueTransformOrDefault(target);
 
 
 % --- Mettre à jour uniquement ce qu'il faut dans le display
@@ -1133,10 +1133,22 @@ end
 % end
 % end
 
-function vt = readValueTransformOrDefault(h5File, h5Path)
+function value = datasetAttribute(datasetInfo, name, defaultValue)
+% h5info already contains every attribute value for this load. Reopening a
+% network HDF5 file for each display attribute makes ROI selection very slow.
+% Keep this snapshot local to the load; no stale persistent metadata cache.
+value = defaultValue;
+attributes = datasetInfo.Attributes;
+index = find(strcmp({attributes.Name}, name), 1);
+if ~isempty(index)
+    value = attributes(index).Value;
+end
+end
+
+function vt = readValueTransformOrDefault(datasetInfo)
 vt = rawValueTransform();
 try
-    mode = lower(strtrim(char(string(readAttOrDefault(h5File, h5Path, 'value_mode', 'raw')))));
+    mode = lower(strtrim(char(string(datasetAttribute(datasetInfo, 'value_mode', 'raw')))));
 catch
     mode = 'raw';
 end
@@ -1146,16 +1158,16 @@ end
 
 unit = 'physical';
 try
-    unit = char(string(readAttOrDefault(h5File, h5Path, 'physical_unit', unit)));
+    unit = char(string(datasetAttribute(datasetInfo, 'physical_unit', unit)));
 catch
 end
-physicalMin = readAttOrDefault(h5File, h5Path, 'physical_min', NaN);
-physicalMax = readAttOrDefault(h5File, h5Path, 'physical_max', NaN);
-encodedMin = readAttOrDefault(h5File, h5Path, 'encoded_min', 0);
-encodedMax = readAttOrDefault(h5File, h5Path, 'encoded_max', 65535);
+physicalMin = datasetAttribute(datasetInfo, 'physical_min', NaN);
+physicalMax = datasetAttribute(datasetInfo, 'physical_max', NaN);
+encodedMin = datasetAttribute(datasetInfo, 'encoded_min', 0);
+encodedMax = datasetAttribute(datasetInfo, 'encoded_max', 65535);
 transform = 'linear';
 try
-    transform = char(string(readAttOrDefault(h5File, h5Path, 'physical_transform', transform)));
+    transform = char(string(datasetAttribute(datasetInfo, 'physical_transform', transform)));
 catch
 end
 

@@ -26,6 +26,7 @@ writeFile(fullfile(folder,'detecdiv_hub_broker.m'), [ ...
     "global DETECDIV_TEST_HUB"
     "if strcmp(action,'register') && DETECDIV_TEST_HUB.failMonitor"
     "error('Test:MonitorOffline','Monitor offline'); end"
+    "if strcmp(action,'register'), DETECDIV_TEST_HUB.callback=varargin{3}; end"
     "out='mock-monitor';"
     "end"]);
 addpath(folder,'-begin');
@@ -121,6 +122,10 @@ f.app.RunButton.ButtonPushedFcn(f.app.RunButton,[]);
 verifyEqual(tc,DETECDIV_TEST_HUB.calls,calls);
 verifyEqual(tc,char(f.app.CancelrunButton.Enable),'on');
 verifyEqual(tc,f.run.status,'hub_running');
+verifyTrue(tc,isstruct(DETECDIV_TEST_HUB.callback));
+job=DETECDIV_TEST_HUB.job; job.status='queued';
+verifyTrue(tc,detecdiv_hub_invoke_callback(DETECDIV_TEST_HUB.callback,struct('ok',true,'data',job)));
+verifyEqual(tc,f.run.ctx.hub.status,'queued');
 verifyTrue(tc,contains(strjoin(string(f.app.ConsoleTextArea.Value)), 'No new job was submitted'));
 end
 

@@ -20856,29 +20856,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 'periodSeconds', 3, 'maxIterations', maxIterations);
             app.HubRunMonitorToken = detecdiv_hub_broker('register', ...
                 'run_status', config, ...
-                @(payload)handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring));
-        end
-
-        function handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring)
-            if isempty(app) || ~isvalid(app) || ~strcmp(jobId, app.HubRunMonitorJobId)
-                return;
-            end
-            if ~isstruct(payload) || ~isfield(payload, 'ok')
-                return;
-            end
-            if ~logical(payload.ok)
-                identifier = char(string(payload.errorIdentifier));
-                if isempty(identifier)
-                    identifier = 'detecdiv_hub:BackgroundRequest';
-                end
-                ME = MException(identifier, '%s', char(string(payload.errorMessage)));
-                handleHubRunStatusError(app, ME, showErrors);
-            else
-                applyHubRunStatus(app, payload.data, jobId);
-            end
-            if ~keepMonitoring && strcmp(jobId, app.HubRunMonitorJobId)
-                stopHubRunMonitor(app);
-            end
+                struct('owner', app, 'method', 'handleHubRunStatusPayload', ...
+                    'args', {{jobId, showErrors, keepMonitoring}}));
         end
 
         function applyHubRunStatus(app, job, jobId)
@@ -21108,8 +21087,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isfield(app.CurrentRun.ctx, 'hub') || ~isstruct(app.CurrentRun.ctx.hub)
                     app.CurrentRun.ctx.hub = struct();
                 else
-                    previousJobId = char(string(getField(app.CurrentRun.ctx.hub, 'job_id', '')));
-                    previousStatus = char(string(getField(app.CurrentRun.ctx.hub, 'status', '')));
+                    previousJobId = char(string(getField(app, app.CurrentRun.ctx.hub, 'job_id', '')));
+                    previousStatus = char(string(getField(app, app.CurrentRun.ctx.hub, 'status', '')));
                 end
                 nextJobId = char(string(getField(app, job, 'id', currentHubRunJobId(app))));
                 nextStatus = char(string(getField(app, job, 'status', 'unknown')));
@@ -23780,6 +23759,30 @@ classdef pipeline2 < matlab.apps.AppBase
 
     % App creation and deletion
     methods (Access = public)
+
+        % Broker dispatch uses a public method name, never a saved MLAPP closure.
+        function handleHubRunStatusPayload(app, payload, jobId, showErrors, keepMonitoring)
+            if isempty(app) || ~isvalid(app) || ~strcmp(jobId, app.HubRunMonitorJobId)
+                return;
+            end
+            if ~isstruct(payload) || ~isfield(payload, 'ok')
+                return;
+            end
+            if ~logical(payload.ok)
+                identifier = char(string(payload.errorIdentifier));
+                if isempty(identifier)
+                    identifier = 'detecdiv_hub:BackgroundRequest';
+                end
+                ME = MException(identifier, '%s', char(string(payload.errorMessage)));
+                handleHubRunStatusError(app, ME, showErrors);
+            else
+                applyHubRunStatus(app, payload.data, jobId);
+            end
+            if ~keepMonitoring && strcmp(jobId, app.HubRunMonitorJobId)
+                stopHubRunMonitor(app);
+            end
+        end
+
 
         function configureClassifierInputBindings(app,classif,afterApply)
             app.BindingEditorClassifier=classif;
