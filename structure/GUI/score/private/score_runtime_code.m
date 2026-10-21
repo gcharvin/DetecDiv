@@ -5972,6 +5972,7 @@ end
         % Code that executes after component creation
         function startupFcn(app, roiobj, options, varargin)
             if nargin < 3, options = ''; end
+            detecdiv_frontend_plugins('score', app);
             % App Designer owns the layout; runtime wiring remains centralized
             % here so layout synchronization cannot silently drop callbacks.
             if isprop(app, 'ChannelModeButtonGroup') && ...
