@@ -29,3 +29,33 @@ function testMissingPathStaysEmpty(testCase)
 verifyEmpty(testCase,pipelineRunRawDataPath(struct()));
 verifyEmpty(testCase,pipelineRunRawDataPath(struct('rawDataPath','Project source path not resolved')));
 end
+
+function testMapOverridesWithoutLoaderEntryKeepTemplatePath(testCase)
+ctx.pipelineSpec.nodes = struct('id','loader','type','dataLoader', ...
+    'params',struct('path','template_raw'));
+ctx.run.nodeParams = struct('classifier',struct('model','saved_model'));
+ctx = jsondecode(jsonencode(ctx));
+verifyEqual(testCase,pipelineRunRawDataPath(ctx),'template_raw');
+end
+
+function testMapLoaderOverrideWinsOverTemplateDefault(testCase)
+ctx.pipelineSpec.nodes = struct('id','loader','type','dataLoader', ...
+    'params',struct('path','template_raw'));
+ctx.run.nodeParams.loader = struct('path','selected_raw');
+ctx = jsondecode(jsonencode(ctx));
+verifyEqual(testCase,pipelineRunRawDataPath(ctx),'selected_raw');
+end
+
+function testEmptyMapLoaderOverrideFallsBackToTemplate(testCase)
+ctx.pipelineSpec.nodes = struct('id','loader','type','dataLoader', ...
+    'params',struct('path','template_raw'));
+ctx.run.nodeParams.loader = struct('path','');
+verifyEqual(testCase,pipelineRunRawDataPath(ctx),'template_raw');
+end
+
+function testNodeIdRecordsAreSupported(testCase)
+ctx.pipelineSpec.nodes = struct('id','loader','type','dataLoader', ...
+    'params',struct('path','template_raw'));
+ctx.run.nodeParams = struct('nodeId','loader','params',struct('path','selected_raw'));
+verifyEqual(testCase,pipelineRunRawDataPath(ctx),'selected_raw');
+end

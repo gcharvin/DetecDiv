@@ -89,6 +89,7 @@ classdef detecdiv < matlab.apps.AppBase
         MainGrid matlab.ui.container.GridLayout
         WorkspaceEventListenerId string = ""
         SkipRunDiskRefresh logical = false
+        WorkspaceRefreshDialog = []
         IsHandlingTreeSelection logical = false
 
     end
@@ -1480,7 +1481,8 @@ end
                     else
                         app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening pipeline run editor...');
                     end
-                    RefreshtreewindowMenuSelected(app, []);
+                    % Opening the editor does not change saved runs. Saves
+                    % update the tree through workspaceChanged instead.
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
                 end
@@ -2676,6 +2678,8 @@ end
             end
 
             pipelineRoot = fullfile(projectRoot, 'pipeline');
+            app.updateWorkspaceRefreshProgress(sprintf( ...
+                'Listing project runs...\n%s\nWaiting for storage; network access may take longer.', pipelineRoot));
             if exist(pipelineRoot, 'dir') ~= 7
                 return;
             end
@@ -2703,6 +2707,10 @@ end
             diskRunsLoaded = false;
             for j = 1:numel(listpipe)
                 runPath = fullfile(pipelineRoot, listpipe(j).name);
+                app.updateWorkspaceRefreshProgress(sprintf( ...
+                    ['Loading project run %d/%d: %s\nReading run.json and execution journal.\n' ...
+                    '%s\nWaiting for storage; network access may take longer.'], ...
+                    j, numel(listpipe), listpipe(j).name, runPath));
                 try
                     [runObj, msg] = pipelineRunLoad(runPath);
                     if isempty(runObj)
@@ -3360,6 +3368,22 @@ end
                 end
             catch
             end
+        end
+
+        function updateWorkspaceRefreshProgress(app, message)
+            d = app.WorkspaceRefreshDialog;
+            if isempty(d) || ~isvalid(d)
+                return;
+            end
+            d.Message = message;
+            % Render this stage before a synchronous server read starts.
+            drawnow nocallbacks;
+        end
+
+        function finishWorkspaceRefresh(app)
+            d = app.WorkspaceRefreshDialog;
+            app.WorkspaceRefreshDialog = [];
+            app.safeCloseProgressDialog(d);
         end
 
         function text = describePipelineTemplate(app, pipeObj) %#ok<INUSD>
@@ -6682,6 +6706,8 @@ end
                 return;
             end
             runRoot = fullfile(classiPath, 'pipeline_runs');
+            app.updateWorkspaceRefreshProgress(sprintf( ...
+                'Listing classifier runs...\n%s\nWaiting for storage; network access may take longer.', runRoot));
             if exist(runRoot, 'dir') ~= 7
                 return;
             end
@@ -6702,6 +6728,10 @@ end
 
             for ir = 1:numel(dd)
                 candidate = fullfile(runRoot, dd(ir).name);
+                app.updateWorkspaceRefreshProgress(sprintf( ...
+                    ['Loading classifier run %d/%d: %s\nReading run.json and execution journal.\n' ...
+                    '%s\nWaiting for storage; network access may take longer.'], ...
+                    ir, numel(dd), dd(ir).name, candidate));
                 runJson = fullfile(candidate, 'run.json');
                 if exist(runJson, 'file') ~= 2
                     continue;
@@ -8932,7 +8962,17 @@ end
 
         % Menu selected function: RefreshtreewindowMenu
         function RefreshtreewindowMenuSelected(app, event)
+            if ~isempty(app.WorkspaceRefreshDialog) && isvalid(app.WorkspaceRefreshDialog)
+                return;
+            end
+            app.WorkspaceRefreshDialog = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Refreshing workspace', ...
+                'Message', 'Updating projects and runs from storage...', ...
+                'Indeterminate', 'on');
+            cleanupObj = onCleanup(@()app.finishWorkspaceRefresh()); %#ok<NASGU>
+            app.updateWorkspaceRefreshProgress('Reading workspace projects and runs...');
             gatherVarsFromWorkspace(app);
+            app.updateWorkspaceRefreshProgress('Updating workspace tree...');
             displayNodes(app);
         end
 
@@ -9970,7 +10010,6 @@ end
             if ~isempty(runObj)
                 try
                     app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening run for editing...', 'EditExistingRun', true);
-                    RefreshtreewindowMenuSelected(app, []);
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
                 end
@@ -10078,7 +10117,6 @@ end
             end
             try
                 app.openPipelineEditorWithProgress([], runObj, 'Opening classifier run for editing...', 'EditExistingRun', true);
-                RefreshtreewindowMenuSelected(app, []);
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
             end
@@ -10091,7 +10129,6 @@ end
             end
             try
                 app.openPipelineEditorWithProgress([], runObj, 'Preparing a new run from classifier run...');
-                RefreshtreewindowMenuSelected(app, []);
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'New pipeline run error', 'Icon', 'warning');
             end

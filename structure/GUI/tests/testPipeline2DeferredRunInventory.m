@@ -44,6 +44,24 @@ verifyEqual(tc, char(dropdown.Enable), 'on');
 verifyFalse(tc, contains(lower(string(app.PipelineandRuncheckreportLabel.Text)), 'error'));
 end
 
+function testRunWithLoaderSnapshotAndMapOverridesOpens(tc)
+f = fixture();
+cleanup = onCleanup(@()removeFixture(f)); %#ok<NASGU>
+% A full saved graph includes the loader even when this run only processes
+% existing ROIs and has no loader override (as in daughter_lineage_9).
+loader = struct('id','loader','type','dataLoader','params',struct('path',''));
+f.run.ctx.pipelineSpec = struct('nodes',loader,'edges',struct([]));
+savedParams = f.run.ctx.run.nodeParams;
+app = pipeline2(f.project, f.run, 'EditExistingRun', true);
+appCleanup = onCleanup(@()delete(app)); %#ok<NASGU>
+app.UIFigure.Visible = 'off';
+verifyEqual(tc, f.run.ctx.run.nodeParams, savedParams);
+verifyEqual(tc, size(app.UISelectedModuleTable.Data,1), 2);
+verifyEqual(tc, app.RuntimeFramesEditField.Value, '1,2');
+verifyEqual(tc, char(bindingDropdown(app, 'disk_only_mask').Enable), 'on');
+verifyEmpty(tc, f.roi.data.data);
+end
+
 function testOpeningInputListsDiscoversDiskChannelsAndVariablesWithoutChangingBindings(tc)
 f = fixture();
 cleanup = onCleanup(@()removeFixture(f)); %#ok<NASGU>

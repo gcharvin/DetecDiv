@@ -17,13 +17,16 @@ if isfield(ctx,'pipelineSpec') && isstruct(ctx.pipelineSpec) && isfield(ctx.pipe
     nodes = ctx.pipelineSpec.nodes;
     for i = 1:numel(nodes)
         if ~isfield(nodes,'type') || ~strcmpi(nodes(i).type,'dataLoader'), continue; end
-        if isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'nodeParams')
-            overrides = ctx.run.nodeParams;
-            for j = 1:numel(overrides)
-                if strcmp(overrides(j).id,nodes(i).id) && isfield(overrides(j),'params') ...
-                        && isstruct(overrides(j).params) && isfield(overrides(j).params,'path')
-                    candidates{end+1} = overrides(j).params.path; %#ok<AGROW>
-                end
+        if isfield(nodes,'id') && ~isempty(nodes(i).id) && ...
+                isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'nodeParams')
+            % Runs store overrides either by node ID or as id/params records.
+            % Resolve both through the execution helper, on an empty params
+            % copy so an empty override still falls back to the template.
+            overridden = nodes(i);
+            overridden.params = struct();
+            overridden = pipelineApplyRunNodeParams(overridden, ctx.run.nodeParams);
+            if isfield(overridden.params,'path')
+                candidates{end+1} = overridden.params.path; %#ok<AGROW>
             end
         end
         if isfield(nodes,'params') && isstruct(nodes(i).params) && isfield(nodes(i).params,'path')
