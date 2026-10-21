@@ -56,6 +56,7 @@ dataset=struct('schemaVersion',1,'parameters',p,'classes',{classes},'features',s
 folder=fullfile(classif.path,'trainingdataset');if ~isfolder(folder),mkdir(folder);end
 filename=fullfile(folder,'lstm_timeseries_dataset.mat');save(filename,'dataset','-v7.3');
 out=lstm_timeseries.result('format');out.artifacts.dataset=filename;
-out.metrics=struct('trainingSequences',nnz(isTrain),'validationSequences',nnz(~isTrain));
+out.metrics=struct('outputCount',numel(samples),'outputUnit','sequences', ...
+    'trainingSequences',nnz(isTrain),'validationSequences',nnz(~isTrain));
 out.provides={'NumericSequenceTrainingSet'};
 end

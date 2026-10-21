@@ -2287,6 +2287,19 @@ function text = compactCoverageText(app, components, reviewed, total) %#ok<INUSD
     text = char(strjoin(parts, ' '));
 end
 
+function indices = selectedTestRoiIndices(app)
+    % Table rows may be filtered/reordered: column 3 owns the ROI identity.
+    data=app.UITableData.Data;indices=[];
+    if isempty(data)
+        try,indices=app.Data.classiObj.dataset.split.test;catch,end
+    else
+        checked=cellfun(@(value)isequal(value,true)||isequal(value,1),data(:,2));
+        indices=cell2mat(data(checked,3)).';
+    end
+    indices=unique(double(indices(:).'),'stable');
+    indices=indices(isfinite(indices)&indices>=1&indices<=numel(app.Data.classiObj.roi));
+end
+
 function indices = selectedAnnotationRoiIndices(app)
     indices = [];
     try
@@ -3455,11 +3468,15 @@ end
 
             % gather the test set.
 
-            selectedfortest=find(cellfun(@(x) x==0,app.UITableData.Data(:,1)));
+            selectedfortest=selectedTestRoiIndices(app);
+            if isempty(selectedfortest)
+                uialert(app.ClassifierUIFigure,'Select at least one test ROI in the Dataset tab.','No test ROI','Icon','warning');
+                return;
+            end
             try
                 if strcmpi(char(string(classiObj.classifierPkg)), 'sam31') || ...
                         strcmpi(char(string(classiObj.classifyFun)), 'sam31.classify')
-                    sam31.displayValidationRuns(classiObj, selectedfortest');
+                    sam31.displayValidationRuns(classiObj, selectedfortest);
                     return;
                 end
             catch ME
@@ -3468,7 +3485,11 @@ end
                     'SAM31 validation runs', 'Icon', 'error');
                 return;
             end
-            classiObj.stats('Confusion','Classes','Rois',selectedfortest','Force');
+            try
+                classiObj.stats('Confusion','Classes','Rois',selectedfortest,'Force');
+            catch ME
+                uialert(app.ClassifierUIFigure,ME.message,'Statistics unavailable','Icon','error');
+            end
         end
 
         % Menu selected function: ValidateclassifierusingtestsetMenu
@@ -3476,13 +3497,10 @@ end
 
             classiObj=app.Data.classiObj;
 
-            testRois = [];
-            try
-                if ~isempty(app.UITableData.Data)
-                    testRois = find(cellfun(@(x) isequal(x, 1) || isequal(x, true), app.UITableData.Data(:,2)));
-                end
-            catch
-                testRois = [];
+            testRois = selectedTestRoiIndices(app);
+            if isempty(testRois)
+                uialert(app.ClassifierUIFigure,'Select at least one test ROI in the Dataset tab.','No test ROI','Icon','warning');
+                return;
             end
 
             try
@@ -3766,7 +3784,10 @@ end
     end
 
     if nExport > 0
-        if isstruct(output) && isfield(output, 'metrics') && ...
+        if isstruct(output) && isfield(output,'metrics') && isfield(output.metrics,'trainingSequences')
+            d.Message=sprintf('%d training sequences and %d validation sequences were exported. The classifier is ready to be trained.', ...
+                output.metrics.trainingSequences,output.metrics.validationSequences);
+        elseif isstruct(output) && isfield(output, 'metrics') && ...
                 isfield(output.metrics, 'outputCount')
             d.Message = sprintf('%d training frame(s) were exported; the classifier is ready to be trained!', ...
                 nExport);
@@ -3787,6 +3808,9 @@ end
     displayProperties(app);
     alertTitle = 'Success';
     alertIcon = 'success';
+    if nExport<=0
+        alertTitle='No training data exported';alertIcon='warning';
+    end
     if isstruct(output) && isfield(output, 'metrics') && ...
             isfield(output.metrics, 'skippedInputChannelRois') && ...
             ~isempty(output.metrics.skippedInputChannelRois)

@@ -58,6 +58,26 @@ validation and test ROI must be disjoint. If validation ROI are unspecified,
 ROI. Test ROI are never formatted. Every class must occur in the actual training
 subset. The exported dataset records the exact split and sequence frames.
 
+After training, check **Select for testing** on the held-out ROI, then use
+**Validate classifier** to open and run the inference pipeline. Finally,
+**Display classifier statistics** compares its stored predictions with reviewed
+GT on those test ROI. Filtering/reordering the ROI table preserves ROI identity.
+Formatting reports training and validation *sequence* counts, rather than an
+image count; its output is one MAT dataset.
+
+Statistics count one example per frame, complete fixed window, or bounded
+video, according to `outputMode`. Repeated per-frame window predictions count
+only once. Unreviewed/undefined GT and incomplete units are excluded. Missing
+predictions produce an instruction to run validation first. The display includes
+the confusion matrix and per-class precision, recall, F1 and support; exported
+reports also retain ROI IDs and absolute frame bounds for every evaluated unit.
+For headless evaluation/export use:
+
+```matlab
+[score, fig] = lstm_timeseries.statistics(classif, 'Rois', testRoiIndices, ...
+    'Confusion', 'Classes', 'Silent', 'Export', fullfile(reportFolder, 'validation'));
+```
+
 ## Pipeline
 
 The node exposes `featureCount` input bindings of type `dataSeriesVariable`.

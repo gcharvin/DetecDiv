@@ -119,6 +119,8 @@ if strcmp(mode,'video')
     end
 end
 out=c.formatDataForTraining();d=load(out.artifacts.dataset);d=d.dataset;
+verifyEqual(testCase,out.metrics.outputCount,numel(d.samples));
+verifyEqual(testCase,out.metrics.outputUnit,'sequences');
 verifyTrue(testCase,isempty(intersect(d.trainRoiIndices,d.validationRoiIndices)));
 verifyFalse(testCase,any([d.samples.roiIndex]==4));
 out=lstm_timeseries.train(c,struct());verifyTrue(testCase,isfile(out.artifacts.model));
@@ -138,6 +140,10 @@ end
 c.classifyData(c.roi(4),'Ctx',struct('io',struct('saveMode','defer')));
 verifyNotEmpty(testCase,c.roi(4).data(2).data.id);
 verifyEqual(testCase,c.roi(4).data(2).data.id_training,old.id_training);
+c.stats('Rois',4,'Force','Silent');
+expected=8;if strcmp(mode,'window'),expected=2;elseif strcmp(mode,'video'),expected=1;end
+verifyEqual(testCase,c.score.N,expected);
+verifyEqual(testCase,sum(c.score.confusion,'all'),expected);
 if strcmp(mode,'frame')
     app=classifierOpenValidationPipeline(c,'Rois',4,'ExecutionTarget','local');
     closeApp=onCleanup(@()delete(app)); %#ok<NASGU>
@@ -153,6 +159,45 @@ if strcmp(mode,'frame')
     verifyEmpty(testCase,parameterControl(dialog,'featureCount'));
     verifyEmpty(testCase,parameterControl(dialog,'featureColumn2'));
 end
+end
+
+function testStatisticsUseReviewedOutputUnitsAndExport(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+ds=c.roi(4).data(2);ds.data.labels=categorical(ones(8,1),1:2,c.classes);c.roi(4).data(2)=ds;
+[s,fig]=lstm_timeseries.statistics(c,'Rois',4,'Confusion','Classes','Silent','Export',fullfile(c.path,'test_validation'));
+closeFig=onCleanup(@()delete(fig)); %#ok<NASGU>
+verifyEqual(testCase,s.N,2);verifyEqual(testCase,s.accuracy,0.5);
+verifyEqual(testCase,s.confusion,[1 0;1 0]);verifyEqual(testCase,s.classes(2).support,1);
+verifyEqual(testCase,s.classes(2).recall,0);verifyEqual(testCase,s.classes(2).fscore,0);
+verifyTrue(testCase,isfile(fullfile(c.path,'test_validation_statistics.png')));
+verifyEqual(testCase,height(readtable(fullfile(c.path,'test_validation_predictions.csv'))),2);
+session=c.annotationSession(4);session.markUnreviewed('Frames',8,'Save',false);
+s=lstm_timeseries.statistics(c,'Rois',4,'Silent');verifyEqual(testCase,s.N,1);
+c.trainingParam.outputMode='frame';s=lstm_timeseries.statistics(c,'Rois',4,'Silent');verifyEqual(testCase,s.N,7);
+session.markReviewed('Frames',8,'Save',false);
+c.trainingParam.outputMode='video';ds=c.roi(4).data(2);ds.data.labels_training(:)=categorical({'dead'},c.classes);
+c.roi(4).data(2)=ds;s=lstm_timeseries.statistics(c,'Rois',4,'Silent');verifyEqual(testCase,s.N,1);verifyEqual(testCase,s.accuracy,0);
+end
+
+function testStatisticsRequirePredictionsAndReviewedTestUnits(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+verifyError(testCase,@()lstm_timeseries.statistics(c,'Rois',4),'lstm_timeseries:MissingPredictions');
+ds=c.roi(4).data(2);ds.data.labels=ds.data.labels_training;c.roi(4).data(2)=ds;
+session=c.annotationSession(4);session.markUnreviewed('Frames',1:8,'Save',false);
+verifyError(testCase,@()lstm_timeseries.statistics(c,'Rois',4),'lstm_timeseries:NoEvaluationSamples');
+end
+
+function testClassifierGUIStatisticsUseFilteredRoiIdentities(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+ds=c.roi(4).data(2);ds.data.labels=ds.data.labels_training;c.roi(4).data(2)=ds;
+app=classifierGUI(c);closeApp=onCleanup(@()delete(app)); %#ok<NASGU>
+closePlots=onCleanup(@()close(findall(0,'Type','figure','Name','Numeric LSTM validation statistics'))); %#ok<NASGU>
+cb=app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;cb(app.SettrainingandvalidationsetROIsTab,[]);
+rows=app.UITableData.Data;row=find(cellfun(@(v)isequal(v,4),rows(:,3)),1);
+app.UITableData.Data=rows(row,:);
+cb=app.DisplayclassifierstatisticsButton.ButtonPushedFcn;cb(app.DisplayclassifierstatisticsButton,[]);
+verifyEqual(testCase,c.score.roiIndices,4);verifyEqual(testCase,c.score.N,8);
 end
 function control=parameterControl(fig,key)
 control=[];objects=findall(fig);
@@ -294,6 +339,9 @@ end
 end
 function testClassifierGUIDynamicFeatureBindings(testCase)
 [c,cleanup]=fixture(); %#ok<ASGLU>
+% Deferred Pipeline2 inventories reopen ROI data from the classifier's
+% persisted snapshot, just as they do for imported production ROI.
+for k=1:numel(c.roi),c.roi(k).save('data',false);end
 app=classifierGUI(c);finish=onCleanup(@()delete(app)); %#ok<NASGU>
 cb=app.SettrainingparametersTab.ButtonDownFcn;cb(app.SettrainingparametersTab,[]);drawnow;
 t=app.UITableParam.Data;verifyFalse(testCase,any(startsWith(string(t.Param),'feature')));
@@ -301,12 +349,16 @@ verifyTrue(testCase,any(contains(string(app.TypeDropDown.Items),'lstm_timeseries
 buttons=findall(app.ClassifierUIFigure,'Type','uibutton');
 verifyTrue(testCase,any(strcmp({buttons.Text},'Configure inputs in Pipeline2...')));
 editor=lstm_timeseries.openInputBindings(c);closeEditor=onCleanup(@()delete(editor)); %#ok<NASGU>
-verifyEmpty(testCase,findall(editor.UIFigure,'Tag','NumericComponent_feature1'));
+% Pipeline2 discovers the ROI schema only when a selector is opened. The
+% initial controls retain saved components until that inventory is known.
 component=findall(editor.UIFigure,'Tag','NumericComponent_feature2');
 verifyNotEmpty(testCase,component);verifyEqual(testCase,component(1).Value,2);
+cb=component(1).DropDownOpeningFcn;cb(component(1),[]);drawnow;
+verifyEqual(testCase,component(1).ItemsData,1:2);
 verifyFalse(testCase,contains(string(editor.PipelineandRuncheckreportLabel.Text),'Missing inputs'));
 variable=findall(editor.UIFigure,'Tag','NumericVariable_feature2');variable=variable(1);
 variable.Value='a';cb=variable.ValueChangedFcn;cb(variable,[]);drawnow;
+verifyEmpty(testCase,findall(editor.UIFigure,'Tag','NumericComponent_feature1'));
 verifyEmpty(testCase,findall(editor.UIFigure,'Tag','NumericComponent_feature2'));
 variable=findall(editor.UIFigure,'Tag','NumericVariable_feature2');variable=variable(1);
 variable.Value='b';cb=variable.ValueChangedFcn;cb(variable,[]);drawnow;
