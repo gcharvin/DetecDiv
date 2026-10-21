@@ -142,6 +142,7 @@ classdef pipeline2 < matlab.apps.AppBase
         RoiManualPreviewListeners cell = {}
         RoiManualSelectedRectangle double = NaN
         ActiveRunMode char = ''
+        RunLaunchInProgress logical = false
         ActiveRunCancelRequested logical = false
         HubRunMonitorToken char = ''
         HubRunMonitorJobId char = ''
@@ -5924,7 +5925,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             setRuntimeArtifactButtonsEnabled(app, true);
-            try, app.RunButton.Enable = 'on'; catch, end
+            try, app.RunButton.Enable = ternary(app, ~app.RunLaunchInProgress && isempty(app.ActiveRunMode), 'on', 'off'); catch, end
             try, app.SmokeTestButton.Enable = 'on'; catch, end
 
             projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
@@ -6262,7 +6263,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             try
-                app.RunButton.Enable = ternary(app, ~tf, 'on', 'off');
+                app.RunButton.Enable = ternary(app, ~tf && ~app.RunLaunchInProgress && isempty(app.ActiveRunMode), 'on', 'off');
             catch
             end
             try, app.CancelrunButton.Enable = ternary(app, tf, 'on', 'off'); catch, end
@@ -20033,6 +20034,40 @@ classdef pipeline2 < matlab.apps.AppBase
             tf = ~isempty(strtrim(app.ActiveRunMode));
         end
 
+        function finishRunLaunch(app)
+            app.RunLaunchInProgress = false;
+            if app.RuntimeModeUnlocked && ~app.BatchPrototypeMode && ...
+                    ~app.HubRunUiLocked && isempty(app.ActiveRunMode)
+                app.RunButton.Enable = 'on';
+            else
+                app.RunButton.Enable = 'off';
+            end
+        end
+
+        function resumed = resumeExistingHubRun(app, runObj, hub)
+            resumed = false;
+            job = detecdiv_hub_find_active_pipeline_run(runObj, app.CurrentProject, hub);
+            if isempty(job), return; end
+            % Reattach in memory; the worker owns the persisted run now.
+            if ~isstruct(runObj.ctx), runObj.ctx = struct(); end
+            if ~isfield(runObj.ctx,'hub') || ~isstruct(runObj.ctx.hub)
+                runObj.ctx.hub = hub;
+            end
+            runObj.ctx.hub.job_id = char(string(job.id));
+            runObj.ctx.hub.status = char(string(job.status));
+            runObj.status = ['hub_' char(string(job.status))];
+            runObj = annotateHubRunControl(app, runObj, job);
+            app.CurrentRun = runObj;
+            app.CurrentRunIsSeed = false;
+            attachCurrentRunToProject(app, runObj);
+            startHubRunMonitor(app, runObj, job);
+            message = sprintf('Run already submitted: %s\nFollowing existing Hub job %s in Monitor. No new job was submitted.', ...
+                char(string(runObj.runId)), char(string(job.id)));
+            setRuntimeStatus(app, message);
+            appendMonitorConsole(app, message);
+            resumed = true;
+        end
+
         function startLocalRunControl(app, runObj) %#ok<INUSD>
             app.ActiveRunMode = 'local_process';
             app.ActiveRunCancelRequested = false;
@@ -20054,7 +20089,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.ActiveRunMode = '';
             app.ActiveRunCancelRequested = false;
             app.RunButton.Text = char(string(buttonText));
-            app.RunButton.Enable = 'on';
+            app.RunButton.Enable = ternary(app, ~app.RunLaunchInProgress && app.RuntimeModeUnlocked, 'on', 'off');
             app.CancelrunButton.Text = 'Cancel run...';
             app.CancelrunButton.Enable = 'off';
             drawnow limitrate;
@@ -20187,8 +20222,10 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 startHubRunStatusWorker(app, jobId, false, Inf);
             catch ME
-                stopHubRunMonitor(app);
-                uialert(app.UIFigure, ME.message, 'Hub monitor failed', 'Icon', 'warning');
+                % A monitor connection failure cannot make the accepted job
+                % safe to submit again. Keep its identity and launch lock.
+                appendMonitorConsole(app, ['[monitor] Status connection unavailable: ' ME.message]);
+                setRuntimeStatus(app, ['Hub job accepted: ' jobId '. Monitor connection unavailable; use Refresh status to retry.']);
             end
         end
 
@@ -21358,7 +21395,8 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function [job, runObj] = submitHubRunWithLockResolution(app, runObj, hub)
+        function [job, runObj, alreadySubmitted] = submitHubRunWithLockResolution(app, runObj, hub)
+            alreadySubmitted = false;
             submitArgs = {'hub', hub, ...
                 'SaveProject', true, ...
                 'ProjectResolveInitialWaitSec', 0, ...
@@ -21369,10 +21407,25 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj, app.CurrentProject, submitArgs{:});
                 return;
             catch ME
-                if ~isHubProjectLockedException(app, ME)
-                    rethrow(ME);
-                end
                 originalError = ME;
+            end
+
+            % The server may have accepted POST even if its response or the
+            % following local save failed. Resolve that outcome before retry.
+            try
+                job = detecdiv_hub_find_active_pipeline_run(runObj, app.CurrentProject, hub);
+            catch
+                rethrow(originalError);
+            end
+            if ~isempty(job)
+                runObj.ctx.hub.job_id = char(string(job.id));
+                runObj.ctx.hub.status = char(string(job.status));
+                runObj.status = ['hub_' char(string(job.status))];
+                alreadySubmitted = true;
+                return;
+            end
+            if ~isHubProjectLockedException(app, originalError)
+                rethrow(originalError);
             end
 
             % The first submission attempt releases this MATLAB session's own
@@ -22747,6 +22800,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function RunButtonPushed(app, event) %#ok<INUSD>
+            if app.RunLaunchInProgress
+                return;
+            end
             if ~isempty(app.BindingEditorClassifier)
                 uialert(app.UIFigure,'Use Apply inputs, then save and train from Classifier GUI.','Input bindings only');return;
             end
@@ -22756,11 +22812,25 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             if isRunCancellationButtonActive(app)
-                requestActiveRunCancellation(app);
+                % A queued second Run callback must never cancel or relaunch.
+                app.MainTabGroup.SelectedTab = app.MonitorTab;
                 return;
             end
+            app.RunLaunchInProgress = true;
+            app.RunButton.Enable = 'off';
+            launchCleanup = onCleanup(@()finishRunLaunch(app)); %#ok<NASGU>
             if ~ensureRuntimeModeUnlocked(app)
                 return;
+            end
+            if strcmp(runtimeExecutionTarget(app), 'hub') && ~app.CurrentRunIsSeed && ~isempty(app.CurrentRun)
+                try
+                    hub = ensureHubSessionFromUi(app, hubSettingsFromUi(app));
+                    if resumeExistingHubRun(app, app.CurrentRun, hub), return; end
+                catch ME
+                    setRuntimeStatus(app, ['Unable to verify existing Hub execution: ' ME.message]);
+                    uialert(app.UIFigure, ME.message, 'Check existing Hub run', 'Icon', 'warning');
+                    return;
+                end
             end
             app.RunButton.Text = 'Run !';
             if ~ensurePipelineSavedForRun(app)
@@ -22953,22 +23023,32 @@ classdef pipeline2 < matlab.apps.AppBase
                     saveHubLocalSec = toc(saveHubLocalTimer);
                     updateRunSaveProgress(app, d, 'Hub launch: exporting bundle and creating job...', 0.76);
                     submitTimer = tic;
-                    [job, runObj] = submitHubRunWithLockResolution(app, runObj, hub);
+                    [job, runObj, alreadySubmitted] = submitHubRunWithLockResolution(app, runObj, hub);
                     submitSec = toc(submitTimer);
                     runObj = annotateHubRunControl(app, runObj, job);
-                    logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
-                    logRunEvent(app, runObj, sprintf(['Launch timings: build %.3fs, run object %.3fs, save preflight %.3fs, ' ...
-                        'dry-run %.3fs, save dry-run %.3fs, hub session %.3fs, path preflight %.3fs, ' ...
-                        'save local %.3fs, submit %.3fs, total %.3fs.'], ...
-                        buildExecSec, createConfirmedSec, saveConfirmedSec, dryRunSec, saveDrySec, ...
-                        hubSessionSec, pathPreflightSec, saveHubLocalSec, submitSec, toc(launchTimer)), 'timing');
-                    updateRunSaveProgress(app, d, 'Hub launch: saving submitted job state...', 0.94);
-                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub job state...', false);
-                    clearRuntimeDataSeriesCache(app);
-                    updateRuntimeResourceInventory(app);
-                    appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
-                    setRuntimeStatus(app, formatHubRunStatusText(app, job, runObj));
+                    app.CurrentRun = runObj;
                     startHubRunMonitor(app, runObj, job);
+                    if alreadySubmitted
+                        appendMonitorConsole(app, sprintf( ...
+                            'Run already submitted. Following Hub job %s; no new job was submitted.', char(string(job.id))));
+                    end
+                    % Submission has succeeded. Local UI/save errors must not
+                    % turn an accepted execution into a failed/blocked run.
+                    try
+                        logRunEvent(app, runObj, 'Hub execution attached to Monitor.', 'pipeline2');
+                        logRunEvent(app, runObj, sprintf(['Launch timings: build %.3fs, run object %.3fs, save preflight %.3fs, ' ...
+                            'dry-run %.3fs, save dry-run %.3fs, hub session %.3fs, path preflight %.3fs, ' ...
+                            'save local %.3fs, submit %.3fs, total %.3fs.'], ...
+                            buildExecSec, createConfirmedSec, saveConfirmedSec, dryRunSec, saveDrySec, ...
+                            hubSessionSec, pathPreflightSec, saveHubLocalSec, submitSec, toc(launchTimer)), 'timing');
+                        updateRunSaveProgress(app, d, 'Hub launch: saving submitted job state...', 0.94);
+                        savePipelineRunAndProject(app, runObj, d, 'Saving Hub job state...', false);
+                        appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
+                        setRuntimeStatus(app, formatHubRunStatusText(app, job, runObj));
+                    catch postSubmitError
+                        appendMonitorConsole(app, ['[client] Job accepted; local update failed: ' postSubmitError.message]);
+                        setRuntimeStatus(app, formatHubRunStatusText(app, job, runObj));
+                    end
                 else
                     if ~isempty(d), d.Message = 'Submitting local MATLAB process run...'; end
                     ctxRun = ctx;
@@ -23014,6 +23094,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 wasCancelled = isPipelineCancelException(app, ME);
                 wasHubIndexQueued = isHubProjectIndexQueuedException(app, ME);
                 wasHubProjectLocked = isHubProjectLockedException(app, ME);
+                if wasHubProjectLocked && ~isempty(runObj)
+                    try
+                        hub = ensureHubSessionFromUi(app, hubSettingsFromUi(app));
+                        if resumeExistingHubRun(app, runObj, hub)
+                            try, close(d); catch, end
+                            return;
+                        end
+                    catch recoveryError
+                        appendMonitorConsole(app, ['[monitor] Unable to resolve existing job: ' recoveryError.message]);
+                    end
+                end
                 if wasCancelled
                     fullReport = ['Pipeline run stopped by user: ' ME.message];
                     fprintf('\n==================== Pipeline run stopped ====================\n%s\n==================== end Pipeline run stopped ====================\n\n', fullReport);
