@@ -341,6 +341,28 @@ verifyEmpty(testCase, c.dataset.split.val);
 verifyEmpty(testCase, c.dataset.split.test);
 end
 
+function testNumericAnnotationSelectionRemainsAvailable(testCase)
+folder=tempname;mkdir(folder);finish=onCleanup(@()removeFolder(folder)); %#ok<NASGU>
+c=classi(folder,'ui_numeric_selection',1,'InitTraining',false);
+lstm_timeseries.ensureClassMetadata(c);c.classes={'budding','dead'};
+c.trainingParam=lstm_timeseries.setparam();
+c.roi=[localGuiTestRoi('R1',c.path) localGuiTestRoi('R2',c.path)];
+c.trainingset=1;c.dataset.split=struct('train',1,'val',[],'test',2);
+app=classifierGUI(c);closeApp=onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
+cb=app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;cb(app.SettrainingandvalidationsetROIsTab,[]);
+verifyEqual(testCase,char(app.AnnotateselectedROIButton.Enable),'on');
+verifyEqual(testCase,app.UITableData.Selection,[1 3]);
+app.UITableData.Selection=[1 3;2 3];cb=app.UITableData.CellSelectionCallback;
+cb(app.UITableData,struct('Indices',[1 3;2 3]));
+verifyEqual(testCase,char(app.AnnotateselectedROIButton.Enable),'on');
+cb=app.UITableData.CellEditCallback;cb(app.UITableData,struct('Indices',[2 1],'NewData',true));
+verifyEqual(testCase,app.Data.selected,2);verifyEqual(testCase,app.UITableData.Selection,[2 3]);
+verifyEqual(testCase,char(app.AnnotateselectedROIButton.Enable),'on');
+verifyEqual(testCase,c.trainingset,[1 2]);
+cb=app.RefreshAnnotationStatusButton.ButtonPushedFcn;cb(app.RefreshAnnotationStatusButton,[]);
+verifyEqual(testCase,app.UITableData.Selection,[2 3]);
+end
+
 function r = localGuiTestRoi(id, folder)
 r = roi(id, [1 1 4 4]);
 r.path = folder;

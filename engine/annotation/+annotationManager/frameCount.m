@@ -1,5 +1,7 @@
 function count = frameCount(roiObj)
 %ANNOTATIONMANAGER.FRAMECOUNT Determine ROI length without requiring full load.
+persistent imageCounts
+if isempty(imageCounts),imageCounts=containers.Map('KeyType','char','ValueType','any');end
 
 count = 0;
 try
@@ -15,12 +17,24 @@ try
         if count==0,count=dataFrameCount(roiObj);end
         return;
     end
-    info = h5info(h5File);
+    stamp=dir(h5File);signature=[];
+    if ~isempty(stamp),signature=[stamp(1).bytes stamp(1).datenum];end
+    if ~isempty(signature)&&isKey(imageCounts,h5File)
+        cached=imageCounts(h5File);
+        if isequal(cached.signature,signature)
+            count=max(count,cached.count);return;
+        end
+    end
+    info = h5info(h5File);diskMaximum=0;
     for i = 1:numel(info.Datasets)
-        datasetPath = ['/' info.Datasets(i).Name];
         diskCount = 0;
         try
-            storedFrames = double(h5readatt(h5File, datasetPath, 'frames'));
+            % h5info already materialized attribute values. Reopening the
+            % network file once per channel adds seconds to every UI action.
+            attributes=info.Datasets(i).Attributes;
+            index=find(strcmp({attributes.Name},'frames'),1);
+            storedFrames=[];
+            if ~isempty(index),storedFrames=double(attributes(index).Value);end
             storedFrames = storedFrames(isfinite(storedFrames));
             if ~isempty(storedFrames)
                 if any(storedFrames == 0) && ~any(storedFrames < 0)
@@ -40,7 +54,12 @@ try
                 diskCount = 1;
             end
         end
-        count = max(count, diskCount);
+        diskMaximum=max(diskMaximum,diskCount);
+    end
+    count=max(count,diskMaximum);
+    if diskMaximum>0&&~isempty(signature)
+        if imageCounts.Count>=512,remove(imageCounts,keys(imageCounts));end
+        imageCounts(h5File)=struct('signature',signature,'count',diskMaximum);
     end
 catch
     % Keep a trustworthy in-memory count when disk metadata is unavailable.

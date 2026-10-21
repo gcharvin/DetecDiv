@@ -68,28 +68,11 @@ try
 catch
 end
 
-% check if processor is already open in the workspace
-varlist=evalin('base','who');
-for i=1:numel(varlist)
-
-    if strcmp(varlist{i},'ans')
-        continue;
-    end
-
-    tmp=evalin('base',varlist{i});
-    if isa(tmp,'classi')
-        % check path & filenemae
-        %   path,file
-        %   a=tmp.path, b=tmp.strid
-
-        if strcmp(path,tmp.path(1:end-1)) & strcmp(file, [tmp.strid  '_classification']) % var exists already
-            msg=['Classification is already in the workspace under the var name:' varlist{i} '; I will take take this classifier as loaded...'];
-            disp(msg);
-            classiObj=tmp;
-            return
-        end
-    end
-end
+% An explicit load must reflect the saved membership and annotations. An
+% older same-path handle in the base workspace can still contain deleted
+% ROIs; substituting it here silently undoes a user's save/reopen operation.
+% Existing open editors retain their own handles; the caller receives the
+% independently loaded snapshot and the path selected on this workstation.
 
 
 if isunix || ismac

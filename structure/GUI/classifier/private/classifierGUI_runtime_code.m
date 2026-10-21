@@ -1810,6 +1810,13 @@ function displayData(app, annotationScanMode) % displays rois in the table
         ~isempty(globalBounds));
 
     t    = app.UITableData;
+    selectedIds={};
+    try
+        selectedRows=unique(t.Selection(:,1),'stable');
+        selectedRows=selectedRows(selectedRows>=1&selectedRows<=size(t.Data,1));
+        selectedIds=t.Data(selectedRows,4);
+    catch
+    end
     Data = {};
     annotationRows = struct([]);
     if ~app.roiTableInitialized && ~isempty(app.annotationInitialRows) && ...
@@ -2023,6 +2030,19 @@ function displayData(app, annotationScanMode) % displays rois in the table
         app.Data.annotationVisibleRoiIndices = [];
     else
         app.Data.annotationVisibleRoiIndices = cell2mat(Data(:, 3)).';
+    end
+    % Training/test checkboxes configure the split; the highlighted row is
+    % the active annotation target. Keep that target across table refreshes.
+    activeRows=[];
+    if ~isempty(Data)
+        activeRows=find(ismember(string(Data(:,4)),string(selectedIds)));
+        if isempty(activeRows)&&~app.roiTableInitialized,activeRows=1;end
+    end
+    if isempty(activeRows)
+        t.Selection=[];app.Data.selected=[];
+    else
+        t.Selection=[activeRows(:) repmat(3,numel(activeRows),1)];
+        app.Data.selected=cell2mat(Data(activeRows,3)).';
     end
     app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
     updateAnnotationActionState(app);
@@ -2290,7 +2310,7 @@ function indices = selectedAnnotationRoiIndices(app)
     indices = indices(isfinite(indices) & indices >= 1 & indices <= nRoi);
 end
 
-function updateAnnotationActionState(app)
+function updateAnnotationActionState(app, indices)
     hasRois = false;
     try
         rois = app.Data.classiObj.roi;
@@ -2304,9 +2324,16 @@ function updateAnnotationActionState(app)
     app.AnnotateselectedROIButton.Enable = 'off';
     if ~hasRois, return; end
 
-    indices = selectedAnnotationRoiIndices(app);
+    if nargin<2,indices = selectedAnnotationRoiIndices(app);end
     if isempty(indices), return; end
-    app.AnnotateselectedROIButton.Enable = localOnOff(app, numel(indices) == 1);
+    numeric=strcmpi(char(string(app.Data.classiObj.classifierPkg)),'lstm_timeseries');
+    app.AnnotateselectedROIButton.Enable = localOnOff(app, numel(indices) == 1||numeric);
+    app.AnnotateselectedROIButton.Tooltip = ...
+        'Open the highlighted ROI. Training/test checkboxes configure the dataset split.';
+    if numeric&&numel(indices)>1
+        app.AnnotateselectedROIButton.Tooltip = ...
+            'Open the first selected ROI; use the ROI selector in the numeric annotation window to navigate.';
+    end
     app.GenerateDraftButton.Enable = 'on';
 end
 
@@ -3272,6 +3299,9 @@ end
             setClassifierTrainingSelection(app, trainIdx);
             checkStatus(app,false);
             refreshTrainingSelectionTable(app);
+            app.UITableData.Selection=[row 3];
+            app.Data.selected=roiIndex;
+            updateAnnotationActionState(app,roiIndex);
          
 
 
@@ -3280,6 +3310,9 @@ end
         % Button pushed function: AnnotateselectedROIButton
         function AnnotateselectedROIButtonPushed(app, event)
             sel = selectedAnnotationRoiIndices(app);
+            if ~isempty(sel)&&strcmpi(char(string(app.Data.classiObj.classifierPkg)),'lstm_timeseries')
+                sel=sel(1);
+            end
             if numel(sel) ~= 1
                 uialert(app.ClassifierUIFigure,'First select an ROI!','Error')
                 return;
@@ -3322,13 +3355,13 @@ end
         % Cell selection callback: UITableData
         function UITableDataCellSelection(app, event)
             indices = event.Indices;
-            if numel(indices)
-                row = indices(1);
-                if row <= size(app.UITableData.Data,1)
-                    app.Data.selected = double(app.UITableData.Data{row,3});
-                end
+            app.Data.selected=[];
+            if ~isempty(indices)
+                rows=unique(indices(:,1),'stable');
+                rows=rows(rows>=1&rows<=size(app.UITableData.Data,1));
+                app.Data.selected=cell2mat(app.UITableData.Data(rows,3)).';
             end
-            updateAnnotationActionState(app);
+            updateAnnotationActionState(app,app.Data.selected);
         end
 
         % Button pushed function: ImportROIsButton
@@ -3368,17 +3401,8 @@ end
 
 
     % Récupérer toutes les lignes sélectionnées dans le UITable
-    indices = app.UITableData.Selection;   % [n x 2] (row, col)
-    if isempty(indices)
-        return
-    end
-    selectedRows = unique(indices(:,1));
-    selectedRows = selectedRows(selectedRows >= 1 & ...
-        selectedRows <= size(app.UITableData.Data,1));
-    sel = zeros(1, numel(selectedRows));
-    for i = 1:numel(selectedRows)
-        sel(i) = double(app.UITableData.Data{selectedRows(i),3});
-    end
+    sel=selectedAnnotationRoiIndices(app);
+    if isempty(sel),return;end
 
     classiObj = app.Data.classiObj;
     nRoi = numel(classiObj.roi);
