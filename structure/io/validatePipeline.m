@@ -1145,10 +1145,16 @@ function nodeReport = evaluateNodeBinding(node, state)
 
     symbolicChannelCollectionSelected = hasSymbolicChannelCollectionSelection(node, binding, selectors);
     symbolicResourceSelected = hasSymbolicResourceSelection(node, binding, selectors);
+    % A typed upstream resource occupies a channel slot even before its
+    % physical name is resolved. Its existence/type is checked separately by
+    % attachResourceBindingReport; mixed symbolic/concrete inputs must count
+    % both slots (for example, segmentation plus a named BF channel).
+    symbolicSlotCount = sum(cellfun(@isSymbolicResourceBinding, configuredChannels));
     configuredChannels = configuredChannels(~isSymbolicChannelSelectionCell(configuredChannels));
     configuredChannels = expandChannelPatternSelections(configuredChannels, availableChannels);
     allChannelsSelected = isAllChannelSelection(configuredChannels) || symbolicChannelCollectionSelected;
     if allChannelsSelected
+        symbolicSlotCount = 0;
         if ~isempty(availableChannels)
             configuredChannels = availableChannels;
         else
@@ -1196,12 +1202,13 @@ function nodeReport = evaluateNodeBinding(node, state)
     end
 
     if ~isempty(configuredChannels)
+        configuredCount = numel(configuredChannels) + symbolicSlotCount;
         missingChoices = 0;
         if ~isempty(exactCount)
-            missingChoices = exactCount - numel(configuredChannels);
-            if numel(configuredChannels) > exactCount
+            missingChoices = exactCount - configuredCount;
+            if configuredCount > exactCount
                 status = 'invalid';
-                message = ['Node ' char(string(node.id)) ' selects ' num2str(numel(configuredChannels)) ...
+                message = ['Node ' char(string(node.id)) ' selects ' num2str(configuredCount) ...
                     ' channel(s), but the contract expects exactly ' num2str(exactCount) '.'];
             elseif missingChoices > 0
                 if ~isempty(availableChannels) && numel(availableChannels) < exactCount
@@ -1216,7 +1223,7 @@ function nodeReport = evaluateNodeBinding(node, state)
             else
                 [status, message] = validateConfiguredChannelSelection(node, scope, requiredCount, configuredChannels, availableChannels, state);
             end
-        elseif numel(configuredChannels) < requiredCount
+        elseif configuredCount < requiredCount
             if ~isempty(availableChannels) && numel(availableChannels) < requiredCount
                 status = 'invalid';
                 message = ['Node ' char(string(node.id)) ' requires at least ' num2str(requiredCount) ...
@@ -1224,7 +1231,7 @@ function nodeReport = evaluateNodeBinding(node, state)
             else
                 status = classifyUnresolvedBinding(binding, availableChannels);
                 message = ['Node ' char(string(node.id)) ' needs at least ' num2str(requiredCount) ...
-                    ' selected channel(s), but only ' num2str(numel(configuredChannels)) ' are configured.'];
+                    ' selected channel(s), but only ' num2str(configuredCount) ' are configured.'];
             end
         else
             [status, message] = validateConfiguredChannelSelection(node, scope, requiredCount, configuredChannels, availableChannels, state);

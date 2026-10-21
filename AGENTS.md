@@ -301,6 +301,21 @@ Preferred logical output families:
 - Existing data policy must be controllable (`replace`, `append`, `skip`, `error`, `upsert`).
 - GUI completion of missing params is acceptable, but backend execution must remain callable without GUI.
 
+## HOCT releases shared with Cell-ACDC
+
+Gilles required on 2026-10-21 that the HOCT release mechanism always remain
+harmonized between DetecDiv and Cell-ACDC. New deployments must use the same
+immutable host-neutral `hoct-model` package, source commit, wheel, runtime,
+weights and checksum-verified `release.json`. Do not create a separate DetecDiv
+Python/model distribution or independent numerical version series.
+DetecDiv supplies only a MATLAB adapter, versioned by its Git commit and
+packaged without Python code or weights. Validate both integrations against
+the exact common release before distributing it. Preserve historical releases
+and pinned runs; authorized channel updates and rollbacks must select a common
+release identity without rebuilding immutable artifacts.
+The canonical implementation and release procedure live in the sibling
+`hoct_model` repository, in `AGENTS.md` and `docs/third_party_integration.md`.
+
 ## 10. Latent-model runtime packaging — fixed v1 contract
 
 Before changing or packaging `cell_latent_model`, read

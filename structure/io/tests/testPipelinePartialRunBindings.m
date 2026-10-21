@@ -35,6 +35,24 @@ verifyEqual(testCase, {specs(logical([specs.required])).param}, ...
 verifyFalse(testCase, any(strcmp({specs.param}, 'trackChannelName')));
 end
 
+function testFullRunCountsMixedSymbolicAndConcreteChannelSlots(testCase)
+[pipe, ctx] = fixture();
+ctx.run = struct();
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+verifyTrue(testCase,ok,strjoin(validation.errors,' | '));
+binding = validation.binding.nodes.classifier_celllatentmodel_5;
+verifyFalse(testCase,ismember(binding.status,{'needs_user_binding','needs_run_binding'}));
+verifyFalse(testCase,any(contains(validation.warnings,'still needs 1 more channel')));
+end
+
+function testFullRunStillRejectsMissingSymbolicProducer(testCase)
+[pipe, ctx] = fixture(); ctx.run = struct();
+pipe.nodes(2).params.instanceChannelName = '@resource:segmentation:missing_classifier';
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+verifyFalse(testCase,ok);
+verifyNotEmpty(testCase,validation.errors);
+end
+
 function testExplicitRunOverrideReplacesTemplateSymbol(testCase)
 [pipe, ctx] = fixture();
 ctx.run.nodeParams = struct('id', pipe.nodes(2).id, ...
