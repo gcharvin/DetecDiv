@@ -171,7 +171,11 @@ end
 
 function testSessionOwnsPerRoiTrainingBounds(testCase)
 [~, c, ~] = maskFixture(testCase);
+% This contract requires the entire selected interval to be reviewed.
+% Cellpose's package contract deliberately accepts partial frame review.
+c.classifierPkg = '';
 session = c.annotationSession(1);
+verifyFalse(testCase, session.Spec.allowPartialApproval);
 
 verifyEmpty(testCase, session.frameBounds());
 verifyEqual(testCase, session.uiContext().frameBoundsText, 'all');
@@ -209,6 +213,48 @@ verifyEqual(testCase, session.uiContext().frameBoundsText, 'all');
 verifyEqual(testCase,session.summary().coverage.total,3);
 verifyFalse(testCase,session.validate().valid, ...
     'Returning to all must expose the still-unreviewed frame.');
+end
+
+function testBoundsChangesInvalidateApprovalWithoutExpandingReviewedFrames(testCase)
+[~, c, ~] = maskFixture(testCase);
+session = c.annotationSession(1);
+verifyTrue(testCase, session.Spec.allowPartialApproval);
+session.setFrameBounds('2:3');
+session.bootstrap();
+session.markReviewed();
+verifyTrue(testCase, session.validate().valid);
+
+% Partial contracts may remain Ready when inspected over the complete ROI,
+% but this never authorizes the untouched first frame for training.
+fullSummary = annotationManager.inspect(c.roi(1), session.Spec);
+verifyEqual(testCase, fullSummary.status, 'approved');
+verifyEqual(testCase, fullSummary.coverage.reviewed, 2);
+verifyEqual(testCase, fullSummary.coverage.total, 3);
+
+session.clearFrameBounds();
+summary = session.summary();
+verifyEqual(testCase, summary.status, 'draft');
+verifyEqual(testCase, summary.validationStatus, 'not_run');
+verifyEmpty(testCase, summary.entry.approved_hash);
+verifyEmpty(testCase, summary.entry.approved_at);
+verifyEqual(testCase, summary.entry.review(1).frames, [false true true]);
+reopened = c.annotationSession(1);
+verifyEqual(testCase, reopened.LastValidationStatus, 'not_run');
+verifyTrue(testCase, reopened.validate().valid, ...
+    'Partial approval must still accept the reviewed subset after revalidation.');
+selection = annotationManager.reviewedFramesForClassifier(c, 1);
+verifyEqual(testCase, selection.roi1, 2:3);
+
+% Moving the bounds to an unreviewed frame must also discard the previous
+% approval, and the new scope cannot pass validation.
+reopened.setFrameBounds('1:1');
+summary = reopened.summary();
+verifyEqual(testCase, summary.status, 'draft');
+verifyEqual(testCase, summary.validationStatus, 'not_run');
+verifyEmpty(testCase, summary.entry.approved_hash);
+verifyFalse(testCase, reopened.validate().valid);
+selection = annotationManager.reviewedFramesForClassifier(c, 1);
+verifyEmpty(testCase, selection.roi1);
 end
 
 function testChangedFramesReviewOnlyFrameUnits(testCase)

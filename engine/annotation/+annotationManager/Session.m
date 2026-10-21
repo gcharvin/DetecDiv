@@ -361,6 +361,16 @@ classdef Session < handle
                 [entry, found] = annotationManager.entryForSpec( ...
                     obj.Roi, obj.Spec);
                 if ~found, return; end
+                % Approval is scoped to the interval that was validated.
+                % Leaving it approved makes inspect() and a reopened session
+                % restore "valid" even after the validation fields are reset.
+                % Keep the GT and review mask; only a new validation may
+                % authorize the changed bounds.
+                if strcmp(char(string(entry.status)), 'approved')
+                    entry.status = 'draft';
+                end
+                entry.approved_at = '';
+                entry.approved_hash = '';
                 entry = annotationManager.resetValidationState(entry);
                 annotationManager.setEntry(obj.Roi, obj.Spec, entry);
             catch
