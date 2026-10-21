@@ -93,6 +93,7 @@ classdef pipeline2 < matlab.apps.AppBase
         ModuleCatalogueItems struct = struct([])
         ModuleCatalogueDiagnostics struct = struct([])
         ModuleCataloguePackagePaths cell = {}
+        ModuleCatalogueFromCache logical = false
         IsRefreshingTabs logical = false
         ModuleTabRefreshSuspended logical = false
         ModuleTabRefreshBatchDepth double = 0
@@ -173,9 +174,12 @@ classdef pipeline2 < matlab.apps.AppBase
     methods (Access = private)
 
         function startupFcn(app)
+            reportPipelineOpenStage(app, sprintf(['Loading installed modules...\n' ...
+                'Checking module locations. Network storage may take longer.']));
             app.UIFigure.Name = guiAppName(app);
             app.AvailableModules = defaultModuleLibrary(app);
 
+            reportPipelineOpenStage(app, 'Preparing editor controls...');
             configureControls(app);
             refreshAvailableModuleTable(app);
             refreshSelectedModuleTable(app);
@@ -208,6 +212,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj = arg;
                 elseif ischar(arg) || isstring(arg)
                     argPath = char(string(arg));
+                    reportPipelineOpenStage(app, 'Reading saved pipeline or run...', argPath);
                     if exist(argPath, 'file') == 2
                         try
                             [~, ~, ext] = fileparts(argPath);
@@ -243,6 +248,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 (~hasPipelineContext || hasExplicitRuntimeContext);
 
             if shouldBindStartupProject
+                reportPipelineOpenStage(app, 'Linking the loaded project...');
                 projectVarFallback = 'shallowObj';
                 if isfield(opts, 'projectVarName') && ~isempty(strtrim(opts.projectVarName))
                     projectVarFallback = opts.projectVarName;
@@ -259,6 +265,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if ~isempty(runObj) && isa(runObj, 'pipelineRun')
                 if isempty(pipeObj)
+                    reportPipelineOpenStage(app, 'Locating the pipeline template for this run...');
                     [pipeFromRun, msg] = resolvePipelineFromRunForUi(app, runObj);
                     if isempty(pipeFromRun)
                         uialert(app.UIFigure, msg, 'Open pipeline run', 'Icon', 'warning');
@@ -270,6 +277,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                     end
                 end
+                reportPipelineOpenStage(app, 'Restoring saved run settings...');
                 loadRunIntoUi(app, runObj);
                 if ~isfield(opts, 'editExistingRun') || ~logical(opts.editExistingRun)
                     markCurrentRunAsSeed(app, runObj);
@@ -279,6 +287,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeStatus(app, sprintf('Editing existing run: %s\nRun/Save updates this run configuration.', char(string(runObj.runId))));
                 end
             end
+            reportPipelineOpenStage(app, 'Applying run selections and execution settings...');
             applyStartupRuntimeOptions(app, opts);
             setRuntimeModeUnlocked(app, (~isempty(runObj) && isa(runObj, 'pipelineRun')) || opts.unlockRuntime);
         end
@@ -622,7 +631,9 @@ classdef pipeline2 < matlab.apps.AppBase
             % every historical/recent location. Preserve the historical
             % full-graph preference used by partial runs.
             directPaths = projectPipelineTemplatePathsForRun(app, runObj, false);
-            directPaths = [directPaths runSnapshotPaths];
+            % The run's exact reference is preferable to several speculative
+            % project paths, each of which may incur a network timeout.
+            directPaths = unique([runSnapshotPaths directPaths], 'stable');
             templateId = runTemplateIdForUi(app, runObj);
             for iPath = 1:numel(directPaths)
                 candidatePath = char(string(directPaths{iPath}));
@@ -632,6 +643,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 candidatePath = expandRunPipelineTemplatePaths(app, {candidatePath});
                 candidatePath = fliplr(candidatePath); % mapped local path first
                 for iLocal = 1:numel(candidatePath)
+                    reportPipelineOpenStage(app, 'Reading the pipeline template...', candidatePath{iLocal});
                     [candidate, ~] = pipelineLoad(candidatePath{iLocal});
                     if isempty(candidate) || (~isempty(templateId) && ...
                             ~strcmpi(char(string(candidate.strid)), templateId))
@@ -646,6 +658,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
             end
+            reportPipelineOpenStage(app, 'Searching other saved template locations...');
             candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) ...
                 classifierPipelineTemplatePathsForRun(app, runObj) ...
                 recentPipelineTemplatePathsForRun(app, runObj) ...
@@ -847,6 +860,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             for i = 1:numel(candidatePaths)
                 candidate = char(string(candidatePaths{i}));
+                reportPipelineOpenStage(app, 'Checking another pipeline template...', candidate);
                 [pipe, loadMsg] = pipelineLoad(candidate);
                 if isempty(pipe)
                     if ~isempty(loadMsg)
@@ -927,7 +941,11 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             paths{end+1} = fullfile(projectRoot, 'pipeline.json'); %#ok<AGROW>
-            if ~discoverFolders || exist(projectRoot, 'dir') ~= 7
+            if ~discoverFolders
+                return;
+            end
+            reportPipelineOpenStage(app, 'Searching the project folder for its pipeline template...', projectRoot);
+            if exist(projectRoot, 'dir') ~= 7
                 return;
             end
             d = dir(fullfile(projectRoot, '*', 'pipeline.json'));
@@ -988,6 +1006,7 @@ classdef pipeline2 < matlab.apps.AppBase
             for i = 1:numel(recent)
                 candidate = char(string(recent{i}));
                 try
+                    reportPipelineOpenStage(app, 'Checking a recent pipeline template...', candidate);
                     [pipeObj, ~] = pipelineLoad(candidate);
                     if ~isempty(pipeObj) && isa(pipeObj, 'pipeline') && strcmpi(char(string(pipeObj.strid)), templateId)
                         paths{end+1} = candidate; %#ok<AGROW>
@@ -1249,13 +1268,38 @@ classdef pipeline2 < matlab.apps.AppBase
             app.MonitorEtaSeconds = NaN;
         end
 
-        function modules = defaultModuleLibrary(app)
+        function modules = defaultModuleLibrary(app, forceRefresh)
+            if nargin < 2, forceRefresh = false; end
+            persistent cachedKey cachedModules cachedItems cachedDiagnostics
+            root = repoRoot(app);
+            if ispc
+                preferenceFile = fullfile(prefdir, 'Detecdiv', 'userprefs.mat');
+            else
+                preferenceFile = fullfile(getenv('HOME'), 'Detecdiv', 'userprefs.mat');
+            end
+            stamp = dir(preferenceFile);
+            stampText = '';
+            if ~isempty(stamp), stampText = sprintf('%.15g:%d', stamp.datenum, stamp.bytes); end
+            key = jsonencode({root, path, app.ModuleCataloguePackagePaths, stampText});
+            if ~forceRefresh && isequal(cachedKey, key)
+                reportPipelineOpenStage(app, 'Using the cached module catalogue...');
+                modules = cachedModules;
+                app.ModuleCatalogueItems = cachedItems;
+                app.ModuleCatalogueDiagnostics = cachedDiagnostics;
+                app.ModuleCatalogueFromCache = true;
+                return;
+            end
             [modules, app.ModuleCatalogueItems, app.ModuleCatalogueDiagnostics] = ...
-                detecdiv_modules_ui('Root', repoRoot(app), ...
+                detecdiv_modules_ui('Root', root, ...
                 'PackagePaths', app.ModuleCataloguePackagePaths);
             modules(end+1,:) = {'Custom function', 'custom', 'customModule', ...
                 'Call a user MATLAB function with declared inputs, outputs and parameters'};
             modules(end+1,:) = customPackageModuleRow(app);
+            cachedKey = key;
+            cachedModules = modules;
+            cachedItems = app.ModuleCatalogueItems;
+            cachedDiagnostics = app.ModuleCatalogueDiagnostics;
+            app.ModuleCatalogueFromCache = false;
         end
 
         function rows = customPackageModuleRow(app) %#ok<INUSD>
@@ -1280,7 +1324,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.UIWorkspacePipelineTable.Data = app.AvailableModules;
         end
 
-        function tf = moduleCatalogueRowCanAdd(app, row)
+        function tf = moduleCatalogueRowCanAdd(app, row, verifyPath)
+            if nargin < 3, verifyPath = true; end
             tf = false;
             if row < 1 || row > size(app.AvailableModules, 1)
                 return;
@@ -1291,6 +1336,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             item = app.ModuleCatalogueItems(row);
             if ~item.canAdd
+                return;
+            end
+            if app.OpeningPipeline || ~verifyPath
+                % Menu construction repeats this check for every module in
+                % several menus. Discovery already checked the entrypoints;
+                % recheck live paths when the user actually selects a module.
+                tf = true;
                 return;
             end
             resolved = which(item.module.entrypoint);
@@ -1982,7 +2034,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         'MenuSelectedFcn', createCallbackFcn(app, @ModuleLibraryMenuSelected, true));
                     item.UserData = struct('action', char(string(action)), ...
                         'nodeType', nodeType, 'pkg', pkg, 'catalogueRow', idx);
-                    if ~moduleCatalogueRowCanAdd(app, idx)
+                    if ~moduleCatalogueRowCanAdd(app, idx, false)
                         item.Enable = 'off';
                     end
                 end
@@ -2068,7 +2120,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function refreshModuleCatalogue(app)
-            app.AvailableModules = defaultModuleLibrary(app);
+            app.AvailableModules = defaultModuleLibrary(app, true);
             refreshAvailableModuleTable(app);
             rebuildModulesMenu(app);
             rebuildModuleContextMenus(app);
@@ -4701,6 +4753,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(inputPath)
                 return;
             end
+            reportPipelineOpenStage(app, 'Locating the saved project...', inputPath);
             projectFilePath = resolveProjectFilePath(app, inputPath);
             if isempty(projectFilePath) || exist(projectFilePath, 'file') ~= 2
                 if showWarnings
@@ -4711,6 +4764,7 @@ classdef pipeline2 < matlab.apps.AppBase
             d = openRuntimeProgress(app, 'Project', 'Loading DetecDiv project...');
             try
                 drawnow limitrate;
+                reportPipelineOpenStage(app, 'Reading project metadata...', projectFilePath);
                 [shallowObj, msg] = shallowLoad(projectFilePath);
                 if isempty(shallowObj)
                     error('pipeline2:ProjectLoadFailed', '%s', msg);
@@ -4728,6 +4782,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             closeRuntimeProgress(app, d);
+        end
+
+        function reportPipelineOpenStage(app, messageText, sourcePath)
+            if ~app.OpeningPipeline, return; end
+            if nargin >= 3 && ~isempty(sourcePath)
+                messageText = sprintf(['%s\n%s\n\n' ...
+                    'Waiting for file access. Network storage may take longer.'], ...
+                    messageText, char(string(sourcePath)));
+            end
+            updateRuntimeProgress(app, [], messageText);
+            if nargin >= 3 && ~isempty(sourcePath)
+                % Flush before a potentially blocking filesystem operation;
+                % keep ordinary local UI updates throttled.
+                drawnow nocallbacks;
+            end
         end
 
         function d = openRuntimeProgress(app, titleText, messageText)
@@ -4758,6 +4827,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function updateRuntimeProgress(app, d, messageText) %#ok<INUSD>
+            if app.OpeningPipeline && strcmp(getenv('DETECDIV_PIPELINE_OPEN_TRACE'), '1')
+                fprintf('[pipeline2/open] %s\n', char(string(messageText)));
+            end
             setRuntimeStatus(app, messageText);
             try
                 target = d;
@@ -4963,7 +5035,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~hasChannels
                     continue;
                 end
-                candidates = fovSourcePathCandidates(app, fovs(i));
+                % This is an existence-in-metadata check, not an inventory.
+                % One saved source is sufficient, even for very long movies.
+                candidates = fovSourcePathCandidates(app, fovs(i), 1);
                 candidates = normalizeSourcePathCandidates(app, candidates);
                 candidates = candidates(~cellfun(@isempty, candidates));
                 if ~isempty(candidates)
@@ -15583,6 +15657,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function [ok, report] = refreshValidationReportWithOutput(app)
+            if app.ModuleCatalogueFromCache
+                refreshModuleCatalogue(app);
+            end
             discoverRuntimeRoiInventory(app);
             pipe = buildPipelineStruct(app);
             pipeForCheck = selectedPipelineStructForRun(app, pipe);
@@ -16956,12 +17033,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(p)
                     continue;
                 end
-                if keepMissing || exist(p, 'file') == 2
+                if app.OpeningPipeline || keepMissing || exist(p, 'file') == 2
                     normalized{end+1} = p; %#ok<AGROW>
                 end
             end
             paths = unique(normalized, 'stable');
-            if ~keepMissing
+            if ~keepMissing && ~app.OpeningPipeline
                 try
                     setpref('DetecDiv', 'pipeline2RecentPipelines', paths);
                 catch
@@ -16972,6 +17049,16 @@ classdef pipeline2 < matlab.apps.AppBase
         function pipelineFile = normalizeRecentPipelinePath(app, pipelineFile) %#ok<INUSD>
             pipelineFile = strtrim(char(string(pipelineFile)));
             if isempty(pipelineFile)
+                return;
+            end
+            if app.OpeningPipeline
+                % The recent-files menu is only a list of saved references.
+                % Never probe or canonicalize unrelated network paths just
+                % to display it. The selected file is checked when opened.
+                [~, ~, ext] = fileparts(pipelineFile);
+                if isempty(ext)
+                    pipelineFile = fullfile(pipelineFile, 'pipeline.json');
+                end
                 return;
             end
             try
@@ -17067,6 +17154,8 @@ classdef pipeline2 < matlab.apps.AppBase
             nodes = normalizeLoadedNodeLayouts(app, nodes);
             nodes = synchronizeCellLatentModelNodes(app, nodes);
             for i = 1:numel(nodes)
+                reportPipelineOpenStage(app, sprintf('Preparing module %d of %d: %s...', ...
+                    i, numel(nodes), char(string(getField(app, nodes(i), 'id', 'module')))));
                 if ~isfield(nodes(i), 'layout') || isempty(nodes(i).layout)
                     nodes(i).layout = [i 1 1 1];
                 end
@@ -23634,7 +23723,8 @@ classdef pipeline2 < matlab.apps.AppBase
             registerApp(app, app.UIFigure)
 
             app.HasStartupPipeline = any(cellfun(@(arg)isa(arg, 'pipeline') || isa(arg, 'pipelineRun'), varargin));
-            d = openRuntimeProgress(app, 'Pipeline', 'Opening pipeline interface...');
+            d = openRuntimeProgress(app, 'Opening pipeline', sprintf(['Loading installed modules...\n' ...
+                'Checking module locations. Network storage may take longer.']));
             startupProgressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             beginModuleTabRefreshBatch(app);
             startupTabsCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
@@ -23643,6 +23733,7 @@ classdef pipeline2 < matlab.apps.AppBase
             runStartupFcn(app, @startupFcn)
 
             applyStartupArguments(app, varargin{:});
+            reportPipelineOpenStage(app, 'Building module panels and input controls...');
             delete(startupTabsCleanup);
             app.OpeningPipeline = false;
             delete(startupProgressCleanup);

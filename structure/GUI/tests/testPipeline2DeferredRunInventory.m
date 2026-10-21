@@ -141,6 +141,39 @@ verifyEqual(tc, [app.UISelectedModuleTable.Data{:,1}], [true false]);
 verifyEmpty(tc, f.roi.data.data);
 end
 
+function testRecentMenuDoesNotProbeMissingFilesAndCatalogueIsReused(tc)
+f = fixture();
+cleanup = onCleanup(@()removeFixture(f)); %#ok<NASGU>
+oldRecent = getpref('DetecDiv','pipeline2RecentPipelines',{});
+prefsCleanup = onCleanup(@()setpref('DetecDiv','pipeline2RecentPipelines',oldRecent)); %#ok<NASGU>
+missing = fullfile(f.folder,'unavailable_storage','pipeline.json');
+setpref('DetecDiv','pipeline2RecentPipelines',{missing});
+first = pipeline2(f.project, f.run, 'EditExistingRun', true);
+firstCleanup = onCleanup(@()delete(first)); %#ok<NASGU>
+first.UIFigure.Visible = 'off';
+verifyTrue(tc, any(strcmp(getpref('DetecDiv','pipeline2RecentPipelines'), missing)), ...
+    'Displaying recent files must not probe/prune unavailable storage.');
+profile clear;
+profile on;
+profileCleanup = onCleanup(@()profile('off')); %#ok<NASGU>
+second = pipeline2(f.project, f.run, 'EditExistingRun', true);
+secondCleanup = onCleanup(@()delete(second)); %#ok<NASGU>
+second.UIFigure.Visible = 'off';
+profile off;
+info = profile('info');
+verifyFalse(tc, any(string({info.FunctionTable.FunctionName}) == "detecdiv_modules_ui"), ...
+    'An unchanged catalogue must be reused between editor windows.');
+menus = findall(second.UIFigure,'Type','uimenu');
+refresh = menus(strcmp({menus.Text},'Refresh module catalogue'));
+profile clear;
+profile on;
+refresh.MenuSelectedFcn(refresh, []);
+profile off;
+info = profile('info');
+verifyTrue(tc, any(string({info.FunctionTable.FunctionName}) == "detecdiv_modules_ui"), ...
+    'Explicit refresh must bypass the catalogue cache.');
+end
+
 function dropdown = bindingDropdown(app, value)
 controls = findall(app.UIFigure, 'Type', 'uidropdown');
 keep = arrayfun(@(ctrl)isequal(ctrl.Value, value), controls);

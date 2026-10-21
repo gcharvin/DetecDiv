@@ -24,7 +24,11 @@ end
 % The common catalogue remains responsible for conflict diagnostics.
 if options.IncludeActivePackages
     active={};
+    % Catalogue paths are already canonical. Compare their keys directly;
+    % canonicalizing every known path for every candidate makes discovery
+    % quadratic and repeats network filesystem calls thousands of times.
     known={modules.path};
+    if ispc, known=cellfun(@lower,known,'UniformOutput',false); end
     for i=1:numel(modules)
         m=modules(i);
         if ~any(strcmpi(m.type,{'classifier','processor'}))|| ...
@@ -32,8 +36,11 @@ if options.IncludeActivePackages
             continue;
         end
         folder=canonical(fileparts(m.resolvedEntrypoint));
-        if ~any(cellfun(@(value)samePath(value,folder),[known active]))
+        key=folder;
+        if ispc,key=lower(key);end
+        if ~any(strcmp(known,key))
             active{end+1}=folder; %#ok<AGROW>
+            known{end+1}=key; %#ok<AGROW>
         end
     end
     if ~isempty(active)

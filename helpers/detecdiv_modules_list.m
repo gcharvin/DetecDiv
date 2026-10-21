@@ -470,7 +470,9 @@ pathValue = char(java.io.File(char(pathValue)).getCanonicalPath());
 end
 
 function key = localPathKey(pathValue)
-key = localCanonical(pathValue);
+% All callers pass paths already canonicalized at discovery/resolution.
+% Avoid a second filesystem round trip for the same directory.
+key = char(pathValue);
 if ispc, key = lower(key); end
 end
 
