@@ -457,9 +457,18 @@ for i=1:numel(geoms)
             set(h.line, 'XData',[xm xd], 'YData',[ym yd], 'Visible','on', ...
                 'Color',lineColor, 'LineWidth',lineWidth, 'LineStyle',lineStyle);
         end
-        if isgraphics(h.arrow)
-            set(h.arrow,'XData',xm,'YData',ym,'UData',(xd-xm)*0.9,'VData',(yd-ym)*0.9, ...
-                'Visible','on','Color',lineColor,'LineWidth',lineWidth,'MaxHeadSize',0.5,'AutoScale','off');
+        if geoms(i).directed
+            if isempty(h.arrow) || ~isgraphics(h.arrow)
+                h.arrow = quiver(ax,xm,ym,(xd-xm)*0.9,(yd-ym)*0.9,0, ...
+                    'LineWidth',lineWidth,'LineStyle',lineStyle, ...
+                    'MaxHeadSize',0.5,'Color',lineColor,'HitTest','off', ...
+                    'PickableParts','none','AutoScale','off');
+            else
+                set(h.arrow,'XData',xm,'YData',ym,'UData',(xd-xm)*0.9,'VData',(yd-ym)*0.9, ...
+                    'Visible','on','Color',lineColor,'LineWidth',lineWidth,'LineStyle',lineStyle,'MaxHeadSize',0.5,'AutoScale','off');
+            end
+        elseif isgraphics(h.arrow)
+            delete(h.arrow); h.arrow = [];
         end
 
         try
@@ -476,9 +485,12 @@ for i=1:numel(geoms)
         hLine  = line(ax, [xm xd], [ym yd], 'Color', lineColor, ...
                       'LineWidth', lineWidth, 'LineStyle', lineStyle, ...
                       'HitTest','off','PickableParts','none');
-        hArrow = quiver(ax, xm, ym, (xd-xm)*0.9, (yd-ym)*0.9, 0, ...
-                        'LineWidth',lineWidth,'MaxHeadSize',0.5,'Color',lineColor, ...
+        hArrow = [];
+        if geoms(i).directed
+            hArrow = quiver(ax, xm, ym, (xd-xm)*0.9, (yd-ym)*0.9, 0, ...
+                        'LineWidth',lineWidth,'LineStyle',lineStyle,'MaxHeadSize',0.5,'Color',lineColor, ...
                         'HitTest','off','PickableParts','none','AutoScale','off');
+        end
         L.map(d) = struct('line',hLine,'arrow',hArrow,'motherID',m, ...
             'daughterID',geoms(i).daughterID,'sourceKey',geoms(i).sourceKey, ...
             'mode',geoms(i).mode);
@@ -532,7 +544,7 @@ keys = groups.keys;
 for i = 1:numel(keys)
     handles = groups(keys{i});
     if isfield(handles, 'line') && isgraphics(handles.line), delete(handles.line); end
-    if isfield(handles, 'arrow') && isgraphics(handles.arrow), delete(handles.arrow); end
+    if isfield(handles, 'arrow') && ~isempty(handles.arrow) && isgraphics(handles.arrow), delete(handles.arrow); end
 end
 end
 
@@ -545,9 +557,9 @@ end
 styleKeys = cell(1, numel(geoms));
 for i = 1:numel(geoms)
     color = double(geoms(i).color(:).');
-    styleKeys{i} = sprintf('%s|%.6f,%.6f,%.6f|%.3f|%s', ...
+    styleKeys{i} = sprintf('%s|%.6f,%.6f,%.6f|%.3f|%s|%d', ...
         char(geoms(i).mode), color(1), color(2), color(3), ...
-        double(geoms(i).lineWidth), char(geoms(i).lineStyle));
+        double(geoms(i).lineWidth), char(geoms(i).lineStyle),geoms(i).directed);
 end
 activeKeys = unique(styleKeys, 'stable');
 for i = 1:numel(activeKeys)
@@ -577,14 +589,17 @@ for i = 1:numel(activeKeys)
             'Color', color, 'LineWidth', lineWidth, ...
             'LineStyle', lineStyle, 'Visible', 'on');
     end
-    if isempty(handles.arrow) || ~isgraphics(handles.arrow)
+    if ~selected(1).directed
+        if isgraphics(handles.arrow), delete(handles.arrow); end
+        handles.arrow = [];
+    elseif isempty(handles.arrow) || ~isgraphics(handles.arrow)
         handles.arrow = quiver(ax, xm, ym, (xd-xm)*0.9, (yd-ym)*0.9, 0, ...
-            'LineWidth',lineWidth,'MaxHeadSize',0.5,'Color',color, ...
+            'LineWidth',lineWidth,'LineStyle',lineStyle,'MaxHeadSize',0.5,'Color',color, ...
             'HitTest','off','PickableParts','none','AutoScale','off');
     else
         set(handles.arrow, 'XData', xm, 'YData', ym, ...
             'UData', (xd-xm)*0.9, 'VData', (yd-ym)*0.9, ...
-            'Color', color, 'LineWidth', lineWidth, ...
+            'Color', color, 'LineWidth', lineWidth, 'LineStyle',lineStyle, ...
             'MaxHeadSize', 0.5, 'AutoScale', 'off', 'Visible', 'on');
     end
     groups(key) = handles;
@@ -599,7 +614,7 @@ staleKeys = setdiff(groups.keys, activeKeys);
 for i = 1:numel(staleKeys)
     handles = groups(staleKeys{i});
     if isfield(handles, 'line') && isgraphics(handles.line), delete(handles.line); end
-    if isfield(handles, 'arrow') && isgraphics(handles.arrow), delete(handles.arrow); end
+    if isfield(handles, 'arrow') && ~isempty(handles.arrow) && isgraphics(handles.arrow), delete(handles.arrow); end
     remove(groups, staleKeys{i});
 end
 end
@@ -742,7 +757,7 @@ end
 
 function geoms = getLineageGeometriesForFrame_ROI(roi, fallbackPix, frm, fallbackColor, layoutOptions)
 geoms = struct('mapKey',{},'daughterID',{},'motherID',{},'xd',{},'yd',{},'xm',{},'ym',{}, ...
-    'color',{},'sourceKey',{},'mode',{},'lineWidth',{},'lineStyle',{});
+    'color',{},'sourceKey',{},'mode',{},'lineWidth',{},'lineStyle',{},'directed',{});
 [geoms, modelConfigured] = getCellModelLineageGeometries( ...
     roi, fallbackPix, frm, fallbackColor, layoutOptions, geoms);
 if modelConfigured
@@ -832,39 +847,44 @@ try
         return;
     end
 
-    instanceRows = find(model.instances.family_id == familyId & ...
-        model.instances.frame == uint32(frm));
-    relationRows = find(model.relations.family_id == familyId);
+    segments = cellModelLineageSegments(model, familyId, frm, ...
+        roi.image, cfg.showGenealogy, pix);
     source = struct('key', char(cfg.sourceKey));
     budColor = resolveBudLinkColor(layoutOptions);
     genealogyColor = resolveGenealogyLinkColor(layoutOptions, fallbackColor);
     linkWidthPx = resolveLineageLinkWidth(layoutOptions);
-    for k = relationRows(:).'
-        childTrack = model.relations.child_track_id(k);
-        parentTrack = model.relations.parent_track_id(k);
-        childRow = instanceRows(find(model.instances.track_id(instanceRows) == childTrack, 1, 'first'));
-        parentRow = instanceRows(find(model.instances.track_id(instanceRows) == parentTrack, 1, 'first'));
-        if isempty(childRow) || isempty(parentRow)
-            continue;
-        end
-        childLabel = int32(model.instances.mask_label(childRow));
-        parentLabel = double(model.instances.mask_label(parentRow));
+    for segment = segments
+        k = segment.relationRow;
         if cfg.showBudPairing
             eventFrame = double(model.relations.event_frame(k));
             if frm >= eventFrame - cfg.budWindowBefore && ...
                     frm <= eventFrame + cfg.budWindowAfter
-                geoms = appendPairGeom(geoms, source, 1, centroids, ...
-                    childLabel, parentLabel, "bud", budColor, linkWidthPx, '-');
+                geoms = appendCellModelGeom(geoms, source, segment, ...
+                    "bud", budColor, linkWidthPx);
             end
         end
         if cfg.showGenealogy
-            geoms = appendPairGeom(geoms, source, 1, centroids, ...
-                childLabel, parentLabel, "genealogy", genealogyColor, linkWidthPx, '-');
+            geoms = appendCellModelGeom(geoms, source, segment, ...
+                "genealogy", genealogyColor, linkWidthPx);
         end
     end
 catch
     % A corrupt optional object model must not break image display.
 end
+end
+
+function geoms = appendCellModelGeom(geoms, source, segment, mode, color, width)
+style = '-';
+if segment.historical, style = '--'; end
+% Key by relation row: historical and current mask labels can be identical
+% even though they represent different TrackIDs in different frames.
+geoms(end+1) = struct('mapKey',lineageMapKey(1,segment.relationRow,mode), ...
+    'daughterID',int32(segment.childLabel),'motherID',double(segment.parentLabel), ...
+    'xd',segment.childXY(1),'yd',segment.childXY(2), ...
+    'xm',segment.parentXY(1),'ym',segment.parentXY(2), ...
+    'color',color,'sourceKey',char(source.key),'mode',char(mode), ...
+    'lineWidth',double(width),'lineStyle',style, ...
+    'directed',isempty(segment.siblingTracks));
 end
 
 function geoms = appendBudEventGeoms(geoms, source, sourceIndex, centroids, frm, color, linkWidthPx)
@@ -925,7 +945,7 @@ geoms(end+1) = struct( ... %#ok<AGROW>
     'sourceKey', char(source.key), ...
     'mode', char(mode), ...
         'lineWidth', double(lineWidth), ...
-        'lineStyle', char(lineStyle));
+        'lineStyle', char(lineStyle),'directed',true);
 end
 
 function centroids = computeLabelCentroidMap(M)

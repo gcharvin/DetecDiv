@@ -7949,6 +7949,7 @@ end
         'Title', 'Generating movie or sequence', ...
         'Message', 'Rendering frames...', ...
         'Indeterminate', 'on');
+    cleanupProgress = onCleanup(@() delete(d)); %#ok<NASGU>
 
 
 
@@ -7984,8 +7985,6 @@ end
              lineageUI = score_lineageDisplayOptions(app);
              opts.ShowBudPairingOverlay = lineageUI.showBudPairing;
              opts.ShowLineageOverlay = lineageUI.showGenealogy;
-             app.layoutOptions=opts;
-
              if strcmpi(target, 'hub')
                  try
                      close(d);
@@ -7995,8 +7994,19 @@ end
                  return;
              end
 
-             displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
-            htrash=score_renderFinalFrame(displayHandles , roilist, opts);
+             % Export owns a separate canvas. A queued Score refresh must
+             % neither clear its panels nor overwrite the interactive layout.
+             displayHandles = score_createDisplayHandles(opts);
+             exportFigure = displayHandles.Figure;
+             exportFigure.Tag = 'ScoreExportFigure';
+             setappdata(exportFigure,'ScoreExportOwner',app.ScoreAppUIFigure);
+             setappdata(exportFigure,'ScoreExportOptions',opts);
+             try
+                 score_renderFinalFrame(displayHandles,roilist,opts);
+             catch ME
+                 if isgraphics(exportFigure), delete(exportFigure); end
+                 rethrow(ME);
+             end
 
             close(d);
 

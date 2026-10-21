@@ -27,6 +27,10 @@ setDropDown(app.MaskProviderDropDown, [{'<family default>'}, providers], provide
 sources = lineageSources(roiobj, model);
 setDropDown(app.LineageSourceDropDown, [{'<family default>','<none>'}, sources], cfg.lineageSource);
 setLineageMode(app, cfg.lineageMode);
+app.FullGenealogyRadioButton.Tooltip = [ ...
+    'Binary fission: one undirected link between the two visible sisters. ' ...
+    'Other families: ancestry of visible tracks; dashed links use the last ' ...
+    'observed position of an absent ancestor. Use Lineage tree for time history.'];
 
 app.FamilyColorPicker.Value = familyColor(model, familyValue, cfg.familyColor);
 app.BudlinkcolorColorPicker.Value = cfg.budLinkColor;

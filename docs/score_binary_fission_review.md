@@ -32,3 +32,15 @@ automatically reassigned frames remain unreviewed for tracking. Review those
 frames, then use **Validate GT**. Neither correcting nor validating a fission
 starts training. Renaming an annotation channel also does not establish human
 ground truth: AI preannotations remain Draft until reviewed.
+
+For a binary-fission family, the image genealogy overlay draws one solid,
+undirected link between the two sisters while both are visible. Neither cell
+is the parent of the other. The link follows their current positions and ends
+when one sister disappears or divides; no line starts at an extinct parent's
+historical position. A complete two-daughter event is required. This display
+does not create or change any relation. Use the lineage tree for ancestry;
+budding families retain their existing parent-to-child image links.
+
+Local movie/PDF exports use their own figure and fixed export layout. Score
+keeps its interactive image figure and display settings, so a queued refresh
+or frame navigation cannot replace the export with a single displayed frame.

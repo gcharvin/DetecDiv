@@ -167,6 +167,14 @@ end
 end
 
 function testGuiExportUsesTheSelectedModeWhenFirstMaskHasNoRelations(testCase)
+exerciseGuiExport(testCase,false);
+end
+
+function testGuiExportSurvivesQueuedInteractiveRefresh(testCase)
+exerciseGuiExport(testCase,true);
+end
+
+function exerciseGuiExport(testCase,queueRefresh)
 [r,~] = fixture('display',true);
 for field = reshape(fieldnames(r.cellModel.relations),1,[])
     r.cellModel.relations.(field{1}) = r.cellModel.relations.(field{1})(2,:);
@@ -181,6 +189,10 @@ r.display.displaylim = repmat([0;1],1,4);
 r.save([],false);
 app = score(r);
 cleanupApp = onCleanup(@() deleteApp(app)); %#ok<NASGU>
+owner = app.ScoreAppUIFigure;
+cleanupExports = onCleanup(@() closeExportFigures(owner)); %#ok<NASGU>
+app.ImageFigure.Visible = 'off';
+beforeModel = r.cellModel;
 app.OverlayCheckBox.Value = false;
 app.MovieoutputtypeDropDown.Value = 'Sequence';
 app.MovieFramesEditField.Value = '1:2';
@@ -198,15 +210,60 @@ app.LineageDisplayButtonGroup.SelectedObject = app.FullGenealogyRadioButton;
 score_configureLineageDisplay(r,'maskA',3,score_getObjectDisplayConfig(r,'maskA'),false,true);
 verifyFalse(testCase,r.display.lineage.showGenealogy);
 callback = app.GrenerateMovieButton.ButtonPushedFcn;
+setappdata(app.ScoreAppUIFigure,'TestExportRefreshCount',0);
+if queueRefresh
+    refreshTimer = timer('ExecutionMode','fixedSpacing','Period',0.05, ...
+        'BusyMode','drop','TimerFcn',@(t,e) refreshDuringExport(t,e,app));
+    cleanupTimer = onCleanup(@() deleteTimer(refreshTimer)); %#ok<NASGU>
+    start(refreshTimer);
+end
 callback(app.GrenerateMovieButton,struct());
-verifyTrue(testCase,app.layoutOptions.ShowLineageOverlay);
-verifyFalse(testCase,app.layoutOptions.ShowBudPairingOverlay);
+exportFigures = findExportFigures(owner);
+assertNumElements(testCase,exportFigures,1);
+exportFigure = exportFigures(1);
+exportOptions = getappdata(exportFigure,'ScoreExportOptions');
+verifyTrue(testCase,exportOptions.ShowLineageOverlay);
+verifyFalse(testCase,exportOptions.ShowBudPairingOverlay);
+verifyEqual(testCase,lower(exportOptions.mode),'sequence');
+verifyEqual(testCase,exportOptions.frames,[1 2]);
+verifyEqual(testCase,exportOptions.Nchannel,2);
+verifyNotEqual(testCase,exportFigure,app.ImageFigure);
+verifyEqual(testCase,lower(app.layoutOptions.mode),'display');
 verifyTrue(testCase,isfile(fullfile(folder,'comparison.pdf')));
-arrows = findall(app.ImageFigure,'Type','quiver');
+arrows = findall(exportFigure,'Type','quiver');
 verifyNumElements(testCase,arrows,4);
 for h = reshape(arrows,1,[])
     verifyEqual(testCase,h.XData,17.5);
 end
+if queueRefresh
+    verifyEqual(testCase,getappdata(app.ScoreAppUIFigure,'TestExportRefreshCount'),1);
+end
+drawnow;
+verifyNumElements(testCase,findall(exportFigure,'Type','quiver'),4);
+verifyEqual(testCase,r.cellModel,beforeModel);
+end
+
+function refreshDuringExport(t,~,app)
+if isempty(findall(groot,'Tag','ScoreSequenceChannelLabel')), return; end
+stop(t);
+setappdata(app.ScoreAppUIFigure,'TestExportRefreshCount',1);
+score_display(app,'slow');
+end
+
+function deleteTimer(t)
+if ~isvalid(t), return; end
+stop(t); delete(t);
+end
+
+function figures = findExportFigures(owner)
+figures = findall(groot,'Type','figure','Tag','ScoreExportFigure');
+keep = arrayfun(@(f) isequal(getappdata(f,'ScoreExportOwner'),owner),figures);
+figures = figures(keep);
+end
+
+function closeExportFigures(owner)
+figures = findExportFigures(owner);
+delete(figures);
 end
 
 function verifyLinks(testCase,gh,opts,frame,useModel)
