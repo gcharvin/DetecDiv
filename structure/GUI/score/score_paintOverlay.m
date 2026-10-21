@@ -71,6 +71,22 @@ yinit = round(cp(1,2));
 
 mods     = get(src,'CurrentModifier');          % {} ou cellstr
 
+% A guided fission consumes ordinary clicks on the next frame, never paint
+% strokes or same-frame parentage shortcuts. Two clicks commit atomically.
+if score_fissionCorrection(app,'active')
+    try
+        if strcmp(seltype,'alt')
+            score_fissionCorrection(app,'cancel');
+        elseif strcmp(seltype,'normal') && xinit>=1 && yinit>=1 && ...
+                xinit<=size(currentMask,2) && yinit<=size(currentMask,1)
+            score_fissionCorrection(app,'pick',double(currentMask(yinit,xinit)));
+        end
+    catch ME
+        errordlg(ME.message,'Correct binary fission');
+    end
+    return;
+end
+
 % isShift  = iscell(mods) && any(strcmp(mods,'shift'))
 % isCtrl   = iscell(mods) && any(strcmp(mods,'control'))
 % isAltKey = iscell(mods) && any(strcmp(mods,'alt'))   % touche Alt clavier (rarement utile)
@@ -743,12 +759,25 @@ uimenu(cm,'Separator','on','Text','Lineage: set parent track...', ...
     'MenuSelectedFcn', @(~,~) openSetParentTrackDialog(app));
 uimenu(cm,'Text','Lineage: remove parent', ...
     'MenuSelectedFcn', @(~,~) removeSelectedParentTrack(app));
+uimenu(cm,'Text','Lineage: correct binary fission (parent -> 2 daughters)...', ...
+    'Tag','ScoreCorrectBinaryFission', ...
+    'MenuSelectedFcn', @(~,~) runFissionAction(app,'start'));
+uimenu(cm,'Text','Lineage: undo last fission correction', ...
+    'MenuSelectedFcn', @(~,~) runFissionAction(app,'undo'));
 % --- Delete actions ---
 uimenu(cm,'Separator','on','Text','Delete object (this frame)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectFrame(app, roi, pix, frm));
 uimenu(cm,'Text','Delete object (all frames)', ...
     'MenuSelectedFcn', @(~,~) deleteSelectedObjectAllFrames(app, roi, chIdx, pix, frm));
 
+end
+
+function runFissionAction(app,action)
+try
+    score_fissionCorrection(app,action);
+catch ME
+    errordlg(ME.message,'Correct binary fission');
+end
 end
 
 function openAssignTrackDialog(app, scope)

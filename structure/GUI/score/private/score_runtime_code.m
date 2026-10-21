@@ -6398,6 +6398,14 @@ end
 
         % Key press function: ScoreAppUIFigure
         function ScoreAppUIFigureKeyPress(app, event)
+            if strcmp(event.Key,'escape') && score_fissionCorrection(app,'cancel')
+                score_display(app,'refresh');
+                return;
+            end
+            if score_fissionCorrection(app,'active')
+                % Complete or cancel selection before other annotation edits.
+                return;
+            end
             % Delete now acts on the selected annotation contour, never on
             % the Score application or its ROI list.
             if strcmp(event.Key, 'delete')

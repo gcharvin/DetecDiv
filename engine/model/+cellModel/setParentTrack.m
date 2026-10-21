@@ -82,6 +82,12 @@ eventFrame = childBirthFrame;
 parentRows = model.instances.family_id == familyId & ...
     model.instances.track_id == parentTrackId;
 parentFrames = unique(double(model.instances.frame(parentRows)));
+if strcmp(cellModel.divisionMode(model,familyId),'binary_fission')
+    if max(parentFrames)==childBirth-1,return;end
+    error('cellModel:InvalidFissionParent', ...
+        'Fission parent Track %u must end at frame %u, immediately before child Track %u is born.', ...
+        parentTrackId,childBirthFrame-1,childTrackId);
+end
 if ismember(childBirth, parentFrames), return; end
 
 convention = cellModel.relationTemporalConvention();
