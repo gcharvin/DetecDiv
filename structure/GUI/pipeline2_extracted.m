@@ -99,6 +99,9 @@ classdef pipeline2 < matlab.apps.AppBase
         ModuleTabRefreshPending logical = false
         IsRedrawingGraph logical = false
         HasStartupPipeline logical = false
+        OpeningPipeline logical = true
+        RuntimeInventoryMetadataOnly logical = true
+        SavedRuntimeInventoryContext struct = struct()
         RuntimeFieldHandles struct = struct()
         RuntimeButtonHandles struct = struct()
         RuntimeValues struct = struct()
@@ -121,6 +124,8 @@ classdef pipeline2 < matlab.apps.AppBase
         CurrentProject = []
         CurrentProjectVarName char = ''
         RuntimeDataSeriesCache struct = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
+        RuntimeLoadedRoiData cell = {}
+        RuntimeStoredChannelsCache = []
         NumericTraceInventory = []
         BindingEditorClassifier = []
         BindingEditorCallback = []
@@ -228,6 +233,9 @@ classdef pipeline2 < matlab.apps.AppBase
 
             hasPipelineContext = ~isempty(pipeObj) && isa(pipeObj, 'pipeline');
             hasRunContext = ~isempty(runObj) && isa(runObj, 'pipelineRun');
+            if hasRunContext && isstruct(runObj.ctx)
+                app.SavedRuntimeInventoryContext = runObj.ctx;
+            end
             hasExplicitRuntimeContext = hasRunContext || opts.unlockRuntime || ...
                 (isfield(opts, 'projectPath') && ~isempty(strtrim(opts.projectPath))) || ...
                 (isfield(opts, 'inputMode') && ~isempty(strtrim(opts.inputMode)));
@@ -609,6 +617,35 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            % Usually the project already names its template. Try those
+            % precise paths before enumerating network folders or probing
+            % every historical/recent location. Preserve the historical
+            % full-graph preference used by partial runs.
+            directPaths = projectPipelineTemplatePathsForRun(app, runObj, false);
+            directPaths = [directPaths runSnapshotPaths];
+            templateId = runTemplateIdForUi(app, runObj);
+            for iPath = 1:numel(directPaths)
+                candidatePath = char(string(directPaths{iPath}));
+                if isRunSnapshotPipelinePath(app, candidatePath)
+                    continue;
+                end
+                candidatePath = expandRunPipelineTemplatePaths(app, {candidatePath});
+                candidatePath = fliplr(candidatePath); % mapped local path first
+                for iLocal = 1:numel(candidatePath)
+                    [candidate, ~] = pipelineLoad(candidatePath{iLocal});
+                    if isempty(candidate) || (~isempty(templateId) && ...
+                            ~strcmpi(char(string(candidate.strid)), templateId))
+                        continue;
+                    end
+                    historicalPipe = widestProjectRunPipelineSpecForUi(app, runObj);
+                    if shouldPreferHistoricalRunPipelineSpec(app, candidate, historicalPipe, runObj)
+                        candidate = historicalPipe;
+                    end
+                    pipeObj = candidate;
+                    msg = '';
+                    return;
+                end
+            end
             candidatePaths = [projectPipelineTemplatePathsForRun(app, runObj) ...
                 classifierPipelineTemplatePathsForRun(app, runObj) ...
                 recentPipelineTemplatePathsForRun(app, runObj) ...
@@ -842,7 +879,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 contains(txt, '/pipeline_run_');
         end
 
-        function paths = projectPipelineTemplatePathsForRun(app, runObj) %#ok<INUSD>
+        function paths = projectPipelineTemplatePathsForRun(app, runObj, discoverFolders) %#ok<INUSD>
+            if nargin < 3, discoverFolders = true; end
             paths = {};
             shallowObj = app.CurrentProject;
             if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
@@ -870,7 +908,7 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 projectRoot = '';
             end
-            if isempty(projectRoot) || exist(projectRoot, 'dir') ~= 7
+            if isempty(projectRoot)
                 return;
             end
 
@@ -889,6 +927,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             paths{end+1} = fullfile(projectRoot, 'pipeline.json'); %#ok<AGROW>
+            if ~discoverFolders || exist(projectRoot, 'dir') ~= 7
+                return;
+            end
             d = dir(fullfile(projectRoot, '*', 'pipeline.json'));
             for i = 1:numel(d)
                 paths{end+1} = fullfile(d(i).folder, d(i).name); %#ok<AGROW>
@@ -1123,6 +1164,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 'MenuSelectedFcn', @(~,~)showCurrentRunReview(app));
             uimenu(app.FileMenu, 'Text', 'Open current run params', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
+            uimenu(app.FileMenu, 'Text', 'Refresh input inventory', ...
+                'MenuSelectedFcn', @(~,~)refreshInputInventory(app));
             rebuildModulesMenu(app);
             updateDocumentationMenuState(app);
 
@@ -2790,6 +2833,29 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function edges = resourceBindingEdgesForGraph(app)
             edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+            if app.RuntimeInventoryMetadataOnly || isempty(fieldnames(app.LastValidationReport))
+                % Explicit symbolic wiring is already known without reading
+                % ROI files or running model/path validation.
+                for iNode = 1:numel(app.Data.nodes)
+                    node = app.Data.nodes(iNode);
+                    try
+                        contract = pipelineNodeContract(node);
+                    catch
+                        continue;
+                    end
+                    inputs = getField(app, getField(app, contract, 'resources', struct()), 'in', struct([]));
+                    for iInput = 1:numel(inputs)
+                        value = bindingDisplayedValue(app, node, inputs(iInput), true);
+                        if ~isSymbolicBindingLabel(app, value), continue; end
+                        source = symbolicBindingSourceNode(app, value);
+                        if isempty(source) || ~any(strcmp({app.Data.nodes.id}, source)), continue; end
+                        edges(end+1) = struct('from', source, 'to', char(string(node.id)), ...
+                            'fromPort', '', 'toPort', char(string(getField(app, inputs(iInput), 'port', ''))), ...
+                            'condition', 'resourceBinding'); %#ok<AGROW>
+                    end
+                end
+                return;
+            end
             try
                 report = app.LastValidationReport;
                 if ~isfield(report, 'edges') || isempty(report.edges)
@@ -4776,12 +4842,16 @@ classdef pipeline2 < matlab.apps.AppBase
             tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
             app.CurrentProject = shallowObj;
             app.CurrentProjectVarName = char(string(varName));
+            if ~app.OpeningPipeline
+                app.SavedRuntimeInventoryContext = struct();
+                app.RuntimeInventoryMetadataOnly = true;
+            end
             clearRuntimeDataSeriesCache(app);
             app.RuntimeInventoryRefreshSuspended = true;
             cleanupObj = onCleanup(@()setRuntimeInventoryRefreshSuspended(app, false)); %#ok<NASGU>
             [pth, file] = shallowObj.getPath;
             projectFilePath = fullfile(pth, [file '.json']);
-            if exist(projectFilePath, 'file') ~= 2
+            if ~app.OpeningPipeline && exist(projectFilePath, 'file') ~= 2
                 legacyMatPath = fullfile(pth, [file '.mat']);
                 if exist(legacyMatPath, 'file') == 2
                     projectFilePath = legacyMatPath;
@@ -5253,6 +5323,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function parseRuntimeRawDataPath(app, rawDataPath)
+            if app.OpeningPipeline, return; end
             rawDataPath = strtrim(char(string(rawDataPath)));
             if isempty(rawDataPath) || ~(exist(rawDataPath, 'dir') == 7 || exist(rawDataPath, 'file') == 2)
                 clearRuntimeParseInfo(app);
@@ -5784,11 +5855,15 @@ classdef pipeline2 < matlab.apps.AppBase
 
             projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
-            rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
+            rawOk = ~isempty(rawDataPath) && (app.OpeningPipeline || exist(rawDataPath, 'dir') == 7);
             startsFromProject = runtimeStartsFromExistingProject(app);
             startsFromClassifier = runtimeStartsFromClassifier(app);
             allowProjectCreation = ~startsFromProject && ~startsFromClassifier;
-            projectPathOk = runtimeProjectPathUsable(app, projectPath, allowProjectCreation);
+            if app.OpeningPipeline
+                projectPathOk = ~isempty(projectPath);
+            else
+                projectPathOk = runtimeProjectPathUsable(app, projectPath, allowProjectCreation);
+            end
             loadedProjectOk = startsFromProject && hasLoadedRuntimeProject(app);
             projectOk = projectPathOk || loadedProjectOk;
 
@@ -6430,6 +6505,9 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function channels = roiStoredChannelNames(app, roiObj) %#ok<INUSD>
             channels = {};
+            if app.RuntimeInventoryMetadataOnly
+                return;
+            end
             h5File = '';
             try
                 h5File = fullfile(char(string(roiObj.path)), ...
@@ -6437,7 +6515,15 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 return;
             end
+            if isempty(app.RuntimeStoredChannelsCache)
+                app.RuntimeStoredChannelsCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+            end
+            if isKey(app.RuntimeStoredChannelsCache, h5File)
+                channels = app.RuntimeStoredChannelsCache(h5File);
+                return;
+            end
             if exist(h5File, 'file') ~= 2
+                app.RuntimeStoredChannelsCache(h5File) = {};
                 return;
             end
 
@@ -6457,6 +6543,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isstruct(cached) && isfield(cached, 'signature') && ...
                         strcmp(cached.signature, signature)
                     channels = cached.channels;
+                    app.RuntimeStoredChannelsCache(h5File) = channels;
                     return;
                 end
             end
@@ -6484,6 +6571,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     'stable');
                 channelCache(cacheKey) = struct( ...
                     'signature', signature, 'channels', {channels});
+                app.RuntimeStoredChannelsCache(h5File) = channels;
             catch
                 channels = {};
             end
@@ -7310,6 +7398,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function openStaticParametersDialog(app, node)
+            discoverRuntimeRoiInventory(app);
             nodeId = char(string(getField(app, node, 'id', 'module')));
             titleText = staticParamSectionTitle(app, node);
             fig = uifigure('Name', [titleText ' - ' nodeId], ...
@@ -11324,7 +11413,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     % binding were selected while the model still stores a
                     % different value. Keep the stored value visible until
                     % the user explicitly chooses another binding.
-                    invalidStoredValue = isInput;
+                    invalidStoredValue = isInput && ~app.RuntimeInventoryMetadataOnly;
                     choices = [{displayValue} choices]; %#ok<AGROW>
                 end
                 if isempty(choices)
@@ -11360,6 +11449,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctrl.Value = displayValue;
                 ctrl.Enable = enableState;
                 ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+                if isInput
+                    ctrl.DropDownOpeningFcn = @(src,~)loadBindingChoicesOnDemand(app, src, node, param);
+                end
                 return;
             end
 
@@ -11405,6 +11497,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 seriesDrop.Value = seriesChoices{1};
             end
             seriesDrop.Enable = enableState;
+            seriesDrop.Editable = 'on';
+            seriesDrop.DropDownOpeningFcn = @(src,~)loadSeriesChoicesOnDemand(app, src, node, param);
             seriesDrop.Tooltip = dataSeriesSeriesFieldTooltipForUi(app, seriesChoices);
             seriesDrop.Layout.Row = 1;
             seriesDrop.Layout.Column = 1;
@@ -11426,6 +11520,7 @@ classdef pipeline2 < matlab.apps.AppBase
             varDrop.Enable = enableState;
             % Upstream modules can expose a series before its variables exist.
             varDrop.Editable = 'on';
+            varDrop.DropDownOpeningFcn = @(src,~)loadVariableChoicesOnDemand(app, src, seriesDrop);
             varDrop.Tooltip = 'Variable declared inside the selected dataseries. Choices are sampled from existing ROI dataseries when available.';
             varDrop.Layout.Row = 2;
             varDrop.Layout.Column = 1;
@@ -11433,19 +11528,25 @@ classdef pipeline2 < matlab.apps.AppBase
                 seriesDrop.Tag=['NumericSeries_' param];varDrop.Tag=['NumericVariable_' param];
                 columns=numericBindingColumns(app,value);number=regexp(param,'\d+$','match','once');key=['featureColumn' number];
                 component=getField(app,getField(app,node,'params',struct()),key,1);
-                if columns>1
+                if app.RuntimeInventoryMetadataOnly || columns>1
                     ctrl.RowHeight={24 24 24};componentDrop=uidropdown(ctrl,'Tag',['NumericComponent_' param]);
-                    componentDrop.Items=arrayfun(@(i)sprintf('Component %d of %d',i,columns),1:columns,'UniformOutput',false);
-                    componentDrop.ItemsData=1:columns;
-                    if component>columns
+                    count = max(1, columns);
+                    componentDrop.Items=arrayfun(@(i)sprintf('Component %d',i),1:count,'UniformOutput',false);
+                    componentDrop.ItemsData=1:count;
+                    if component>count
                         componentDrop.Items{end+1}=sprintf('Component %d (unavailable)',component);
                         componentDrop.ItemsData(end+1)=component;
+                        if app.RuntimeInventoryMetadataOnly
+                            componentDrop.Items{end}=sprintf('Component %d',component);
+                        end
                     end
                     componentDrop.Value=component;componentDrop.Enable=enableState;
                     componentDrop.Tooltip='This variable has several scalar values per frame. Choose the component used by this input.';
                     componentDrop.Layout.Row=3;componentDrop.ValueChangedFcn=@(src,~)numericComponentChanged(app,node,key,src.Value);
+                    componentDrop.DropDownOpeningFcn=@(src,~)loadNumericComponentsOnDemand(app,src,value);
                 elseif columns==0&&component>1
-                    ctrl.RowHeight={24 24 24};label=uilabel(ctrl,'Text',sprintf('Saved component %d (source unavailable)',component));label.Layout.Row=3;
+                    state = ternary(app, app.RuntimeInventoryMetadataOnly, 'inventory not loaded', 'source unavailable');
+                    ctrl.RowHeight={24 24 24};label=uilabel(ctrl,'Text',sprintf('Saved component %d (%s)',component,state));label.Layout.Row=3;
                 end
             end
 
@@ -11554,7 +11655,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(choices) && isSymbolicDataSeriesLabelForUi(app, seriesName)
                 choices = inferredDataSeriesVariablesForSymbolicSeries(app, seriesName);
             end
-            if isempty(choices) && ~isempty(currentVariable) && ~strcmp(currentVariable, '<variable>')
+            if ~isempty(currentVariable) && ~strcmp(currentVariable, '<variable>') && ...
+                    ~any(strcmp(choices, currentVariable))
                 choices = [{currentVariable} choices]; %#ok<AGROW>
             end
             if isempty(choices)
@@ -12005,6 +12107,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 rois=app.ExplicitRuntimeRoiList;
             end
             for k=1:min(12,numel(rois))
+                if app.RuntimeInventoryMetadataOnly && ...
+                        (isempty(rois(k).data) || all(arrayfun(@(d)isempty(d.data), rois(k).data)))
+                    continue;
+                end
+                loadRuntimeRoiData(app, rois(k));
                 found=classifierBinding.numericSeries(rois(k));
                 for j=1:numel(found)
                     idx=find(strcmp({rows.name},found(j).name),1);
@@ -12033,7 +12140,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 key=['featureColumn' regexp(param,'\d+$','match','once')];
                 component=getField(app,node.params,key,1);
                 columns=numericBindingColumns(app,value);
-                if columns>1||(columns==0&&component>1),height=81;end
+                if app.RuntimeInventoryMetadataOnly||columns>1||(columns==0&&component>1),height=81;end
             end
         end
 
@@ -12693,6 +12800,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                     channels = [channels roiStoredChannelNames(app, roiObj)]; %#ok<AGROW>
                 end
+                if app.RuntimeInventoryMetadataOnly
+                    channels = [channels savedRuntimeInventoryNames(app, 'roiChannels') ...
+                        savedRuntimeInventoryNames(app, 'availableChannels')];
+                end
                 channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
             catch
                 channels = {};
@@ -12742,6 +12853,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function names = runtimeDataSeriesNames(app)
             names = {};
+            if app.RuntimeInventoryMetadataOnly
+                names = savedRuntimeInventoryNames(app, 'dataSeriesNames');
+                names = [names savedRuntimeInventoryNames(app, 'dataSeries')];
+            end
             try
                 cacheKey = runtimeDataSeriesCacheKey(app);
                 if isfield(app.RuntimeDataSeriesCache, 'key') && strcmp(char(string(app.RuntimeDataSeriesCache.key)), cacheKey) && ...
@@ -12751,7 +12866,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 [roiList, nFovSampled] = runtimeSampledRoisForDataSeries(app);
                 if isempty(roiList)
-                    app.RuntimeDataSeriesCache = struct('key', cacheKey, 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
+                    names = unique(names, 'stable');
+                    app.RuntimeDataSeriesCache = struct('key', cacheKey, 'names', {names}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
                     return;
                 end
                 maxRoi = min(numel(roiList), 12);
@@ -12765,7 +12881,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         continue;
                     end
                     try
-                        roiObj.load('data', 'silent');
+                        loadRuntimeRoiData(app, roiObj);
                     catch
                     end
                     if ~isprop(roiObj, 'data') || isempty(roiObj.data)
@@ -12819,7 +12935,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 for r = 1:maxRoi
                     roiObj = roiList(r);
                     try
-                        roiObj.load('data', 'silent');
+                        loadRuntimeRoiData(app, roiObj);
                     catch
                     end
                     if ~isprop(roiObj, 'data') || isempty(roiObj.data)
@@ -12877,7 +12993,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 for r = 1:maxRoi
                     roiObj = roiList(r);
                     try
-                        roiObj.load('data', 'silent');
+                        loadRuntimeRoiData(app, roiObj);
                     catch
                     end
                     if ~isprop(roiObj, 'data') || isempty(roiObj.data)
@@ -12915,6 +13031,101 @@ classdef pipeline2 < matlab.apps.AppBase
         function clearRuntimeDataSeriesCache(app)
             app.RuntimeDataSeriesCache = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
             app.NumericTraceInventory=[];
+            app.RuntimeLoadedRoiData = {};
+            app.RuntimeStoredChannelsCache = [];
+        end
+
+        function names = savedRuntimeInventoryNames(app, key)
+            names = {};
+            ctx = app.SavedRuntimeInventoryContext;
+            sources = {ctx, getField(app, ctx, 'run', struct())};
+            for i = 1:numel(sources)
+                value = getField(app, sources{i}, key, []);
+                if ischar(value) || isstring(value) || iscellstr(value)
+                    names = [names cellstr(string(value(:)'))]; %#ok<AGROW>
+                end
+            end
+            names = unique(names(~cellfun(@isempty, names)), 'stable');
+        end
+
+        function loadRuntimeRoiData(app, roiObj)
+            if app.RuntimeInventoryMetadataOnly, return; end
+            key = fullfile(char(string(roiObj.path)), ['data_' char(string(roiObj.id)) '.mat']);
+            if any(strcmp(app.RuntimeLoadedRoiData, key)), return; end
+            roiObj.load('data', 'silent');
+            app.RuntimeLoadedRoiData{end+1} = key;
+        end
+
+        function discoverRuntimeRoiInventory(app, force)
+            if nargin >= 2 && force
+                app.RuntimeInventoryMetadataOnly = true;
+            end
+            if app.OpeningPipeline || ~app.RuntimeInventoryMetadataOnly, return; end
+            d = openRuntimeProgress(app, 'Input inventory', 'Loading available ROI channels and dataseries...');
+            cleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+            app.RuntimeInventoryMetadataOnly = false;
+            clearRuntimeDataSeriesCache(app);
+            runtimeConcreteChannels(app);
+            runtimeDataSeriesNames(app);
+            updateRuntimeResourceInventory(app);
+        end
+
+        function refreshInputInventory(app)
+            app.RuntimeInventoryMetadataOnly = true;
+            discoverRuntimeRoiInventory(app);
+            refreshValidationReport(app, false);
+            refreshModuleTabs(app);
+            redrawGraph(app);
+        end
+
+        function choices = currentBindingChoices(app, node, param)
+            rows = bindingTableData(app, node);
+            idx = find(strcmp(rows(:,3), param), 1);
+            choices = {};
+            if ~isempty(idx), choices = flattenChoiceList(app, rows{idx,5}); end
+        end
+
+        function updateDiscoveredDropdown(app, ctrl, choices) %#ok<INUSD>
+            % Discovery updates alternatives only. Opening a list must not
+            % select another value or write back to the saved configuration.
+            value = char(string(ctrl.Value));
+            choices = unique([{value} choices(:)'], 'stable');
+            ctrl.ItemsData = {};
+            ctrl.Items = choices;
+            ctrl.Value = value;
+        end
+
+        function loadBindingChoicesOnDemand(app, ctrl, node, param)
+            discoverRuntimeRoiInventory(app);
+            updateDiscoveredDropdown(app, ctrl, currentBindingChoices(app, node, param));
+        end
+
+        function loadSeriesChoicesOnDemand(app, ctrl, node, param)
+            discoverRuntimeRoiInventory(app);
+            choices = currentBindingChoices(app, node, param);
+            choices = dataSeriesVariableSeriesChoicesForUi(app, choices, ctrl.Value);
+            if strcmpi(node.pkg, 'lstm_timeseries')
+                inventory = numericTraceInventory(app);
+                choices = [choices {inventory.group}];
+            end
+            updateDiscoveredDropdown(app, ctrl, choices);
+        end
+
+        function loadVariableChoicesOnDemand(app, ctrl, seriesDrop)
+            discoverRuntimeRoiInventory(app);
+            choices = dataSeriesVariableDropdownChoicesForUi(app, seriesDrop.Value, ctrl.Value);
+            updateDiscoveredDropdown(app, ctrl, choices);
+        end
+
+        function loadNumericComponentsOnDemand(app, ctrl, selector)
+            discoverRuntimeRoiInventory(app);
+            columns = numericBindingColumns(app, selector);
+            value = ctrl.Value;
+            items = unique([1:max(1, columns) value], 'stable');
+            ctrl.ItemsData = {};
+            ctrl.Items = arrayfun(@(i)sprintf('Component %d',i),items,'UniformOutput',false);
+            ctrl.ItemsData = items;
+            ctrl.Value = value;
         end
 
         function name = dataSeriesDisplayName(app, item) %#ok<INUSD>
@@ -12944,7 +13155,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function key = runtimeDataSeriesCacheKey(app)
-            parts = {};
+            parts = {sprintf('metadataOnly=%d', app.RuntimeInventoryMetadataOnly)};
             try, parts{end+1} = char(string(app.CurrentProjectVarName)); catch, end %#ok<AGROW>
             try
                 if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
@@ -15278,6 +15489,14 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 2 || isempty(redraw)
                 redraw = true;
             end
+            if app.OpeningPipeline || app.RuntimeInventoryMetadataOnly
+                % An incomplete disk inventory is not evidence of invalid
+                % bindings. Do not run classifier/path preflight on open.
+                app.PipelineandRuncheckreportLabel.Text = ...
+                    'Configuration loaded. Use Check build to verify inputs before execution.';
+                if redraw, redrawGraph(app); end
+                return;
+            end
             d = openRuntimeProgress(app, 'Pipeline check', 'Checking pipeline...');
             cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             updateRuntimeProgress(app, d, 'Building pipeline check model...');
@@ -15334,6 +15553,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function CheckpipelineButtonPushed(app, event) %#ok<INUSD>
+            discoverRuntimeRoiInventory(app, true);
             if ~app.RuntimeModeUnlocked
                 [ok, report] = refreshValidationReportWithOutput(app);
                 app.PipelineandRuncheckreportLabel.Text = formatValidationReport(app, ok, report);
@@ -15363,6 +15583,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function [ok, report] = refreshValidationReportWithOutput(app)
+            discoverRuntimeRoiInventory(app);
             pipe = buildPipelineStruct(app);
             pipeForCheck = selectedPipelineStructForRun(app, pipe);
             ctx = buildBindingValidationContext(app);
@@ -20893,6 +21114,11 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(runObj) || ~isa(runObj, 'pipelineRun')
                 return;
             end
+            app.RuntimeInventoryMetadataOnly = true;
+            app.SavedRuntimeInventoryContext = runObj.ctx;
+            app.LastValidationReport = struct();
+            app.LastValidationOk = false;
+            clearRuntimeDataSeriesCache(app);
             beginModuleTabRefreshBatch(app);
             tabBatchCleanup = onCleanup(@()endModuleTabRefreshBatch(app, logical(refreshUi))); %#ok<NASGU>
             wasSuspended = app.RuntimeInventoryRefreshSuspended;
@@ -21005,6 +21231,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 setRuntimeValuePreserveParse(app, 'rawDataPath', rawDataPath);
                 app.RuntimeValues.rawDataPathActive = rawDataPath;
             end
+            app.SavedRuntimeInventoryContext = ctx;
             app.RuntimeInventoryRefreshSuspended = wasSuspended;
             hydrateRuntimeInventoryFromRunContext(app, ctx);
             if ~wasSuspended
@@ -21124,6 +21351,12 @@ classdef pipeline2 < matlab.apps.AppBase
             if isstruct(info) && isfield(info, 'ok') && logical(info.ok)
                 app.RuntimeParseInfo = info;
                 applyRuntimeParseInfo(app, info);
+            end
+
+            % Opening a saved run never reparses the remote raw dataset.
+            % Its snapshot (or the loaded project) supplies the initial UI.
+            if app.RuntimeInventoryMetadataOnly
+                return;
             end
 
             mode = runtimeInputModeFromRunContext(app, ctx);
@@ -21940,6 +22173,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
 
+                discoverRuntimeRoiInventory(app, true);
                 [okTemplate, reportTemplate] = refreshValidationReportWithOutput(app);
                 runtimeIssues = validateRuntimeInputs(app);
                 blockingRuntimeIssues = runtimeIssues(~contains(string(runtimeIssues), "unusual"));
@@ -22463,6 +22697,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             try
                 prepTimer = tic;
+                discoverRuntimeRoiInventory(app, true);
                 updateRunSaveProgress(app, dPrep, 'Preparing run: building runtime context...', 0.05);
                 ctxTimer = tic;
                 ctxPreflight = buildRunContext(app, dPrep);
@@ -23401,11 +23636,15 @@ classdef pipeline2 < matlab.apps.AppBase
             app.HasStartupPipeline = any(cellfun(@(arg)isa(arg, 'pipeline') || isa(arg, 'pipelineRun'), varargin));
             d = openRuntimeProgress(app, 'Pipeline', 'Opening pipeline interface...');
             startupProgressCleanup = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+            beginModuleTabRefreshBatch(app);
+            startupTabsCleanup = onCleanup(@()endModuleTabRefreshBatch(app, true)); %#ok<NASGU>
 
             % Execute startup logic after the designer-created layout exists
             runStartupFcn(app, @startupFcn)
 
             applyStartupArguments(app, varargin{:});
+            delete(startupTabsCleanup);
+            app.OpeningPipeline = false;
             delete(startupProgressCleanup);
 
             if app.BatchPrototypeMode && app.BatchPrototypeModal
