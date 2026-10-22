@@ -70,6 +70,9 @@ try
 catch
 end
 score_updateSelectedCensoringFields(app);
+if exist('detecdiv_event','file')==2
+    detecdiv_event('emit','scoreObjectSelectionChanged',struct('app',app));
+end
 end
 
 function value = onOff(tf)
