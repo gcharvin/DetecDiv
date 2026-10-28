@@ -3560,22 +3560,7 @@ function tf = roiListHasMaskLikeChannels(roiList)
 end
 
 function tf = roiListHasDataSeries(roiList)
-    tf = false;
-    try
-        if isempty(roiList)
-            return;
-        end
-        r0 = roiList(1);
-        if isprop(r0,'data') && ~isempty(r0.data)
-            tf = true;
-            return;
-        end
-        if isfield(r0,'data') && ~isempty(r0.data)
-            tf = true;
-        end
-    catch
-        tf = false;
-    end
+    tf = ~isempty(inferRoiDataSeriesNames(roiList));
 end
 
 function out = mergeKnownChannels(a, b)
@@ -4374,21 +4359,28 @@ end
 
 function names = inferRoiDataSeriesNames(roiList)
     names = {};
-    try
-        if isempty(roiList)
-            return;
+    % Inspect materialized ROI data only. Explicit GUI inventory discovery
+    % loads persisted series; validating a template must not trigger disk I/O.
+    for k = 1:numel(roiList)
+        try
+            r0 = roiList(k);
+            ds = [];
+            if isprop(r0, 'data') || isfield(r0, 'data')
+                ds = r0.data;
+            end
+            if isa(ds, 'dataseries')
+                % A default empty dataseries has a random id, not an input.
+                usable = arrayfun(@(d)~isempty(d.groupid) && ~isempty(d.data), ds);
+                current = cellstr(string({ds(usable).groupid}));
+            else
+                current = normalizeResourceNameList(ds);
+            end
+            names = [names current(:)']; %#ok<AGROW>
+        catch
+            % Numeric ROI placeholders carry no materialized data.
         end
-        r0 = roiList(1);
-        ds = [];
-        if isprop(r0, 'data')
-            ds = r0.data;
-        elseif isfield(r0, 'data')
-            ds = r0.data;
-        end
-        names = normalizeResourceNameList(ds);
-    catch
-        names = {};
     end
+    names = unique(names(~cellfun(@(n)isempty(strtrim(n)), names)), 'stable');
 end
 
 function role = inferDataSeriesRole(name)
@@ -4477,6 +4469,10 @@ end
 
 function available = initialAvailablePorts(ctx)
     available = fieldnames(ctx);
+    roiList = getField(ctx, 'roiList', getField(ctx, 'rois', []));
+    if ~isempty(inferRoiDataSeriesNames(roiList)) && ~any(strcmp(available, 'dataSeries'))
+        available{end+1} = 'dataSeries';
+    end
     if any(strcmp(available, 'shallowObj')) && ~any(strcmp(available, 'shallow'))
         available{end+1} = 'shallow'; %#ok<AGROW>
     elseif any(strcmp(available, 'shallow')) && ~any(strcmp(available, 'shallowObj'))

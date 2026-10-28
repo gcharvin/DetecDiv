@@ -13231,6 +13231,11 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function key = runtimeDataSeriesCacheKey(app)
             parts = {sprintf('metadataOnly=%d', app.RuntimeInventoryMetadataOnly)};
+            if runtimeStartsFromClassifier(app) && ~isempty(app.ExplicitRuntimeRoiList)
+                rois = app.ExplicitRuntimeRoiList;
+                parts{end+1} = ['classifierROI=' fullfile(char(string(rois(1).path)), char(string(rois(1).id)))];
+                parts{end+1} = sprintf('classifierRoiCount=%d', numel(rois));
+            end
             try, parts{end+1} = char(string(app.CurrentProjectVarName)); catch, end %#ok<AGROW>
             try
                 if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
@@ -13250,6 +13255,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function roiList = runtimeSelectedRois(app)
             roiList = [];
+            if runtimeStartsFromClassifier(app)
+                [roiList, ~] = selectedClassifierRoisForValidation(app);
+                return;
+            end
             if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
                 return;
             end
@@ -13287,6 +13296,13 @@ classdef pipeline2 < matlab.apps.AppBase
         function [roiList, nFovSampled] = runtimeSampledRoisForDataSeries(app)
             roiList = [];
             nFovSampled = 0;
+            if runtimeStartsFromClassifier(app)
+                roiList = runtimeSelectedRois(app);
+                indices = deterministicSample(app, 1:numel(roiList), ...
+                    min(12, numel(roiList)), runtimeDataSeriesCacheKey(app));
+                roiList = roiList(indices);
+                return;
+            end
             if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
                 return;
             end
