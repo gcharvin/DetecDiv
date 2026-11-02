@@ -47,11 +47,12 @@ hprogressbar = [];           % ui handle (uiprogressdlg or compatible)
 % =========================================================
 
 CorrectDrift      = true;
-DriftMethod       = 'robust';
-DriftRefMode      = 'fixed';
-DriftSubpixel     = true;
+driftDefaults    = roiExtract.driftDefaults();
+DriftMethod       = driftDefaults.method;
+DriftRefMode      = '';
+DriftSubpixel     = driftDefaults.subpixel;
 
-DriftMaxShift     = 20;
+DriftMaxShift     = driftDefaults.maxShift;
 DriftHipassSigma  = 3;
 DriftApodize      = true;
 DriftMask         = [];
@@ -59,10 +60,11 @@ DriftMask         = [];
 DriftRollingRef   = 0;     % IMPORTANT pour le test
 DriftWarmupFrames = 0;
 
-DriftPsrMin       = 10;
+DriftPsrMin       = driftDefaults.psrMin;
 DriftPsrRadius    = 6;
 
-DriftMaxStep      = 10;
+DriftMaxStep      = driftDefaults.maxStep;
+DriftReferenceInterval = driftDefaults.referenceInterval;
 DriftSmoothWin    = 0;
 
 DriftDebug        = true;
@@ -144,6 +146,8 @@ for i = 1:2:numel(varargin)
         case "driftrejectmode"
             DriftRejectMode = char(varargin{i+1});
 
+        case "driftreferenceinterval"
+            DriftReferenceInterval = varargin{i+1};
         case "driftmaxstep"
             DriftMaxStep = varargin{i+1};
         case "driftmaxstepmode"
@@ -190,7 +194,7 @@ checkExtractionCancellation(CancelTokenFile, hprogressbar, 'startup');
 
 % ---- Drift fallbacks (avoid missing vars during refactor) ----
 if ~exist('DriftMethod','var')       || isempty(DriftMethod),       DriftMethod = 'robust'; end
-if ~exist('DriftRefMode','var')      || isempty(DriftRefMode),      DriftRefMode = 'fixed'; end
+DriftRefMode = roiExtract.driftReferenceMode(DriftMethod,DriftRefMode);
 if ~exist('DriftSubpixel','var')     || isempty(DriftSubpixel),     DriftSubpixel = true; end
 if ~exist('DriftMaxShift','var')     || isempty(DriftMaxShift),     DriftMaxShift = 20; end
 if ~exist('DriftHipassSigma','var')  || isempty(DriftHipassSigma),  DriftHipassSigma = 3; end
@@ -200,7 +204,7 @@ if ~exist('DriftWarmupFrames','var') || isempty(DriftWarmupFrames), DriftWarmupF
 if ~exist('DriftPsrRadius','var')    || isempty(DriftPsrRadius),    DriftPsrRadius = 6; end
 if ~exist('DriftPsrMin','var')       || isempty(DriftPsrMin),       DriftPsrMin = 10; end
 if ~exist('DriftRejectMode','var')   || isempty(DriftRejectMode),   DriftRejectMode = 'hold'; end
-if ~exist('DriftMaxStep','var')      || isempty(DriftMaxStep),      DriftMaxStep = 10; end
+if ~exist('DriftMaxStep','var')      || isempty(DriftMaxStep),      DriftMaxStep = driftDefaults.maxStep; end
 if ~exist('DriftSmoothWin','var')    || isempty(DriftSmoothWin),    DriftSmoothWin = 0; end
 if ~exist('DriftSmoothMethod','var') || isempty(DriftSmoothMethod), DriftSmoothMethod = 'median'; end
 if ~exist('DriftDebug','var')        || isempty(DriftDebug),        DriftDebug = false; end
@@ -764,6 +768,7 @@ for kF = 1:numel(FOVIndex)
                 'psrmin',       DriftPsrMin, ...
                 'rejectmode',   DriftRejectMode, ...   % (PSR reject)
                 'maxstep',      DriftMaxStep, ...
+                'referenceinterval', DriftReferenceInterval, ...
                 'smoothwin',    DriftSmoothWin, ...
                 'smoothmethod', DriftSmoothMethod, ...
                 'debug',        DriftDebug, ...

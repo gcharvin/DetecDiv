@@ -64,6 +64,8 @@ classdef fov < handle
 
     properties (Transient)
         parent = [];
+        % Raw adaptive keyframe cache. Pixel arrays are never project metadata.
+        driftReferenceState = [];
     end
 
     methods

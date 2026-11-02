@@ -3,6 +3,9 @@ function [list, drift, score] = computeDrift(obj, varargin)
 %
 % Key points:
 %   - method='robust' estimates displacement against an immutable anchor.
+%     Default refMode='adaptive' can bridge appearance changes using a
+%     recent spatially validated keyframe, with its absolute pose recorded.
+%     Explicit refMode='fixed' retains the historical reference policy.
 %     Temporal prealignment bounds the new motion, while spatial consensus
 %     and pixel correlation validate it without a biological-domain model.
 %     maxshift limits the new motion, not the total lifetime displacement.
@@ -30,8 +33,9 @@ function [list, drift, score] = computeDrift(obj, varargin)
 %   'register'  : imregtform translation (no score)
 
 % ---------- Defaults ----------
-method      = 'robust';
-refMode     = 'fixed';
+defaults    = roiExtract.driftDefaults();
+method      = defaults.method;
+refMode     = ''; % resolved after method, preserving non-robust fixed defaults
 channel     = 1;
 images      = [];
 framesid    = [];
@@ -41,7 +45,7 @@ previousimage = []; % raw preceding processed frame, for a block boundary
 refframeid  = 1;
 crop        = 1.0;
 subpixel    = true;
-maxshift    = 20;     % robust: new-motion search bound; legacy fixed: absolute bound
+maxshift    = defaults.maxShift; % robust: new-motion bound, not lifetime drift
 hipasssigma = 3;
 apodize     = true;
 mask        = [];
@@ -49,8 +53,9 @@ mask        = [];
 % ---- Robustness (simple) ----
 warmupFrames = 0;
 psrRadius    = 6;
-psrMin       = 10;      % 0 => no PSR reject
-maxStep      = 10;      % motion between processed frames (px); 0 => off
+psrMin       = defaults.psrMin;
+maxStep      = defaults.maxStep;
+referenceInterval = defaults.referenceInterval;
 onReject     = 'hold';  % 'hold' | 'zero'  (when PSR too low)
 
 % ---- Optional smoothing ----
@@ -92,6 +97,7 @@ for i = 1:2:numel(varargin)
         case "psrradius",    psrRadius = max(1, round(double(val)));
         case "psrmin",       psrMin = double(val);
         case "maxstep",      maxStep = double(val);
+        case "referenceinterval", referenceInterval = double(val);
         case "rejectmode",   onReject = char(val);   % compat
         case "smoothwin",    smoothWin = round(double(val));
         case "smoothmethod", smoothMethod = char(val);
@@ -112,19 +118,13 @@ method = lower(char(string(method)));
 if strcmpi(method, 'integer')
     method = 'circshift';
 end
-if isempty(refMode)
-    if strcmpi(method,'robust'), refMode = 'fixed';
-    else,                         refMode = 'previous';
-    end
+refMode = string(roiExtract.driftReferenceMode(method,refMode));
+adaptiveMode = strcmpi(method,'robust') && refMode == "adaptive";
+absoluteMode = refMode ~= "previous";
+if ~isscalar(referenceInterval) || ~isfinite(referenceInterval) || referenceInterval<1
+    error('computeDrift:InvalidReferenceInterval','Reference interval must be positive.');
 end
-refMode = lower(string(refMode));
-if refMode == "anchor" || refMode == "first"
-    refMode = "fixed";
-end
-if strcmpi(method, 'robust')
-    refMode = "fixed";
-end
-absoluteMode = refMode == "fixed";
+referenceInterval=round(referenceInterval);
 
 % sanitize smoothing
 smoothMethod = lower(string(smoothMethod));
@@ -176,6 +176,7 @@ estimation_hist = cell(1,nT);
 anchorCorrelation_hist = NaN(1,nT);
 temporalCorrelation_hist = NaN(1,nT);
 anchorValidated_hist = false(1,nT);
+referenceFrames_hist = repmat(refframeid,1,nT);
 
 % residual effectiveness (after correction)
 resRow_hist  = NaN(1,nT);
@@ -195,7 +196,7 @@ else
     % orientation to avoid implicit expansion in consumers and comparisons.
     historyNames={'x','y','score','frames','accepted','decision','estimation', ...
         'consensusCount','consensusSpread','anchorCorrelation', ...
-        'temporalCorrelation','anchorValidated'};
+        'temporalCorrelation','anchorValidated','referenceFrames'};
     for hi=1:numel(historyNames)
         field=historyNames{hi};
         if isfield(drift,field), drift.(field)=reshape(drift.(field),1,[]); end
@@ -338,6 +339,37 @@ if ~isempty(previousimage) && hasPreviousFrame
     end
 end
 
+% A trusted raw keyframe and its absolute pose survive block boundaries in a
+% transient cache. Persist only its frame and pose so a cold resume can read
+% the same raw source, rather than serialize images into project metadata.
+keyframe=[];
+if adaptiveMode
+    signature={channel,crop,hipasssigma,denoiseSigma,apodize,mask};
+    cached=obj.driftReferenceState;
+    if hasPreviousFrame && isstruct(cached) && isfield(cached,'lastFrame') && ...
+            cached.lastFrame==prevAbs && isequal(cached.signature(:),signature(:))
+        keyframe=cached;
+    elseif hasPreviousFrame && isfield(drift,'adaptiveReference')
+        saved=drift.adaptiveReference;
+        if saved.frame<=prevAbs && isequal(saved.signature(:),signature(:))
+            raw=obj.readImage(saved.frame,channel);
+            if isempty(raw)
+                error('computeDrift:MissingAdaptiveReference', ...
+                    'Cannot restore trusted reference frame %d from the raw source.',saved.frame);
+            end
+            keyframe=saved;
+            keyframe.gray=cropCenter(toGray(raw),crop);
+            keyframe.proc=preprocess(keyframe.gray,hipasssigma,false,mask,denoiseSigma);
+            keyframe.edges=[];
+        end
+    end
+    if isempty(keyframe)
+        keyframe=struct('frame',refframeid,'row',0,'col',0, ...
+            'gray',cropCenter(refGray0,crop),'proc',fixedRefProc, ...
+            'edges',[],'signature',{signature},'lastFrame',refframeid);
+    end
+end
+
 cc = 1;
 for j = framesid
     % load
@@ -445,7 +477,44 @@ for j = framesid
                 % Biological changes can create a coherent false anchor mode.
                 % Cross-check weak/discordant anchors against the untouched
                 % preceding frame; keep the immutable anchor for reacquisition.
-                if ~isempty(previousRawProc) && ...
+                % Adaptive policy compares against a trusted keyframe, whose
+                % pose was validated before promotion. Never integrate a delta
+                % from a rejected raw frame into a held cumulative estimate.
+                if adaptiveMode && (~isfinite(stepRow) || anchorCorrelation<.5)
+                    prediction=[cumRow-keyframe.row cumCol-keyframe.col];
+                    [tr,tc,ts,tn,tspread,~,tcorrelation]=robustAnchorShift( ...
+                        keyframe.proc,imProc,subpixel,psrRadius,psrMin,maxshift, ...
+                        prediction,apodize,stepGate);
+                    temporalKind='';
+                    if ~isfinite(tr) || tn<6 || tcorrelation<.6 || tspread>.5
+                        if isempty(keyframe.edges)
+                            keyframe.edges=roiExtract.structuralRegistrationImage( ...
+                                keyframe.gray,hipasssigma,denoiseSigma,mask);
+                        end
+                        if isempty(movingEdges)
+                            movingEdges=roiExtract.structuralRegistrationImage( ...
+                                cropCenter(imGrayEst,crop),hipasssigma,denoiseSigma,mask);
+                        end
+                        [er,ec,es,en,espread,~,ecorrelation]=robustAnchorShift( ...
+                            keyframe.edges,movingEdges,subpixel,psrRadius,psrMin,maxshift, ...
+                            prediction,apodize,stepGate);
+                        if isfinite(er) && en>=6 && ecorrelation>=.6 && espread<=.5 && ...
+                                (~isfinite(tr) || ecorrelation>tcorrelation+.1 || espread<tspread*.5)
+                            tr=er;tc=ec;ts=es;tn=en;tspread=espread;
+                            tcorrelation=ecorrelation;temporalKind=':structural';
+                        end
+                    end
+                    temporalCorrelation=tcorrelation;
+                    if isfinite(tr) && tn>=6 && tcorrelation>=.6 && tspread<=.5
+                        stepRow=keyframe.row+tr;stepCol=keyframe.col+tc;
+                        sc=ts;consensusCount=tn;consensusSpread=tspread;
+                        estimationReason=['temporalFallback:keyframe' temporalKind];
+                        referenceFrames_hist(cc)=keyframe.frame;
+                    elseif ~isfinite(stepRow) || anchorCorrelation<.2
+                        if isfinite(stepRow), estimationReason='weakAnchorAndKeyframeEvidence'; end
+                        stepRow=NaN;stepCol=NaN;
+                    end
+                elseif ~adaptiveMode && ~isempty(previousRawProc) && ...
                         (~isfinite(stepRow) || anchorCorrelation<.5)
                     [tr,tc,ts,tn,tspread,~,temporalCorrelation]=robustAnchorShift( ...
                         previousRawProc,imProc,subpixel,psrRadius,psrMin,maxshift, ...
@@ -592,6 +661,20 @@ for j = framesid
     anchorValidated_hist(cc)=anchorValidated && accepted_hist(cc);
     cumRow_hist(cc) = cumRow;
     cumCol_hist(cc) = cumCol;
+
+    if adaptiveMode
+        % Absolute anchor matches can refresh immediately without integrating
+        % error. Relative-only matches refresh less often to limit chaining
+        % bias, at an interval independent of extraction block boundaries.
+        quality=anchorCorrelation;
+        if startsWith(estimationReason,'temporalFallback'), quality=temporalCorrelation; end
+        if accepted_hist(cc) && consensusCount>=6 && quality>=.6 && ...
+                consensusSpread<=.5 && (anchorValidated || j-keyframe.frame>=referenceInterval)
+            keyframe.frame=j;keyframe.row=cumRow;keyframe.col=cumCol;
+            keyframe.gray=cropCenter(imGray,crop);keyframe.proc=imProc;keyframe.edges=[];
+        end
+        keyframe.lastFrame=j;
+    end
 
     % apply cumulative shift to all channels (output)
     tApp = tic;
@@ -750,6 +833,13 @@ drift.consensusSpread(framesid)=consensusSpread_hist;
 drift.anchorCorrelation(framesid)=anchorCorrelation_hist;
 drift.temporalCorrelation(framesid)=temporalCorrelation_hist;
 drift.anchorValidated(framesid)=anchorValidated_hist;
+if adaptiveMode
+    if ~isfield(drift,'referenceFrames'), drift.referenceFrames=nan(size(drift.x)); end
+    drift.referenceFrames(framesid)=referenceFrames_hist;
+    drift.referenceInterval=referenceInterval;
+    drift.adaptiveReference=rmfield(keyframe,{'gray','proc','edges','lastFrame'});
+    obj.driftReferenceState=keyframe;
+end
 
 % ---------- footer timing ----------
 if doTiming

@@ -65,6 +65,10 @@ classdef roiExtractGUI < matlab.apps.AppBase
         end
 
         function params = mergeWithDefaults(app, params) %#ok<INUSD>
+            if ~isfield(params,'driftRefMode') && isfield(params,'driftMethod') && ...
+                    ~strcmpi(params.driftMethod,'robust')
+                params.driftRefMode=roiExtract.driftReferenceMode(params.driftMethod);
+            end
             defaults = roiExtract.setparam(struct());
             fn = fieldnames(defaults);
             for i = 1:numel(fn)
@@ -81,7 +85,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.CorrectDriftCheckBox.Value = logical(defaultLogical(app, params.correctDrift, true));
             app.DriftChannelEditField.Value = formatNumericField(app, params.driftChannel);
             app.DriftMethodDropDown.Value = validateChoice(app, char(string(params.driftMethod)), app.DriftMethodDropDown.Items, 'robust');
-            app.DriftRefModeDropDown.Value = validateChoice(app, char(string(params.driftRefMode)), app.DriftRefModeDropDown.Items, 'fixed');
+            updateDriftReferenceChoices(app,params.driftRefMode);
             app.DriftSubpixelCheckBox.Value = logical(defaultLogical(app, params.driftSubpixel, true));
             app.DriftMaxShiftEditField.Value = defaultNumeric(app, params.driftMaxShift, 20);
             app.ScaleEditField.Value = defaultNumeric(app, params.scale, 1);
@@ -91,6 +95,16 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.ExtendCheckBox.Value = logical(defaultLogical(app, params.extend, false));
             app.ForceChannelNamesCheckBox.Value = logical(defaultLogical(app, params.forceChannelNames, true));
             populateFovTable(app, params);
+        end
+
+        function updateDriftReferenceChoices(app, requested)
+            [mode,choices]=roiExtract.driftReferenceMode(app.DriftMethodDropDown.Value,requested);
+            app.DriftRefModeDropDown.Items=choices;
+            app.DriftRefModeDropDown.Value=mode;
+        end
+
+        function DriftMethodChanged(app, ~)
+            updateDriftReferenceChoices(app,'');
         end
 
         function populateFovTable(app, params)
@@ -390,6 +404,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
 
             app.DriftMethodDropDown = uidropdown(app.MainLayout);
             app.DriftMethodDropDown.Items = {'robust', 'subpixel', 'integer'};
+            app.DriftMethodDropDown.ValueChangedFcn = createCallbackFcn(app, @DriftMethodChanged, true);
             app.DriftMethodDropDown.Layout.Row = 5;
             app.DriftMethodDropDown.Layout.Column = 2;
 
@@ -399,7 +414,8 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.DriftRefModeDropDownLabel.Layout.Column = 1;
 
             app.DriftRefModeDropDown = uidropdown(app.MainLayout);
-            app.DriftRefModeDropDown.Items = {'fixed', 'previous'};
+            app.DriftRefModeDropDown.Items = {'adaptive', 'fixed'};
+            app.DriftRefModeDropDown.Tooltip = 'Adaptive: initial anchor with trusted recent references when image appearance changes.';
             app.DriftRefModeDropDown.Layout.Row = 6;
             app.DriftRefModeDropDown.Layout.Column = 2;
 

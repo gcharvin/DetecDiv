@@ -56,7 +56,7 @@ verifyTrue(testCase,drift.accepted);
 verifyEqual(testCase,drift.x,0,'AbsTol',1e-8);
 verifyEqual(testCase,drift.y,0,'AbsTol',1e-8);
 verifyEqual(testCase,drift.method,'robust');
-verifyEqual(testCase,drift.refMode,'fixed');
+verifyEqual(testCase,drift.refMode,'adaptive');
 end
 
 function testRejectedFirstFrameOfNextBlockHoldsCorrection(testCase)

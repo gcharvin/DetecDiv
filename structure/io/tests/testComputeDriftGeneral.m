@@ -9,7 +9,7 @@ other=uint16(500+.7*double(ref));
 images(:,:,2,:)=translateSequence(other,rows,cols);
 f=fov(); [corrected,d]=f.computeDrift('images',images);
 verifyEqual(testCase,d.method,'robust');
-verifyEqual(testCase,d.refMode,'fixed');
+verifyEqual(testCase,d.refMode,'adaptive');
 verifyTrue(testCase,all(d.accepted));
 verifyLessThan(testCase,max(hypot(d.x+rows,d.y+cols)),.1);
 for channel=1:2

@@ -51,11 +51,11 @@ function ctx = process(ctx)
     elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
         p = mergeStructOverride(p, ctx.params);
     end
-    % Robust registration always uses a fixed anchor. Persist the effective
-    % setting so saved runs cannot misleadingly report a previous-frame mode.
-    if isfield(p,'driftMethod') && strcmpi(p.driftMethod,'robust')
-        p.driftRefMode = 'fixed';
+    % Record the effective backend policy; honor explicit legacy fixed runs.
+    if ~strcmpi(p.driftMethod,'robust') && strcmpi(p.driftRefMode,'adaptive')
+        p.driftRefMode='fixed';
     end
+    p.driftRefMode = roiExtract.driftReferenceMode(p.driftMethod,p.driftRefMode);
 
     hasRuntimeFovSelection = isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'fovs');
     runtimeFovSelection = [];
@@ -1699,6 +1699,9 @@ function args = buildExtractArgs(p, progressDlg, ctx)
     end
     if isfield(p,'driftMaxStep') && ~isempty(p.driftMaxStep)
         args = [args {'DriftMaxStep'} {p.driftMaxStep}];
+    end
+    if isfield(p,'driftReferenceInterval') && ~isempty(p.driftReferenceInterval)
+        args = [args {'DriftReferenceInterval'} {p.driftReferenceInterval}];
     end
     if isfield(p,'driftPsrMin') && ~isempty(p.driftPsrMin)
         args = [args {'DriftPsrMin'} {p.driftPsrMin}];
