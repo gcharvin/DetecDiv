@@ -85,9 +85,12 @@ for s = 1:numel(seriesNames)
     shape = double(arrayJson.shape(:))';
     chunks = double(arrayJson.chunk_grid.configuration.chunk_shape(:))';
     dimNames = localGetV3DimNames(arrayJson);
+    if isempty(dimNames)
+        dimNames = localDefaultDimNames(shape);
+    end
     tDim = localFindDim(dimNames, 't', 1);
     cDim = localFindDim(dimNames, 'c', 2);
-    zDim = localFindDim(dimNames, 'z', 3);
+    zDim = localFindDim(dimNames, 'z');
 
     if numel(shape) < 4 || isempty(tDim) || isempty(cDim)
         warning('Unsupported OME-Zarr array dimensions in %s', arrayJsonPath);
@@ -144,12 +147,12 @@ for s = 1:numel(seriesNames)
     chunks = double(arrayJson.chunks(:))';
     dimNames = localGetV2DimNames(arrayAttrs, rootAttrs);
     if isempty(dimNames)
-        dimNames = {'t','c','z','y','x'};
+        dimNames = localDefaultDimNames(shape);
     end
 
     tDim = localFindDim(dimNames, 't', 1);
     cDim = localFindDim(dimNames, 'c', 2);
-    zDim = localFindDim(dimNames, 'z', 3);
+    zDim = localFindDim(dimNames, 'z');
     if isempty(tDim) || isempty(cDim) || numel(shape) < max([tDim cDim])
         warning('Unsupported OME-Zarr v2 array dimensions in %s', arrayJsonPath);
         continue;
@@ -368,6 +371,16 @@ function idx = localFindDim(dimNames, name, fallback)
 idx = find(strcmpi(dimNames, name), 1, 'first');
 if isempty(idx) && nargin >= 3
     idx = fallback;
+end
+end
+
+function dimNames = localDefaultDimNames(shape)
+% Legacy stores without axis names use TCYX or TCZYX. An explicitly
+% named array without Z must never acquire a positional Z fallback.
+if numel(shape) == 4
+    dimNames = {'t','c','y','x'};
+else
+    dimNames = {'t','c','z','y','x'};
 end
 end
 
