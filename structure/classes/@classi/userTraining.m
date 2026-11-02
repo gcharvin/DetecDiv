@@ -190,6 +190,8 @@ ensureCellInformationDataseries(roiObj);
 
     if ~isempty(annotationSession)
         app.setAnnotationSession(annotationSession);
+    elseif strcmpi(category, "LSTM")
+        app.selectClassifierTrainingData(classif);
     end
 
         % app.updatePanelsLayout();

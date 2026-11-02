@@ -102,6 +102,57 @@ app.assignSelectedTrainingClass('arrested',true);
 verifyEqual(testCase,r.data(di).data.id_training(9:12),[0;2;2;2]);
 end
 
+function testManagedAnnotationSelectsLabelsAndAllInputChannels(testCase)
+[c,r,cleanup] = inputSelectionFixture(); %#ok<ASGLU>
+session = c.annotationSession(1);
+app = score(r,'dataAnnotation','CacheIsFresh',true);
+appCleanup = onCleanup(@()closeApp(app)); %#ok<NASGU>
+app.setAnnotationSession(session);
+verifyAnnotationSelection(testCase,app,r,c);
+% No manual table selection is needed before using a class shortcut.
+app.keys = {'a','z'};
+callback = app.ImageFigure.KeyPressFcn;
+callback(app.ImageFigure,struct('Key','z','Modifier',{{}}));
+verifyEqual(testCase,r.data(2).data.id_training(1:4),2*ones(4,1));
+end
+
+function testLegacyAnnotationReusesScoreAndRestoresInputSelection(testCase)
+[c,r,cleanup] = inputSelectionFixture(); %#ok<ASGLU>
+app = score(r,'','CacheIsFresh',true);
+appCleanup = onCleanup(@()closeApp(app)); %#ok<NASGU>
+app.UIDataTable.Selection = [1 1];
+c.userTraining('Roi',1);
+verifyAnnotationSelection(testCase,app,r,c);
+% Opening the same ROI again must restore the annotation defaults too.
+r.display.selectedchannel = [false false true];
+app.UIDataTable.Selection = [1 1];
+c.userTraining('Roi',1);
+verifyAnnotationSelection(testCase,app,r,c);
+end
+
+function verifyAnnotationSelection(testCase,app,r,c)
+verifyEqual(testCase,app.UIDataTable.Data{app.UIDataTable.Selection(1),2},c.strid);
+verifyEqual(testCase,app.UISubDataTable.Data{app.UISubDataTable.Selection(1),2},'labels_training');
+verifyEqual(testCase,logical(r.display.selectedchannel),[true true false]);
+verifyEqual(testCase,logical(cell2mat(app.UIChannelTable.Data(:,1))).',[true true false]);
+verifyTrue(testCase,r.data(2).show);
+end
+
+function [c,r,cleanup] = inputSelectionFixture()
+[c,r,cleanup] = fixture();
+r.addChannel(uint16(2*ones(8,8,1,12)),'fluorescence',[1 1 1],[1 1 1]);
+r.addChannel(uint16(3*ones(8,8,1,12)),'unrelated',[1 1 1],[1 1 1]);
+c.channelName = {'raw','fluorescence'};
+r.display.indexed = false(1,3);
+r.display.selectedchannel = [false false true];
+other = dataseries;
+other.groupid = 'other_classifier'; other.class = 'classification';
+other.data = table(ones(12,1),'VariableNames',{'id'});
+other.show = true;
+r.data = [other r.data];
+r.save([],false);
+end
+
 function [c,r,cleanup] = fixture()
 folder = tempname; mkdir(folder);
 cleanup = onCleanup(@()removeFolder(folder));

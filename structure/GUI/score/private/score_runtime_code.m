@@ -2047,6 +2047,38 @@ end
             app.selectPanelTab('annotation');
         end
 
+        function selectClassifierTrainingData(app, classif)
+            % Annotation starts on the classifier's GT and every bound image
+            % input, independently of a previously viewed ROI or preset.
+            roi = app.getSelectedROI();
+            if isempty(roi), return; end
+            dataIndex = find(strcmp({roi.data.groupid}, classif.strid), 1);
+            if isempty(dataIndex), return; end
+            app.DisplaySettings.annotation.state = 'data';
+            app.DisplaySettings.annotation.groupid = classif.strid;
+            app.DisplaySettings.annotation.dataidx = dataIndex;
+            for i = 1:numel(roi.data)
+                roi.data(i).show = (i == dataIndex);
+            end
+            ds = roi.data(dataIndex);
+            ds.ensurePlotProperties();
+            props = ds.plotProperties;
+            for i = 1:size(props,1)
+                props{i,1} = strcmp(props{i,2}, 'labels_training');
+            end
+            ds.plotProperties = props;
+            roi.data(dataIndex) = ds;
+            inputs = cellstr(string(classif.channelName));
+            inputs = inputs(~cellfun(@isempty, inputs));
+            if ~isempty(inputs)
+                score_loadChannelsForDisplay(roi, inputs);
+                roi.display.selectedchannel = ...
+                    ismember(string(roi.display.channel), string(inputs));
+            end
+            app.displayROIChannels();
+            app.displayData();
+        end
+
         function [frames, isWindow, classif] = trainingClassFrames(app, roi)
             classif = [];
             if ~isempty(app.AnnotationSession) && isvalid(app.AnnotationSession)
@@ -2461,6 +2493,15 @@ end
             preset = context.displayPreset;
             roi = app.getSelectedROI();
             if isempty(roi) || ~strcmp(char(string(roi.id)), context.roiId)
+                return;
+            end
+
+            if strcmp(context.legacyScoreOption, 'dataAnnotation') && ...
+                    any(strcmp({app.AnnotationSession.Spec.components.kind}, 'frame_labels'))
+                % Frame-label annotation uses all classifier inputs. The
+                % single-background mask preset below is for mask editors.
+                app.selectClassifierTrainingData(app.AnnotationSession.Classifier);
+                app.setManagedAnnotationLayout(true);
                 return;
             end
 
