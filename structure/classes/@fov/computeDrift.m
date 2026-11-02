@@ -9,6 +9,8 @@ function [list, drift, score] = computeDrift(obj, varargin)
 %   - refMode='previous' remains available for legacy runs. It estimates a
 %     residual step and integrates it over time.
 %   - Blocks seed from the last earlier processed frame, including sparse runs.
+%     In previous-frame mode, previousimage supplies that frame's raw image;
+%     its saved correction reconstructs the reference at a block boundary.
 %   - drift.accepted/decision/estimation, consensusCount/Spread and
 %     anchorCorrelation are indexed by absolute frame IDs. A rejected robust
 %     frame holds the last correction; a small residual alone is not proof
@@ -182,8 +184,9 @@ resNorm_hist = NaN(1,nT);
 
 % ---------- drift struct ----------
 % We keep existing obj.drift.x/y as "global correction history" over absolute frames.
-if isempty(obj) || ~isprop(obj,'drift') || isempty(obj.drift) || ...
-        ~isstruct(obj.drift) || ~isfield(obj.drift,'x') || ~isfield(obj.drift,'y')
+hasStoredDrift = ~isempty(obj) && isprop(obj,'drift') && ~isempty(obj.drift) && ...
+    isstruct(obj.drift) && isfield(obj.drift,'x') && isfield(obj.drift,'y');
+if ~hasStoredDrift
     drift.x = zeros(1, max(framesid));
     drift.y = zeros(1, max(framesid));
 else
@@ -288,7 +291,8 @@ if stitchFromObjDrift && ~legacyMode && framesid(1) > 1
         cumRow = -double(drift.x(prevAbs));
         cumCol = -double(drift.y(prevAbs));
         hasPreviousFrame = true;
-    elseif ~absoluteMode && numel(drift.x) >= prevAbs && numel(drift.y) >= prevAbs
+    elseif ~absoluteMode && hasStoredDrift && ...
+            numel(drift.x) >= prevAbs && numel(drift.y) >= prevAbs
         cumRow = -double(drift.x(prevAbs));
         cumCol = -double(drift.y(prevAbs));
         hasPreviousFrame = true;
@@ -300,9 +304,38 @@ end
 prevProc = fixedRefProc;
 previousRawProc=[];
 previousGray=[];
+if ~absoluteMode && hasPreviousFrame && isempty(previousimage)
+    % Older block callers may omit previousimage. Read the preceding raw
+    % frame when possible rather than silently dropping its boundary motion.
+    try
+        previousimage = obj.readImage(prevAbs, channel);
+    catch ME
+        error('computeDrift:MissingPreviousImage', ...
+            ['Previous-frame drift at frame %d requires the raw image of ' ...
+             'preceding processed frame %d. Pass previousimage or restore ' ...
+             'the FOV source. Source read failed: %s'], ...
+            framesid(1), prevAbs, ME.message);
+    end
+    if isempty(previousimage)
+        error('computeDrift:MissingPreviousImage', ...
+            ['Previous-frame drift at frame %d requires the raw image of ' ...
+             'preceding processed frame %d. Pass previousimage or restore ' ...
+             'the FOV source.'], framesid(1), prevAbs);
+    end
+end
+hasIncrementalReference = ~absoluteMode && hasPreviousFrame && ~isempty(previousimage);
 if ~isempty(previousimage) && hasPreviousFrame
-    previousGray=cropCenter(toGray(previousimage),crop);
-    previousRawProc=preprocess(cropCenter(toGray(previousimage),crop),hipasssigma,false,mask,denoiseSigma);
+    previousFullGray=toGray(previousimage);
+    previousGray=cropCenter(previousFullGray,crop);
+    previousRawProc=preprocess(previousGray,hipasssigma,false,mask,denoiseSigma);
+    if hasIncrementalReference
+        % Match the reference produced inside a single block: translate the
+        % untouched preceding image exactly once, then crop and preprocess.
+        previousCorrected=imtranslate(previousFullGray, [-cumCol -cumRow], ...
+            'linear', 'FillValues', median(previousFullGray(:)));
+        prevProc=preprocess(cropCenter(previousCorrected,crop), ...
+            hipasssigma,globalWindow,mask,denoiseSigma);
+    end
 end
 
 cc = 1;
@@ -350,10 +383,11 @@ for j = framesid
     if doTiming, TT.prep = TT.prep + toc(tPrep); end
 
     % choose reference for estimation
+    initialIncrementalFrame = (cc == 1) && ~absoluteMode && ~hasIncrementalReference;
     if absoluteMode
         refEst = fixedRefProc;
     else
-        if cc == 1
+        if initialIncrementalFrame
             refEst = imProc; % step forced to 0 below
         else
             refEst = prevProc; % already in corrected frame
@@ -370,7 +404,7 @@ for j = framesid
     temporalCorrelation = NaN;
     movingEdges=[];
     anchorValidated = false;
-    if (cc == 1) && ~absoluteMode
+    if initialIncrementalFrame
         stepRow = 0; stepCol = 0; sc = 0;
     else
         switch lower(method)
@@ -474,7 +508,8 @@ for j = framesid
     end
 
     % PSR reject (only meaningful for subpixel)
-    if strcmpi(method,'subpixel') && psrMin > 0 && ~isnan(sc) && sc < psrMin
+    if strcmpi(method,'subpixel') && ~initialIncrementalFrame && ...
+            psrMin > 0 && ~isnan(sc) && sc < psrMin
         if strcmpi(onReject,'zero')
             stepRow = 0; stepCol = 0;
             decisionParts(end+1) = "psrReject|zero";
