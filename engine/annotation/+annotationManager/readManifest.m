@@ -5,11 +5,14 @@ manifest = emptyManifest();
 storeIndex = [];
 if isempty(roiObj), return; end
 
-ensureDataLoaded(roiObj);
+loadedFromDisk = ensureDataLoaded(roiObj);
 data = roiObj.data;
 if isempty(data), return; end
 [manifest, storeIndex, found] = manifestFromData(data);
 if found, return; end
+% We just read this authoritative file. A second deserialization cannot find
+% a lifecycle series that was absent in the first read (common for legacy GT).
+if loadedFromDisk, return; end
 
 % A classifier snapshot may retain other ROI dataseries while its annotation
 % manifest was written later by Score to data_<roi>.mat. In that case the
@@ -72,7 +75,8 @@ catch
 end
 end
 
-function ensureDataLoaded(roiObj)
+function loadedFromDisk = ensureDataLoaded(roiObj)
+loadedFromDisk = false;
 hasRealData = false;
 try
     data = roiObj.data;
@@ -86,6 +90,7 @@ try
         ['data_' char(string(roiObj.id)) '.mat']);
     if isfile(dataFile)
         roiObj.load('Data', 'Silent');
+        loadedFromDisk = true;
     end
 catch
 end

@@ -43,6 +43,9 @@ c.dataset.channels = {'BF'};
 app = classifierGUI(c);
 appCleanup = onCleanup(@()deleteClassifierGUI(app)); %#ok<NASGU>
 drawnow;
+verifyEqual(testCase, app.NumberofannotatedROIsEditField.Value, 'Open ROI tab', ...
+    'Opening classifier parameters must defer the per-ROI annotation audit.');
+verifyEqual(testCase, app.AnnotatedROIswithvalidationdataEditField.Value, 'Open ROI tab');
 catalogueMenu = findall(app.ClassifierMenu, ...
     'Tag', 'DetecdivModuleCatalogueMenu');
 verifyNumElements(testCase, catalogueMenu, 1);
@@ -61,6 +64,9 @@ verifyEqual(testCase, char(editors(1).Enable), 'off', ...
 tabCallback = app.SettrainingandvalidationsetROIsTab.ButtonDownFcn;
 tabCallback(app.SettrainingandvalidationsetROIsTab, []);
 drawnow;
+verifyFalse(testCase, isnan(str2double(app.NumberofannotatedROIsEditField.Value)), ...
+    'Opening the ROI tab must populate live annotation statistics.');
+verifyFalse(testCase, isnan(str2double(app.AnnotatedROIswithvalidationdataEditField.Value)));
 trainingTabCallback = app.SettrainingparametersTab.ButtonDownFcn;
 trainingTabCallback(app.SettrainingparametersTab, []);
 drawnow;

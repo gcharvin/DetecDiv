@@ -11464,8 +11464,8 @@ end
             % hard drive, this function allows one to restore the previous
             % verison
 
-            if numel(app.Tree.SelectedNodes)==0
-                uialert(app.DetecDivUIFigure,'First select a classifier in the tree window!','Error');
+            if numel(app.Tree.SelectedNodes)~=1
+                uialert(app.DetecDivUIFigure,'Select exactly one classifier in the tree window!','Error');
                 return;
             end
 
@@ -11492,24 +11492,32 @@ end
                 clas=shallowObj.processing.classification(pos);
             end
 
-            dirpath=fullfile(clas.path);
-
-            ls=dir(dirpath);
-            lsname={ls.name};
-
-            for i=1:numel(clas.roi)
-
-                nme=['im_' clas.roi(i).id '.mat'];
-
-                if numel(find(matches(lsname,nme)))
-                    fle=fullfile(dirpath,nme);
-                    tmp=load(fle);
-                    clas.roi(i)=tmp.roiobj;
-                    %  clas.roi(i).clear;
-                    clas.roi(i).save;
-                    clas.roi(i).clear;
+            try
+                progress = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Restore ROIs', 'Message', 'Reading missing ROIs from disk...', ...
+                    'Indeterminate', 'on');
+                progressCleanup = onCleanup(@()delete(progress)); %#ok<NASGU>
+                report = classiRestoreDiskRois(clas);
+                clear progressCleanup;
+                app.stopRoiTreeBuild();
+                delete(selectedNodes.Children);
+                if strcmp(str, 'Classifier')
+                    app.startRoiTreeBuild(selectedNodes, app.buildRoiTreeLabels(clas.roi), ...
+                        'Classifierrois', cc);
+                else
+                    app.startRoiTreeBuild(selectedNodes, app.buildRoiTreeLabels(clas.roi), ...
+                        'Projectclassirois', arg);
                 end
-
+                app.TreeSelectionChanged([]);
+                msg = sprintf(['Disk ROIs: %d\nAlready listed: %d\nAdded: %d\nFailed: %d\n\n' ...
+                    'Save the classifier/project to keep this restored list.'], ...
+                    report.scanned, report.existing, numel(report.added), numel(report.failed));
+                if ~isempty(report.failed)
+                    msg = sprintf('%s\n\n%s', msg, strjoin(report.failed, ', '));
+                end
+                uialert(app.DetecDivUIFigure, msg, 'Restore ROIs', 'Icon', 'info');
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Restore ROIs failed');
             end
         end
 

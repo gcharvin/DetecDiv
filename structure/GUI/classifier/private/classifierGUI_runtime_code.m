@@ -1842,6 +1842,9 @@ function displayData(app, annotationScanMode) % displays rois in the table
                 'Could not summarize annotations: %s', ME.message);
         end
     end
+    if numel(annotationRows) == numel(rois)
+        updateAnnotationStatistics(app, annotationRows);
+    end
     app.annotationInitialRows = struct([]);
 
     if numel(rois) == 1
@@ -2047,6 +2050,19 @@ function displayData(app, annotationScanMode) % displays rois in the table
     app.BoundsnoticeLabel.Text = localBoundsNotice(app,boundsType, globalBounds);
     updateAnnotationActionState(app);
     app.roiTableInitialized = true;
+end
+
+function updateAnnotationStatistics(app, rows)
+    statuses = string({rows.status});
+    validationStatuses = string({rows.validationStatus});
+    app.NumberofannotatedROIsEditField.Value = ...
+        num2str(nnz(~strcmpi(statuses, 'missing')));
+    app.AnnotatedROIswithvalidationdataEditField.Value = ...
+        num2str(nnz(strcmpi(statuses, 'approved') | ...
+            strcmpi(validationStatuses, 'valid')));
+    app.AnnotatedROIswithvalidationdataEditFieldLabel.Text = 'Ready annotation ROIs:';
+    app.NumberofannotatedROIsEditField.Tooltip = '';
+    app.AnnotatedROIswithvalidationdataEditField.Tooltip = '';
 end
 
 function rows = annotationSummaryRows(app, classiObj, roiIndices, varargin) %#ok<INUSD>
@@ -2540,7 +2556,8 @@ end
             end
         end
         
-        function displayProperties(app)
+        function displayProperties(app, scanAnnotations)
+            if nargin < 2, scanAnnotations = true; end
 
             % display classi generic parameters
 
@@ -2633,21 +2650,25 @@ end
      end
 
 
+     % Opening parameters must not audit every ROI on a network drive.
+     % The ROI tab performs the same live checks and fills these counters.
+     if ~scanAnnotations
+         app.NumberofannotatedROIsEditField.Value = 'Open ROI tab';
+         app.AnnotatedROIswithvalidationdataEditField.Value = 'Open ROI tab';
+         app.NumberofannotatedROIsEditField.Tooltip = ...
+             'Annotation counts are checked when the training and validation ROI tab is opened.';
+         app.AnnotatedROIswithvalidationdataEditField.Tooltip = ...
+             app.NumberofannotatedROIsEditField.Tooltip;
+         return;
+     end
+
      % Annotation lifecycle statistics shared by every classifier category.
      try
          rows = annotationSummaryRows(app, classiObj);
          if ~app.roiTableInitialized
              app.annotationInitialRows = rows;
          end
-         statuses = string({rows.status});
-         validationStatuses = string({rows.validationStatus});
-         app.NumberofannotatedROIsEditField.Value = ...
-             num2str(nnz(~strcmpi(statuses, 'missing')));
-         app.AnnotatedROIswithvalidationdataEditField.Value = ...
-             num2str(nnz(strcmpi(statuses, 'approved') | ...
-                 strcmpi(validationStatuses, 'valid')));
-         app.AnnotatedROIswithvalidationdataEditFieldLabel.Text = ...
-             'Ready annotation ROIs:';
+         updateAnnotationStatistics(app, rows);
      catch
          app.NumberofannotatedROIsEditField.Value = 'Not available';
          app.AnnotatedROIswithvalidationdataEditField.Value = 'Not available';
@@ -2907,7 +2928,7 @@ end
         showParamEditor(app, app.paramSelectedKey);
     end
 
-    displayProperties(app);
+    displayProperties(app, false);
 
 
 

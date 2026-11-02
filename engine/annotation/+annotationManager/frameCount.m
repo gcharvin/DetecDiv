@@ -58,7 +58,9 @@ try
     end
     count=max(count,diskMaximum);
     if diskMaximum>0&&~isempty(signature)
-        if imageCounts.Count>=512,remove(imageCounts,keys(imageCounts));end
+        % Keep ordinary classifier collections through repeated scans. The
+        % former 512-entry whole-cache flush thrashed with 635+ ROI datasets.
+        if imageCounts.Count>=4096,remove(imageCounts,keys(imageCounts));end
         imageCounts(h5File)=struct('signature',signature,'count',diskMaximum);
     end
 catch
