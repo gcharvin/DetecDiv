@@ -90,6 +90,11 @@ classdef detecdiv < matlab.apps.AppBase
         RoiTreeBuildTimer = []
         RoiTreeBuildDialog = []
         RoiTreeBuildState = struct()
+        SelectedPathField matlab.ui.control.EditField
+        CopyAbsolutePathButton matlab.ui.control.Button
+        OpenExplorerButton matlab.ui.control.Button
+        MainInformationTextArea matlab.ui.control.TextArea
+        SelectedPathIsFile logical = false
         MainGrid matlab.ui.container.GridLayout
         WorkspaceEventListenerId string = ""
         SkipRunDiskRefresh logical = false
@@ -6591,6 +6596,9 @@ end
                 if ~isequal(app.(name).Position, position)
                     app.(name).Position = position;
                 end
+                if strcmp(name, 'ProjectInformationLabel') && app.componentExists('MainInformationTextArea')
+                    app.MainInformationTextArea.Position = [position(1:3), max(24, position(4)-68)];
+                end
             catch
             end
         end
@@ -6601,6 +6609,10 @@ end
             end
             try
                 app.(name).Visible = value;
+                if strcmp(name, 'ProjectInformationLabel') && app.componentExists('MainInformationTextArea')
+                    app.MainInformationTextArea.Visible = value;
+                    app.ProjectInformationLabel.Visible = 'off';
+                end
             catch
             end
         end
@@ -6611,6 +6623,9 @@ end
             end
             try
                 app.(name).Text = value;
+                if strcmp(name, 'ProjectInformationLabel') && app.componentExists('MainInformationTextArea')
+                    app.MainInformationTextArea.Value = splitlines(string(value));
+                end
             catch
             end
         end
@@ -6873,6 +6888,84 @@ end
             end
         end
 
+        function ensureMainPathControls(app)
+            if app.componentExists('SelectedPathField')
+                return;
+            end
+            app.SelectedPathField = uieditfield(app.ProjectsPanel, 'text', ...
+                'Position', [8 575 410 24], 'Editable', 'off', ...
+                'Placeholder', 'No saved path', 'Tag', 'SelectedAbsolutePath', ...
+                'Tooltip', 'Absolute path: select text to copy it.');
+            app.CopyAbsolutePathButton = uibutton(app.ProjectsPanel, 'push', ...
+                'Position', [8 543 200 26], 'Text', 'Copy absolute path', ...
+                'Tag', 'CopyAbsolutePath', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~,~)app.copyMainSelectedPath());
+            app.OpenExplorerButton = uibutton(app.ProjectsPanel, 'push', ...
+                'Position', [218 543 200 26], 'Text', 'Open Explorer', ...
+                'Tag', 'OpenPathExplorer', 'Enable', 'off', ...
+                'Tooltip', 'Open this folder, or the folder containing this file.', ...
+                'ButtonPushedFcn', @(~,~)app.openMainSelectedPath());
+            % Keep the App Designer label as the layout anchor, while long
+            % descriptions can scroll and their text can be selected.
+            app.MainInformationTextArea = uitextarea(app.ProjectsPanel, ...
+                'Position', [8 112 420 421], 'Editable', 'off', ...
+                'Tag', 'MainInformationTextArea', ...
+                'BackgroundColor', app.ProjectsPanel.BackgroundColor);
+            app.ProjectInformationLabel.Visible = 'off';
+        end
+
+        function setMainSelectedPath(app, value, isFile)
+            if nargin < 3, isFile = false; end
+            app.ensureMainPathControls();
+            value = char(string(value));
+            if ~isempty(value) && ~(ispc && startsWith(value, '/'))
+                % Absolute paths remain copyable even when temporarily offline.
+                pathFile = java.io.File(value);
+                value = char(pathFile.getAbsolutePath());
+            end
+            app.SelectedPathIsFile = isFile;
+            app.SelectedPathField.Value = value;
+            app.SelectedPathField.Tooltip = value;
+            enabled = 'off';
+            if ~isempty(value), enabled = 'on'; end
+            app.CopyAbsolutePathButton.Enable = enabled;
+            app.OpenExplorerButton.Enable = enabled;
+        end
+
+        function copyMainSelectedPath(app)
+            value = app.SelectedPathField.Value;
+            if isempty(value), return; end
+            try
+                clipboard('copy', value);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Cannot copy path');
+            end
+        end
+
+        function openMainSelectedPath(app)
+            value = app.SelectedPathField.Value;
+            if isempty(value), return; end
+            folder = value;
+            if app.SelectedPathIsFile || isfile(folder)
+                folder = fileparts(value);
+            end
+            if ~isfolder(folder)
+                uialert(app.DetecDivUIFigure, ...
+                    ['Folder is unavailable: ' folder], 'Cannot open folder');
+                return;
+            end
+            try
+                if ispc
+                    winopen(folder);
+                else
+                    folderFile = java.io.File(folder);
+                    web(char(folderFile.toURI().toString()), '-browser');
+                end
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Cannot open folder');
+            end
+        end
+
         function applyMainWindowLayout(app)
             if ~isvalid(app.DetecDivUIFigure)
                 return;
@@ -6880,6 +6973,7 @@ end
 
             figPos = app.DetecDivUIFigure.Position;
             app.DetecDivUIFigure.Position = [figPos(1) figPos(2) max(figPos(3), 708) max(figPos(4), 674)];
+            app.ensureMainPathControls();
 
             if isempty(app.MainGrid) || ~isvalid(app.MainGrid)
                 app.MainGrid = uigridlayout(app.DetecDivUIFigure, [2 2]);
@@ -7002,6 +7096,7 @@ end
         end
 
         function resetMainPanelState(app)
+            app.setMainSelectedPath('');
             try, app.ProjectsPanel.Title = 'Projects'; catch, end
             app.setComponentText('ProjectInformationLabel', 'Project Information');
             app.setComponentVisible('ProjectInformationLabel', 'on');
@@ -7176,6 +7271,8 @@ end
             selectionCleanup = onCleanup(@()app.finishTreeSelection()); %#ok<NASGU>
             selectedNodes = app.Tree.SelectedNodes;
 
+            app.setMainSelectedPath('');
+
             app.AdddataButton.Visible='off';
             app.AddclassifierButton.Visible='off';
 
@@ -7208,15 +7305,15 @@ end
 
             if numel(selectedNodes.Tag)==0 & strcmp(selectedNodes.Text,'Projects')
                 app.ProjectsPanel.Title='';
-                app.ProjectInformationLabel.Text='';
+                app.setComponentText('ProjectInformationLabel', '');
             end
             if numel(selectedNodes.Tag)==0 & any(strcmp(selectedNodes.Text, {'Independent Classifiers','Classifiers'}))
                 app.ProjectsPanel.Title='';
-                app.ProjectInformationLabel.Text='';
+                app.setComponentText('ProjectInformationLabel', '');
             end
             if strcmp(selectedNodes.Tag,'PipelinesRoot') || (numel(selectedNodes.Tag)==0 & strcmp(selectedNodes.Text,'Pipeline'))
                 app.ProjectsPanel.Title='';
-                app.ProjectInformationLabel.Text='';
+                app.setComponentText('ProjectInformationLabel', '');
             end
 
             if strcmp(selectedNodes.Tag,'Project')
@@ -7224,7 +7321,7 @@ end
                 % displayNodes(app)
 
                 app.ProjectsPanel.Title='Project';
-                app.ProjectInformationLabel.Text='Loading project information...';
+                app.setComponentText('ProjectInformationLabel', 'Loading project information...');
                 drawnow nocallbacks;
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
@@ -7233,7 +7330,12 @@ end
                 t='';
                 t=[t app.formatProjectHubStatusText(shallowObj) newline newline];
                 t=[t 'Project path: ' newline newline];
-                t=[t shallowObj.io.path shallowObj.io.file '.mat' newline newline];
+                projectPath = '';
+                if ~isempty(shallowObj.io.path) && ~isempty(shallowObj.io.file)
+                    projectPath = fullfile(shallowObj.io.path, [shallowObj.io.file '.json']);
+                end
+                app.setMainSelectedPath(projectPath, true);
+                t=[t projectPath newline newline];
 
                 n = getProjectFovCount(app, shallowObj);
 
@@ -7287,7 +7389,7 @@ end
                     t=[t 'Open a project run to inspect or edit the exact pipeline instance used for that run.' newline];
                 end
                 t=[t 'Use the Pipeline section for standalone templates.' newline];
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
 
                 app.AdddataButton.Visible='off';
                 app.AddclassifierButton.Visible='off';
@@ -7325,9 +7427,9 @@ end
                 t=[t app.formatProjectHubStatusText(shallowObj) newline newline];
                 t=[t 'Source files path: ' newline newline];
 
-                for i=1%:numel(position.srcpath)
-                    t=[t position.srcpath{i} newline newline];
-                end
+                [sourcePath, sourceIsFile] = app.getFovSourcePath(position);
+                app.setMainSelectedPath(sourcePath, sourceIsFile);
+                t=[t sourcePath newline newline];
 
                 t=[t 'Source sample filename: ' newline newline];
                 t=[t app.describeFovSampleSource(position) newline newline];
@@ -7350,7 +7452,7 @@ end
                 if n==0
                     t=[t 'You must first define one or several ROIs by opening the raw data viewer!' newline newline];
                 end
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
 
             end
 
@@ -7381,6 +7483,7 @@ end
 
                 t='';
                 t=[t 'Classification path: ' newline];
+                app.setMainSelectedPath(clas.path);
                 t=[t clas.path newline newline];
 
                 if numel(clas.description)
@@ -7414,7 +7517,7 @@ end
                     t=[t 'You must first import ROIs ! For this, first open the classifier.' newline newline];
                 end
 
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
                 displayClassiImage(app,clas);
             end
 
@@ -7447,6 +7550,7 @@ end
 
                 t='';
                 t=[t 'Processor path: ' newline];
+                app.setMainSelectedPath(clas.path);
                 t=[t clas.path newline newline];
 
                 if isprop(clas, 'description') && ~isempty(clas.description)
@@ -7476,7 +7580,7 @@ end
 
 
 
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
             end
 
 
@@ -7505,6 +7609,7 @@ end
 
                 t='';
                 t=[t 'Classification path: ' newline newline];
+                app.setMainSelectedPath(clas.path);
                 t=[t clas.path newline newline];
 
                 if numel(clas.description)
@@ -7537,7 +7642,7 @@ end
                     t=[t 'You must first import ROIs ! For this, first open the classifier.' newline newline];
                 end
 
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
 
                 if numel(clas.category)
                     [catCell, ~] = classiNormalizeCategory(clas.category);
@@ -7574,11 +7679,12 @@ end
 
                     t='';
                     t=[t 'Pipeline variable: ' pipeVar newline newline];
+                    app.setMainSelectedPath(pipeObj.path);
                     t=[t 'Pipeline path: ' newline pipeObj.path newline newline];
                     t=[t 'Nodes: ' num2str(nNodes) newline];
                     t=[t 'Connections: ' num2str(nEdges) newline newline];
                     t=[t app.describePipelineTemplate(pipeObj)];
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
                 end
             end
 
@@ -7589,6 +7695,7 @@ end
                 app.ProcessdataButton.Visible='off';
 
                 pipelineJson = char(string(selectedNodes.UserData));
+                app.setMainSelectedPath(pipelineJson, true);
                 t='';
                 t=[t 'Pipeline path: ' newline pipelineJson newline newline];
                 if exist(pipelineJson, 'file') ~= 2
@@ -7608,7 +7715,7 @@ end
                         t=[t 'Status: cannot inspect pipeline' newline ME.message newline];
                     end
                 end
-                app.ProjectInformationLabel.Text=t;
+                app.setComponentText('ProjectInformationLabel', t);
             end
 
             if strcmp(selectedNodes.Tag,'PipelineModule')
@@ -7636,6 +7743,7 @@ end
                     t='';
                     t=[t 'Classification path: ' newline newline];
                     if isprop(clas,'path') && ~isempty(clas.path)
+                        app.setMainSelectedPath(clas.path);
                         t=[t clas.path newline newline];
                     else
                         t=[t '(not saved yet)' newline newline];
@@ -7676,7 +7784,7 @@ end
                         n=0;
                     end
                     t=[t num2str(n) ' ROIs as training/test sets' newline newline];
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
 
                     try
                         [catCell, ~] = classiNormalizeCategory(clas.category);
@@ -7728,7 +7836,7 @@ end
                         end
                     end
 
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
 
                 else
                     app.ProjectsPanel.Title='Pipeline module';
@@ -7742,7 +7850,7 @@ end
                     if isfield(node,'type'), t=[t 'Type: ' char(string(node.type)) newline]; end
                     if isfield(node,'pkg') && ~isempty(node.pkg), t=[t 'Package: ' char(string(node.pkg)) newline]; end
                     if isfield(node,'func') && ~isempty(node.func), t=[t 'Function: ' char(string(node.func)) newline]; end
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
                 end
             end
 
@@ -7805,7 +7913,7 @@ end
                     catch
                     end
                     t=[t newline 'Open Review run for the event log and live Hub status.' newline];
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
                 end
             end
 
@@ -7854,7 +7962,7 @@ end
                         end
                     end
                     t=[t newline 'Open Review run for the event log and live Hub status.' newline];
-                    app.ProjectInformationLabel.Text=t;
+                    app.setComponentText('ProjectInformationLabel', t);
                 end
             end
 
@@ -8399,6 +8507,27 @@ end
                     close(d);
                 end
             catch
+            end
+        end
+
+        function [value, isFile] = getFovSourcePath(app, position) %#ok<INUSD>
+            value = '';
+            isFile = false;
+            if position.isMultiTiff && ~isempty(position.tiffSource)
+                sources = position.tiffSource;
+                isFile = true;
+            elseif position.isNDTiff && ~isempty(position.ndtiffPath)
+                sources = {position.ndtiffPath};
+            elseif position.isOMEZarr && ~isempty(position.omeZarrPath)
+                sources = {position.omeZarrPath};
+            else
+                sources = position.srcpath;
+            end
+            for i = 1:numel(sources)
+                if ~isempty(sources{i})
+                    value = char(string(sources{i}));
+                    return;
+                end
             end
         end
 

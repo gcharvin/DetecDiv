@@ -81,6 +81,12 @@ if strcmpi(ext, '.json')
     [shallowObj, msg] = shallowProjectImportLight(filename, ...
         'ProjectDir', projectDirOverride, 'ProgressCallback', progressCallback, ...
         'HubPathSettings', hubPathSettings);
+    if ~isempty(shallowObj)
+        [shallowObj, rawResolution] = detecdiv_hub_relink_raw_project(shallowObj, hubPathSettings);
+        if rawResolution.changedCount > 0 && exist('loadData_rebuildParsedDataFromProject', 'file') == 2
+            shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
+        end
+    end
     return;
 end
 if isempty(projectDirOverride)
@@ -143,6 +149,8 @@ if isempty(hubPathSettings)
 else
     shallowObj = detecdiv_paths_localize_project(shallowObj, hubPathSettings);
 end
+
+shallowObj = detecdiv_hub_relink_raw_project(shallowObj, hubPathSettings);
 
 % éviter de charger 2x le même projet dans le workspace
 try

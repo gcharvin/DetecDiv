@@ -41,6 +41,10 @@ function [shallowObj, msg, projectDetail, resolutionInfo] = detecdiv_hub_load_pr
     end
     if ~isempty(shallowObj) && isa(shallowObj, 'shallow')
         shallowObj = localApplyHubLoadMetadata(shallowObj, projectDetail, projectMatPath, resolutionInfo);
+        [shallowObj, rawResolution] = detecdiv_hub_relink_raw_project(shallowObj, hubSettings, projectDetail);
+        if rawResolution.changedCount > 0 && exist('loadData_rebuildParsedDataFromProject', 'file') == 2
+            shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
+        end
     end
 
     if isstruct(projectDetail) && isfield(projectDetail, 'id') && ~isempty(projectDetail.id)
