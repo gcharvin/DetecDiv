@@ -2,19 +2,28 @@
 
 ROI extraction defaults come from `roiExtract.driftDefaults`: method `robust`,
 reference policy `adaptive`, new-motion limits `maxShift=20` and `maxStep=20`
-pixels, and relative keyframe refresh interval 20 frames. These limits constrain
+pixels, and relative keyframe refresh interval 5 frames. These limits constrain
 new motion, not the total displacement over a movie. An explicit saved limit or
 reference policy is retained.
 
 Robust registration uses distributed image patches, spatial consensus, and
 intensity/structural agreement. Adaptive mode first tries the immutable initial
-reference. If that reference no longer matches, it tries a trusted recent raw
+reference. When the regular sampling grid loses support, smaller patches at
+generic salient corners provide a second distributed match against that same
+initial reference. Competing modes and localized foreground matches are rejected.
+This uses no ROI coordinates or biological template. If the initial reference
+still cannot match, adaptive mode tries a trusted recent raw
 keyframe and adds that keyframe's absolute pose. This is still robust patch
 consensus, not a switch to the legacy global `subpixel` algorithm.
 
 An accepted strong initial-anchor match can refresh the keyframe immediately.
+It uses the registration acceptance gates without an additional tile quorum;
+otherwise a valid match on only a few persistent regions could leave a stale
+reference behind while the rest of the field evolves.
 Relative-only matches refresh at the configured interval to reduce chaining
-bias. Rejected images never become references. The initial anchor remains
+bias. Their acceptance uses the same spatial registration contract, rather than
+discarding valid sparse support through a second arbitrary tile quorum.
+Rejected images never become references. The initial anchor remains
 available for reacquisition. Adaptive registration cannot guarantee alignment
 when no stable image content remains; inspect rejection history and absolute
 centering, especially under clogging. Small consecutive-frame residuals alone

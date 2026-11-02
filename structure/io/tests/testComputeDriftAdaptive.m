@@ -19,6 +19,22 @@ f=fov();[~,d]=f.computeDrift('images',ims,'refmode','fixed','maxstep',10);
 verifyFalse(t,d.accepted(2));verifyEqual(t,d.y(2),0,'AbsTol',1e-8);
 end
 
+function testAcceptedDistributedSparseAnchorRefreshesReference(t)
+rng(287);r=15000*ones(512);
+for row=[91 359]
+    for col=[91 359]
+        r(row:row+63,col:col+63)=15000+2500*imgaussfilt(randn(64),1.2);
+    end
+end
+r=uint16(r);ims=cat(4,r,imtranslate(r,[1 1],'FillValues',15000));
+f=fov();[~,d]=f.computeDrift('images',ims);
+verifyTrue(t,d.accepted(2));verifyTrue(t,d.anchorValidated(2));
+verifyGreaterThanOrEqual(t,d.consensusCount(2),3);
+verifyLessThan(t,d.consensusCount(2),6);
+verifyEqual(t,f.driftReferenceState.frame,2);
+verifyEqual(t,d.adaptiveReference.frame,2);
+end
+
 function testEvolvingContentMatchesSingletonAndUnevenBlocks(t)
 [ims,rows,cols]=evolving();args={'referenceinterval',8,'refimage',ims(:,:,1,1)};
 f=fov();[out,full]=f.computeDrift('images',ims,args{:});
@@ -34,6 +50,28 @@ for widths={[7 16 18],[ones(1,41)]}
     verifyEqual(t,d.x,full.x,'AbsTol',1e-8);verifyEqual(t,d.y,full.y,'AbsTol',1e-8);
     verifyEqual(t,d.referenceFrames,full.referenceFrames);verifyEqual(t,outBlocks,out);
 end
+end
+
+function testSparseEvolvingContentUsesValidatedRecentConsensus(t)
+rng(288);a=15000*ones(512);b=a;
+for row=[91 359]
+    for col=[91 359]
+        a(row:row+63,col:col+63)=15000+2500*imgaussfilt(randn(64),1.2);
+        b(row:row+63,col:col+63)=15000+2500*imgaussfilt(randn(64),1.2);
+    end
+end
+ims=zeros(512,512,1,41,'uint16');rows=0:.15:6;
+for k=1:41
+    fraction=(k-1)/40;
+    ims(:,:,1,k)=imtranslate(uint16((1-fraction)*a+fraction*b), ...
+        [-rows(k)/2 rows(k)],'linear','FillValues',15000);
+end
+f=fov();[~,d]=f.computeDrift('images',ims);
+fallback=startsWith(d.estimation,'temporalFallback:keyframe');
+verifyTrue(t,any(fallback));
+verifyTrue(t,any(d.consensusCount(fallback)<6));
+verifyLessThan(t,max(hypot(d.x+rows,d.y-rows/2)),.8);
+verifyTrue(t,all(d.accepted));
 end
 
 function testRejectedFrameNeverBecomesReference(t)

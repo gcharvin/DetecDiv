@@ -368,6 +368,7 @@ if adaptiveMode
             'gray',cropCenter(refGray0,crop),'proc',fixedRefProc, ...
             'edges',[],'signature',{signature},'lastFrame',refframeid);
     end
+    if ~isfield(keyframe,'anchorFeaturePoints'),keyframe.anchorFeaturePoints=[];end
 end
 
 cc = 1;
@@ -474,6 +475,28 @@ for j = framesid
                         end
                     end
                 end
+                % The regular grid may miss the few stable corners remaining
+                % under changing foreground. Reacquire the immutable anchor
+                % using smaller salient patches, still with distributed
+                % support, ambiguity checks and the same new-motion bounds.
+                if adaptiveMode && (~isfinite(stepRow)||anchorCorrelation<.5)
+                    if isempty(fixedRefEdges)
+                        fixedRefEdges=roiExtract.structuralRegistrationImage( ...
+                            cropCenter(refGray0,crop),hipasssigma,denoiseSigma,mask);
+                    end
+                    if isempty(movingEdges)
+                        movingEdges=roiExtract.structuralRegistrationImage( ...
+                            cropCenter(imGrayEst,crop),hipasssigma,denoiseSigma,mask);
+                    end
+                    [fr,fc,fs,fn,fspread,fcorrelation,freason,keyframe.anchorFeaturePoints]= ...
+                        roiExtract.featureAnchorShift(fixedRefEdges,movingEdges, ...
+                            [cumRow cumCol],maxshift,stepGate,keyframe.anchorFeaturePoints,subpixel,mask);
+                    if isfinite(fr)
+                        stepRow=fr;stepCol=fc;sc=fs;consensusCount=fn;
+                        consensusSpread=fspread;anchorCorrelation=fcorrelation;
+                        estimationReason=['features:' freason];
+                    end
+                end
                 % Biological changes can create a coherent false anchor mode.
                 % Cross-check weak/discordant anchors against the untouched
                 % preceding frame; keep the immutable anchor for reacquisition.
@@ -486,7 +509,7 @@ for j = framesid
                         keyframe.proc,imProc,subpixel,psrRadius,psrMin,maxshift, ...
                         prediction,apodize,stepGate);
                     temporalKind='';
-                    if ~isfinite(tr) || tn<6 || tcorrelation<.6 || tspread>.5
+                    if ~isfinite(tr) || tn<3 || tcorrelation<.6 || tspread>.5
                         if isempty(keyframe.edges)
                             keyframe.edges=roiExtract.structuralRegistrationImage( ...
                                 keyframe.gray,hipasssigma,denoiseSigma,mask);
@@ -498,14 +521,25 @@ for j = framesid
                         [er,ec,es,en,espread,~,ecorrelation]=robustAnchorShift( ...
                             keyframe.edges,movingEdges,subpixel,psrRadius,psrMin,maxshift, ...
                             prediction,apodize,stepGate);
-                        if isfinite(er) && en>=6 && ecorrelation>=.6 && espread<=.5 && ...
+                        if isfinite(er) && en>=3 && ...
                                 (~isfinite(tr) || ecorrelation>tcorrelation+.1 || espread<tspread*.5)
                             tr=er;tc=ec;ts=es;tn=en;tspread=espread;
                             tcorrelation=ecorrelation;temporalKind=':structural';
                         end
                     end
                     temporalCorrelation=tcorrelation;
-                    if isfinite(tr) && tn>=6 && tcorrelation>=.6 && tspread<=.5
+                    % The same distributed-support, ambiguity and pixel gates
+                    % as the immutable anchor have already run inside the
+                    % estimator. A second six-tile quorum discarded valid
+                    % sparse persistent regions as the field became clogged.
+                    if wantObs
+                        localDebugPrint(debug,debugFcn,struct('stage','adaptiveProposal', ...
+                            'frame',j,'referenceFrame',keyframe.frame,'count',tn, ...
+                            'spread',tspread,'correlation',tcorrelation), ...
+                            sprintf('[computeDrift:keyframe] frame=%d ref=%d proposal=(%.3g,%.3g) count=%d spread=%.3g correlation=%.3g', ...
+                                j,keyframe.frame,tr,tc,tn,tspread,tcorrelation));
+                    end
+                    if isfinite(tr) && isfinite(tc) && tn>=3
                         stepRow=keyframe.row+tr;stepCol=keyframe.col+tc;
                         sc=ts;consensusCount=tn;consensusSpread=tspread;
                         estimationReason=['temporalFallback:keyframe' temporalKind];
@@ -666,10 +700,15 @@ for j = framesid
         % Absolute anchor matches can refresh immediately without integrating
         % error. Relative-only matches refresh less often to limit chaining
         % bias, at an interval independent of extraction block boundaries.
-        quality=anchorCorrelation;
-        if startsWith(estimationReason,'temporalFallback'), quality=temporalCorrelation; end
-        if accepted_hist(cc) && consensusCount>=6 && quality>=.6 && ...
-                consensusSpread<=.5 && (anchorValidated || j-keyframe.frame>=referenceInterval)
+        % An absolute match has already passed the registration consensus,
+        % ambiguity and motion gates. Requiring six tiles again here stranded
+        % the reference when only 3-5 persistent regions remained visible.
+        % Relative poses use the same distributed registration contract, with
+        % less frequent refresh to limit the number of chained estimates.
+        refreshAbsolute=anchorValidated_hist(cc);
+        refreshRelative=accepted_hist(cc) && consensusCount>=3 && ...
+            j-keyframe.frame>=referenceInterval;
+        if refreshAbsolute || refreshRelative
             keyframe.frame=j;keyframe.row=cumRow;keyframe.col=cumCol;
             keyframe.gray=cropCenter(imGray,crop);keyframe.proc=imProc;keyframe.edges=[];
         end
@@ -837,7 +876,7 @@ if adaptiveMode
     if ~isfield(drift,'referenceFrames'), drift.referenceFrames=nan(size(drift.x)); end
     drift.referenceFrames(framesid)=referenceFrames_hist;
     drift.referenceInterval=referenceInterval;
-    drift.adaptiveReference=rmfield(keyframe,{'gray','proc','edges','lastFrame'});
+    drift.adaptiveReference=rmfield(keyframe,{'gray','proc','edges','lastFrame','anchorFeaturePoints'});
     obj.driftReferenceState=keyframe;
 end
 
