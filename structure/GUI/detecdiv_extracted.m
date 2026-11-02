@@ -6927,27 +6927,45 @@ end
         end
 
         function connectToHub(app)
-            detecdiv_hub_connection_dialog(app.DetecDivUIFigure);
+            detecdiv_hub_connection_dialog(app.DetecDivUIFigure, ...
+                @(hub, user)app.refreshHubConnectionStatus(hub, user));
             app.refreshHubConnectionStatus();
         end
 
         function disconnectFromHub(app)
-            detecdiv_hub_logout();
-            app.refreshHubConnectionStatus();
+            try
+                [~, status] = detecdiv_hub_logout([], @(hub)app.showHubLoggedOut(hub));
+                if ~isempty(status.message)
+                    app.HubConnectionLabel.Tooltip = ...
+                        ['Disconnected locally. Server session revocation could not be confirmed: ' status.message];
+                end
+            catch ME
+                app.refreshHubConnectionStatus();
+                uialert(app.DetecDivUIFigure, ME.message, 'Hub disconnect failed');
+            end
         end
 
-        function refreshHubConnectionStatus(app)
+        function showHubLoggedOut(app, hub)
+            app.refreshHubConnectionStatus(hub);
+            drawnow;
+        end
+
+        function refreshHubConnectionStatus(app, hub, user)
             app.HubConnectionLabel.Text = 'Not connected';
             app.HubConnectionLabel.FontColor = [0.45 0.45 0.45];
             app.HubConnectionLabel.Tooltip = 'Connect through the DetecDiv Hub menu.';
             app.HubDisconnectMenu.Enable = 'off';
-            hub = detecdiv_hub_settings_get();
+            if nargin < 2
+                hub = detecdiv_hub_settings_get();
+            end
             if isempty(strtrim(char(string(hub.sessionToken))))
                 return;
             end
             try
                 hub.timeout = min(hub.timeout, 5);
-                user = detecdiv_hub_get_current_user(hub);
+                if nargin < 3
+                    user = detecdiv_hub_get_current_user(hub);
+                end
                 name = char(string(user.user_key));
                 if isfield(user, 'display_name') && ~isempty(user.display_name)
                     name = char(string(user.display_name));

@@ -1,4 +1,4 @@
-function [hub, connected] = detecdiv_hub_connection_dialog(parentFigure)
+function [hub, connected] = detecdiv_hub_connection_dialog(parentFigure, onConnected)
 %detecdiv_hub_connection_dialog  Shared compact Hub connection editor.
 %
 % It deliberately uses the same persisted fields as pipeline2: URL,
@@ -7,6 +7,7 @@ function [hub, connected] = detecdiv_hub_connection_dialog(parentFigure)
 % saved in the Hub settings structure.
 
 if nargin < 1, parentFigure = []; end
+if nargin < 2, onConnected = []; end
 hub = detecdiv_hub_settings_get();
 connected = false;
 result = struct('hub', hub, 'connected', false, 'done', false);
@@ -48,14 +49,18 @@ connectButton = uibutton(grid, 'push', 'Text', 'Connect', 'ButtonPushedFcn', @on
 connectButton.Layout.Row = 4; connectButton.Layout.Column = 3;
 status = uilabel(grid, 'Text', 'Not connected', 'FontColor', [0.45 0.45 0.45]);
 status.Layout.Row = 9; status.Layout.Column = [1 3];
-saveButton = uibutton(grid, 'push', 'Text', 'Save settings', 'ButtonPushedFcn', @onSave);
-saveButton.Layout.Row = 10; saveButton.Layout.Column = 2;
-cancelButton = uibutton(grid, 'push', 'Text', 'Cancel', 'ButtonPushedFcn', @onCancel);
-cancelButton.Layout.Row = 10; cancelButton.Layout.Column = 3;
+footer = uigridlayout(grid, [1 2], 'Padding', [0 0 0 0], ...
+    'ColumnWidth', {'1x', 86}, 'RowHeight', {'1x'});
+footer.Layout.Row = 10; footer.Layout.Column = [1 3];
+okButton = uibutton(footer, 'push', 'Text', 'OK', ...
+    'Tooltip', 'Close this window. A successful connection is already saved.', ...
+    'ButtonPushedFcn', @onCancel);
+okButton.Layout.Column = 2;
 
 uiwait(fig);
 hub = result.hub;
 connected = result.connected;
+localDelete(fig);
 
     function onConnect(~, ~)
         try
@@ -71,16 +76,13 @@ connected = result.connected;
             fields.sessionToken.Data = candidate.sessionToken;
             result.hub = candidate; result.connected = true;
             status.Text = 'Connected — settings saved.'; status.FontColor = [0.1 0.55 0.2];
+            if ~isempty(onConnected)
+                onConnected(candidate, user);
+                drawnow;
+            end
         catch ME
             status.Text = ME.message; status.FontColor = [0.75 0.1 0.1];
         end
-    end
-
-    function onSave(~, ~)
-        candidate = localReadFields();
-        detecdiv_hub_settings_set(candidate);
-        result.hub = candidate; result.done = true;
-        uiresume(fig);
     end
 
     function onCancel(~, ~)
