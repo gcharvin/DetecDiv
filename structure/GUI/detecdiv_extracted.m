@@ -50,6 +50,10 @@ classdef detecdiv < matlab.apps.AppBase
         DisplayMenu                    matlab.ui.container.Menu
         RefreshtreewindowMenu          matlab.ui.container.Menu
         SettingsMenu                   matlab.ui.container.Menu
+        DetecDivHubMenu                 matlab.ui.container.Menu
+        HubConnectMenu                  matlab.ui.container.Menu
+        HubDisconnectMenu               matlab.ui.container.Menu
+        HubConnectionLabel              matlab.ui.control.Label
         UserpreferencesMenu            matlab.ui.container.Menu
         ProjectsPanel                  matlab.ui.container.Panel
         InspectRunButton               matlab.ui.control.Button
@@ -6534,6 +6538,7 @@ end
         % Code that executes after component creation
         function startupFcn(app)
             app.applyMainWindowLayout();
+            app.refreshHubConnectionStatus();
             app.resetMainPanelState();
             checkInstalledToolboxes;
             initUserPreferences;
@@ -6874,14 +6879,36 @@ end
             end
 
             figPos = app.DetecDivUIFigure.Position;
-            app.DetecDivUIFigure.Position = [figPos(1) figPos(2) max(figPos(3), 708) max(figPos(4), 646)];
+            app.DetecDivUIFigure.Position = [figPos(1) figPos(2) max(figPos(3), 708) max(figPos(4), 674)];
+
+            if isempty(app.MainGrid) || ~isvalid(app.MainGrid)
+                app.MainGrid = uigridlayout(app.DetecDivUIFigure, [2 2]);
+                app.Tree.Parent = app.MainGrid;
+                app.Tree.Layout.Row = 2;
+                app.Tree.Layout.Column = 1;
+                app.ProjectsPanel.Parent = app.MainGrid;
+                app.ProjectsPanel.Layout.Row = 2;
+                app.ProjectsPanel.Layout.Column = 2;
+                app.HubConnectionLabel = uilabel(app.MainGrid, ...
+                    'Text', 'Not connected', 'HorizontalAlignment', 'right');
+                app.HubConnectionLabel.Layout.Row = 1;
+                app.HubConnectionLabel.Layout.Column = [1 2];
+            end
+
+            if isempty(app.DetecDivHubMenu) || ~isvalid(app.DetecDivHubMenu)
+                app.DetecDivHubMenu = uimenu(app.DetecDivUIFigure, 'Text', 'DetecDiv Hub');
+                app.HubConnectMenu = uimenu(app.DetecDivHubMenu, ...
+                    'Text', 'Connect...', 'MenuSelectedFcn', @(~,~)app.connectToHub());
+                app.HubDisconnectMenu = uimenu(app.DetecDivHubMenu, ...
+                    'Text', 'Disconnect', 'MenuSelectedFcn', @(~,~)app.disconnectFromHub());
+            end
 
             if ~isempty(app.MainGrid) && isvalid(app.MainGrid)
                 app.MainGrid.Padding = [8 8 8 8];
                 app.MainGrid.ColumnSpacing = 12;
                 app.MainGrid.RowSpacing = 0;
-                app.MainGrid.ColumnWidth = {241, '1x'};
-                app.MainGrid.RowHeight = {'1x'};
+                app.MainGrid.ColumnWidth = {352, '1x'};
+                app.MainGrid.RowHeight = {24, '1x'};
             end
 
             app.setComponentPosition('UIAxes', [0 16 417 341]);
@@ -6897,6 +6924,43 @@ end
             app.setComponentPosition('OpenButton', [282 12 136 40]);
             app.setComponentPosition('InspectRunButton', [282 60 136 40]);
             app.setComponentPosition('EditRunButton', [282 108 136 40]);
+        end
+
+        function connectToHub(app)
+            detecdiv_hub_connection_dialog(app.DetecDivUIFigure);
+            app.refreshHubConnectionStatus();
+        end
+
+        function disconnectFromHub(app)
+            detecdiv_hub_logout();
+            app.refreshHubConnectionStatus();
+        end
+
+        function refreshHubConnectionStatus(app)
+            app.HubConnectionLabel.Text = 'Not connected';
+            app.HubConnectionLabel.FontColor = [0.45 0.45 0.45];
+            app.HubConnectionLabel.Tooltip = 'Connect through the DetecDiv Hub menu.';
+            app.HubDisconnectMenu.Enable = 'off';
+            hub = detecdiv_hub_settings_get();
+            if isempty(strtrim(char(string(hub.sessionToken))))
+                return;
+            end
+            try
+                hub.timeout = min(hub.timeout, 5);
+                user = detecdiv_hub_get_current_user(hub);
+                name = char(string(user.user_key));
+                if isfield(user, 'display_name') && ~isempty(user.display_name)
+                    name = char(string(user.display_name));
+                end
+                app.HubConnectionLabel.Text = ['Connected as ' name];
+                app.HubConnectionLabel.FontColor = [0.1 0.5 0.2];
+                app.HubConnectionLabel.Tooltip = hub.baseUrl;
+                app.HubDisconnectMenu.Enable = 'on';
+            catch ME
+                app.HubConnectionLabel.Tooltip = ME.message;
+                % An invalid or unreachable session can still be cleared.
+                app.HubDisconnectMenu.Enable = 'on';
+            end
         end
 
         function applyTextOnlyMainPanelLayout(app)

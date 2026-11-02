@@ -35,13 +35,13 @@ for i = 1:numel(keys)
     if strcmp(keys{i}, 'timeout')
         value = localTimeout(hub);
         field = uieditfield(grid, 'numeric', 'Value', value, 'Limits', [1 600]);
+    elseif any(strcmp(keys{i}, {'password','sessionToken'}))
+        field = uihtml(grid, 'HTMLSource', fullfile(fileparts(mfilename('fullpath')), ...
+            'detecdiv_hub_password_input.html'), 'Data', localInitialValue(hub, keys{i}));
     else
         field = uieditfield(grid, 'text', 'Value', localInitialValue(hub, keys{i}));
     end
     field.Layout.Row = i; field.Layout.Column = 2;
-    if strcmp(keys{i}, 'password')
-        field.Value = '';
-    end
     fields.(keys{i}) = field;
 end
 connectButton = uibutton(grid, 'push', 'Text', 'Connect', 'ButtonPushedFcn', @onConnect);
@@ -61,13 +61,14 @@ connected = result.connected;
         try
             status.Text = 'Connecting…'; status.FontColor = [0.1 0.35 0.7]; drawnow;
             candidate = localReadFields();
-            password = char(string(fields.password.Value));
+            password = char(string(fields.password.Data));
             if ~isempty(strtrim(password))
                 [~, candidate] = detecdiv_hub_login(candidate.userKey, password, candidate);
             end
-            health = detecdiv_hub_request('GET', '/health', [], candidate); %#ok<NASGU>
+            user = detecdiv_hub_get_current_user(candidate); %#ok<NASGU>
             detecdiv_hub_settings_set(candidate);
-            fields.password.Value = '';
+            fields.password.Data = '';
+            fields.sessionToken.Data = candidate.sessionToken;
             result.hub = candidate; result.connected = true;
             status.Text = 'Connected — settings saved.'; status.FontColor = [0.1 0.55 0.2];
         catch ME
@@ -92,7 +93,7 @@ connected = result.connected;
         candidate.baseUrl = char(string(fields.baseUrl.Value));
         candidate.fallbackBaseUrls = localSplitUrls(fields.fallbackBaseUrls.Value);
         candidate.userKey = char(string(fields.userKey.Value));
-        candidate.sessionToken = char(string(fields.sessionToken.Value));
+        candidate.sessionToken = char(string(fields.sessionToken.Data));
         candidate.timeout = double(fields.timeout.Value);
         candidate.defaultRemoteProjectRoot = char(string(fields.defaultRemoteProjectRoot.Value));
         candidate.defaultLocalProjectRoot = char(string(fields.defaultLocalProjectRoot.Value));
