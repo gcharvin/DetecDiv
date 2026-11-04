@@ -39,7 +39,7 @@ classdef DockingHost < handle
             group = matlab.ui.internal.FigureDocumentGroup( ...
                 'Tag','workspace','Title','Workspace','EnableDockControls',true);
             obj.App.add(group);
-            for name = {'Projects','Image','Display'}
+            for name = {'Projects','Image','Display','Pipeline'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',false);
@@ -59,7 +59,7 @@ classdef DockingHost < handle
         end
         function addDockMenus(obj,parent)
             docking = obj.menu(parent,'Docking','Separator','on');
-            names = {'Projects','Image','Display'};
+            names = {'Projects','Image','Display','Pipeline'};
             for k = 1:numel(names)
                 name = names{k};
                 obj.DockCommands{k} = obj.menu(docking,['Undock ' name], ...
@@ -108,6 +108,11 @@ classdef DockingHost < handle
         function value = isDocked(obj,name)
             value = obj.widget(name).Docked;
         end
+        function focusWidget(obj,name)
+            obj.setWidgetVisible(name,true);
+            obj.App.SelectedChild = struct('tag',lower(char(name)),'documentGroupTag','workspace');
+            obj.settle();
+        end
         function setWidgetVisible(obj,name,visible)
             id = lower(char(name)); doc = obj.widget(id);
             if doc.Visible == logical(visible), obj.syncMenus(); return; end
@@ -146,7 +151,7 @@ classdef DockingHost < handle
         end
         function resetLayout(obj)
             obj.dockAll();
-            names = {'projects','image','display'};
+            names = {'projects','image','display','pipeline'};
             for k = 1:numel(names)
                 doc = obj.widget(names{k}); doc.Visible = true;
             end
@@ -157,6 +162,7 @@ classdef DockingHost < handle
                     'columnWeights',[0.20 0.64 0.16],'rowWeights',1,'tileCoverage',[1 2 3]);
                 occupancy = repmat(struct('children',struct('id','')),1,3);
                 for k = 1:3, occupancy(k).children.id = ['workspace_' names{k}]; end
+                occupancy(3).children(2).id = 'workspace_pipeline';
                 layout.tileOccupancy = occupancy;
                 obj.App.DocumentLayout = layout;
             end
@@ -197,6 +203,12 @@ classdef DockingHost < handle
             if isempty(file) || ~isfile(file), return; end
             try
                 record = jsondecode(fileread(file));
+                % Earlier workspaces predate Pipeline. Keep their geometry;
+                % expose the new widget through View without resetting tiles.
+                if isfield(record,'widgets') && ~isfield(record.widgets,'pipeline')
+                    record.widgets.pipeline = struct('docked',true,'visible',false, ...
+                        'windowBounds',obj.Widgets.pipeline.WindowBounds);
+                end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
                 names = fieldnames(obj.Widgets);
@@ -235,7 +247,7 @@ classdef DockingHost < handle
         function syncMenus(obj)
             if ~obj.MenusInstalled || obj.WebBusy || isempty(obj.Window) || ~isvalid(obj.Window) || obj.Closing, return; end
             for k = 1:numel(obj.DockCommands)
-                names = {'Projects','Image','Display'}; name = names{k};
+                names = {'Projects','Image','Display','Pipeline'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
                 obj.DockCommands{k}.Text = [verb ' ' name];

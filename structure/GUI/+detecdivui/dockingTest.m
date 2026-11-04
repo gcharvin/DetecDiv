@@ -34,7 +34,7 @@ assert(viewer.Session.Zone == 1 && isequal(getPixels(ax),pixels+100));
 host.findCommand('Dock Projects').invoke();
 disp('Docking test: Projects detached; redocking.');
 waitUntil(@()host.isDocked('Projects') && floatingCount() == floating);
-for name = {'Image','Display'}
+for name = {'Image','Display','Pipeline'}
     fprintf('Docking test: %s.\n',name{1});
     host.setDocked(name{1},false);
     waitUntil(@()floatingCount() > floating);
@@ -45,6 +45,7 @@ end
 assert(isequal(channels,findall(viewer.widgetFigure('Display'),'Tag','channels')));
 % Save a non-default arrangement with a floating widget and resized columns.
 disp('Docking test: saving layout.');
+host.setWidgetVisible('Pipeline',false);
 host.setDocked('Display',false);
 waitUntil(@()floatingCount() > floating);
 host.Widgets.display.WindowBounds = [180 120 300 480];
@@ -85,7 +86,7 @@ actualBounds = restored.Host.Widgets.display.WindowBounds;
 assert(max(abs(actualBounds-savedBounds)) < 5, ...
     sprintf('Floating bounds: saved %s, restored %s',mat2str(savedBounds),mat2str(actualBounds)));
 restored.Host.findCommand('Reset Layout').invoke();
-assert(all(cellfun(@(name)restored.Host.isDocked(name),{'Projects','Image','Display'})));
+assert(all(cellfun(@(name)restored.Host.isDocked(name),{'Projects','Image','Display','Pipeline'})));
 delete(restored);
 % Corrupt preferences must fall back without overwriting the original file.
 badFile = fullfile(folder,'broken.json');
@@ -97,7 +98,7 @@ assert(broken.Host.isDocked('Projects') && broken.Host.isDocked('Display'));
 delete(broken);
 assert(strcmp(fileread(badFile),'{broken'));
 assert(isempty(timerfindall('Tag','DetecDivDockMenu')));
-disp('Docking test passed: real floating windows, all three widgets, menu callbacks, auto-save, restore and corrupt-file recovery.');
+disp('Docking test passed: real floating windows, all four widgets, menu callbacks, auto-save, restore and corrupt-file recovery.');
 end
 
 function count = floatingCount()

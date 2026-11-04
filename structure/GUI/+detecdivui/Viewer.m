@@ -8,6 +8,7 @@ classdef Viewer < handle
         ActiveProject = 0
         DisplayModel
         WorkspaceObjects = struct('object',{},'variables',{},'kind',{})
+        Pipeline
     end
     properties (Access = private)
         Tree
@@ -41,6 +42,7 @@ classdef Viewer < handle
         OverlayMenu
         CloseMenu
         CopyMenu
+        SavePipelineMenu
         ParentMenu
         PreviousMenu
         NextMenu
@@ -168,6 +170,9 @@ classdef Viewer < handle
             uibutton(tools,'Text','Fit image','Tooltip','Fit the complete image to the viewport', ...
                 'Tag','fit-image','ButtonPushedFcn',@(~,~)obj.resetView());
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
+            obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
+            obj.Pipeline.OnStatus = @(message)set(obj.Status,'Text',message,'Tooltip',message);
+            obj.Pipeline.OnChanged = @()obj.syncPipelineMenu();
             if iscell(project)
                 for k = 1:numel(project), obj.addProject(project{k}); end
             elseif ~isempty(project)
@@ -227,6 +232,7 @@ classdef Viewer < handle
             entries = detecdivui.workspaceObjects();
             active = obj.Session.Project;
             obj.WorkspaceObjects = entries(~strcmp({entries.kind},'shallow'));
+            obj.Pipeline.importWorkspace(entries);
             for k = find(strcmp({entries.kind},'shallow'))
                 obj.addProject(entries(k).object);
             end
@@ -248,6 +254,9 @@ classdef Viewer < handle
             file = obj.Host.menu([],'File');
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
+            obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
+            obj.SavePipelineMenu = obj.Host.menu(file,'Save Pipeline','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.Pipeline.saveTemplate());
             obj.CloseMenu = obj.Host.menu(file,'Close Project','Accelerator','W', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.closeProject());
             obj.Host.menu(file,'Exit','Separator','on', ...
@@ -259,6 +268,7 @@ classdef Viewer < handle
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
+            obj.Host.widgetMenu(view,'Pipeline');
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
             obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
@@ -293,6 +303,14 @@ classdef Viewer < handle
             catch err
                 obj.showError(err);
             end
+        end
+        function openPipeline(obj)
+            obj.Pipeline.openTemplate(); obj.Host.focusWidget('Pipeline');
+        end
+        function syncPipelineMenu(obj)
+            template = obj.Pipeline.Template;
+            obj.SavePipelineMenu.Enable = obj.onOff(~isempty(template) && isvalid(template) && ~isempty(template.path));
+            obj.Host.syncMenus();
         end
         function index = findProject(obj,project)
             index = 0;
@@ -437,6 +455,9 @@ classdef Viewer < handle
             obj.ProjectInfo.Data = {'Type',labels.(entry.kind); ...
                 'Workspace',strjoin(entry.variables,', '); 'Description',char(string(item.description))};
             obj.Status.Text = sprintf('%s selected',labels.(entry.kind));
+            if strcmp(entry.kind,'pipeline')
+                obj.Pipeline.addTemplate(item); obj.Host.focusWidget('Pipeline');
+            end
         end
         function copyProjectPath(obj)
             if isempty(obj.CopyPath.UserData), return; end
@@ -485,6 +506,7 @@ classdef Viewer < handle
         end
         function refreshView(obj)
             obj.refreshProjectInfo();
+            obj.Pipeline.setContext(obj.Session);
             obj.Crumb.Text = obj.Session.breadcrumb();
             obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
             obj.Back.Enable = obj.onOff(obj.Session.Zone > 0);

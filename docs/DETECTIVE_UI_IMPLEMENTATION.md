@@ -31,7 +31,8 @@ viewer = detecdiv_ui({projectA, projectB});
 - A Layers table with independent visibility, an active layer, Solo, source-unit min/max contrast and a range slider, Auto, color and opacity. Label layers use score's renderer and stable ID colors or a selected RGB color.
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
-- Independent Projects, Image and Display widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches.
+- Independent Projects, Image, Display and Pipeline widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches. Older three-widget layouts keep their geometry and initially hide Pipeline.
+- Pipeline selects workspace or JSON templates, inspects steps/parameter scope, validates and dry-runs the current FOV/ROI or whole project, lists associated project runs and opens their inspector. Advanced editing/execution reuse `pipeline2`; the main widget does not yet launch/monitor runs inline. See `DETECTIVE_UI_PIPELINE.md`.
 - Concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
 - Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
 
@@ -39,7 +40,7 @@ The session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI load
 
 ## Limits
 
-The current interface is an exploration prototype. Scientific editing, classifier/processor/pipeline management, guided segmentation, cross-session display presets and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
+The current interface is an exploration prototype. Scientific editing, full classifier/processor management, inline pipeline editing/execution, guided segmentation, cross-session display presets and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
 
 Reading is synchronous, with a bounded current-frame cache for requested channels. Contrast defaults to finite pixel min/max and stays fixed while navigating until changed or reset with Auto. Display settings are separate for each project's FOV/ROI during the session, without changing source pixels or metadata. Project switching restores frame and channel but does not preserve an independent zoom for every FOV/ROI. Data is synthetic in automated validation; real acquisitions and performance still need validation.
 

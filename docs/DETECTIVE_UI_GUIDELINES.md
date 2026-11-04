@@ -10,7 +10,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 - **DetecDiv vocabulary.** Use Project, FOV, ROI, Classifier, Processor and Pipeline. Do not replace FOV and ROI with a new naming scheme.
 - **One project tree.** Show the actual Project → FOV → ROI hierarchy, with multiple open projects in the same tree. Project navigation and task-oriented tools complement one another.
 - **Image first.** Keep the central viewport dominant. The Projects and Display panels can be hidden through View.
-- **Real docking.** Projects, Image and Display are independent native docking documents. Each can float, redock or change position without reconstructing its contents. Save and restore the workspace layout across launches.
+- **Real docking.** Projects, Image, Display and Pipeline are independent native docking documents. Each can float, redock or change position without reconstructing its contents. Save and restore the workspace layout across launches. New widgets must preserve older saved arrangements.
 - **No explanatory paragraphs in the layout.** Remove onboarding text, next-step essays, disclaimers and decorative workflow slogans. Use concise control labels and MATLAB tooltips. Keep the bottom status bar for the current view or an actionable error. Hover-driven status help can be added if it works reliably with native components; standard tooltips are the initial implementation.
 
 ## Interaction rules
@@ -28,9 +28,9 @@ The requirements below supersede the earlier French labels, renamed data concept
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Close Project, Exit |
+| File | Open Project..., Open Pipeline..., Save Pipeline, Close Project, Exit |
 | Edit | Copy Image |
-| View | Projects, Image, Display, ROI Outlines, Fit Image, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
+| View | Projects, Image, Display, Pipeline, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame |
 | Help | About DetecDiv |
 
@@ -54,4 +54,4 @@ The R2026a-specific integration and layout contract are described in `DETECTIVE_
 
 Display exposes a visibility table, an active layer, Solo, source-unit contrast, Auto, color, opacity and label rendering. Settings are local to each project's FOV/ROI view during the session. Selecting a layer edits its settings without changing visibility implicitly. See `DETECTIVE_UI_DISPLAY.md` for reuse of score and the validation scope.
 
-Before Segment Cells, add actual classifier management as a typed browser collection alongside Projects (not a new project data type). Pipeline is a separate dockable widget, synchronized with guided analysis actions. These collections/widgets remain planned until their data and execution adapters are connected.
+Workspace discovery now exposes typed Classifiers, Processors and Pipelines collections alongside Projects. The dockable Pipeline widget provides template selection, steps/parameter inspection, validation, dry run and project-linked run history. Detailed editing and run configuration reuse the existing advanced editor. Before Segment Cells, add compatible-classifier selection and connect guided actions to the same inspectable templates/runs. See `DETECTIVE_UI_PIPELINE.md` for the current boundary.
