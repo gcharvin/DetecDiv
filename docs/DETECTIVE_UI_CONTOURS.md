@@ -56,8 +56,10 @@ viewer.contourChanged();
 
 Restore rejects another ROI/path/provider or conflicting current pixels. Recovery files are not scientific exports or automatically applied to project data. Preserve them until the restored draft is saved and verified.
 
+Tracks now shares this provider draft, object selection and bounded history. Recovery also includes baseline/working models; model editing and parentage reuse Score's existing cellModel operations. Pure model saves can leave image H5 untouched. Cross-provider model-edit guards protect the ROI's shared model file. See `DETECTIVE_UI_TRACKS.md`.
+
 ## Validation and remaining work
 
 `detecdivui.maskDraftTest()` checks exact Score brush coverage at edges, source isolation, fill/delete/undo/redo, H5 round-trip, model track preservation, annotation invalidation, an actual MAT file-lock failure after H5 writing, successful retry, external-edit conflicts, recovery restore and consecutive provider saves. `detecdivui.contourTest()` exercises the native assistant, selection outline, a native polygon/createMask, real CEF key events, opacity/frame navigation, Done callback restoration, retained drafts, floating/redocking Display, explicit H5 saving, native X-close cancellation, save-and-close-project continuation and discard-and-close-app continuation. A screenshot is optional via its path argument.
 
-Interactive freehand/vertex gestures still need testing on representative acquisitions. Current scope does not include new mask-channel creation, painting a selected track identity across frames, watershed splits, relabel/track swaps, lineage linking, SAM propagation, or classifier-managed Annotation/Review sessions. Those remain separate integrations from the Score parity roadmap.
+Interactive freehand/vertex gestures still need testing on representative acquisitions. Tracks now supplies identity swaps and lineage linking as a separate assistant. New mask-channel creation, painting a selected track identity across frames, watershed splits, mask-label relabeling, SAM propagation and classifier-managed Annotation/Review sessions remain separate integrations from the Score parity roadmap.

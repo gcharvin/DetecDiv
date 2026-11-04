@@ -102,6 +102,9 @@ classdef MaskWidget < handle
             end
         end
         function setActive(obj,active)
+            entering = active && ~obj.Active;
+            selected = [];
+            if entering, selected = obj.Viewer.selectedAnnotation(); end
             if active && ~obj.Active
                 fig = obj.Viewer.Figure;
                 obj.Callbacks = {fig.WindowButtonDownFcn,fig.WindowButtonMotionFcn,fig.WindowButtonUpFcn,fig.Pointer};
@@ -110,12 +113,15 @@ classdef MaskWidget < handle
                 fig.WindowButtonUpFcn = @(~,~)obj.mouseUp();
             elseif ~active && obj.Active
                 obj.cancelStroke(); fig = obj.Viewer.Figure;
-                fig.WindowButtonDownFcn = obj.Callbacks{1}; fig.WindowButtonMotionFcn = obj.Callbacks{2};
-                fig.WindowButtonUpFcn = obj.Callbacks{3}; fig.Pointer = obj.Callbacks{4};
+                liveFigure = isvalid(fig);
+                if liveFigure
+                    fig.WindowButtonDownFcn = obj.Callbacks{1}; fig.WindowButtonMotionFcn = obj.Callbacks{2};
+                    fig.WindowButtonUpFcn = obj.Callbacks{3}; fig.Pointer = obj.Callbacks{4};
+                end
                 obj.clearOutline(); obj.Callbacks = {};
                 for k = 1:numel(obj.AxesState)
                     state = obj.AxesState{k};
-                    if isvalid(state.axes)
+                    if liveFigure && isvalid(state.axes)
                         state.axes.Interactions = state.interactions; state.axes.Toolbar.Visible = state.toolbar;
                     end
                 end
@@ -123,6 +129,12 @@ classdef MaskWidget < handle
             end
             obj.Active = logical(active);
             if obj.Active, obj.refresh(); end
+            if entering && ~isempty(selected)
+                if any(strcmp(obj.Provider.Items,selected.channel)), obj.Provider.Value = selected.channel; end
+                if strcmp(obj.current().Channel,selected.channel)
+                    obj.Label.Value = selected.label; obj.showSelection();
+                end
+            end
         end
         function onRender(obj)
             if ~obj.Active, return; end
@@ -133,30 +145,44 @@ classdef MaskWidget < handle
             end
         end
         function saveAll(obj)
-            scope = obj.Progress.begin('Saving mask drafts...'); %#ok<NASGU>
+            scope = obj.Progress.begin('Saving annotation edits...'); %#ok<NASGU>
             try
                 for k = 1:numel(obj.Drafts)
                     if obj.Drafts{k}.Dirty, obj.Drafts{k}.save(); obj.followSave(obj.Drafts{k}); end
                 end
-                obj.Viewer.contourChanged(); obj.status('Masks saved');
+                obj.Viewer.contourChanged(); obj.status('Annotation edits saved');
             catch err, obj.status(err.message);
             end
         end
         function draft = current(obj)
             c = obj.Viewer.contourContext(); draft = [];
             if isempty(c.roi), return; end
-            [provider,~,~] = score_resolveMaskProvider(c.roi,obj.Provider.Value);
+            draft = obj.draftFor(c.roi,obj.Provider.Value,c.project);
+        end
+        function draft = draftFor(obj,source,channel,project)
+            [provider,~,~] = score_resolveMaskProvider(source,channel);
             for k = 1:numel(obj.Drafts)
                 candidate = obj.Drafts{k};
-                if isequal(candidate.Source,c.roi) && strcmp(candidate.Channel,provider)
-                    if ~candidate.Dirty && ~isequal(candidate.Masks,c.roi.image(:,:,candidate.Pix,:))
-                        candidate = detecdivui.MaskDraft(c.roi,obj.Provider.Value); obj.Drafts{k} = candidate;
+                if isequal(candidate.Source,source) && strcmp(candidate.Channel,provider)
+                    if ~candidate.Dirty && ~candidate.matchesSource()
+                        candidate = detecdivui.MaskDraft(source,channel); obj.Drafts{k} = candidate;
                     end
                     draft = candidate; return;
                 end
             end
-            draft = detecdivui.MaskDraft(c.roi,obj.Provider.Value);
-            obj.Drafts{end+1} = draft; obj.Projects{end+1} = c.project;
+            draft = detecdivui.MaskDraft(source,channel);
+            obj.Drafts{end+1} = draft; obj.Projects{end+1} = project;
+        end
+        function saved(obj,draft)
+            obj.followSave(draft); obj.Viewer.contourChanged();
+        end
+        function assertEditable(obj,draft,modelMutation)
+            for k = 1:numel(obj.Drafts)
+                other = obj.Drafts{k};
+                if other == draft || ~isequal(other.Source,draft.Source) || ~other.Dirty, continue; end
+                assert(~modelMutation && ~other.hasModelEdits(),'detecdivui:AnnotationProviderBusy', ...
+                    'Save or discard pending edits on provider "%s" before editing this provider. The ROI shares one cell model.',other.Channel);
+            end
         end
         function plane = override(obj,session,index,frame,plane)
             if session.Zone == 0, return; end
@@ -205,7 +231,7 @@ classdef MaskWidget < handle
                 file = fullfile(folder,[char(matlab.lang.internal.uuid) '.mat']);
                 draft = obj.Drafts{k}.recovery();
                 save(file,'draft','-v7.3');
-                warning('detecdivui:MaskRecovery','Unsaved mask draft recovered to %s',file);
+                warning('detecdivui:MaskRecovery','Unsaved annotation draft recovered to %s',file);
             end
         end
         function action(obj,action)
@@ -215,6 +241,9 @@ classdef MaskWidget < handle
                 if strcmp(action,'save'), message = 'Saving masks and annotation data...'; end
                 scope = obj.Progress.begin(message); %#ok<NASGU>
                 d = obj.current(); if isempty(d), return; end
+                if ~strcmp(action,'discard')
+                    obj.assertEditable(d,any(strcmp(action,{'undo','redo'})) && d.historyTouchesModel(action));
+                end
                 c = obj.Viewer.contourContext();
                 switch action
                     case 'undo', d.undo();
@@ -239,6 +268,7 @@ classdef MaskWidget < handle
             shape = [];
             try
                 d = obj.current(); c = obj.Viewer.contourContext(); ax = obj.Viewer.roiAxes();
+                obj.assertEditable(d,false);
                 mask = d.read(c.frame); holes = false(size(mask));
                 if obj.Label.Value == 0, obj.newLabel(); end
                 label = obj.Label.Value; args = {};
@@ -280,11 +310,11 @@ classdef MaskWidget < handle
             end
             token = obj.ResolveGeneration;
             d = obj.ResolveQueue{1};
-            obj.ResolveFigure = uifigure('Name','Unsaved Masks','Tag','mask-close-dialog', ...
+            obj.ResolveFigure = uifigure('Name','Unsaved Annotations','Tag','mask-close-dialog', ...
                 'Position',[300 300 460 160],'WindowStyle','modal', ...
                 'CloseRequestFcn',@(~,~)obj.resolveChoice('Cancel',token));
             grid = uigridlayout(obj.ResolveFigure,[3 1]); grid.RowHeight = {44,24,28};
-            message = sprintf('Unsaved masks: %s / %s',d.Source.id,d.Channel);
+            message = sprintf('Unsaved annotations: %s / %s',d.Source.id,d.Channel);
             uilabel(grid,'Text',message,'Tooltip',message,'Interpreter','none');
             obj.ResolveStatus = uilabel(grid,'Text','','Interpreter','none','Tag','mask-close-status');
             buttons = uigridlayout(grid,[1 3]); buttons.Padding = [0 0 0 0];
@@ -303,7 +333,7 @@ classdef MaskWidget < handle
             obj.ResolveBusy = true;
             try
                 d = obj.ResolveQueue{1};
-                scope = obj.ResolveProgress.begin('Saving masks...'); %#ok<NASGU>
+                scope = obj.ResolveProgress.begin('Saving annotations...'); %#ok<NASGU>
                 if strcmp(choice,'Save'), d.save(); obj.followSave(d); else, d.discard(); end
                 clear scope; obj.ResolveBusy = false;
                 obj.ResolveQueue(1) = []; obj.nextResolution();
@@ -333,7 +363,7 @@ classdef MaskWidget < handle
             d = obj.current(); marker = ''; if d.Dirty, marker = ' *'; end
             obj.Target.Text = sprintf('%s · Frame %d%s',c.roi.id,c.frame,marker);
             if d.SaveFailed, obj.status(['Save incomplete: ' d.LastError]);
-            elseif d.Dirty, obj.status('Unsaved masks'); else, obj.status('Ready'); end
+            elseif d.Dirty, obj.status('Unsaved annotations'); else, obj.status('Ready'); end
             obj.showSelection();
         end
         function providerChanged(obj)
@@ -345,8 +375,13 @@ classdef MaskWidget < handle
             obj.Label.Value = value;
         end
         function showSelection(obj)
-            obj.clearOutline(); if ~obj.Active || obj.Label.Value == 0, return; end
-            d = obj.current(); c = obj.Viewer.contourContext(); b = bwboundaries(d.read(c.frame) == obj.Label.Value,'noholes');
+            obj.clearOutline(); if ~obj.Active, return; end
+            d = obj.current(); c = obj.Viewer.contourContext(); mask = d.read(c.frame);
+            label = obj.Label.Value;
+            if label == 0 || ~any(mask(:) == label), label = 0; end
+            obj.Viewer.rememberAnnotation(c.roi,d.Channel,c.frame,label,'Contours');
+            if label == 0, return; end
+            b = bwboundaries(mask == label,'noholes');
             ax = obj.Viewer.roiAxes(); hold(ax,'on');
             for k = 1:numel(b)
                 obj.Outline(end+1) = plot(ax,b{k}(:,2),b{k}(:,1),'Color',[1 .75 0], ...
@@ -364,6 +399,7 @@ classdef MaskWidget < handle
                 if isempty(ax) || ~isequal(ancestor(ax,'figure'),obj.Viewer.Figure), return; end
                 point = ax.CurrentPoint(1,1:2); d = obj.current(); c = obj.Viewer.contourContext();
                 if strcmp(obj.Tool.Value,'Select'), obj.select(point(1),point(2)); return; end
+                obj.assertEditable(d,false);
                 if ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
                 erase = strcmp(obj.Tool.Value,'Eraser') || any(strcmp(obj.Viewer.Figure.CurrentModifier,'shift'));
                 if obj.Label.Value == 0 && ~erase

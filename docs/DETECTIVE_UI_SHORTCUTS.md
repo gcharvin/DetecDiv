@@ -35,3 +35,5 @@ Inventory sources: `structure/GUI/score/private/score_runtime_code.m` (`ScoreApp
 `detecdivui.keyboardTest()` sends actual CEF keydown events through the Image document. It checks frame and ten-frame jumps, clamping, repeated events, input/modifier isolation, pixels, timeline, zoom, float/redock, active preference labels, help-window reuse/cleanup and unchanged source data.
 
 With Contours active, Ctrl+Z/Ctrl+Y undo/redo the mask draft, and Escape cancels a pending stroke/returns to Select. Its Delete/fill/opacity bindings share the existing Score preferences. Frame navigation remains active outside drawing gestures. See `DETECTIVE_UI_CONTOURS.md` and `detecdivui.contourTest()` for editor scope and persistence.
+
+Tracks uses the same navigation and shared annotation Undo/Redo. Escape cancels a pending parent/continuity pick; Delete retains the current-frame contour meaning. Whole-track deletion is an explicitly labeled button, not the Delete key. Inputs retain text editing, including exact decimal uint64 IDs. See `DETECTIVE_UI_TRACKS.md` and `detecdivui.tracksTest()`.
