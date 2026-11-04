@@ -327,6 +327,12 @@ classdef Viewer < handle
             % R2026a's native TreeNodeManager can otherwise retain stale indices.
             obj.Tree.SelectedNodes = [];
             drawnow;
+            % Build away from the live peer. R2026a can fail inside HG set
+            % when native tree updates interleave with a large node batch.
+            parent = obj.Tree.Parent;
+            restoreParent = onCleanup(@()obj.restoreBrowserParent(parent));
+            obj.Tree.Parent = [];
+            drawnow;
             delete(obj.Tree.Children);
             for k = 1:numel(obj.Sessions)
                 session = obj.Sessions{k};
@@ -349,7 +355,6 @@ classdef Viewer < handle
                         end
                     end
                 end
-                expand(projectNode);
             end
             kinds = {'classi','process','pipeline'};
             labels = {'Classifiers','Processors','Pipelines'};
@@ -365,7 +370,16 @@ classdef Viewer < handle
                     obj.browserNode(group,name, ...
                         struct('project',0,'fov',0,'roi',0,'object',j),'workspace-object');
                 end
-                expand(group);
+            end
+            clear restoreParent; % Publish the completed hierarchy in one step.
+            drawnow;
+            roots = obj.Tree.Children;
+            for k = 1:numel(roots), expand(roots(k)); end
+        end
+        function restoreBrowserParent(obj,parent)
+            if isvalid(obj) && isgraphics(obj.Tree) && isgraphics(parent)
+                obj.Tree.Parent = parent;
+                obj.Tree.Layout.Row = 1; obj.Tree.Layout.Column = 1;
             end
         end
         function browseSelection(obj)
@@ -714,8 +728,7 @@ classdef Viewer < handle
     end
     methods (Static, Access = private)
         function node = browserNode(parent,text,data,tag)
-            % Keep navigation records on the MATLAB side, away from the
-            % native NodeData conversion path. Assign only after construction.
+            % Navigation records stay on the MATLAB side.
             node = uitreenode(parent,'Text',text,'Tag',tag,'NodeData',[]);
             node.UserData = data;
         end
