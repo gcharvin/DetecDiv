@@ -13,6 +13,7 @@ classdef Viewer < handle
         ProjectProgress
         DisplayProgress
         ROIs
+        RecentProjects
     end
     properties (Access = private)
         Tree
@@ -69,11 +70,17 @@ classdef Viewer < handle
         SaveProjectMenu
         DrawingROI = false
         LoadedObjects = struct('object',{},'variables',{},'kind',{})
+        RecentMenu
+        RecentCommands = {}
+        ClearRecentCommand
+        ProjectSources = {}
     end
     methods
-        function obj = Viewer(project, visibility, layoutFile, autoSave)
+        function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)
             if nargin < 1, project = []; end
             if nargin < 2, visibility = 'on'; end
+            if nargin < 5, recentFile = fullfile(prefdir,'recentProjects.mat'); end
+            obj.RecentProjects = detecdivui.RecentProjects(recentFile);
             obj.Session = detecdivui.Session();
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
             obj.Host.OnClosed = @()delete(obj);
@@ -246,6 +253,7 @@ classdef Viewer < handle
                 obj.Sessions{end+1} = detecdivui.Session(project);
                 obj.DisplayModels{end+1} = detecdivui.LayerModel();
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
+                obj.ProjectSources{end+1} = '';
                 index = numel(obj.Sessions);
                 obj.rebuildTree();
             elseif ~isequal(obj.Sessions{index}.Project,project)
@@ -276,6 +284,7 @@ classdef Viewer < handle
             if obj.hasROIWidget(), obj.ROIs.forgetProject(obj.Sessions{index}.Project); end
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
+            if numel(obj.ProjectSources) >= index, obj.ProjectSources(index) = []; end
             obj.DisplayModels(index) = [];
             remaining = find(cellfun(@(session)isequal(session,active),obj.Sessions),1);
             if ~wasActive
@@ -296,7 +305,8 @@ classdef Viewer < handle
             end
             obj.refreshView(false);
         end
-        function openProject(obj,path)
+        function project = openProject(obj,path)
+            project = [];
             try
                 if nargin < 2
                     [file,folder] = uigetfile( ...
@@ -305,10 +315,12 @@ classdef Viewer < handle
                     path = fullfile(folder,file);
                 end
                 activity = obj.ProjectProgress.begin('Loading project...'); %#ok<NASGU>
-                project = shallowLoad(path,'ProgressCallback',@(payload)obj.ProjectProgress.report(payload));
-                if ~isempty(project), obj.addProject(project); end
+                path = detecdivui.RecentProjects.resolve(path);
+                [project,message] = shallowLoad(path,'ProgressCallback',@(payload)obj.ProjectProgress.report(payload));
+                assert(~isempty(project),'detecdivui:ProjectLoad','Could not open project. %s',char(string(message)));
+                obj.addProject(project); obj.ProjectSources{obj.ActiveProject} = path; obj.rememberProject(path);
             catch err
-                obj.showError(err);
+                project = []; obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
             end
         end
         function classifier = openClassifier(obj,path)
@@ -343,6 +355,8 @@ classdef Viewer < handle
                     'detecdivui:ProjectPath','Set a project name and folder before saving.');
                 shallowSave(project,'shallowObj');
                 obj.Status.Text = 'Project saved'; ok = true;
+                path = fullfile(project.io.path,[project.io.file '.json']);
+                obj.ProjectSources{obj.ActiveProject} = path; obj.rememberProject(path);
             catch err
                 obj.Status.Text = err.message;
             end
@@ -495,6 +509,52 @@ classdef Viewer < handle
             same = strcmpi(pathA,pathB);
             if ~isa(a,'pipeline'), same = same && strcmp(a.strid,b.strid); end
         end
+        function rememberProject(obj,path)
+            try
+                if isempty(obj.RecentProjects), obj.RecentProjects = detecdivui.RecentProjects(); end
+                obj.RecentProjects.remember(path); obj.refreshRecentMenu();
+            catch err
+                obj.Status.Text = ['Project opened/saved; recent history was not saved: ' err.message];
+                obj.Status.Tooltip = obj.Status.Text;
+            end
+        end
+        function openRecentProject(obj,path)
+            % Focus an open project without reloading over unsaved data.
+            for k = 1:numel(obj.Sessions)
+                project = obj.Sessions{k}.Project; source = '';
+                if numel(obj.ProjectSources) >= k, source = obj.ProjectSources{k}; end
+                if isempty(source) && ~isempty(project.io.path) && ~isempty(project.io.file)
+                    source = fullfile(project.io.path,[project.io.file '.json']);
+                end
+                if ~isempty(source) && detecdivui.RecentProjects.samePath(source,path)
+                    if obj.ActiveProject ~= k, obj.activate(k); obj.refreshView(false); end
+                    obj.selectCurrentNode(); obj.refreshProjectInfo(); obj.rememberProject(path); return;
+                end
+            end
+            obj.openProject(path);
+        end
+        function clearRecentProjects(obj)
+            try
+                obj.RecentProjects.clear(); obj.refreshRecentMenu();
+                obj.Status.Text = 'Recent projects cleared';
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
+        end
+        function refreshRecentMenu(obj)
+            if isempty(obj.RecentMenu), return; end
+            paths = obj.RecentProjects.Paths;
+            for k = 1:numel(obj.RecentCommands)
+                command = obj.RecentCommands{k}; command.Enable = 'off'; command.MenuSelectedFcn = [];
+                if k <= numel(paths)
+                    path = char(paths(k)); [folder,name,extension] = fileparts(path);
+                    command.Text = sprintf('%d %s%s — %s',k,name,extension,folder);
+                    command.Enable = 'on'; command.MenuSelectedFcn = @(~,~)obj.openRecentProject(path);
+                end
+            end
+            obj.RecentMenu.Children = [obj.RecentCommands(1:numel(paths)) {obj.ClearRecentCommand}];
+            obj.RecentMenu.Enable = obj.onOff(~isempty(paths)); obj.Host.syncMenus();
+        end
         function yes = hasROIWidget(obj)
             yes = isa(obj.ROIs,'detecdivui.ROIWidget') && isscalar(obj.ROIs) && isvalid(obj.ROIs);
         end
@@ -549,6 +609,13 @@ classdef Viewer < handle
             file = obj.Host.menu([],'File');
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
+            obj.RecentMenu = obj.Host.menu(file,'Recent Projects','Enable','off');
+            for k = 1:10
+                obj.RecentCommands{k} = obj.Host.menu(obj.RecentMenu,'','Enable','off');
+            end
+            obj.ClearRecentCommand = obj.Host.menu(obj.RecentMenu,'Clear Recent Projects', ...
+                'Separator','on','MenuSelectedFcn',@(~,~)obj.clearRecentProjects());
+            obj.refreshRecentMenu();
             obj.Host.menu(file,'Open Classifier...','MenuSelectedFcn',@(~,~)obj.openClassifier());
             obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.saveProject());

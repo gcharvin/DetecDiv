@@ -7,7 +7,7 @@ project = shallow(); project.io.path = folder; project.io.file = 'ROI project'; 
 project.fov.id = 'Pos0'; project.fov.srcpath = {folder}; project.fov.srclist = {dir(file)};
 project.fov.channel = {'Phase'}; project.fov.frames = 1; project.fov.interval = 1;
 existing = roi('Original',[1 1 3 3]); existing.image = uint16(ones(3,3)); project.fov.roi = existing;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
 closeViewer = onCleanup(@()delete(viewer));
 viewer.openROITool(); viewer.ROIs.addRectangle([3 4 5 6]);
 assert(isempty(project.processing.pipelineRun) && isequal(project.fov.roi,existing));

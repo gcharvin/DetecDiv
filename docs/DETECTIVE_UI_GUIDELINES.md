@@ -35,7 +35,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Save Project, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
+| File | Open Project..., Recent Projects, Open Classifier..., Save Project, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
 | Edit | Copy Image |
 | View | Projects, Image, Display, Pipeline, ROIs, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame |

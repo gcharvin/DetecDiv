@@ -145,31 +145,32 @@ structure/GUI/workflow_extracted.m,5615,"function GenerateROIsButtonPushed(app, 
 structure/GUI/workflow_extracted.m,5635,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,5705,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,6041,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/+detecdivui/PipelineWidget.m,302,"function openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,311,"function refresh(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,359,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,525,"function run = saveRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,572,"function saveTemplate(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,585,"function editor = openEditor(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,620,"function editor = openEditor(obj)",pipeline2,destination frontend; caller covers launch,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,660,"function ok = syncAdvanced(obj)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
-structure/GUI/+detecdivui/PipelineWidget.m,727,"function review = reviewRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,1068,"function inspectRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,1070,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,304,"function template = openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,317,"function refresh(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,365,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,531,"function run = saveRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,578,"function saveTemplate(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,591,"function editor = openEditor(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,626,"function editor = openEditor(obj)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,666,"function ok = syncAdvanced(obj)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
+structure/GUI/+detecdivui/PipelineWidget.m,733,"function review = reviewRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,1074,"function inspectRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,1076,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
 structure/GUI/+detecdivui/ROIWidget.m,141,"function ctx = apply(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/ROIWidget.m,166,"function preview(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,219,"function obj = Viewer(project, visibility, layoutFile, autoSave)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
-structure/GUI/+detecdivui/Viewer.m,241,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,270,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,305,"function openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,314,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,340,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,411,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,801,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,851,"function render(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,923,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,984,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1006,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,228,"function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
+structure/GUI/+detecdivui/Viewer.m,250,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,280,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,317,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,334,"function classifier = openClassifier(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,351,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,379,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,450,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,933,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,983,"function render(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1055,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1116,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1138,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source

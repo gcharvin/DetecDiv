@@ -14,8 +14,9 @@ p.addParameter('LayoutFile',fullfile(prefdir,'DetecDiv','ui-layout-r2026a.json')
     @(x)ischar(x)||(isstring(x)&&isscalar(x)));
 p.addParameter('AutoSaveLayout',true,@(x)islogical(x)&&isscalar(x));
 p.addParameter('DiscoverWorkspace',discover,@(x)islogical(x)&&isscalar(x));
+p.addParameter('RecentProjectsFile',fullfile(prefdir,'recentProjects.mat'),@(x)ischar(x)||(isstring(x)&&isscalar(x)));
 p.parse(varargin{:});
-viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout);
+viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout,p.Results.RecentProjectsFile);
 try
     if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
 catch err
