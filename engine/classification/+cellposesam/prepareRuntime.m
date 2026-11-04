@@ -51,16 +51,8 @@ if ~runner.exists || ~script.exists
     diagnostics(end+1,1) = diagnostic('error','MissingPythonEntryPoint', ...
         'The installed CellposeSAM adapter is missing its Python runner or script.','');
 end
-modelPath = 'sam';
 classifierPath = propertyText(classif,'path');
-if ~isempty(classifierPath) && ~isempty(id)
-    candidate = fullfile(classifierPath,'models',id);
-    if isfile(candidate)
-        modelPath = candidate;
-    elseif isfile([candidate '.pth'])
-        modelPath = [candidate '.pth'];
-    end
-end
+modelPath = cellposesam.selectModelPath(classifierPath,id);
 model = struct('source','backend_managed','selection',modelPath, ...
     'identity',pipelineModuleFileIdentity(''),'verification','deferred');
 if ~strcmp(modelPath,'sam')

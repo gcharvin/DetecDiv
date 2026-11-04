@@ -43,6 +43,22 @@ prepared = cellposesam.prepareRuntime(c,struct());
 verifyEqual(testCase,prepared.context.cellposeModelPath,model);
 verifyEqual(testCase,prepared.provenance.model.source,'classifier_local');
 verifyEqual(testCase,prepared.provenance.model.verification,'sha256');
+best = fullfile(folder,[c.strid '_best.pth']);
+writeText(best,'best epoch weights');
+prepared = cellposesam.prepareRuntime(c,struct());
+verifyEqual(testCase,prepared.context.cellposeModelPath,best);
+verifyEqual(testCase,prepared.provenance.model.identity,pipelineModuleFileIdentity(best));
+verifyEqual(testCase,cellposesam.selectModelPath(folder,c.strid),best);
+verifyEqual(testCase,cellposesam.selectModelPath('',c.strid),'sam');
+end
+
+function testBestDoesNotRequireLegacyModelsDirectory(testCase)
+folder = freshFolder(testCase);
+c = classifier(folder);
+best = fullfile(folder,[c.strid '_best.pth']);
+writeText(best,'best only');
+prepared = cellposesam.prepareRuntime(c,struct());
+verifyEqual(testCase,prepared.context.cellposeModelPath,best);
 end
 
 function testActualLegacyParametersAndNodeOverrides(testCase)

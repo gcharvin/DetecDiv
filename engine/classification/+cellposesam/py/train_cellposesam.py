@@ -3,6 +3,9 @@ import json
 import random
 import datetime
 import gc
+import ast
+import inspect
+import textwrap
 import numpy as np
 # Initialize NumPy's BLAS/OpenMP runtime before PyTorch loads its bundled
 # libiomp5md.dll. Reversing this order can load two Intel OpenMP runtimes on
@@ -203,6 +206,68 @@ def checkpoint_options(cfg):
     return {"save_every": checkpoint_every, "save_each": True}
 
 
+def train_with_best_checkpoint(net, best_path, **kwargs):
+    """Save the actual best epoch, separately from Cellpose's final weights.
+
+    Cellpose 4 train_seg has no epoch callback and only validates on epochs
+    0, 5, 10, ... (other test_losses entries are unmeasured zeros). Adapt a
+    private copy of its loop to validate each epoch and snapshot immediately.
+    The installed Cellpose function/module is never modified. Refuse an
+    incompatible loop rather than silently writing final weights as 'best'.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(train.train_seg)))
+    function = tree.body[0]
+    loops = [node for node in function.body if isinstance(node, ast.For)
+             and isinstance(node.target, ast.Name) and node.target.id == "iepoch"]
+    if len(loops) != 1:
+        raise RuntimeError("Unsupported Cellpose train_seg: epoch loop not found")
+    loop = loops[0]
+    validation_blocks = [node for node in loop.body if isinstance(node, ast.If)
+                         and any(isinstance(child, ast.Assign) and any(
+                             isinstance(target, ast.Subscript)
+                             and isinstance(target.value, ast.Name)
+                             and target.value.id == "test_losses"
+                             for target in child.targets)
+                             for child in ast.walk(node))]
+    if len(validation_blocks) != 1:
+        raise RuntimeError("Unsupported Cellpose train_seg: validation block not found")
+    validation_blocks[0].test = ast.Constant(value=True)
+    loop.body.extend(ast.parse(
+        "_detecdiv_epoch_end(net, iepoch, train_losses[iepoch], test_losses[iepoch])"
+    ).body)
+
+    has_validation = (kwargs.get("test_data") is not None
+                      or kwargs.get("test_files") is not None)
+    best = {"epoch": None, "metric": None,
+            "metric_name": "val_loss" if has_validation else "train_loss"}
+
+    def epoch_end(network, epoch, train_loss, val_loss):
+        metric = float(val_loss if has_validation else train_loss)
+        if not np.isfinite(metric):
+            return
+        if best["metric"] is None or metric < best["metric"]:
+            # Serialize now, before later optimizer steps mutate the tensors.
+            temporary = str(best_path) + ".tmp"
+            try:
+                torch.save(network.state_dict(), temporary)
+                os.replace(temporary, best_path)
+            finally:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+            best.update(epoch=int(epoch) + 1, metric=metric)
+            print(f"[INFO] Best checkpoint: epoch {epoch + 1}, "
+                  f"{best['metric_name']}={metric:.6f}")
+
+    namespace = dict(train.train_seg.__globals__)
+    namespace["_detecdiv_epoch_end"] = epoch_end
+    exec(compile(ast.fix_missing_locations(tree), inspect.getfile(train.train_seg),
+                 "exec"), namespace)
+    result = namespace[function.name](net, **kwargs)
+    if best["epoch"] is None:
+        raise RuntimeError("No finite epoch loss: no best checkpoint was selected")
+    return (*result, best)
+
+
 def load_from_framebank(framebank_path, seed=None):
     # Load images/masks from framebank and use /split (0=test,1=train,2=val)
     if not os.path.exists(framebank_path):
@@ -392,8 +457,10 @@ def train_model():
         pretrained_model=pretrained_model,
     )
 
-    model_path, train_losses, test_losses = train.train_seg(
+    best_path = os.path.join(save_path, f"{model_name}_best.pth")
+    model_path, train_losses, test_losses, best = train_with_best_checkpoint(
         model.net,
+        best_path,
         train_data=imgs,
         train_labels=labels,
         test_data=test_data,
@@ -409,36 +476,19 @@ def train_model():
     )
     print("[INFO] training finished, model saved to", model_path)
 
-    best_epoch = None
-    best_metric = None
-    metric_name = None
-
-    if test_losses is not None and len(test_losses) > 0:
-        best_epoch = int(np.argmin(test_losses))
-        best_metric = float(test_losses[best_epoch])
-        metric_name = "val_loss"
-    elif train_losses is not None and len(train_losses) > 0:
-        best_epoch = int(np.argmin(train_losses))
-        best_metric = float(train_losses[best_epoch])
-        metric_name = "train_loss"
-
-    if best_epoch is not None:
-        best_path = os.path.join(save_path, f"{model_name}_best.pth")
-        torch.save(model.net.state_dict(), best_path)
-        print(f"[INFO] Best model (by {metric_name}) saved at epoch {best_epoch+1} with value {best_metric:.6f}")
-        print(f"[INFO] Best model path: {best_path}")
-    else:
-        print("[WARN] Could not determine best model (no losses).")
+    print(f"[INFO] Best model (by {best['metric_name']}) saved at epoch "
+          f"{best['epoch']} with value {best['metric']:.6f}")
+    print(f"[INFO] Best model path: {best_path}")
 
     write_status(
         status_path,
         {
             "status": "OK",
             "model_path": str(model_path),
-            "best_model_path": str(best_path) if best_epoch is not None else "",
-            "best_epoch": int(best_epoch + 1) if best_epoch is not None else None,
-            "best_metric": float(best_metric) if best_metric is not None else None,
-            "metric_name": metric_name or "",
+            "best_model_path": str(best_path),
+            "best_epoch": best["epoch"],
+            "best_metric": best["metric"],
+            "metric_name": best["metric_name"],
             "n_train": len(imgs),
             "n_val": len(val_imgs),
         },

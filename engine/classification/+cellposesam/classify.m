@@ -242,17 +242,7 @@ cellprob_threshold = getCellposeParamLocal(ctx, classif, 'cell_prob_threshold', 
 % Model selection. A common-runner preparation freezes the selected file or
 % the backend-managed sam alias before the first ROI.
 classifPath = getClassifierPathLocal(classif);
-model_dir          = fullfile(classifPath, 'models');
-model_path_to_use  = 'sam';
-if exist(model_dir, 'dir')
-    candidate1 = fullfile(model_dir, classif.strid);
-    candidate2 = [candidate1 '.pth'];
-    if exist(candidate1, 'file')
-        model_path_to_use = candidate1;
-    elseif exist(candidate2, 'file')
-        model_path_to_use = candidate2;
-    end
-end
+model_path_to_use = cellposesam.selectModelPath(classifPath,classif.strid);
 [pinnedModelPath,hasPinnedModel] = pinnedCellposeModelLocal(ctx,classif);
 if hasPinnedModel, model_path_to_use = pinnedModelPath; end
 
