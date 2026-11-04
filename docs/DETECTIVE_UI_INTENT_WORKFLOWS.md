@@ -1,6 +1,22 @@
 # Intents, evolving pipelines and business-function integration
 
-Design from Gilles's UI discussion, 4 November 2026. This document specifies the next integration layer; it does not describe an implemented automatic planner. “Segment Cells” is an example of the general interaction, not a selected implementation priority.
+Design from Gilles's UI discussion, 4 November 2026. The first implementation now provides metadata-only proposals, graph deltas and independent editable drafts. Automatic execution remains a later tranche. “Segment Cells” is an example of the general interaction, not a selected implementation priority.
+
+## Implemented first tranche
+
+Open **Edit > Plan Workflow...**, or **Plan...** in Pipeline. Five curated intents currently cover ROI definition, segmentation, tracking, measurements and cavity trajectory selection. Their method candidates come from `detecdiv_modules_list`; only valid modules resolving on the active MATLAB path are offered. Existing uniquely matching enabled steps are proposed for reuse; ambiguous steps or new scientific methods require an explicit selection. Probability-only segmentation steps cannot supply masks.
+
+The same compact Pipeline graph displays **Added**, **Reused step**, **Choose method**, and existing-resource states (**declared**, **unverified**, **partial**, **stale**). Resources appear as input nodes in the proposal view, separately from executable business nodes. Display ordering follows dependencies without reordering the source graph. Reusing a step preserves its effective parameters, including run overrides; it does not assert that its old scientific outputs are valid for a new target.
+
+The inventory reads selected FOV/ROI metadata and already cached model metadata only. It never calls an image/model loader, probes raw paths, migrates annotations or starts Python. Common mask/family names are intersected across the selected FOV's ROIs; heterogeneous coverage is partial. Known GT naming prefixes are excluded, but provenance and scientific suitability still require verification. No channel name alone authorizes reuse of results. Typed metadata fingerprints detect changed contexts, including exact uint64 identities, without serializing image pixels or expanding entire cellular models into JSON strings.
+
+**Use Draft** creates an independent `pipeline` with the proposed executable nodes/edges and baked effective parameters. It preserves existing branches, requires refresh after context changes, keeps source templates/runs intact, and clears invocation-specific identifiers/paths when forking. A proposal based on a saved run uses its frozen graph and run settings, rather than the currently edited live template. Added nodes initially contain their catalogue entry point/package; method defaults, model references and bindings remain to be configured through the existing advanced path. No run or H5 is created by applying a proposal. The button remains disabled while method choices are unresolved or the plan would be unchanged.
+
+The new draft stays in memory until an explicit save. Save Pipeline asks for a parent folder for a new workflow and refuses an existing destination directory. Save Run uses the existing run persistence path and includes an additive `ctx.workflowIntent` record (`detecdiv.ui.intent_proposal.v1`): intent ID, parent proposal, scope, graph change summary, unresolved checks, source reference and applied-graph fingerprint. The record indicates whether the effective graph was subsequently amended, including through the advanced bridge. This metadata does not alter execution contracts or processing algorithms.
+
+**History...** in the planning dialog shows the current project's bounded session proposal history and intent origins in already loaded project runs. Run-backed history survives reopening through `run.json`; unsaved session proposals are not durable revision storage. Readable details distinguish the originating intent from later graph edits. This is the first history integration, not the complete scientific-action journal.
+
+Validation: `detecdivui.intentPlannerTest()` and `detecdivui.intentWorkflowTest()` cover missing/partial/stale resources, effective-step reuse, method ambiguity, cycles, source preservation, native controls/docking, stale proposals, frozen run forking, advanced edits, independent saves, provenance and cross-project isolation. The planner appends or reuses curated recipe steps; it does not yet replace/prune arbitrary advanced graphs, invalidate downstream scientific outputs, certify reusable artifacts, instantiate module defaults, execute from a task button, or implement drag-and-drop. Planning/applying drafts never implies inference.
 
 ## Central interaction
 

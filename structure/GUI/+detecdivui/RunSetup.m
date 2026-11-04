@@ -27,9 +27,7 @@ classdef RunSetup < handle
             obj.load(struct());
         end
         function load(obj,settings)
-            defaults = struct('runId','','inputSourceMode','existing_rois','rawDataPath','', ...
-                'fovs','all','rois','all','frames','all','runPolicy','resume', ...
-                'outputPolicy','skip','gpuPolicy','module_default','executionTarget','local','description','');
+            defaults = detecdivui.RunSetup.defaults();
             for item = fieldnames(defaults)'
                 key = item{1}; value = defaults.(key);
                 if isfield(settings,key), value = settings.(key); end
@@ -62,6 +60,38 @@ classdef RunSetup < handle
         end
     end
     methods (Static)
+        function settings = defaults()
+            settings = struct('runId','','inputSourceMode','existing_rois','rawDataPath','', ...
+                'fovs','all','rois','all','frames','all','runPolicy','resume', ...
+                'outputPolicy','skip','gpuPolicy','module_default','executionTarget','local','description','');
+        end
+        function settings = fromRun(run)
+            settings = detecdivui.RunSetup.defaults(); settings.description = run.description;
+            context = run.ctx;
+            if isfield(context,'run')
+                fields = {'inputSourceMode','rawDataPath','runPolicy','gpuPolicy','executionTarget'};
+                for k = 1:numel(fields)
+                    key = fields{k}; if isfield(context.run,key), settings.(key) = context.run.(key); end
+                end
+            end
+            if isfield(context,'sel')
+                for key = {'fovs','rois','frames'}
+                    name = key{1};
+                    if isfield(context.sel,name) && ~isempty(context.sel.(name))
+                        value = context.sel.(name);
+                        if isnumeric(value), value = mat2str(value(:)'); else, value = char(strjoin(string(value),',')); end
+                        settings.(name) = value;
+                    end
+                end
+            end
+            if isfield(context,'io') && isfield(context.io,'globalExistingPolicy')
+                settings.outputPolicy = context.io.globalExistingPolicy;
+            end
+            fields = intersect(fieldnames(context),{'run','io','hub','exec','names','executionPolicy','workflowIntent'});
+            settings.extraContext = struct();
+            for k = 1:numel(fields), name = fields{k}; settings.extraContext.(name) = context.(name); end
+            if isfield(context,'workflowIntent'), settings.intentProposal = context.workflowIntent; end
+        end
         function selected = selection(text,ids)
             % Parse a UI selector without evaluating MATLAB expressions.
             if nargin < 2, ids = {}; end

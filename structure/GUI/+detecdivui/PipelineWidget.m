@@ -14,6 +14,9 @@ classdef PipelineWidget < handle
         SettingsFigure
         CompactGraph
         AdvancedEditor = []
+        Proposal = []
+        Planner = []
+        PlanHistory = struct('project',{},'event',{})
     end
     properties
         OnStatus = []
@@ -65,6 +68,10 @@ classdef PipelineWidget < handle
         Syncing = false
         DefinitionContext = 0
         FollowTimer = []
+        ProposalProject = []
+        ApplyingProposal = false
+        ProposalTemplate = []
+        PlanHistoryFigure = []
     end
     methods
         function obj = PipelineWidget(parent)
@@ -203,7 +210,9 @@ classdef PipelineWidget < handle
             obj.CompactGraph.OnSelect = detecdivui.Callback(obj,'widgetEvent','openStep');
             obj.RunState = uilabel(compact,'Text','Draft','Tag','pipeline-run-state','Interpreter','none');
             obj.RunState.Layout.Row = 6;
-            buttons = uigridlayout(compact,[1 2]); buttons.Padding = [0 0 0 0]; buttons.Layout.Row = 7;
+            buttons = uigridlayout(compact,[1 3]); buttons.Padding = [0 0 0 0]; buttons.Layout.Row = 7;
+            uibutton(buttons,'Text','Plan...','Tag','pipeline-plan','Tooltip','Propose a workflow from an intended outcome', ...
+                'ButtonPushedFcn',@(~,~)obj.openPlanner());
             uibutton(buttons,'Text','Refresh','Tooltip','Refresh the selected run and its review', ...
                 'ButtonPushedFcn',@(~,~)obj.refreshSelectedRun());
             uibutton(buttons,'Text','Details...','Tooltip','Open checks and run details', ...
@@ -233,7 +242,125 @@ classdef PipelineWidget < handle
             if ~isempty(index), obj.Tabs.SelectedTab = tabs(index); end
             obj.SettingsFigure.Visible = 'on'; figure(obj.SettingsFigure);
         end
+        function openPlanner(obj,intent)
+            if nargin<2, intent = ''; end
+            try
+                assert(isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor), ...
+                    'detecdivui:PlannerEditor','Close the advanced editor before proposing a workflow change.');
+                assert(~isempty(obj.Session) && obj.Session.Position>0, ...
+                    'detecdivui:PlannerTarget','Select a FOV or ROI first.');
+                if isempty(obj.Planner) || ~isvalid(obj.Planner), obj.Planner = detecdivui.IntentDialog(obj); end
+                obj.Planner.open(intent);
+            catch err, obj.setStatus(err.message);
+            end
+        end
+        function [base,state,target] = planningContext(obj)
+            assert(~isempty(obj.Session),'detecdivui:PlannerTarget','Select a project.');
+            base = detecdivui.IntentPlanner.snapshot(obj.Template,obj.Draft.effectiveNodes());
+            base.settings = obj.Setup.values();
+            base.settings = obj.overlay(base.settings,obj.Draft.Settings);
+            base.source = 'draft';
+            if ~strcmp(obj.RunPicker.Value,'draft')
+                index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
+                assert(~isempty(index),'detecdivui:PlannerRun','This run is no longer available.');
+                run = obj.RunObjects(index);
+                assert(isfield(run.ctx,'pipelineSpec'),'detecdivui:PlannerRun','This run has no pipeline snapshot.');
+                spec = run.ctx.pipelineSpec; base.nodes = spec.nodes;
+                if isfield(run.ctx,'run') && isfield(run.ctx.run,'nodeParams')
+                    base.nodes = pipelineApplyRunNodeParams(base.nodes,run.ctx.run.nodeParams);
+                end
+                base.edges = spec.edges; base.branches = obj.field(spec,'branches',struct([]));
+                base.name = run.templateId; base.path = run.templatePath; base.source = ['run:' run.runId];
+                base.version = obj.field(spec,'version','1.0'); base.runProfiles = obj.field(spec,'runProfiles',struct());
+                base.settings = detecdivui.RunSetup.fromRun(run);
+            end
+            state = detecdivui.ProjectInventory.inspect(obj.Session); target = obj.Session.breadcrumb();
+        end
+        function proposal = proposeIntent(obj,intent,choices,catalogue)
+            assert(isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor), ...
+                'detecdivui:PlannerEditor','Close the advanced editor and refresh the proposal.');
+            [base,state] = obj.planningContext();
+            proposal = detecdivui.IntentPlanner.propose(base,state,intent,choices,catalogue);
+            proposal.applied = false;
+            obj.Proposal = proposal; obj.ProposalProject = obj.Session.Project; obj.ProposalTemplate = obj.Template;
+            obj.renderProposal();
+        end
+        function template = applyProposal(obj)
+            assert(~isempty(obj.Proposal) && ~obj.Proposal.applied && obj.Proposal.canApply, ...
+                'detecdivui:PlannerIncomplete','Choose the missing methods before using the draft.');
+            [base,state] = obj.planningContext(); proposal = obj.Proposal;
+            assert(isequal(obj.Session.Project,obj.ProposalProject) && isequal(obj.Template,obj.ProposalTemplate) && ...
+                strcmp(jsonencode(base),proposal.baseSignature) && strcmp(state.signature,proposal.inventorySignature), ...
+                'detecdivui:PlannerStale','The pipeline or project selection changed. Refresh the proposal.');
+            assert(isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor), ...
+                'detecdivui:PlannerEditor','Close the advanced editor and refresh the proposal.');
+            activity = obj.Progress.begin('Creating workflow draft...'); %#ok<NASGU>
+            obj.ApplyingProposal = true; guard = onCleanup(@()obj.finishProposal());
+            template = pipeline(); prefix = [matlab.lang.makeValidName(base.name) '_workflow'];
+            names = cellfun(@(p)p.strid,obj.Templates,'UniformOutput',false);
+            template.strid = matlab.lang.makeUniqueStrings(prefix,names,namelengthmax);
+            template.description = proposal.label; template.nodes = proposal.nodes;
+            template.version = base.version; template.runProfiles = base.runProfiles;
+            template.edges = proposal.edges; template.branches = proposal.branches;
+            settings = obj.freshPlanSettings(base.settings);
+            settings.runId = ''; settings.description = proposal.label;
+            settings.fovs = num2str(obj.Session.Position); settings.rois = 'all';
+            if obj.Session.Zone>0, settings.rois = num2str(obj.Session.Zone); end
+            if isfield(settings,'selectedNodes')
+                ids = proposal.changes(ismember(proposal.changes(:,3),{'Added','Reused step'}),1);
+                settings.selectedNodes = union(settings.selectedNodes,reshape(ids,1,[]),'stable');
+            end
+            parent = ''; if isfield(base.settings,'intentProposal'), parent = base.settings.intentProposal.id; end
+            event = struct('format','detecdiv.ui.intent_proposal.v1','id',proposal.id,'parentProposal',parent, ...
+                'intent',proposal.intent,'label',proposal.label, ...
+                'createdAt',char(datetime('now')),'scope',proposal.scope,'changes',{proposal.changes}, ...
+                'checks',{proposal.questions},'base',struct('name',base.name,'path',base.path,'source',base.source));
+            event.graphSignature = detecdivui.IntentPlanner.configurationSignature(struct('nodes',template.nodes, ...
+                'edges',template.edges,'branches',template.branches));
+            settings.intentProposal = event;
+            obj.addTemplate(template); obj.Draft.configure(settings); obj.Setup.load(settings);
+            obj.Scope.Value = 'Run selection'; obj.RunPicker.Value = 'draft';
+            proposal.applied = true; obj.Proposal = proposal; obj.ProposalTemplate = template;
+            [current,~] = obj.planningContext(); obj.Proposal.appliedSignature = jsonencode(current);
+            obj.PlanHistory(end+1) = struct('project',obj.Session.Project,'event',event);
+            if numel(obj.PlanHistory)>100, obj.PlanHistory = obj.PlanHistory(end-99:end); end
+            obj.updateGraph(); obj.setStatus('Workflow draft created · validation required');
+        end
+        function cancelProposal(obj)
+            if isempty(obj.Proposal) || obj.ApplyingProposal, return; end
+            obj.Proposal = []; obj.ProposalProject = []; obj.ProposalTemplate = [];
+            obj.Graph.OnToggle = detecdivui.Callback(obj,'widgetEvent','toggle'); obj.updateGraph();
+        end
+        function showPlanHistory(obj)
+            if isgraphics(obj.PlanHistoryFigure), delete(obj.PlanHistoryFigure); end
+            obj.PlanHistoryFigure = uifigure('Name','Workflow History','Tag','intent-history-dialog','Position',[260 180 800 420]);
+            grid = uigridlayout(obj.PlanHistoryFigure,[2 1]); grid.RowHeight = {'1x',100};
+            events = {};
+            for k = 1:numel(obj.PlanHistory)
+                if isequal(obj.PlanHistory(k).project,obj.Session.Project), events{end+1} = obj.PlanHistory(k).event; end %#ok<AGROW>
+            end
+            if ~isempty(obj.Session.Project)
+                runs = obj.Session.Project.processing.pipelineRun;
+                for k = 1:numel(runs)
+                    if isfield(runs(k).ctx,'workflowIntent')
+                        event = runs(k).ctx.workflowIntent;
+                        event.label = [event.label ' · run ' runs(k).runId ' · ' runs(k).status];
+                        events{end+1} = event; %#ok<AGROW>
+                    end
+                end
+            end
+            rows = cell(numel(events),3);
+            for k = 1:numel(events)
+                e = events{k}; rows(k,:) = {e.createdAt,e.label,sprintf('FOV %d / ROI %d',e.scope.fov,e.scope.roi)};
+            end
+            details = uitextarea(grid,'Editable','off','Value',{''},'Tag','intent-history-details'); details.Layout.Row = 2;
+            list = uitable(grid,'Data',rows,'ColumnName',{'Time','Action','Scope'},'RowName',{}, ...
+                'Tag','intent-history-list','CellSelectionCallback',@(~,e)obj.historySelected(e,events,details));
+            list.Layout.Row = 1;
+        end
         function delete(obj)
+            if ~isempty(obj.Planner) && isvalid(obj.Planner), delete(obj.Planner); end
+            if isgraphics(obj.PlanHistoryFigure), delete(obj.PlanHistoryFigure); end
             if ~isempty(obj.FollowTimer) && isvalid(obj.FollowTimer), stop(obj.FollowTimer); delete(obj.FollowTimer); end
             if ~isempty(obj.SettingsFigure) && isvalid(obj.SettingsFigure), delete(obj.SettingsFigure); end
             if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
@@ -253,9 +380,9 @@ classdef PipelineWidget < handle
         function widgetEvent(obj,action,varargin)
             switch action
                 case 'settings', obj.settingsChanged();
-                case 'select', obj.showParams(varargin{:});
+                case 'select', obj.openPlanStep(varargin{:},false);
                 case 'toggle', obj.toggleStep(varargin{:});
-                case 'openStep', obj.openStep(varargin{:});
+                case 'openStep', obj.openPlanStep(varargin{:},true);
                 case 'advanced', obj.acceptAdvanced(varargin{:});
                 case 'roiDefinition', obj.acceptRoiDefinition(varargin{:});
                 case 'follow', obj.followRun();
@@ -509,6 +636,12 @@ classdef PipelineWidget < handle
                     if isfield(extra,key{1}), ctx.(key{1}) = extra.(key{1}); end
                 end
             end
+            if isfield(obj.Draft.Settings,'intentProposal')
+                ctx.workflowIntent = obj.Draft.Settings.intentProposal;
+                effective = struct('nodes',obj.Draft.effectiveNodes(),'edges',obj.Template.edges,'branches',obj.Template.branches);
+                ctx.workflowIntent.modifiedAfterProposal = ~isfield(ctx.workflowIntent,'graphSignature') || ...
+                    ~strcmp(ctx.workflowIntent.graphSignature,detecdivui.IntentPlanner.configurationSignature(effective));
+            end
         end
         function run = draftRun(obj)
             assert(~isempty(obj.Template),'detecdivui:Pipeline','Select a pipeline.');
@@ -519,7 +652,8 @@ classdef PipelineWidget < handle
             ctx = rmfield(ctx,intersect(fieldnames(ctx),{'shallow','shallowObj','images','fovList','roiList','rois'}));
             run.ctx = ctx;
             run.ctx.pipelineSpec = struct('name',obj.Template.strid,'path',obj.Template.path, ...
-                'nodes',obj.Template.nodes,'edges',obj.Template.edges,'branches',obj.Template.branches);
+                'nodes',obj.Template.nodes,'edges',obj.Template.edges,'branches',obj.Template.branches, ...
+                'version',obj.Template.version,'runProfiles',obj.Template.runProfiles);
             settings = obj.Setup.values(); run.description = settings.description;
             if ~isempty(strtrim(settings.runId)), run.runId = strtrim(settings.runId); end
             if ~isempty(obj.Session) && ~isempty(obj.Session.Project)
@@ -532,6 +666,16 @@ classdef PipelineWidget < handle
         function forgetProject(obj,project)
             if ~isempty(obj.Session) && isequal(obj.Session.Project,project), obj.syncAdvanced(); end
             obj.Draft.forgetProject(project);
+            if isequal(obj.ProposalProject,project), obj.cancelProposal(); end
+            obj.PlanHistory = obj.PlanHistory(~arrayfun(@(item)isequal(item.project,project),obj.PlanHistory));
+            if isgraphics(obj.PlanHistoryFigure), delete(obj.PlanHistoryFigure); end
+        end
+        function rebindProject(obj,oldProject,newProject)
+            obj.Draft.rebindProject(oldProject,newProject);
+            for k = 1:numel(obj.PlanHistory)
+                if isequal(obj.PlanHistory(k).project,oldProject), obj.PlanHistory(k).project = newProject; end
+            end
+            if isequal(obj.ProposalProject,oldProject), obj.cancelProposal(); end
         end
         function newRun(obj)
             if ~obj.syncAdvanced(), return; end
@@ -594,11 +738,21 @@ classdef PipelineWidget < handle
                 obj.setStatus(err.message);
             end
         end
-        function saveTemplate(obj)
+        function saveTemplate(obj,parent)
             if ~obj.syncAdvanced(), return; end
             if isempty(obj.Template), return; end
             activity = obj.Progress.begin('Saving pipeline...'); %#ok<NASGU>
             try
+                if isempty(obj.Template.path)
+                    if nargin<2, parent = uigetdir(pwd,'Choose a parent folder for this workflow'); end
+                    if isequal(parent,0), return; end
+                    destination = fullfile(parent,obj.Template.strid);
+                    assert(~isfolder(destination),'detecdivui:PlanDestination','Choose another folder; this workflow directory already exists.');
+                    saved = pipeline();
+                    for key = properties(obj.Template)', saved.(key{1}) = obj.Template.(key{1}); end
+                    saved.path = destination; pipelineSave(saved,'Artifacts',false);
+                    obj.Template.path = destination; obj.setStatus('Workflow saved'); return;
+                end
                 pipelineSave(obj.Template); obj.setStatus('Pipeline saved');
             catch err
                 obj.setStatus(err.message);
@@ -719,6 +873,8 @@ classdef PipelineWidget < handle
                 obj.Templates{index} = copy; obj.Template = copy;
             end
             settings = state.settings; settings.extraContext = state.ctx;
+            if isfield(state.ctx,'workflowIntent'), settings.intentProposal = state.ctx.workflowIntent;
+            elseif isfield(obj.Draft.Settings,'intentProposal'), settings.intentProposal = obj.Draft.Settings.intentProposal; end
             obj.Draft.select(obj.Session.Project,obj.Template);
             obj.Draft.import(settings,state.ctx.run.nodeParams);
             obj.refresh(); obj.setStatus('Advanced settings applied');
@@ -769,6 +925,52 @@ classdef PipelineWidget < handle
         end
     end
     methods (Access = private)
+        function finishProposal(obj)
+            obj.ApplyingProposal = false; obj.updateGraph();
+        end
+        function renderProposal(obj)
+            if isempty(obj.Proposal) || obj.ApplyingProposal, return; end
+            [base,state] = obj.planningContext(); p = obj.Proposal;
+            expected = p.baseSignature; if p.applied, expected = p.appliedSignature; end
+            if ~isequal(obj.ProposalProject,obj.Session.Project) || ~isequal(obj.ProposalTemplate,obj.Template) || ...
+                    ~strcmp(expected,jsonencode(base)) || ~strcmp(p.inventorySignature,state.signature)
+                obj.Proposal = []; obj.ProposalProject = []; obj.ProposalTemplate = [];
+                obj.Graph.OnToggle = detecdivui.Callback(obj,'widgetEvent','toggle');
+                if ~isempty(obj.Planner) && isvalid(obj.Planner), obj.Planner.invalidate('Context changed · Refresh to propose again'); end
+                return;
+            end
+            obj.Graph.OnToggle = [];
+            obj.Graph.show(p.viewNodes,p.viewEdges,0,true(1,numel(p.viewNodes)),p.statuses);
+            obj.CompactGraph.show(p.viewNodes,p.viewEdges,0,true(1,numel(p.viewNodes)),p.statuses);
+            label = 'Proposal'; if p.applied, label = 'Workflow draft'; end
+            obj.RunState.Text = sprintf('%s · %d added / %d reused',label, ...
+                nnz(strcmp(p.statuses,'Added')),nnz(strcmp(p.statuses,'Reused step')));
+            obj.RunState.Tooltip = 'Reused step means a configuration was preserved; scientific results still require checks.';
+        end
+        function openPlanStep(obj,index,open)
+            if ~isempty(obj.Proposal)
+                nodes = obj.Proposal.viewNodes;
+                if index<1 || index>numel(nodes), return; end
+                id = nodes(index).id; target = [];
+                if ~isempty(obj.Template), target = find(strcmp({obj.Template.nodes.id},id),1); end
+                if ~isempty(target)
+                    if open, obj.openSettings('Steps'); end
+                    obj.showParams(target);
+                else
+                    at = find(strcmp(obj.Proposal.changes(:,1),id),1);
+                    if ~isempty(at), obj.setStatus(strjoin(obj.Proposal.changes(at,[2 3 4]),' · ')); end
+                end
+            elseif open
+                obj.openStep(index);
+            else
+                obj.showParams(index);
+            end
+        end
+        function historySelected(~,event,events,details)
+            if isempty(event.Indices), return; end
+            selected = events{event.Indices(1,1)};
+            details.Value = cellstr(splitlines(string(jsonencode(selected,'PrettyPrint',true))));
+        end
         function id = nextRunId(obj)
             base = matlab.lang.makeValidName(char(string(obj.Template.strid))); n = 1; names = {}; root = '';
             if isempty(base), base = 'pipeline'; end
@@ -783,7 +985,7 @@ classdef PipelineWidget < handle
             end
         end
         function followRun(obj)
-            if obj.Busy || obj.Syncing || isempty(obj.RunPicker) || ~isvalid(obj.RunPicker) || ...
+            if ~isempty(obj.Proposal) || obj.Busy || obj.Syncing || isempty(obj.RunPicker) || ~isvalid(obj.RunPicker) || ...
                     strcmp(obj.RunPicker.Value,'draft') || isempty(obj.RunObjects), return; end
             index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
             if isempty(index) || ~isvalid(obj.RunObjects(index)), return; end
@@ -830,6 +1032,7 @@ classdef PipelineWidget < handle
             end
         end
         function selectCompactRun(obj)
+            if ~obj.ApplyingProposal && ~isempty(obj.Proposal), obj.cancelProposal(); end
             if strcmp(obj.RunPicker.Value,'draft')
                 obj.Inspect.UserData = []; obj.RunState.Text = 'Draft'; obj.updateGraph(); return;
             end
@@ -892,6 +1095,7 @@ classdef PipelineWidget < handle
         end
         function settingsChanged(obj)
             settings = obj.Setup.values();
+            if isfield(obj.Draft.Settings,'intentProposal'), settings.intentProposal = obj.Draft.Settings.intentProposal; end
             if isfield(obj.Draft.Settings,'extraContext'), settings.extraContext = obj.Draft.Settings.extraContext; end
             if isfield(obj.Draft.Settings,'selectedNodes'), settings.selectedNodes = obj.Draft.Settings.selectedNodes; end
             obj.Draft.configure(settings); obj.Scope.Value = 'Run selection'; obj.invalidate(); obj.updateGraph();
@@ -907,7 +1111,7 @@ classdef PipelineWidget < handle
         end
         function updateGraph(obj)
             if isempty(obj.Template)
-                obj.Graph.show(struct([]),struct([]),0); obj.CompactGraph.show(struct([]),struct([]),0); return;
+                obj.Graph.show(struct([]),struct([]),0); obj.CompactGraph.show(struct([]),struct([]),0); obj.renderProposal(); return;
             end
             obj.Graph.show(obj.Template.nodes,obj.Template.edges,obj.SelectedStep,obj.includedSteps());
             if strcmp(obj.RunPicker.Value,'draft')
@@ -919,6 +1123,7 @@ classdef PipelineWidget < handle
                 state = 'Excluded'; if included(k), state = 'Included'; end
                 obj.Steps.Data{k,3} = state;
             end
+            obj.renderProposal();
         end
         function toggleStep(obj,index)
             if isempty(obj.Template) || index > numel(obj.Template.nodes), return; end
@@ -1120,6 +1325,20 @@ classdef PipelineWidget < handle
         end
     end
     methods (Static, Access = private)
+        function settings = freshPlanSettings(settings)
+            settings.runId = '';
+            if ~isfield(settings,'extraContext'), return; end
+            extra = settings.extraContext;
+            invocation = {'runId','path','runPath','eventLogPath','cancelTokenPath','progressJsonPath','jobId','hubJobId','job'};
+            for key = {'run','io','store','hub'}
+                name = key{1};
+                if isfield(extra,name) && isstruct(extra.(name))
+                    extra.(name) = rmfield(extra.(name),intersect(fieldnames(extra.(name)),invocation));
+                end
+            end
+            extra = rmfield(extra,intersect(fieldnames(extra),{'runId','cancel','progress','progressDlg','progressCallback'}));
+            settings.extraContext = extra;
+        end
         function value = overlay(value,fields)
             for key = fieldnames(fields)', value.(key{1}) = fields.(key{1}); end
         end

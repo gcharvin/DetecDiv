@@ -44,6 +44,11 @@ classdef PipelineGraph < handle
             for k = 1:n
                 node = nodes(k); y = n-k+.13;
                 [face,edge] = obj.colors(obj.field(node,'type',''));
+                if strcmp(statuses{k},'Added'), edge = [.15 .55 .30]; face = [.89 .97 .91];
+                elseif strcmp(statuses{k},'Reused step'), edge = [.20 .45 .75]; face = [.89 .94 .99];
+                elseif any(contains(statuses{k},{'unverified','partial','stale','Choose method'}))
+                    edge = [.70 .46 .12]; face = [1 .96 .86];
+                end
                 if ~included(k), face = [.94 .94 .94]; edge = [.70 .70 .70]; end
                 width = 1; if selected == k, width = 2.5; end
                 rectangle(ax,'Position',[.20 y .77 .74],'Curvature',.10, ...
@@ -55,9 +60,12 @@ classdef PipelineGraph < handle
                 text(ax,.27,y+.49,name,'Interpreter','none','FontSize',11,'FontWeight','bold', ...
                     'Color',[.14 .18 .22],'ButtonDownFcn',@(~,~)obj.select(k));
                 state = obj.field(node,'type','');
-                if ~isempty(statuses{k}), state = [char(string(state)) ' · ' statuses{k}]; end
+                if ~isempty(statuses{k})
+                    if any(strcmp(state,{'resource','question'})), state = statuses{k};
+                    else, state = [char(string(state)) ' · ' statuses{k}]; end
+                end
                 state = char(string(state));
-                if numel(state) > 24, state = [state(1:22) '…']; end
+                if numel(state) > 32, state = [state(1:30) '…']; end
                 text(ax,.27,y+.20,state,'Interpreter','none','FontSize',10, ...
                     'Color',[.35 .39 .43],'ButtonDownFcn',@(~,~)obj.select(k));
                 if ~isempty(obj.OnToggle)

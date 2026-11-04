@@ -312,7 +312,7 @@ classdef Viewer < handle
             elseif ~isequal(obj.Sessions{index}.Project,project)
                 session = obj.Sessions{index}; old = session.Project;
                 position = session.Position; zone = session.Zone;
-                obj.Pipeline.Draft.rebindProject(old,project);
+                obj.Pipeline.rebindProject(old,project);
                 if obj.hasROIWidget(), obj.ROIs.forgetProject(old); end
                 session.setProject(project);
                 if position > 0 && position <= numel(project.fov)
@@ -604,6 +604,10 @@ classdef Viewer < handle
         end
         function openData(obj)
             obj.ensureDataWidget(); obj.Data.setContext(); obj.Host.openData();
+        end
+        function planWorkflow(obj,intent)
+            if nargin<2, intent = ''; end
+            obj.Host.focusWidget('Pipeline'); obj.Pipeline.openPlanner(intent);
         end
         function toggleData(obj)
             if obj.Host.isWidgetVisible('Data'), obj.Host.setWidgetVisible('Data',false);
@@ -931,6 +935,8 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.EditTracksMenu = obj.Host.menu(edit,'Edit Tracks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openTracksTool());
+            obj.Host.menu(edit,'Plan Workflow...','Separator','on', ...
+                'MenuSelectedFcn',@(~,~)obj.planWorkflow());
             view = obj.Host.menu([],'View');
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
