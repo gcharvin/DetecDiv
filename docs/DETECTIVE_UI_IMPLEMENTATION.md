@@ -8,6 +8,8 @@ Use a MATLAB session dedicated to this worktree:
 cd('C:\Users\Gilles\Documents\MATLAB\Detective-UI');
 detecdiv_setup_path(pwd, 'DetecDivRoot', pwd);
 viewer = detecdiv_ui();
+% Imports existing shallow/classi/process/pipeline handles from the base workspace.
+% Use detecdiv_ui([]) to start empty, or View > Refresh Workspace to rescan.
 % Existing projects can also be supplied:
 viewer = detecdiv_ui(projectA);
 viewer.addProject(projectB);
@@ -21,6 +23,8 @@ viewer = detecdiv_ui({projectA, projectB});
 
 - File, Edit, View, Navigate and Help menus, with standard open/close/copy accelerators.
 - One Projects tree containing Project → FOV → ROI nodes. Multiple projects remain open; selecting a node updates the central image. Opening the same handle, stable project ID or project path focuses the existing project.
+- Launching without arguments discovers live `shallow`, `classi`, `process` and `pipeline` variables in the base workspace, including object arrays and aliases. Independent tools have typed Classifiers, Processors and Pipelines collections with metadata inspection; their editing/execution widgets remain future work. View > Refresh Workspace (or `viewer.refreshWorkspace()`) imports new objects without removing manually opened projects. Deleted handles are skipped. Discovery does not load files, save data, publish variables or recursively scan cells/structs. Explicit project arguments keep their existing behavior; `DiscoverWorkspace` can override discovery for scripted launches.
+- A bottom Project details panel follows the active project, including when a FOV/ROI is selected. It shows the name, selectable project folder path (`fullfile(io.path, io.file)`) with Copy, FOV/ROI counts, associated classifiers/processors, pipeline runs and the cached default pipeline when available. Unknown paths disable Copy; no filesystem/network scan or image load is needed. Clicking a project keeps that node selected while retaining its current image context.
 - Per-project FOV/ROI, frame and named-channel state. Closing a project restores another open project; closing the last project clears the viewport.
 - Breadcrumb and parent-FOV navigation synchronized with tree and ROI-outline selection.
 - Named logical channels, including non-contiguous RGB subchannels. Missing or incompatible channel metadata falls back to individual image planes.

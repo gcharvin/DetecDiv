@@ -7,9 +7,15 @@ classdef Viewer < handle
         Sessions = {}
         ActiveProject = 0
         DisplayModel
+        WorkspaceObjects = struct('object',{},'variables',{},'kind',{})
     end
     properties (Access = private)
         Tree
+        ProjectName
+        DetailsPanel
+        ProjectPath
+        ProjectInfo
+        CopyPath
         Channels
         LayerTable
         LayerKind
@@ -65,11 +71,28 @@ classdef Viewer < handle
                 'ButtonPushedFcn',@(~,~)obj.returnToPosition());
             obj.Crumb = uilabel(location,'Text','', ...
                 'Interpreter','none','FontSize',12,'Tag','breadcrumb');
-            nav = uigridlayout(obj.Host.widgetFigure('Projects'),[1 1]);
+            nav = uigridlayout(obj.Host.widgetFigure('Projects'),[2 1]);
             nav.Padding = [4 4 4 4];
+            nav.RowHeight = {'1x',230};
             obj.Tree = uitree(nav,'Tag','projects-tree', ...
                 'SelectionChangedFcn',@(~,~)obj.browseSelection());
             obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
+            details = uipanel(nav,'Title','Project','Tag','project-details');
+            obj.DetailsPanel = details;
+            info = uigridlayout(details,[3 1]);
+            info.Padding = [6 4 6 4]; info.RowHeight = {22,54,'1x'};
+            obj.ProjectName = uilabel(info,'Text','—','FontWeight','bold', ...
+                'Interpreter','none','Tag','project-name');
+            pathRow = uigridlayout(info,[1 2]); pathRow.Padding = [0 0 0 0];
+            pathRow.ColumnWidth = {'1x',48};
+            obj.ProjectPath = uitextarea(pathRow,'Value',{'—'},'Editable','off', ...
+                'Tag','project-path','Tooltip','Project folder');
+            obj.CopyPath = uibutton(pathRow,'Text','Copy','Enable','off', ...
+                'Tag','copy-project-path','Tooltip','Copy the project folder path', ...
+                'ButtonPushedFcn',@(~,~)obj.copyProjectPath());
+            obj.ProjectInfo = uitable(info,'Data',cell(0,2),'ColumnName',{}, ...
+                'ColumnWidth',{105,'auto'},'RowName',{},'Tag','project-information', ...
+                'ColumnEditable',[false false]);
             canvas = uigridlayout(root,[2 1]);
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
@@ -199,6 +222,21 @@ classdef Viewer < handle
         function figure = widgetFigure(obj,name)
             figure = obj.Host.widgetFigure(name);
         end
+        function refreshWorkspace(obj)
+            % Import live handles; never load files or alter workspace variables.
+            entries = detecdivui.workspaceObjects();
+            active = obj.Session.Project;
+            obj.WorkspaceObjects = entries(~strcmp({entries.kind},'shallow'));
+            for k = find(strcmp({entries.kind},'shallow'))
+                obj.addProject(entries(k).object);
+            end
+            if ~isempty(active)
+                index = obj.findProject(active);
+                if index > 0, obj.activate(index); end
+            end
+            obj.rebuildTree(); obj.selectCurrentNode(); obj.refreshView();
+            obj.Status.Text = 'Workspace refreshed';
+        end
         function delete(obj)
             if obj.Closing, return; end
             obj.Closing = true;
@@ -226,6 +264,8 @@ classdef Viewer < handle
             obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
             obj.Host.menu(view,'Reload Image','Accelerator','R', ...
                 'MenuSelectedFcn',@(~,~)obj.reloadImage());
+            obj.Host.menu(view,'Refresh Workspace', ...
+                'MenuSelectedFcn',@(~,~)obj.refreshWorkspace());
             obj.Host.menu(view,'Expand Projects','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)expand(obj.Tree,'all'));
             obj.Host.menu(view,'Collapse Projects', ...
@@ -293,11 +333,40 @@ classdef Viewer < handle
                 end
                 expand(projectNode);
             end
+            kinds = {'classi','process','pipeline'};
+            labels = {'Classifiers','Processors','Pipelines'};
+            for k = 1:numel(kinds)
+                indices = find(strcmp({obj.WorkspaceObjects.kind},kinds{k}));
+                if isempty(indices), continue; end
+                group = uitreenode(obj.Tree,'Text',labels{k},'Tag','workspace-collection', ...
+                    'NodeData',struct('project',0,'fov',0,'roi',0,'object',0));
+                for j = indices
+                    entry = obj.WorkspaceObjects(j);
+                    name = char(string(entry.object.strid));
+                    if isempty(name), name = entry.variables{1}; end
+                    uitreenode(group,'Text',name,'Tag','workspace-object', ...
+                        'NodeData',struct('project',0,'fov',0,'roi',0,'object',j));
+                end
+                expand(group);
+            end
         end
         function browseSelection(obj)
             nodes = obj.Tree.SelectedNodes;
             if isempty(nodes), return; end
             target = nodes(1).NodeData;
+            if target.project == 0
+                if target.object > 0
+                    obj.showWorkspaceObject(target.object);
+                else
+                    obj.DetailsPanel.Title = nodes(1).Text;
+                    obj.ProjectName.Text = nodes(1).Text;
+                    obj.ProjectName.Tooltip = nodes(1).Text;
+                    obj.ProjectPath.Value = {'—'}; obj.ProjectPath.Tooltip = '';
+                    obj.CopyPath.UserData = ''; obj.CopyPath.Enable = 'off';
+                    obj.ProjectInfo.Data = {'Objects',numel(nodes(1).Children)};
+                end
+                return;
+            end
             obj.activate(target.project);
             if target.fov > 0
                 if obj.Session.Position ~= target.fov || target.roi == 0
@@ -306,7 +375,77 @@ classdef Viewer < handle
                 obj.Session.selectZone(target.roi);
                 if target.roi > 0, obj.SelectedZone = target.roi; end
             end
-            obj.selectCurrentNode(); obj.refreshView();
+            if target.fov > 0, obj.selectCurrentNode(); end
+            obj.refreshView();
+        end
+        function refreshProjectInfo(obj)
+            obj.DetailsPanel.Title = 'Project';
+            obj.CopyPath.Tooltip = 'Copy the project folder path';
+            obj.ProjectName.Text = '—'; obj.ProjectPath.Value = {'—'};
+            obj.ProjectPath.Tooltip = 'Project folder'; obj.CopyPath.UserData = '';
+            obj.CopyPath.Enable = 'off'; obj.ProjectInfo.Data = cell(0,2);
+            if obj.ActiveProject == 0, return; end
+            project = obj.Session.Project;
+            obj.ProjectName.Text = obj.projectName(project);
+            obj.ProjectName.Tooltip = obj.ProjectName.Text;
+            folder = char(string(project.io.path)); name = char(string(project.io.file));
+            if ~isempty(folder) && ~isempty(name)
+                file = fullfile(folder,name);
+                obj.ProjectPath.Value = {file}; obj.ProjectPath.Tooltip = file;
+                obj.CopyPath.UserData = file; obj.CopyPath.Enable = 'on';
+            end
+            [~,indices] = obj.Session.positionItems();
+            roiCount = 0;
+            for k = indices
+                rois = project.fov(k).roi;
+                for r = 1:numel(rois)
+                    roiCount = roiCount + (strlength(string(rois(r).id)) > 0 || ...
+                        ~isempty(rois(r).value) || ~isempty(rois(r).image));
+                end
+            end
+            data = {'FOVs',numel(indices); 'ROIs',roiCount};
+            fields = {'classification','processor','pipelineRun'};
+            labels = {'Classifiers','Processors','Pipeline runs'};
+            for k = 1:numel(fields)
+                count = 0;
+                if isfield(project.processing,fields{k}), count = numel(project.processing.(fields{k})); end
+                data(end+1,:) = {labels{k},count}; %#ok<AGROW>
+            end
+            [pipelinePath,pipelineId] = detecdiv_project_cached_pipeline_ref(project);
+            if ~isempty(pipelineId) || ~isempty(pipelinePath)
+                if isempty(pipelineId), pipelineId = pipelinePath; end
+                data(end+1,:) = {'Default pipeline',pipelineId};
+            end
+            obj.ProjectInfo.Data = data;
+        end
+        function showWorkspaceObject(obj,index)
+            entry = obj.WorkspaceObjects(index); item = entry.object;
+            if ~isvalid(item), obj.refreshWorkspace(); return; end
+            labels = struct('classi','Classifier','process','Processor','pipeline','Pipeline');
+            obj.DetailsPanel.Title = labels.(entry.kind);
+            obj.CopyPath.Tooltip = 'Copy the object folder path';
+            name = char(string(item.strid));
+            if isempty(name), name = entry.variables{1}; end
+            obj.ProjectName.Text = name; obj.ProjectName.Tooltip = name;
+            obj.ProjectPath.Value = {'—'}; obj.ProjectPath.Tooltip = 'Object folder';
+            obj.CopyPath.UserData = ''; obj.CopyPath.Enable = 'off';
+            folder = char(string(item.path));
+            if ~isempty(folder)
+                obj.ProjectPath.Value = {folder}; obj.ProjectPath.Tooltip = folder;
+                obj.CopyPath.UserData = folder; obj.CopyPath.Enable = 'on';
+            end
+            obj.ProjectInfo.Data = {'Type',labels.(entry.kind); ...
+                'Workspace',strjoin(entry.variables,', '); 'Description',char(string(item.description))};
+            obj.Status.Text = sprintf('%s selected',labels.(entry.kind));
+        end
+        function copyProjectPath(obj)
+            if isempty(obj.CopyPath.UserData), return; end
+            try
+                clipboard('copy',obj.CopyPath.UserData);
+                obj.Status.Text = 'Path copied';
+            catch err
+                obj.Status.Text = err.message;
+            end
         end
         function activate(obj,index)
             if obj.ActiveProject == index, return; end
@@ -327,6 +466,7 @@ classdef Viewer < handle
             nodes = findall(obj.Tree,'Type','uitreenode');
             for k = 1:numel(nodes)
                 d = nodes(k).NodeData;
+                if d.project == 0, continue; end
                 if d.project == obj.ActiveProject && d.fov == obj.Session.Position && d.roi == obj.Session.Zone
                     obj.Tree.SelectedNodes = nodes(k);
                     if isa(nodes(k).Parent,'matlab.ui.container.TreeNode'), expand(nodes(k).Parent); end
@@ -344,6 +484,7 @@ classdef Viewer < handle
             obj.openZone(0);
         end
         function refreshView(obj)
+            obj.refreshProjectInfo();
             obj.Crumb.Text = obj.Session.breadcrumb();
             obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
             obj.Back.Enable = obj.onOff(obj.Session.Zone > 0);

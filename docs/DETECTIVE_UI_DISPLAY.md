@@ -41,6 +41,8 @@ Tests cover known rendered pixels, additive weights, mask alpha/background, labe
 
 Before introducing Segment Cells, implement model discovery and selection. The proposed browser structure uses typed top-level collections for Projects, Classifiers and Processors in the same browser widget, with icons and contextual actions. A Classifier remains an independent `@classi` object, not a second kind of `@shallow` project. Project-associated classifiers are links to those objects. The collection can become a separate widget if later usability testing supports that choice. Do not add empty placeholder collections before their backing registry is connected.
 
+Workspace discovery now provides read-only Classifiers, Processors and Pipelines collections for live base-workspace objects, including metadata and variable names. Compatible-model selection for execution, file-based discovery, project links and editing actions remain to implement.
+
 Pipeline requires its own dockable widget for steps, effective parameters, validation, progress and runs. Guided actions should select compatible classifiers and configure the same inspectable `@pipeline` template / `pipelineRun` execution, with advanced details available on demand. Pipeline templates remain independent of projects. Add future widgets with a layout migration/default strategy that preserves existing user arrangements.
 
 These are design requirements for the next tranche; classifier management and the Pipeline widget are not implemented by the Display changes.
