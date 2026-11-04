@@ -46,6 +46,11 @@ classdef Viewer < handle
         Status
         Back
         Axes
+        ImageGrid
+        ImageAxes = gobjects(0)
+        ImageLink = []
+        ImageRevision = 0
+        OverlayChannels
         Overlays
         BrowserMenu
         ToolsMenu
@@ -132,7 +137,10 @@ classdef Viewer < handle
             obj.ProjectProgress = detecdivui.Progress(nav,projectStatus,'projects-progress');
             canvas = uigridlayout(root,[2 1]);
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
-            obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
+            obj.ImageGrid = uigridlayout(canvas,[1 1]); obj.ImageGrid.Padding = [0 0 0 0];
+            obj.ImageGrid.ColumnSpacing = 8;
+            obj.Axes = uiaxes(obj.ImageGrid,'Color',[0.07 0.09 0.11],'Tag','image-view');
+            obj.ImageAxes = obj.Axes;
             obj.ImageMenu = uicontextmenu(obj.Figure);
             uimenu(obj.ImageMenu,'Text','ROI Tools...','MenuSelectedFcn',@(~,~)obj.openROITool());
             obj.Axes.ContextMenu = obj.ImageMenu;
@@ -165,7 +173,11 @@ classdef Viewer < handle
             tools = uigridlayout(displayTab,[13 1]);
             tools.RowSpacing = 6; tools.Scrollable = 'on';
             tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
-            uilabel(tools,'Text','Layers','FontWeight','bold');
+            heading = uigridlayout(tools,[1 2]); heading.Padding = [0 0 0 0]; heading.ColumnWidth = {45,'1x'};
+            uilabel(heading,'Text','Layers','FontWeight','bold');
+            obj.OverlayChannels = uicheckbox(heading,'Text','Overlay channels','Value',true, ...
+                'Enable','off','Tag','display-overlay','Tooltip','Combine intensity channels; masks stay on every separate panel', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('presentation'));
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
             active = uigridlayout(tools,[1 3]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
@@ -429,6 +441,12 @@ classdef Viewer < handle
                 case 'templateOpened', obj.registerLoadedObject(varargin{1},'pipeline');
                 case 'progressOwner', result = obj.progressOwner(varargin{1});
                 case 'layerEdit', obj.editLayerRow(varargin{:});
+                case 'imageLayer', obj.selectImageLayer(varargin{:});
+                case 'zone'
+                    if varargin{3} == obj.ImageRevision && ~obj.DrawingROI
+                        if varargin{2} > 0, obj.Channels.Value = varargin{2}; end
+                        obj.openZone(varargin{1});
+                    end
                 otherwise, error('detecdivui:WidgetEvent','Unknown viewer widget event.');
             end
         end
@@ -460,6 +478,10 @@ classdef Viewer < handle
             if obj.Session.Zone > 0, obj.openZone(0);
             elseif ~obj.ImageRequested, obj.loadCurrentImage(); end
             assert(~isempty(findall(obj.Axes,'Type','image')),'detecdivui:RawImage','Load the raw image or relink its source first.');
+            if obj.isSeparated() && isstruct(obj.Axes.UserData) && obj.Axes.UserData.layer > 0 && ...
+                    obj.Channels.Value ~= obj.Axes.UserData.layer
+                obj.Channels.Value = obj.Axes.UserData.layer; obj.render();
+            end
             ax = obj.Axes;
         end
         function [plane,frame,channel] = roiSource(obj)
@@ -946,7 +968,7 @@ classdef Viewer < handle
             obj.OverlayMenu.Enable = obj.Overlays.Enable;
             if obj.Session.Position == 0
                 obj.setControls({},1);
-                cla(obj.Axes); title(obj.Axes,''); obj.RenderKey = '';
+                obj.clearImagePanels(); obj.RenderKey = '';
                 obj.CopyMenu.Enable = 'off';
                 obj.ImageRequested = false;
                 obj.LoadImage.Text = 'Load Image';
@@ -960,7 +982,7 @@ classdef Viewer < handle
                 obj.setControls({},max(1,obj.Frame.Value));
                 obj.PreferredChannel = preferred;
                 obj.FrameCount.Text = '';
-                cla(obj.Axes); title(obj.Axes,''); obj.RenderKey = '';
+                obj.clearImagePanels(); obj.RenderKey = '';
                 obj.CopyMenu.Enable = 'off'; obj.LoadImage.Text = 'Load Image';
                 obj.Status.Text = 'Select a FOV or ROI, or load the current image';
                 obj.Status.Tooltip = obj.Status.Text;
@@ -1022,62 +1044,120 @@ classdef Viewer < handle
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
                 obj.TimeSlider.Value = obj.Frame.Value;
                 obj.updateFrameActions(true);
-                view = obj.DisplayModel.compose(obj.Frame.Value,obj.Channels.Value);
+                separated = obj.isSeparated();
+                if separated
+                    views = obj.DisplayModel.separate(obj.Frame.Value,obj.Channels.Value);
+                else
+                    view = obj.DisplayModel.compose(obj.Frame.Value,obj.Channels.Value);
+                    view.layer = obj.Channels.Value; view.title = ''; views = {view};
+                end
                 obj.refreshLayerControls();
-                plane = view.pixels;
                 key = sprintf('%d:%d:%d',obj.ActiveProject,obj.Session.Position,obj.Session.Zone);
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
-                cla(obj.Axes);
-                if view.native
-                    imagesc(obj.Axes,plane); colormap(obj.Axes,gray(256));
-                    obj.Axes.CLim = view.limits;
-                else
-                    image(obj.Axes,plane);
-                end
-                axis(obj.Axes,'image'); obj.Axes.XTick = []; obj.Axes.YTick = [];
-                set(findall(obj.Axes,'Type','image'),'ContextMenu',obj.ImageMenu);
-                title(obj.Axes,'');
-                if obj.Session.Zone == 0 && obj.Overlays.Value, obj.drawRegions(); end
-                obj.Axes.YDir = 'reverse';
-                if keepView
-                    obj.Axes.XLim = xl; obj.Axes.YLim = yl;
-                else
-                    obj.Axes.XLim = [0.5 size(plane,2)+0.5];
-                    obj.Axes.YLim = [0.5 size(plane,1)+0.5];
-                end
-                if view.native, obj.Axes.CLim = view.limits; end
-                if isfield(view,'vectors') && ~isempty(view.vectors)
-                    options = score_collectDisplayOptions('mode','display','frames',1,'hideStamp',true);
-                    [~,contours] = score_displayVectorGraphics(obj.Axes,1,1,view.vectors,options);
-                    set(contours,'Tag','mask-contour','HitTest','off','PickableParts','none');
-                end
+                obj.renderImagePanels(views,separated,keepView,xl,yl);
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end
+                names = {obj.DisplayModel.Layers([obj.DisplayModel.Layers.visible]).name};
+                separator = ' + '; if separated, separator = ' | '; end
                 obj.Status.Text = sprintf('%s | Frame %d / %d | %s',source, ...
-                    obj.Frame.Value,obj.MaxFrame,strjoin(view.names,' + '));
+                    obj.Frame.Value,obj.MaxFrame,strjoin(names,separator));
                 obj.Status.Tooltip = obj.Status.Text;
             catch err
                 obj.showError(err);
             end
         end
-        function drawRegions(obj)
+        function yes = isSeparated(obj)
+            yes = ~isempty(obj.OverlayChannels) && isvalid(obj.OverlayChannels) && ~obj.OverlayChannels.Value;
+        end
+        function ensureImagePanels(obj,count)
+            if ~isempty(obj.ImageLink), delete(obj.ImageLink); obj.ImageLink = []; end
+            if isempty(obj.ImageAxes), obj.ImageAxes = obj.Axes; end
+            if numel(obj.ImageAxes) > count
+                delete(obj.ImageAxes(count+1:end)); obj.ImageAxes = obj.ImageAxes(1:count);
+            end
+            for k = numel(obj.ImageAxes)+1:count
+                obj.ImageAxes(k) = uiaxes(obj.ImageGrid,'Color',[.07 .09 .11]);
+                obj.ImageAxes(k).Toolbar.Visible = 'on';
+            end
+            if ~isempty(obj.ImageGrid)
+                obj.ImageGrid.ColumnWidth = repmat({'1x'},1,count);
+                for k = 1:count, obj.ImageAxes(k).Layout.Row = 1; obj.ImageAxes(k).Layout.Column = k; end
+                obj.ImageGrid.RowHeight = {'1x'};
+            end
+        end
+        function clearImagePanels(obj)
+            obj.ensureImagePanels(1); obj.Axes = obj.ImageAxes(1);
+            cla(obj.Axes); title(obj.Axes,''); obj.Axes.Tag = 'image-view';
+            obj.ImageRevision = obj.ImageRevision+1;
+        end
+        function renderImagePanels(obj,views,separated,keepView,xl,yl)
+            obj.ensureImagePanels(numel(views)); obj.ImageRevision = obj.ImageRevision+1;
+            selected = find(cellfun(@(v)v.layer == obj.Channels.Value,views),1);
+            matched = ~isempty(selected);
+            if isempty(selected), selected = 1; end
+            obj.Axes = obj.ImageAxes(selected);
+            for k = 1:numel(views)
+                ax = obj.ImageAxes(k); view = views{k}; plane = view.pixels; cla(ax);
+                ax.Tag = 'channel-view'; if k == selected, ax.Tag = 'image-view'; end
+                if view.native
+                    imagesc(ax,plane); colormap(ax,gray(256)); ax.CLim = view.limits;
+                else
+                    image(ax,plane);
+                end
+                axis(ax,'image'); ax.XTick = []; ax.YTick = []; ax.YDir = 'reverse';
+                ax.ContextMenu = obj.ImageMenu; ax.UserData = struct('layer',view.layer);
+                callback = detecdivui.Callback(obj,'widgetEvent','imageLayer',view.layer,obj.ImageRevision);
+                ax.ButtonDownFcn = {@detecdivui.Callback.event,callback};
+                imageHandle = findall(ax,'Type','image');
+                set(imageHandle,'ContextMenu',obj.ImageMenu,'ButtonDownFcn',{@detecdivui.Callback.event,callback});
+                label = ''; if separated, label = view.title; end
+                color = [.25 .3 .35]; if matched && k == selected, color = [0 .4 .65]; end
+                title(ax,label,'Interpreter','none','FontSize',11,'Color',color);
+                if obj.Session.Zone == 0 && obj.Overlays.Value, obj.drawRegions(ax,view.layer); end
+                if keepView, ax.XLim = xl; ax.YLim = yl;
+                else, ax.XLim = [.5 size(plane,2)+.5]; ax.YLim = [.5 size(plane,1)+.5]; end
+                if isfield(view,'vectors') && ~isempty(view.vectors)
+                    options = score_collectDisplayOptions('mode','display','frames',1,'hideStamp',true);
+                    [~,contours] = score_displayVectorGraphics(ax,1,1,view.vectors,options);
+                    set(contours,'Tag','mask-contour','HitTest','off','PickableParts','none');
+                end
+            end
+            if numel(obj.ImageAxes) > 1, obj.ImageLink = linkprop(obj.ImageAxes,{'XLim','YLim'}); end
+        end
+        function selectImageLayer(obj,index,revision)
+            if revision ~= obj.ImageRevision || obj.DrawingROI || index < 1 || ...
+                    index > numel(obj.DisplayModel.Layers) || ~obj.DisplayModel.Layers(index).visible, return; end
+            if obj.Channels.Value ~= index
+                obj.Channels.Value = index;
+                for ax = obj.ImageAxes
+                    ax.Tag = 'channel-view'; ax.Title.Color = [.25 .3 .35];
+                    if ax.UserData.layer == index
+                        obj.Axes = ax; ax.Tag = 'image-view'; ax.Title.Color = [0 .4 .65];
+                    end
+                end
+                obj.refreshLayerControls();
+                if obj.hasROIWidget(), obj.ROIs.onRender(); end
+            end
+        end
+        function drawRegions(obj,ax,layer)
             regions = obj.Session.referenceRegions();
-            hold(obj.Axes,'on');
+            hold(ax,'on');
             for k = 1:numel(regions)
                 r = regions(k); p = r.position; color = [0.25 0.9 0.85];
                 if r.index == obj.SelectedZone, color = [1 0.8 0.25]; end
-                h = patch(obj.Axes,p(1)+[0 p(3) p(3) 0],p(2)+[0 0 p(4) p(4)],color, ...
+                h = patch(ax,p(1)+[0 p(3) p(3) 0],p(2)+[0 0 p(4) p(4)],color, ...
                     'FaceAlpha',0.025,'EdgeColor',color,'LineWidth',1.5, ...
                     'Tag','zone-overlay','UserData',r.index);
-                h.ButtonDownFcn = @(~,~)obj.openZone(r.index);
-                t = text(obj.Axes,p(1),p(2),sprintf(' ROI %d',r.index),'Color',color, ...
+                callback = detecdivui.Callback(obj,'widgetEvent','zone',r.index,layer,obj.ImageRevision);
+                h.ButtonDownFcn = {@detecdivui.Callback.event,callback};
+                t = text(ax,p(1),p(2),sprintf(' ROI %d',r.index),'Color',color, ...
                     'VerticalAlignment','bottom','FontWeight','bold','Interpreter','none');
-                t.ButtonDownFcn = @(~,~)obj.openZone(r.index);
+                t.ButtonDownFcn = {@detecdivui.Callback.event,callback};
             end
-            hold(obj.Axes,'off');
+            hold(ax,'off');
         end
         function setOutlines(obj,visible)
             obj.Overlays.Value = visible; obj.OverlayMenu.Checked = obj.onOff(visible); obj.render();
@@ -1106,6 +1186,7 @@ classdef Viewer < handle
                     case 'picker', obj.DisplayModel.setColor(index,sprintf('%.8g %.8g %.8g',obj.ColorPicker.Value));
                     case 'kind', obj.DisplayModel.setKind(index,obj.LayerKind.Value);
                     case 'mask-style', obj.DisplayModel.setLabelStyle(index,obj.MaskStyle.Value,obj.MaskWidth.Value);
+                    case 'presentation'
                 end
                 obj.render();
             catch err
@@ -1116,7 +1197,8 @@ classdef Viewer < handle
             layers = obj.DisplayModel.Layers;
             if isempty(layers), obj.clearLayerControls(); return; end
             index = obj.Channels.Value;
-            obj.LayerTable.update(layers,index);
+            obj.LayerTable.update(layers,index,~obj.isSeparated());
+            if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'on'; end
             layer = obj.DisplayModel.Layers(index);
             isLabel = strcmp(layer.kind,'Labels'); isRGB = strcmp(layer.kind,'RGB');
             if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
@@ -1147,7 +1229,7 @@ classdef Viewer < handle
             rgb = sscanf(strrep(layer.color,',',' '),'%f');
             if numel(rgb) ~= 3 || any(~isfinite(rgb) | rgb < 0 | rgb > 1), rgb = [1 1 1]; end
             obj.ColorPicker.Value = reshape(rgb,1,3); obj.ColorPicker.Enable = obj.onOff(~isRGB);
-            obj.OpacitySlider.Value = layer.opacity; obj.OpacitySlider.Enable = 'on';
+            obj.OpacitySlider.Value = layer.opacity; obj.OpacitySlider.Enable = obj.onOff(isLabel || ~obj.isSeparated());
             for control = {obj.MinField,obj.MaxField,obj.ContrastSlider,obj.AutoButton}
                 item = control{1}; item.Enable = obj.onOff(~isLabel);
             end
@@ -1164,6 +1246,7 @@ classdef Viewer < handle
             obj.Histogram.update(obj.DisplayModel,obj.Frame.Value,index);
         end
         function clearLayerControls(obj)
+            if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'off'; end
             obj.LayerTable.update(struct([]),0); obj.Histogram.clear();
             if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
                 obj.MaskOptions.Visible = 'off'; obj.Histogram.View.Visible = 'on';
@@ -1209,7 +1292,7 @@ classdef Viewer < handle
             end
         end
         function showError(obj,err)
-            cla(obj.Axes); obj.RenderKey = ''; obj.CopyMenu.Enable = 'off';
+            obj.clearImagePanels(); obj.RenderKey = ''; obj.CopyMenu.Enable = 'off';
             obj.clearLayerControls();
             obj.MissingRaw = strcmp(err.identifier,'detecdivui:RawSourceMissing');
             obj.RelinkImage.Visible = obj.onOff(obj.MissingRaw);

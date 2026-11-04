@@ -4,6 +4,8 @@
 
 - Layers uses a custom local HTML/JavaScript table embedded through uihtml, rather than uitable or Swing. Each row shows visibility, a color picker, type, display levels and weight. The selected row exposes numeric Low/High/Weight editors. Selection changes settings without silently changing visibility. Names are inserted as text, and asynchronously received edits are scoped to the current table revision.
 - Solo shows only the active layer.
+- Overlay channels follows Score's display convention: checked combines visible intensity/RGB layers; unchecked displays one horizontal panel per visible intensity/RGB channel, with the same visible masks/contours on every panel. Masks do not get extra panels. Mask-only selection uses one black base tile; no visible layers produces a black tile. A logical RGB channel remains one tile even when its stored planes are non-contiguous.
+- Separate panels share time, pan and zoom. Clicking an image selects its channel and active drawing/copy target without changing visibility or rebuilding the images during a pan gesture. Per-channel contrast/color stays unchanged when switching modes. As in Score's non-overlay renderer, intensity weights apply only to the combined view; their controls are disabled in separate mode, while mask fill opacity still applies. Copy Image copies the active panel.
 - Intensity and RGB layers have source-unit minimum/maximum fields, a contrast range slider and an Auto button. Auto uses finite min/max from the current frame and keeps those limits while browsing time.
 - Color can be chosen from the row's picker or the native MATLAB uicolorpicker below the histogram. The editable dropdown offers common RGB/Score colormap choices and accepts the full Score color specification. RGB layers retain their three subchannels and disable tinting. Label layers accept `Labels` for score's ID palette or an RGB triplet for a single overlay color. A multicolor swatch denotes an ID palette or named colormap, not a fixed RGB color.
 - Opacity controls intensity weight or mask alpha. Label zero is transparent and label one remains a valid object.
@@ -13,6 +15,8 @@
 - Histogram shows the active intensity layer, its median and finite pixel count. Visible overlays other visible intensity/RGB histograms. Label IDs are excluded from intensity statistics. Auto X follows Score (log for strictly positive ranges, linear otherwise); explicit Linear X/Log X and Log Y are available. Nonpositive ranges fall back to linear X. Drag the two level markers, or use their arrow keys, to adjust the same source-unit contrast as the numeric editors/slider. Histogram axis scaling does not change pixel mapping.
 
 All controls remain inside the dockable Display widget. Help is in native tooltips; no explanatory paragraphs are added to the interface.
+
+Overlay/separate presentation is a viewer-session setting retained while navigating projects/FOVs/ROIs, with Overlay as the initial default. Image panels are inside the existing Image docking document, not additional floating image windows. Raw ROI pattern capture uses the active visible panel's original channel/frame pixels. Rendering failures and metadata-only navigation clear all old panels. A future export adapter must carry this presentation flag into Score's existing overlay option.
 
 ## State and cache
 
@@ -26,7 +30,7 @@ The adapter uses `score_makeComposite`, `score_collectDisplayOptions`, `score_ch
 
 A temporary ROI is used only as a renderer input. It is never saved and does not modify the source ROI. Intensity layers combine additively using score's `imlincomb` convention; label overlays are alpha-composited above them. A single untinted scalar layer uses native axes with the original pixels and selected contrast limits; a single unadjusted RGB layer preserves its original pixels. Mixed/colorized views produce an 8-bit RGB display image, while quantitative source values remain unchanged.
 
-Histogram statistics are factored into score_histogramData, also called by legacy score_updateHistogram: finite values, 200 bin edges, positive logarithmic bins, linear bins for zero/signed values, median and RGB luminance. Display consumes source pixel units; legacy Score retains its existing physical-value decoding before calling the shared helper. No project image/metadata is modified by the helper.
+Histogram statistics are factored into score_histogramData, also called by legacy score_updateHistogram: finite values, a target of 200 bin edges, positive logarithmic bins, linear bins for zero/signed values, median and RGB luminance. Flat ranges are expanded and repeated/rounded edges normalized to keep counts valid for constant or near-constant planes. Display consumes source pixel units; legacy Score retains its existing physical-value decoding before calling the shared helper. No project image/metadata is modified by the helper.
 
 Semantic coloring by lineage, censoring, cell state and tracking provider, mask editing, layer reordering and saved display presets remain later integrations. The labels view uses frame-local IDs and the existing stable score palette. Swing components cannot be embedded in this web FigureDocument/uifigure host; the custom web boundary stays local, with no network/CDN or third-party table library.
 
@@ -36,6 +40,7 @@ Semantic coloring by lineage, censoring, cell state and tracking provider, mask 
 detecdivui.layerTest();
 detecdivui.displayTest();
 detecdivui.contoursTest();
+detecdivui.separateChannelsTest();
 detecdivui.displayWebTest();
 detecdivui.scoreHistogramTest();
 detecdivui.smokeTest();

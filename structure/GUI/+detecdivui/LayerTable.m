@@ -15,9 +15,10 @@ classdef LayerTable < handle
             obj.View = uihtml(parent,'HTMLSource',fullfile(fileparts(mfilename('fullpath')),'layers.html'), ...
                 'Tag','layers','DataChangedFcn',@(~,event)obj.receive(event.Data));
         end
-        function update(obj,layers,selected)
+        function update(obj,layers,selected,overlay)
+            if nargin < 4, overlay = true; end
             obj.Revision = obj.Revision+1;
-            obj.State = struct('revision',obj.Revision,'layers',layers,'selected',selected);
+            obj.State = struct('revision',obj.Revision,'layers',layers,'selected',selected,'overlay',overlay);
             obj.View.Data = obj.State;
         end
         function receive(obj,event)

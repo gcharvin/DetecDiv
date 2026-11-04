@@ -59,7 +59,7 @@ assert(isequal(ax.CLim,double([min(pixels(:)) max(pixels(:))])));
 regions = findall(ax,'Tag','zone-overlay');
 assert(numel(regions) == 2);
 region = regions(arrayfun(@(item)item.UserData == 2,regions));
-region.ButtonDownFcn(region,[]);
+detecdivui.Callback.call(region.ButtonDownFcn,region,[]);
 assert(viewer.Session.Zone == 2);
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 projectPath = findall(viewer.widgetFigure('Projects'),'Tag','project-path');

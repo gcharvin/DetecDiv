@@ -14,7 +14,7 @@ assert(isempty(project.processing.pipelineRun) && isequal(project.fov.roi,existi
 assert(isequal(viewer.ROIs.Rects,[3 4 5 6]));
 assert(~isempty(findall(viewer.roiAxes(),'Tag','roi-draft-shape')));
 gesture = viewer.beginROIGesture(); %#ok<NASGU>
-overlay = findall(viewer.roiAxes(),'Tag','zone-overlay'); overlay(1).ButtonDownFcn(overlay(1),[]);
+overlay = findall(viewer.roiAxes(),'Tag','zone-overlay'); detecdivui.Callback.call(overlay(1).ButtonDownFcn,overlay(1),[]);
 assert(viewer.Session.Zone == 0); clear gesture;
 ctx = viewer.ROIs.apply(); assert(~isempty(ctx));
 assert(numel(project.fov.roi) == 2 && isequal(project.fov.roi(1).image,uint16(ones(3,3))));

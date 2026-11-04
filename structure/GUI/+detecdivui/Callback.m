@@ -25,6 +25,9 @@ classdef Callback
                 else
                     feval(callback.Method,owner,callback.Args{:},varargin{:});
                 end
+            elseif iscell(callback) && ~isempty(callback) && isa(callback{1},'function_handle')
+                if nargout, [varargout{:}] = feval(callback{1},varargin{:},callback{2:end});
+                else, feval(callback{1},varargin{:},callback{2:end}); end
             else
                 assert(isa(callback,'function_handle'),'detecdivui:Callback','Expected a callback descriptor or function handle.');
                 if nargout, [varargout{:}] = callback(varargin{:});

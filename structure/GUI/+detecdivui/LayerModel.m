@@ -170,6 +170,54 @@ classdef LayerModel < handle
             key = sprintf('%s:%d:%s',obj.Key,index,obj.Layers(index).name);
             obj.Styles(key) = struct('mode',char(mode),'width',double(width));
         end
+        function views = separate(obj,frame,selected)
+            % Score's non-overlay layout: intensity tiles, shared mask overlays.
+            base = obj.read(selected,frame);
+            visible = find([obj.Layers.visible]); labels = strcmp({obj.Layers.kind},'Labels');
+            masks = visible(labels(visible)); intensities = visible(~labels(visible));
+            overlay = zeros(size(base,1),size(base,2),3); alpha = zeros(size(base,1),size(base,2));
+            vectors = struct([]);
+            for index = masks
+                plane = obj.read(index,frame);
+                assert(isequal(size(plane,1),size(base,1)) && isequal(size(plane,2),size(base,2)), ...
+                    'detecdivui:LayerSize','Visible layers have different image sizes.');
+                [~,color,weight,edges] = obj.renderWithScore(plane,obj.Layers(index),index);
+                combined = weight + alpha.*(1-weight);
+                overlay = (color.*weight + overlay.*alpha.*(1-weight))./max(combined,eps);
+                alpha = combined; vectors = [vectors edges]; %#ok<AGROW>
+            end
+            if isempty(intensities), intensities = 0; end
+            views = cell(1,numel(intensities));
+            for k = 1:numel(intensities)
+                index = intensities(k);
+                view = struct('pixels',[],'limits',[0 1],'native',false, ...
+                    'names',{{obj.Layers(masks).name}},'vectors',vectors,'layer',index,'title','Masks');
+                if index == 0
+                    rgb = zeros(size(base,1),size(base,2),3,'uint8');
+                    if ~isempty(masks), view.layer = masks(1); end
+                    if isempty(masks), view.title = ''; end
+                else
+                    plane = obj.read(index,frame); layer = obj.Layers(index);
+                    assert(size(plane,1) == size(base,1) && size(plane,2) == size(base,2), ...
+                        'detecdivui:LayerSize','Visible layers have different image sizes.');
+                    view.title = layer.name; view.names = [{layer.name} view.names];
+                    color = sscanf(strrep(layer.color,',',' '),'%f');
+                    if isempty(masks) && strcmp(layer.kind,'Intensity') && isequal(color(:)',[1 1 1])
+                        view.pixels = plane; view.native = true; view.limits = layer.limits;
+                    elseif isempty(masks) && strcmp(layer.kind,'RGB') && ...
+                            ((isinteger(plane) && isequal(layer.limits,[0 double(intmax(class(plane)))])) || ...
+                            (~isinteger(plane) && isequal(layer.limits,[0 1])))
+                        view.pixels = plane;
+                    else
+                        [rgb,~,~] = obj.renderWithScore(plane,layer,index);
+                    end
+                end
+                if isempty(view.pixels)
+                    view.pixels = uint8(double(rgb).*(1-alpha) + 255*overlay.*alpha);
+                end
+                views{k} = view;
+            end
+        end
         function view = compose(obj,frame,selected)
             assert(~isempty(obj.Layers),'detecdivui:NoChannels','No image channels available for this FOV.');
             base = obj.read(selected,frame);

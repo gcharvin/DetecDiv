@@ -22,7 +22,7 @@ project.fov.srclist = {dir(file)}; viewer.loadCurrentImage();
 % Restore a stale link immediately before the actual ROI-outline click.
 viewer.Pipeline.OnStatus = @(message)error('test:StaleStatus','A legacy callback must be rebound.');
 overlay = findall(ax,'Tag','zone-overlay'); assert(isscalar(overlay));
-overlay.ButtonDownFcn(overlay,[]);
+detecdivui.Callback.call(overlay.ButtonDownFcn,overlay,[]);
 assert(viewer.Session.Zone == 1 && isequal(tree.SelectedNodes,node));
 assert(isa(viewer.Pipeline.OnStatus,'detecdivui.Callback') && isa(viewer.Pipeline.OnChanged,'detecdivui.Callback'));
 item = findall(ax,'Type','image'); assert(isequal(item.CData,pixels));
