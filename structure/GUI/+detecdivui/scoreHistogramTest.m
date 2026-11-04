@@ -18,5 +18,11 @@ assert(isequal(counts,stats.counts) && sum(counts) == 100);
 limits = findall(axes,'Type','constantline');
 assert(isequal(sort([limits.Value]),[10 80]));
 assert(isequal(source.image,pixels) && isequal(source.display,metadata));
+for value = [0 1 400 -400 65535]
+    stats = score_histogramData(repmat(value,10));
+    assert(sum(stats.counts) == 100 && stats.median == value && all(diff(stats.edges) > 0));
+end
+stats = score_histogramData(400+(0:5)*eps(400));
+assert(sum(stats.counts) == 6 && all(diff(stats.edges) > 0));
 disp('Score histogram test passed: legacy curves, counts, levels and unchanged source metadata.');
 end
