@@ -50,6 +50,8 @@ assert(numel(session.referenceRegions()) == 2);
 viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeViewer = onCleanup(@()delete(viewer));
 assert(isempty(viewer.ROIs)); % Navigation must work before this optional tool exists.
+tabs = findall(viewer.widgetFigure('Display'),'Tag','display-tabs');
+assert(isscalar(tabs.Children) && isempty(findall(tabs,'Tag','roi-tab')));
 drawnow;
 ax = findall(viewer.Figure,'Tag','image-view');
 assert(isempty(findall(ax,'Type','image')));
@@ -101,12 +103,36 @@ tree.SelectionChangedFcn(tree,[]); back.ButtonPushedFcn(back,[]);
 assert(viewer.Session.Zone == 0 && isequal(getPixels(ax),pixels+100));
 viewer.openROITool();
 assert(isvalid(viewer.ROIs) && isscalar(findall(viewer.widgetFigure('Display'),'Tag','roi-mode')));
-% Selecting the ROIs tab directly must lazily recreate the same tool too.
-tabs = findall(viewer.widgetFigure('Display'),'Tag','display-tabs');
+% Done removes the contextual tab and drawing handles, retaining the draft.
+assistant = viewer.ROIs; assistant.addRectangle([10 10 12 12]);
+assert(isscalar(findall(ax,'Tag','roi-draft-shape')));
+viewer.showRoiPreview(struct('scaled',[20 20 12 12]));
+done = findall(viewer.widgetFigure('Display'),'Tag','roi-done');
+done.ButtonPushedFcn(done,[]);
+assert(isscalar(tabs.Children) && isempty(findall(tabs,'Tag','roi-tab')));
+assert(isempty(findall(ax,'Tag','roi-draft-shape')) && isempty(findall(ax,'Tag','roi-preview')));
+slider.Value = 1; slider.ValueChangedFcn(slider,[]);
+assert(isempty(findall(ax,'Tag','roi-draft-shape')));
+slider.Value = 2; slider.ValueChangedFcn(slider,[]);
+viewer.Host.findCommand('Define ROIs...').invoke();
+assert(viewer.ROIs == assistant && isequal(assistant.Rects,[10 10 12 12]));
+assert(isscalar(findall(ax,'Tag','roi-draft-shape')));
+% Display is a viewing context: inactive drawing handles must disappear.
 roiTab = findall(tabs,'Tag','roi-tab'); other = tabs.Children(tabs.Children ~= roiTab);
+tabs.SelectedTab = other(1); tabs.SelectionChangedFcn(tabs,[]);
+assert(isempty(findall(ax,'Tag','roi-draft-shape')));
+tabs.SelectedTab = roiTab; tabs.SelectionChangedFcn(tabs,[]);
+assert(isscalar(findall(ax,'Tag','roi-draft-shape')));
+viewer.ROIs.clearDraft();
+% Selecting the ROIs tab directly must lazily recreate the same tool too.
 tabs.SelectedTab = other(1); delete(viewer.ROIs);
 tabs.SelectedTab = roiTab; tabs.SelectionChangedFcn(tabs,[]);
 assert(isvalid(viewer.ROIs) && isscalar(findall(roiTab,'Tag','roi-mode')));
+% Entering a cropped ROI dismisses a FOV drawing context.
+node = findall(tree,'Tag','roi-node','Text','ROI 2 · Cells 01');
+tree.SelectedNodes = node; tree.SelectionChangedFcn(tree,[]);
+assert(isempty(findall(tabs,'Tag','roi-tab')));
+back.ButtonPushedFcn(back,[]);
 % An unreadable frame must clear old pixels, then recover on navigation.
 position.srclist{1}(2).name = 'missing-frame.tif';
 viewer.Host.findCommand('Reload Image').invoke();
@@ -190,6 +216,9 @@ assert(strcmp(closeMenu.Enable,'off'));
 empty = detecdiv_ui(shallow(),'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeEmpty = onCleanup(@()delete(empty));
 assert(empty.Session.Position == 0);
+assert(strcmp(empty.Host.findCommand('Define ROIs...').Enable,'off'));
+empty.openROITool();
+assert(isempty(empty.ROIs) && isempty(findall(empty.widgetFigure('Display'),'Tag','roi-tab')));
 assert(~isfile(fullfile(folder,'im_zone1.h5')));
 disp('Viewer smoke test passed: menus, project tree, multi-project navigation, pixels, RGB and errors.');
 end

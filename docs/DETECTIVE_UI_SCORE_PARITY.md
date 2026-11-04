@@ -108,7 +108,7 @@ New dockable widgets are explicitly part of the migration when a task needs its 
 | Projects (existing) | Project/FOV/ROI browsing and links to classifiers/processors/pipelines | Left; remains the shared navigation source |
 | Image (existing) | Single image viewport, temporal navigation, selection and all drawing gestures | Central; no separate image window for each tool |
 | Display (existing) | Layers, color/contrast/histograms, fill/contour appearance, scale bars | Right; changing appearance does not enable scientific editing |
-| ROIs assistant (existing tab) | Define extraction geometry on raw FOVs | Right contextual assistant; reused by Pipeline; independent of mask editing |
+| Define ROIs assistant (on-demand tab) | Define extraction geometry on raw FOVs | Opened explicitly from Edit, image/Projects context menus or Pipeline; Done dismisses it and retains the draft; independent of mask editing |
 | Objects (new) | Selected object/track, family/provider, read-only lineage context; later track/link/split/delete actions | Right; may stay open alongside Display or Data; explicit edit scope for scientific actions |
 | Data (new) | Dataseries/variable browser, plot groups and plots synchronized to Image | Normally below Image; compact selector with detailed settings on demand; one initial dockable document with an internal split rather than mandatory separate browser/plot windows |
 | Annotation (new) | Brush/mask settings, classifier-bound session, GT/prediction source, review/validation actions | Right; drawing uses Image; advanced initialization/validation findings open dialogues |

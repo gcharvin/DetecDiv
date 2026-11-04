@@ -35,6 +35,9 @@ assert(~isempty(findall(widget.SettingsFigure,'Tag','pipeline-parameters')));
 assert(strcmp(widget.SettingsFigure.Visible,'on'));
 control = widget.Setup.Controls.runId; control.Value = 'manual_run'; control.ValueChangedFcn(control,[]);
 widget.defineROIs(); viewer.ROIs.addRectangle([10 11 4 4]);
+viewer.closeROITool(); widget.defineROIs();
+assert(isequal(viewer.ROIs.Rects,[10 11 4 4])); % Closing never submits or discards this run draft.
+assert(isequal(widget.Template.nodes.params,p));
 ctx = viewer.ROIs.apply(); assert(~isempty(ctx));
 assert(numel(project.fov.roi) == 2 && isequal(template.nodes,original));
 assert(isequal(widget.Template.nodes.params.manualRois.rect,[10 11 4 4]));

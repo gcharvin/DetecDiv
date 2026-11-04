@@ -75,6 +75,9 @@ classdef Viewer < handle
         DisplayTabs
         ROIsTab
         ImageMenu
+        DefineROIMenu
+        ImageROIMenu
+        TreeROIMenu
         SaveProjectMenu
         DrawingROI = false
         LoadedObjects = struct('object',{},'variables',{},'kind',{})
@@ -117,6 +120,10 @@ classdef Viewer < handle
             obj.Tree = uitree(nav,'Tag','projects-tree', ...
                 'SelectionChangedFcn',@(~,~)obj.browseSelection());
             obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
+            treeMenu = uicontextmenu(obj.Host.widgetFigure('Projects'));
+            obj.TreeROIMenu = uimenu(treeMenu,'Text','Define ROIs...','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.openROITool());
+            obj.Tree.ContextMenu = treeMenu;
             details = uipanel(nav,'Title','Project','Tag','project-details');
             obj.DetailsPanel = details;
             info = uigridlayout(details,[3 1]);
@@ -142,7 +149,8 @@ classdef Viewer < handle
             obj.Axes = uiaxes(obj.ImageGrid,'Color',[0.07 0.09 0.11],'Tag','image-view');
             obj.ImageAxes = obj.Axes;
             obj.ImageMenu = uicontextmenu(obj.Figure);
-            uimenu(obj.ImageMenu,'Text','ROI Tools...','MenuSelectedFcn',@(~,~)obj.openROITool());
+            obj.ImageROIMenu = uimenu(obj.ImageMenu,'Text','Define ROIs...','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.openROITool());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             obj.Axes.Toolbar.Visible = 'on';
@@ -169,7 +177,6 @@ classdef Viewer < handle
             displayRoot.Padding = [0 0 0 0];
             obj.DisplayTabs = uitabgroup(displayRoot,'Tag','display-tabs');
             displayTab = uitab(obj.DisplayTabs,'Title','Display');
-            obj.ROIsTab = uitab(obj.DisplayTabs,'Title','ROIs','Tag','roi-tab');
             tools = uigridlayout(displayTab,[13 1]);
             tools.RowSpacing = 6; tools.Scrollable = 'on';
             tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
@@ -428,7 +435,10 @@ classdef Viewer < handle
                 obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
                 obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
             end
-            if obj.hasROIWidget(), obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display'); end
+            if obj.hasROIWidget()
+                obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+                obj.ROIs.OnDismiss = detecdivui.Callback(obj,'closeROITool');
+            end
         end
         function result = widgetEvent(obj,action,varargin)
             result = [];
@@ -452,19 +462,30 @@ classdef Viewer < handle
         end
         function openROITool(obj,project,node,callback)
             if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
+            if obj.Session.Position == 0 && nargin >= 3 && ~isempty(node) && ...
+                    isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
+                obj.Session.selectPosition(node.params.fovIndex(1)); obj.refreshView(false);
+            end
+            if obj.Session.Position == 0
+                obj.widgetEvent('status','Select a FOV to define ROIs'); return;
+            end
             obj.ensureROIWidget();
             if nargin >= 3 && ~isempty(node)
-                if obj.Session.Position == 0 && isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
-                    if obj.Session.Position ~= node.params.fovIndex(1) || obj.Session.Zone > 0
-                        obj.Session.selectPosition(node.params.fovIndex(1)); obj.refreshView(false);
-                    end
-                end
                 obj.ROIs.bind(node,callback);
             else
                 obj.ROIs.standalone();
             end
+            obj.ROIsTab.Parent = obj.DisplayTabs;
             obj.DisplayTabs.SelectedTab = obj.ROIsTab;
+            obj.ROIs.setActive(true);
             obj.Host.focusWidget('Display'); obj.Host.show();
+        end
+        function closeROITool(obj)
+            if obj.hasROIWidget(), obj.ROIs.setActive(false); end
+            if ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab)
+                % Detach rather than delete: retain controls and the pending draft.
+                obj.ROIsTab.Parent = [];
+            end
         end
         function ax = roiAxes(obj)
             ax = obj.Axes;
@@ -527,6 +548,7 @@ classdef Viewer < handle
             if obj.Closing, return; end
             obj.Closing = true;
             if obj.hasROIWidget(), delete(obj.ROIs); end
+            if ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab), delete(obj.ROIsTab); end
             if ~isempty(obj.Pipeline) && isvalid(obj.Pipeline), delete(obj.Pipeline); end
             if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.OnActivity = []; end
             if ~isempty(obj.Host) && isvalid(obj.Host), delete(obj.Host); end
@@ -618,17 +640,24 @@ classdef Viewer < handle
         end
         function ensureROIWidget(obj)
             if obj.hasROIWidget(), return; end
-            assert(isa(obj.ROIsTab,'matlab.ui.container.Tab') && isvalid(obj.ROIsTab), ...
-                'detecdivui:ViewerVersion','Close this viewer and launch detecdiv_ui again to load ROI Tools.');
+            if isempty(obj.ROIsTab) || ~isvalid(obj.ROIsTab)
+                obj.ROIsTab = uitab(obj.DisplayTabs,'Title','Define ROIs','Tag','roi-tab');
+            end
             % A deleted assistant may have left its controls in the tab.
             delete(obj.ROIsTab.Children);
             obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
             obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+            obj.ROIs.OnDismiss = detecdivui.Callback(obj,'closeROITool');
             obj.ROIs.setContext(obj.Session); obj.ROIs.onRender();
         end
         function displayTabSelected(obj)
             if obj.Closing, return; end
-            if isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab), obj.ensureROIWidget(); end
+            if isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
+                obj.ensureROIWidget();
+            end
+            if obj.hasROIWidget()
+                obj.ROIs.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab));
+            end
         end
         function finishROIGesture(obj)
             if isvalid(obj), obj.DrawingROI = false; end
@@ -638,6 +667,9 @@ classdef Viewer < handle
             if obj.Closing, return; end
             owners = struct('Image',obj.Progress,'Projects',obj.ProjectProgress, ...
                 'Pipeline',obj.Pipeline.Progress,'Display',obj.DisplayProgress);
+            if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
+                owners.Display = obj.ROIs.Progress;
+            end
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
@@ -689,8 +721,9 @@ classdef Viewer < handle
             edit = obj.Host.menu([],'Edit');
             obj.CopyMenu = obj.Host.menu(edit,'Copy Image','Accelerator','C', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
+            obj.DefineROIMenu = obj.Host.menu(edit,'Define ROIs...','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.openROITool());
             view = obj.Host.menu([],'View');
-            obj.Host.menu(view,'ROIs','MenuSelectedFcn',@(~,~)obj.openROITool());
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
@@ -953,6 +986,10 @@ classdef Viewer < handle
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
             if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
+            if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
+            roiEnabled = obj.onOff(obj.Session.Position > 0);
+            obj.DefineROIMenu.Enable = roiEnabled;
+            obj.ImageROIMenu.Enable = roiEnabled; obj.TreeROIMenu.Enable = roiEnabled;
             obj.Pipeline.setContext(obj.Session);
             obj.Crumb.Text = obj.Session.breadcrumb();
             obj.Crumb.Tooltip = obj.Crumb.Text;

@@ -5,7 +5,11 @@ classdef ROIWidget < handle
         Params = struct()
         Progress
     end
+    properties
+        OnDismiss = []
+    end
     properties (Access = private)
+        Active = false
         Viewer
         Project = []
         Position = 0
@@ -29,7 +33,12 @@ classdef ROIWidget < handle
             obj.Viewer = viewer;
             grid = uigridlayout(parent,[8 1]); grid.Padding = [6 6 6 6];
             grid.RowHeight = {22,28,28,'1x','1x',28,28,24};
-            obj.Target = uilabel(grid,'Text','—','Interpreter','none','Tag','roi-target');
+            header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0];
+            header.ColumnWidth = {'1x',60};
+            obj.Target = uilabel(header,'Text','—','Interpreter','none','Tag','roi-target');
+            uibutton(header,'Text','Done','Tag','roi-done', ...
+                'Tooltip','Close the assistant and keep the pending draft', ...
+                'ButtonPushedFcn',@(~,~)detecdivui.Callback.call(obj.OnDismiss));
             obj.Mode = uidropdown(grid,'Items',{'Manual','Pattern','Grid','Tracked'}, ...
                 'ItemsData',{'roiManual','roiPattern','roiGrid','roiTracked'},'Tag','roi-mode', ...
                 'Tooltip','ROI definition method','ValueChangedFcn',@(~,~)obj.changeMode());
@@ -76,6 +85,10 @@ classdef ROIWidget < handle
             obj.refresh();
         end
         function bind(obj,node,callback)
+            % Reopening the same run/step resumes its unsubmitted draft.
+            if ~isempty(obj.Binding) && isequal(obj.Binding,callback)
+                obj.refresh(); obj.onRender(); return;
+            end
             mode = node.type; if strcmpi(mode,'roiIdentify'), mode = 'roiPattern'; end
             obj.Mode.Value = mode; obj.Params = feval([mode '.setparam'],node.params);
             obj.Binding = callback; obj.ApplyButton.Text = 'Use in Run'; obj.Rects = zeros(0,4);
@@ -198,7 +211,7 @@ classdef ROIWidget < handle
         end
         function onRender(obj)
             obj.clearHandles();
-            if obj.Viewer.Session.Zone > 0 || obj.Position == 0, return; end
+            if ~obj.Active || obj.Viewer.Session.Zone > 0 || obj.Position == 0, return; end
             ax = obj.Viewer.roiAxes();
             if isempty(findall(ax,'Type','image')), return; end
             for k = 1:size(obj.Rects,1), obj.addHandle(obj.Rects(k,:),'roi',k); end
@@ -209,6 +222,14 @@ classdef ROIWidget < handle
                 end
             end
             if ~isempty(obj.Crop), obj.addHandle(obj.Crop,'crop',1); end
+        end
+        function setActive(obj,active)
+            obj.Active = logical(active);
+            if ~obj.Active
+                obj.stash();
+                delete(findall(obj.Viewer.Figure,'Tag','roi-preview'));
+            end
+            obj.onRender();
         end
         function clearDraft(obj)
             obj.Rects = zeros(0,4); obj.Crop = [];
