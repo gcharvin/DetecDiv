@@ -93,6 +93,7 @@ classdef Session < handle
             validateattributes(channel, {'numeric'}, {'scalar','integer','positive','<=',numel(names)});
             position = obj.Project.fov(obj.Position);
             if obj.Zone == 0
+                obj.requireRawSource(position,channel);
                 plane = readImage(position, frame, channel);
             else
                 plane = position.roi(obj.Zone).image(:,:,channels(channel).planes,frame);
@@ -129,6 +130,29 @@ classdef Session < handle
         end
     end
     methods (Access = private)
+        function requireRawSource(~,position,channel)
+            % Check only the referenced source. The legacy reader's readiness
+            % helper searches known roots when it is missing; relinking must
+            % instead be an explicit viewer action.
+            source = ''; isFile = false;
+            if position.isMultiTiff
+                sources = position.tiffSource; isFile = true;
+                if channel <= numel(sources) && ~isempty(sources{channel})
+                    source = sources{channel};
+                elseif ~isempty(sources)
+                    source = sources{1};
+                end
+            elseif position.isNDTiff
+                source = position.ndtiffPath;
+                if isempty(source) && ~isempty(position.srcpath), source = position.srcpath{1}; end
+            elseif channel <= numel(position.srcpath)
+                source = position.srcpath{channel};
+            end
+            source = char(string(source));
+            available = ~isempty(source) && ((isFile && isfile(source)) || (~isFile && isfolder(source)));
+            assert(available,'detecdivui:RawSourceMissing', ...
+                'Raw data unavailable. Use Relink Raw Data... (%s)',source);
+        end
         function ensureZoneImages(~, zone)
             if isempty(zone.image), zone.load('Data',false); end
             assert(~isempty(zone.image), 'detecdivui:MissingPixels', ...

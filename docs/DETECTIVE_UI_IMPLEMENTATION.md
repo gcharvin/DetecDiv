@@ -28,6 +28,8 @@ viewer = detecdiv_ui({projectA, projectB});
 - A bottom Project details panel follows the active project, including when a FOV/ROI is selected. It shows the name, selectable project folder path (`fullfile(io.path, io.file)`) with Copy, FOV/ROI counts, associated classifiers/processors, pipeline runs and the cached default pipeline when available. Unknown paths disable Copy; no filesystem/network scan or image load is needed. Clicking a project keeps that node selected while retaining its current image context.
 - Per-project FOV/ROI, frame and named-channel state. Closing a project restores another open project; closing the last project clears the viewport.
 - Breadcrumb and parent-FOV navigation synchronized with tree and ROI-outline selection.
+- Launch, Open Project, workspace refresh, project-root selection and project closure update metadata without probing raw paths or loading ROI H5 stores. Select a FOV/ROI or click Load Image to request pixels. View > Reload Image also explicitly requests/retries the current image. Display controls cannot trigger reads while the view is pending.
+- On a requested raw read, Session checks only the referenced source folder/file before using `fov.readImage`. Missing sources expose Relink Raw Data... in the image toolbar; File > Relink Raw Data... remains available for a project with FOVs. The action uses the existing root picker and `detecdiv_paths_relink_project` in its default mode, invalidates display pixels and retries a previously requested missing raw image after successful relinking. A metadata-only view stays unloaded. Relinking changes paths in memory and registers the chosen root through the existing helpers; it does not save the project.
 - Named logical channels, including non-contiguous RGB subchannels. Missing or incompatible channel metadata falls back to individual image planes.
 - A Layers table with independent visibility, an active layer, Solo, source-unit min/max contrast and a range slider, Auto, color and opacity. Label layers use score's renderer and stable ID colors or a selected RGB color.
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
@@ -37,7 +39,7 @@ viewer = detecdiv_ui({projectA, projectB});
 - Concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
 - Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
 
-The session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI loading can load a whole extraction and update in-memory display metadata; the legacy raw reader can repair paths in memory. Browsing does not save, extract or process scientific data. Closing a project only removes its UI reference.
+On demand, the session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI loading can load a whole extraction and update in-memory display metadata. A missing recorded raw source is reported before invoking the legacy reader's automatic root search. Direct path checks and successful image reads remain synchronous after an explicit image request; an unavailable network filesystem can therefore still delay that requested read. Startup does no image I/O. Browsing does not save, extract or process scientific data. Closing a project only removes its UI reference.
 
 ## Limits
 
@@ -71,6 +73,7 @@ detecdivui.smokeTest();
 detecdivui.dockingTest();
 detecdivui.layerTest();
 detecdivui.displayTest();
+detecdivui.lazyImageTest();
 % Optional visible export for visual inspection:
 detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 ```

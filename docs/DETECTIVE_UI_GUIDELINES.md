@@ -28,13 +28,15 @@ The requirements below supersede the earlier French labels, renamed data concept
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Open Pipeline..., Save Pipeline, Close Project, Exit |
+| File | Open Project..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
 | Edit | Copy Image |
 | View | Projects, Image, Display, Pipeline, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame |
 | Help | About DetecDiv |
 
 Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C. Save/edit/analysis commands will be added with their actual implementations.
+
+Opening the workspace/project is metadata-only. Image I/O follows FOV/ROI selection or Load Image / Reload Image. A missing raw source offers Relink Raw Data... through the existing path tools; do not start a root search as a side effect of opening the application. No automatic analysis or pixel preload is scheduled after startup.
 
 ## Remaining design decisions
 

@@ -51,6 +51,8 @@ viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',fa
 closeViewer = onCleanup(@()delete(viewer));
 drawnow;
 ax = findall(viewer.Figure,'Tag','image-view');
+assert(isempty(findall(ax,'Type','image')));
+viewer.loadCurrentImage();
 assert(isequal(ax.XLim,[0.5 240.5]) && isequal(ax.YLim,[0.5 180.5]));
 assert(isequal(ax.CLim,double([min(pixels(:)) max(pixels(:))])));
 regions = findall(ax,'Tag','zone-overlay');
@@ -129,6 +131,7 @@ second.fov.id = 'Chamber B';
 second.fov.channel = {'Phase'}; second.fov.frames = 1; second.fov.interval = 1;
 second.fov.srcpath = {folder}; second.fov.srclist = {position.srclist{1}(1)};
 viewer.addProject(second);
+viewer.loadCurrentImage();
 assert(numel(viewer.Sessions) == 2 && numel(tree.Children) == 2);
 assert(viewer.ActiveProject == 2 && isequal(getPixels(ax),pixels));
 assert(strcmp(projectName.Text,'Experiment B') && strcmp(copyPath.Enable,'off'));
@@ -139,8 +142,10 @@ tree.SelectedNodes = firstNode; tree.SelectionChangedFcn(tree,[]);
 assert(viewer.ActiveProject == 1 && viewer.Session.Zone == 2);
 assert(isequal(tree.SelectedNodes,firstNode));
 assert(strcmp(projectPath.Value{1},fullfile(folder,'Experiment A')));
+viewer.loadCurrentImage();
 assert(isequal(getPixels(ax),gray+100));
 viewer.addProject(project); assert(numel(viewer.Sessions) == 2);
+viewer.loadCurrentImage();
 viewer.closeProject(2); % Closing an inactive project keeps the active ROI.
 assert(viewer.ActiveProject == 1 && viewer.Session.Zone == 2);
 assert(isequal(getPixels(ax),gray+100));

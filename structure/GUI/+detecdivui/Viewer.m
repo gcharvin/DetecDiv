@@ -43,6 +43,11 @@ classdef Viewer < handle
         CloseMenu
         CopyMenu
         SavePipelineMenu
+        RelinkMenu
+        LoadImage
+        RelinkImage
+        ImageRequested = false
+        MissingRaw = false
         ParentMenu
         PreviousMenu
         NextMenu
@@ -66,13 +71,19 @@ classdef Viewer < handle
             root.RowHeight = {32,'1x',24};
             root.Padding = [8 6 8 6];
             root.BackgroundColor = [0.95 0.96 0.97];
-            location = uigridlayout(root,[1 2]);
-            location.ColumnWidth = {100,'1x'}; location.Padding = [0 0 0 0];
+            location = uigridlayout(root,[1 4]);
+            location.ColumnWidth = {100,'1x',100,130}; location.Padding = [0 0 0 0];
             obj.Back = uibutton(location,'Text','← FOV','Enable','off', ...
                 'Tag','parent-fov','Tooltip','Return to the parent FOV', ...
                 'ButtonPushedFcn',@(~,~)obj.returnToPosition());
             obj.Crumb = uilabel(location,'Text','', ...
                 'Interpreter','none','FontSize',12,'Tag','breadcrumb');
+            obj.LoadImage = uibutton(location,'Text','Load Image','Enable','off', ...
+                'Tag','load-image','Tooltip','Load the selected FOV or ROI on demand', ...
+                'ButtonPushedFcn',@(~,~)obj.loadCurrentImage());
+            obj.RelinkImage = uibutton(location,'Text','Relink Raw Data...','Visible','off', ...
+                'Tag','relink-raw-data','Tooltip','Locate raw data using the existing project relink helper', ...
+                'ButtonPushedFcn',@(~,~)obj.relinkRawData());
             nav = uigridlayout(obj.Host.widgetFigure('Projects'),[2 1]);
             nav.Padding = [4 4 4 4];
             nav.RowHeight = {'1x',230};
@@ -201,8 +212,8 @@ classdef Viewer < handle
                 obj.rebuildTree();
             end
             obj.activate(index);
-            obj.selectCurrentNode();
-            obj.refreshView();
+            obj.selectProjectNode();
+            obj.refreshView(false);
         end
         function closeProject(obj,index)
             % Closing removes the UI reference only; scientific data is unchanged.
@@ -210,19 +221,59 @@ classdef Viewer < handle
             if index == 0, return; end
             validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
             active = obj.Session;
+            wasActive = index == obj.ActiveProject;
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             obj.DisplayModels(index) = [];
             remaining = find(cellfun(@(session)isequal(session,active),obj.Sessions),1);
+            if ~wasActive
+                obj.ActiveProject = remaining;
+                obj.rebuildTree(); obj.selectCurrentNode(); obj.refreshProjectInfo();
+                if ~isempty(obj.RenderKey)
+                    obj.RenderKey = sprintf('%d:%d:%d',remaining,obj.Session.Position,obj.Session.Zone);
+                end
+                return;
+            end
             obj.ActiveProject = 0;
             obj.Session = detecdivui.Session();
             obj.DisplayModel = [];
             obj.rebuildTree();
             if ~isempty(obj.Sessions)
                 if isempty(remaining), remaining = min(index,numel(obj.Sessions)); end
-                obj.activate(remaining); obj.selectCurrentNode();
+                obj.activate(remaining); obj.selectProjectNode();
             end
-            obj.refreshView();
+            obj.refreshView(false);
+        end
+        function loadCurrentImage(obj)
+            if obj.Session.Position == 0, return; end
+            obj.selectCurrentNode();
+            obj.DisplayModel.invalidate(); obj.refreshView(true);
+        end
+        function report = relinkRawData(obj,root)
+            report = [];
+            if obj.ActiveProject == 0, return; end
+            try
+                if nargin < 2
+                    [root,picked] = detecdiv_paths_prompt_root(string(pwd),"","PROJECT");
+                    if ~picked, obj.Status.Text = 'Relink cancelled'; return; end
+                end
+                retry = obj.ImageRequested && obj.MissingRaw;
+                obj.Status.Text = 'Relinking raw data...'; drawnow limitrate nocallbacks;
+                report = detecdiv_paths_relink_project(obj.Session.Project,root);
+                obj.DisplayModel.invalidate();
+                if isempty(report)
+                    obj.Status.Text = 'No raw paths updated';
+                elseif ~any([report.ok])
+                    obj.Status.Text = 'No matching raw paths found. Choose the dataset or a Pos folder.';
+                elseif retry && any([report.ok])
+                    obj.refreshView(true);
+                else
+                    obj.Status.Text = sprintf('Raw data: %d/%d paths linked',sum([report.ok]),numel(report));
+                end
+                obj.Status.Tooltip = obj.Status.Text;
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
         end
         function figure = widgetFigure(obj,name)
             figure = obj.Host.widgetFigure(name);
@@ -240,7 +291,7 @@ classdef Viewer < handle
                 index = obj.findProject(active);
                 if index > 0, obj.activate(index); end
             end
-            obj.rebuildTree(); obj.selectCurrentNode(); obj.refreshView();
+            obj.rebuildTree(); obj.selectProjectNode(); obj.refreshView(false);
             obj.Status.Text = 'Workspace refreshed';
         end
         function delete(obj)
@@ -259,6 +310,8 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.Pipeline.saveTemplate());
             obj.CloseMenu = obj.Host.menu(file,'Close Project','Accelerator','W', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.closeProject());
+            obj.RelinkMenu = obj.Host.menu(file,'Relink Raw Data...','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.relinkRawData());
             obj.Host.menu(file,'Exit','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)delete(obj));
             edit = obj.Host.menu([],'Edit');
@@ -408,7 +461,7 @@ classdef Viewer < handle
                 if target.roi > 0, obj.SelectedZone = target.roi; end
             end
             if target.fov > 0, obj.selectCurrentNode(); end
-            obj.refreshView();
+            obj.refreshView(target.fov > 0);
         end
         function refreshProjectInfo(obj)
             obj.DetailsPanel.Title = 'Project';
@@ -485,6 +538,7 @@ classdef Viewer < handle
         function activate(obj,index)
             if obj.ActiveProject == index, return; end
             obj.storeView();
+            obj.ImageRequested = false;
             obj.ActiveProject = index; obj.Session = obj.Sessions{index};
             obj.DisplayModel = obj.DisplayModels{index};
             state = obj.ViewStates{index};
@@ -492,7 +546,7 @@ classdef Viewer < handle
             obj.SelectedZone = state.selectedROI; obj.RenderKey = '';
         end
         function storeView(obj)
-            if obj.ActiveProject == 0, return; end
+            if obj.ActiveProject == 0 || ~obj.ImageRequested, return; end
             name = obj.Channels.Items{obj.Channels.Value};
             obj.ViewStates{obj.ActiveProject} = struct('frame',obj.Frame.Value, ...
                 'channel',name,'selectedROI',obj.SelectedZone);
@@ -509,6 +563,14 @@ classdef Viewer < handle
                 end
             end
         end
+        function selectProjectNode(obj)
+            nodes = findall(obj.Tree,'Tag','project-node');
+            for k = 1:numel(nodes)
+                if nodes(k).UserData.project == obj.ActiveProject
+                    obj.Tree.SelectedNodes = nodes(k); return;
+                end
+            end
+        end
         function openZone(obj,index)
             obj.Session.selectZone(index);
             if index > 0, obj.SelectedZone = index; end
@@ -518,11 +580,16 @@ classdef Viewer < handle
             if obj.Session.Position == 0, return; end
             obj.openZone(0);
         end
-        function refreshView(obj)
+        function refreshView(obj,loadImage)
+            if nargin < 2, loadImage = true; end
             obj.refreshProjectInfo();
             obj.Pipeline.setContext(obj.Session);
             obj.Crumb.Text = obj.Session.breadcrumb();
+            obj.Crumb.Tooltip = obj.Crumb.Text;
             obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
+            obj.RelinkMenu.Enable = obj.onOff(obj.Session.Position > 0);
+            obj.LoadImage.Enable = obj.onOff(obj.Session.Position > 0);
+            obj.RelinkImage.Visible = 'off'; obj.MissingRaw = false;
             obj.Back.Enable = obj.onOff(obj.Session.Zone > 0);
             obj.ParentMenu.Enable = obj.Back.Enable;
             obj.Overlays.Enable = obj.onOff(obj.Session.Position > 0 && obj.Session.Zone == 0);
@@ -531,10 +598,26 @@ classdef Viewer < handle
                 obj.setControls({},1);
                 cla(obj.Axes); title(obj.Axes,''); obj.RenderKey = '';
                 obj.CopyMenu.Enable = 'off';
+                obj.ImageRequested = false;
+                obj.LoadImage.Text = 'Load Image';
                 obj.Status.Text = 'Ready';
                 if obj.ActiveProject > 0, obj.Status.Text = 'No FOVs'; end
                 return;
             end
+            if ~loadImage
+                obj.storeView(); obj.ImageRequested = false;
+                preferred = obj.ViewStates{obj.ActiveProject}.channel;
+                obj.setControls({},max(1,obj.Frame.Value));
+                obj.PreferredChannel = preferred;
+                obj.FrameCount.Text = '';
+                cla(obj.Axes); title(obj.Axes,''); obj.RenderKey = '';
+                obj.CopyMenu.Enable = 'off'; obj.LoadImage.Text = 'Load Image';
+                obj.Status.Text = 'Select a FOV or ROI, or load the current image';
+                obj.Status.Tooltip = obj.Status.Text;
+                return;
+            end
+            obj.ImageRequested = true; obj.LoadImage.Text = 'Reload Image';
+            obj.Status.Text = 'Loading image...'; drawnow limitrate nocallbacks;
             try
                 [names, frames] = obj.Session.dimensions();
                 obj.setControls(names,frames);
@@ -583,7 +666,7 @@ classdef Viewer < handle
             obj.setFrame(obj.Frame.Value+delta);
         end
         function render(obj)
-            if obj.Session.Position == 0, return; end
+            if obj.Session.Position == 0 || ~obj.ImageRequested, return; end
             try
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
                 obj.TimeSlider.Value = obj.Frame.Value;
@@ -645,22 +728,22 @@ classdef Viewer < handle
             obj.RenderKey = ''; obj.render();
         end
         function reloadImage(obj)
-            if isempty(obj.DisplayModel), return; end
-            obj.DisplayModel.invalidate(); obj.render();
+            obj.loadCurrentImage();
         end
         function layerSelected(obj,event)
             if isempty(event.Indices), return; end
             obj.Channels.Value = event.Indices(1,1); obj.render();
         end
         function soloLayer(obj)
-            if isempty(obj.DisplayModel) || isempty(obj.DisplayModel.Layers), return; end
+            if ~obj.ImageRequested || isempty(obj.DisplayModel) || isempty(obj.DisplayModel.Layers), return; end
             obj.DisplayModel.solo(obj.Channels.Value); obj.render();
         end
         function layerVisibilityChanged(obj,event)
+            if ~obj.ImageRequested, return; end
             obj.DisplayModel.setVisible(event.Indices(1),event.NewData); obj.render();
         end
         function editLayer(obj,action)
-            if isempty(obj.DisplayModel), return; end
+            if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
             index = obj.Channels.Value;
             try
                 switch action
@@ -722,6 +805,9 @@ classdef Viewer < handle
         end
         function showError(obj,err)
             cla(obj.Axes); obj.RenderKey = ''; obj.CopyMenu.Enable = 'off';
+            obj.clearLayerControls();
+            obj.MissingRaw = strcmp(err.identifier,'detecdivui:RawSourceMissing');
+            obj.RelinkImage.Visible = obj.onOff(obj.MissingRaw);
             obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
             title(obj.Axes,'Image unavailable');
         end
