@@ -13,6 +13,7 @@ classdef Viewer < handle
         ProjectProgress
         DisplayProgress
         ROIs
+        Masks
         RecentProjects
     end
     properties (Access = private)
@@ -74,6 +75,9 @@ classdef Viewer < handle
         Closing = false
         DisplayTabs
         ROIsTab
+        MasksTab
+        EditContoursMenu
+        SaveMasksMenu
         ImageMenu
         DefineROIMenu
         ImageROIMenu
@@ -164,6 +168,7 @@ classdef Viewer < handle
             obj.ImageMenu = uicontextmenu(obj.Figure);
             obj.ImageROIMenu = uimenu(obj.ImageMenu,'Text','Define ROIs...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openROITool());
+            uimenu(obj.ImageMenu,'Text','Edit Contours...','MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             obj.Axes.Toolbar.Visible = 'on';
@@ -291,6 +296,7 @@ classdef Viewer < handle
             if index == 0
                 obj.Sessions{end+1} = detecdivui.Session(project);
                 obj.DisplayModels{end+1} = detecdivui.LayerModel();
+                obj.DisplayModels{end}.ReadOverride = detecdivui.Callback(obj,'maskPlane');
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
                 obj.ProjectSources{end+1} = '';
                 index = numel(obj.Sessions);
@@ -316,6 +322,12 @@ classdef Viewer < handle
             if nargin < 2, index = obj.ActiveProject; end
             if index == 0, return; end
             validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
+            if obj.hasMaskWidget() && ~obj.Masks.resolve(obj.Sessions{index}.Project, ...
+                    detecdivui.Callback(obj,'closeProjectHandle',obj.Sessions{index}.Project)), return; end
+            if obj.hasMaskWidget()
+                if obj.ActiveProject == index, obj.closeContourTool(); end
+                obj.Masks.forgetProject(obj.Sessions{index}.Project);
+            end
             activity = obj.ProjectProgress.begin('Closing project...'); %#ok<NASGU>
             active = obj.Session;
             wasActive = index == obj.ActiveProject;
@@ -449,6 +461,7 @@ classdef Viewer < handle
             obj.DisplayProgress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
             obj.Host.OnActivity = detecdivui.Callback(obj.Progress,'begin');
             obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
+            obj.Host.OnCanClose = detecdivui.Callback(obj,'canClose');
             if isa(obj.LayerTable,'detecdivui.LayerTable')
                 obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
                 obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
@@ -479,6 +492,7 @@ classdef Viewer < handle
             end
         end
         function openROITool(obj,project,node,callback)
+            obj.closeContourTool();
             if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
             if obj.Session.Position == 0 && nargin >= 3 && ~isempty(node) && ...
                     isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
@@ -509,6 +523,69 @@ classdef Viewer < handle
         end
         function ax = roiAxes(obj)
             ax = obj.Axes;
+        end
+        function openContourTool(obj)
+            try
+                scope = obj.DisplayProgress.begin('Opening contour editor...'); %#ok<NASGU>
+                c = obj.contourContext();
+                assert(~isempty(c.roi) && ~isempty(c.masks),'detecdivui:ContourContext', ...
+                    'Select an extracted ROI and a label mask layer first.');
+                obj.closeROITool();
+                if ~obj.hasMaskWidget()
+                    obj.MasksTab = uitab(obj.DisplayTabs,'Title','Contours','Tag','mask-tab');
+                    obj.Masks = detecdivui.MaskWidget(obj.MasksTab,obj);
+                    obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+                end
+                obj.MasksTab.Parent = obj.DisplayTabs; obj.DisplayTabs.SelectedTab = obj.MasksTab;
+                obj.Masks.setActive(true); obj.refreshKeyboard();
+                obj.Host.focusWidget('Display'); obj.Host.show();
+            catch err, obj.closeContourTool(); obj.widgetEvent('status',err.message);
+            end
+        end
+        function closeContourTool(obj)
+            if obj.hasMaskWidget(), obj.Masks.setActive(false); end
+            if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), obj.MasksTab.Parent = []; end
+            obj.refreshKeyboard();
+        end
+        function context = contourContext(obj)
+            context = struct('roi',[],'frame',obj.Frame.Value,'project',obj.Session.Project,'masks',{{}});
+            if obj.Session.Zone == 0 || ~obj.ImageRequested, return; end
+            context.roi = obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone);
+            if isempty(context.roi.image), context.roi = []; return; end
+            layers = obj.DisplayModel.Layers;
+            context.masks = {layers(strcmp({layers.kind},'Labels')).name};
+            context.masks = context.masks(cellfun(@(name)detecdivui.MaskDraft.isLabel(context.roi,name),context.masks));
+        end
+        function yes = contourGestureActive(obj)
+            yes = obj.DrawingROI;
+        end
+        function contourChanged(obj)
+            for k = 1:numel(obj.DisplayModels), obj.DisplayModels{k}.invalidate(); end
+            obj.SaveMasksMenu.Enable = obj.onOff(obj.hasMaskWidget() && obj.Masks.dirty());
+            obj.render(); obj.refreshKeyboard();
+        end
+        function contourOpacity(obj,delta,channel)
+            c = obj.contourContext(); if isempty(c.masks), return; end
+            index = find(strcmp({obj.DisplayModel.Layers.name},channel),1);
+            if isempty(index), return; end
+            value = obj.DisplayModel.Layers(index).opacity;
+            obj.DisplayModel.setOpacity(index,min(1,max(0,value+delta))); obj.render();
+        end
+        function plane = maskPlane(obj,session,index,frame,plane)
+            if obj.hasMaskWidget(), plane = obj.Masks.override(session,index,frame,plane); end
+        end
+        function yes = canClose(obj)
+            yes = true;
+            if obj.hasMaskWidget() && obj.Masks.dirty()
+                yes = obj.Masks.resolve([],detecdivui.Callback(obj,'close'));
+            end
+        end
+        function closeProjectHandle(obj,project)
+            index = find(cellfun(@(session)isequal(session.Project,project),obj.Sessions),1);
+            if ~isempty(index), obj.closeProject(index); end
+        end
+        function close(obj)
+            if obj.canClose(), delete(obj); end
         end
         function scope = beginROIGesture(obj)
             obj.DrawingROI = true;
@@ -567,7 +644,10 @@ classdef Viewer < handle
         end
         function delete(obj)
             if obj.Closing, return; end
+            if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            if obj.hasMaskWidget(), delete(obj.Masks); end
+            if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), delete(obj.MasksTab); end
             if obj.hasROIWidget(), delete(obj.ROIs); end
             if ~isempty(obj.ShortcutFigure) && isvalid(obj.ShortcutFigure), delete(obj.ShortcutFigure); end
             if ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab), delete(obj.ROIsTab); end
@@ -577,6 +657,9 @@ classdef Viewer < handle
         end
     end
     methods (Access = private)
+        function yes = hasMaskWidget(obj)
+            yes = isa(obj.Masks,'detecdivui.MaskWidget') && isscalar(obj.Masks) && isvalid(obj.Masks);
+        end
         function registerLoadedObject(obj,item,kind)
             entry = struct('object',item,'variables',{{}},'kind',kind);
             keep = true(1,numel(obj.LoadedObjects));
@@ -680,6 +763,7 @@ classdef Viewer < handle
             if obj.hasROIWidget()
                 obj.ROIs.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab));
             end
+            if obj.hasMaskWidget(), obj.Masks.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.MasksTab)); end
             obj.refreshKeyboard();
         end
         function finishROIGesture(obj)
@@ -693,6 +777,7 @@ classdef Viewer < handle
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
                 owners.Display = obj.ROIs.Progress;
             end
+            if obj.hasMaskWidget() && obj.Masks.Active, owners.Display = obj.Masks.Progress; end
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
@@ -732,6 +817,8 @@ classdef Viewer < handle
             obj.Host.menu(file,'Open Classifier...','MenuSelectedFcn',@(~,~)obj.openClassifier());
             obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.saveProject());
+            obj.SaveMasksMenu = obj.Host.menu(file,'Save Masks','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.Masks.saveAll());
             obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
             obj.SavePipelineMenu = obj.Host.menu(file,'Save Pipeline','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.Pipeline.saveTemplate());
@@ -740,12 +827,14 @@ classdef Viewer < handle
             obj.RelinkMenu = obj.Host.menu(file,'Relink Raw Data...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.relinkRawData());
             obj.Host.menu(file,'Exit','Separator','on', ...
-                'MenuSelectedFcn',@(~,~)delete(obj));
+                'MenuSelectedFcn',@(~,~)obj.close());
             edit = obj.Host.menu([],'Edit');
             obj.CopyMenu = obj.Host.menu(edit,'Copy Image','Accelerator','C', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
             obj.DefineROIMenu = obj.Host.menu(edit,'Define ROIs...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openROITool());
+            obj.EditContoursMenu = obj.Host.menu(edit,'Edit Contours...','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.openContourTool());
             view = obj.Host.menu([],'View');
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
@@ -1018,6 +1107,8 @@ classdef Viewer < handle
             obj.refreshProjectInfo();
             if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
             if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
+            if obj.Session.Zone == 0, obj.closeContourTool(); end
+            obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0);
             roiEnabled = obj.onOff(obj.Session.Position > 0);
             obj.DefineROIMenu.Enable = roiEnabled;
             obj.ImageROIMenu.Enable = roiEnabled; obj.TreeROIMenu.Enable = roiEnabled;
@@ -1105,14 +1196,16 @@ classdef Viewer < handle
         function refreshKeyboard(obj)
             if isempty(obj.KeyboardView) || ~isvalid(obj.KeyboardView) || obj.Closing, return; end
             toolActive = obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab);
+            editing = obj.hasMaskWidget() && obj.Masks.Active;
             enabled = obj.ImageRequested && obj.Session.Position > 0 && ...
-                strcmp(obj.Frame.Enable,'on') && ~obj.DrawingROI && ~toolActive;
+                (strcmp(obj.Frame.Enable,'on') || editing) && ~obj.DrawingROI && ~toolActive;
             selection = {obj.Session.Project,obj.Session.Position,obj.Session.Zone,enabled};
             if ~isequal(selection,obj.KeyboardSelection)
                 obj.KeyboardSelection = selection; obj.KeyboardGeneration = obj.KeyboardGeneration+1;
             end
             state = struct('context',sprintf('%d',obj.KeyboardGeneration),'enabled',enabled, ...
-                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}});
+                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}},'ctrlKeys',{{}});
+            if editing, state.keys = [state.keys obj.Masks.shortcuts()]; state.ctrlKeys = {'z','y'}; end
             if isequal(state,obj.KeyboardState), return; end
             obj.KeyboardState = state; obj.KeyboardView.Data = state;
         end
@@ -1122,6 +1215,10 @@ classdef Viewer < handle
             obj.refreshKeyboard();
             state = obj.KeyboardState;
             if ~state.enabled || ~strcmp(event.context,state.context), return; end
+            ctrl = isfield(event,'ctrl') && event.ctrl;
+            if obj.hasMaskWidget() && obj.Masks.Active && (ctrl || ~any(strcmpi(event.key,state.keys(1:4))))
+                obj.Masks.key(char(event.key),ctrl); return;
+            end
             index = find(strcmpi(char(event.key),state.keys),1);
             if isempty(index), return; end
             offsets = [-1 1 -10 10];
@@ -1142,6 +1239,16 @@ classdef Viewer < handle
                 'Ctrl+O','Open project','Main window'; 'Ctrl+S','Save project','Main window'; ...
                 'Ctrl+W','Close project','Main window'; 'Ctrl+C','Copy image','Main window'; ...
                 'Ctrl+R','Reload image','Main window'};
+            if obj.hasMaskWidget()
+                keys = obj.Masks.shortcuts();
+                rows = [rows; {'Delete','Delete selected label on this frame','Contours'; ...
+                    upper(keys{5}),'Fill selected label holes','Contours'; ...
+                    [upper(keys{6}) ' / ' upper(keys{7})],'Decrease / increase mask opacity','Contours'; ...
+                    'Up / Down Arrow','Increase / decrease mask opacity','Contours'; ...
+                    'Ctrl+Z / Ctrl+Y','Undo / redo mask edit','Contours'; ...
+                    'Escape','Cancel stroke / return to Select','Contours'; ...
+                    'Shift + drag','Erase with the brush','Contours'}];
+            end
             uitable(grid,'Data',rows,'ColumnName',{'Shortcut','Action','Context'}, ...
                 'ColumnWidth',{110,'auto',140},'RowName',{},'ColumnEditable',false, ...
                 'Tag','keyboard-shortcuts-table');
@@ -1173,6 +1280,7 @@ classdef Viewer < handle
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
                 obj.renderImagePanels(views,separated,keepView,xl,yl);
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
+                if obj.hasMaskWidget(), obj.Masks.onRender(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end
@@ -1180,6 +1288,10 @@ classdef Viewer < handle
                 separator = ' + '; if separated, separator = ' | '; end
                 obj.Status.Text = sprintf('%s | Frame %d / %d | %s',source, ...
                     obj.Frame.Value,obj.MaxFrame,strjoin(names,separator));
+                if obj.Session.Zone > 0 && obj.hasMaskWidget() && ...
+                        obj.Masks.dirty(obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone))
+                    obj.Status.Text = [obj.Status.Text ' | Unsaved masks'];
+                end
                 obj.Status.Tooltip = obj.Status.Text;
             catch err
                 obj.showError(err);

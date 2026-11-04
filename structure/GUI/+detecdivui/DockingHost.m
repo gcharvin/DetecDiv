@@ -11,6 +11,7 @@ classdef DockingHost < handle
     properties
         OnClosed = []
         OnActivity = []
+        OnCanClose = []
     end
     properties (Access = private)
         Window
@@ -376,6 +377,9 @@ classdef DockingHost < handle
             end
         end
         function ok = allowClose(obj)
+            ok = true;
+            if ~isempty(obj.OnCanClose), ok = detecdivui.Callback.call(obj.OnCanClose); end
+            if ~ok, return; end
             obj.stopPump(); obj.saveOnClose(); ok = true;
         end
         function appStateChanged(obj)

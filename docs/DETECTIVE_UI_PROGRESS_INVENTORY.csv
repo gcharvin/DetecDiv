@@ -145,6 +145,9 @@ structure/GUI/workflow_extracted.m,5615,"function GenerateROIsButtonPushed(app, 
 structure/GUI/workflow_extracted.m,5635,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,5705,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,6041,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/+detecdivui/MaskWidget.m,136,"function saveAll(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/MaskWidget.m,216,"function action(obj,action)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/MaskWidget.m,306,"function resolveChoice(obj,choice,token)",.ResolveProgress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/PipelineWidget.m,326,"function template = openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/PipelineWidget.m,339,"function refresh(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/PipelineWidget.m,387,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
@@ -158,18 +161,19 @@ structure/GUI/+detecdivui/PipelineWidget.m,1097,"function inspectRun(obj)",.Prog
 structure/GUI/+detecdivui/PipelineWidget.m,1099,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
 structure/GUI/+detecdivui/ROIWidget.m,154,"function ctx = apply(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/ROIWidget.m,179,"function preview(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,289,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,319,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,356,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,373,"function classifier = openClassifier(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,390,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,418,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,550,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1060,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1158,"function render(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1293,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1381,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1403,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,294,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,331,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,368,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,385,"function classifier = openClassifier(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,402,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,430,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,529,"function openContourTool(obj)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,627,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1151,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1265,"function render(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1405,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1493,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1515,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
@@ -182,7 +186,7 @@ structure/GUI/classifier/private/classifierGUI_runtime_code.m,4630,"function Dis
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,4781,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,4816,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
 structure/GUI/loadData/loadData_load.m,930,"function shallowObj = loadData_load(parsedData, hprogressbar)",score,destination frontend; caller covers launch,review,source
-structure/GUI/score/score_paintOverlay.m,826,"function progress = beginTrackProgress(app, scope)",uiprogressdlg,app.ScoreAppUIFigure,review,source
+structure/GUI/score/score_paintOverlay.m,825,"function progress = beginTrackProgress(app, scope)",uiprogressdlg,app.ScoreAppUIFigure,review,source
 structure/GUI/score/private/score_runtime_code.m,4601,"function quantifyChannelFluo(app)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/score/private/score_runtime_code.m,5163,"function CreateFromPredictionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/score/private/score_runtime_code.m,5388,"function ReviewFindingsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source

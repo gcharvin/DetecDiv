@@ -3,6 +3,9 @@ classdef LayerModel < handle
     properties (SetAccess = private)
         Layers = struct([])
     end
+    properties
+        ReadOverride = []
+    end
     properties (Access = private)
         Session
         Views
@@ -76,6 +79,9 @@ classdef LayerModel < handle
             end
             if numel(obj.Planes) < index || isempty(obj.Planes{index})
                 plane = obj.Session.readPlane(frame,index);
+                if ~isempty(obj.ReadOverride)
+                    plane = detecdivui.Callback.call(obj.ReadOverride,obj.Session,index,frame,plane);
+                end
                 assert(~isempty(plane),'detecdivui:EmptyImage','Image unavailable. Check the source and selected channel.');
                 obj.Planes{index} = plane;
             end

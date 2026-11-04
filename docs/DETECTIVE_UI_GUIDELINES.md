@@ -31,13 +31,14 @@ The requirements below supersede the earlier French labels, renamed data concept
 14. Introduce task-specific dockable widgets when needed: Objects, Data and Annotation, with Lineage/Measurements separable when useful. Keep them on a shared session/selection and one image viewport. Instantiate usable widgets on demand through View, preserve older layouts when adding documents, and use dialogues for occasional detailed configuration/export. Do not add empty widgets in anticipation of unimplemented functions.
 15. Centralize Hub connection/identity in a shared session controller and independent Hub widget. Reuse existing settings/auth/dialog/broker helpers; Pipeline, Export and project clients consume this session and retain only their job-specific settings. No duplicate credentials forms, blocking startup checks or job cancellation merely from hiding/disconnecting the connection UI. See `DETECTIVE_UI_HUB.md`.
 16. Preserve Score keyboard conventions and shared preferences. Bare browsing keys act on the focused Image canvas, including floating documents, without intercepting typing or native/widget navigation. Editing tools own their context-specific bindings. Show active navigation keys in Navigate and list available shortcuts in Help; keep an inventory of annotation bindings for their corresponding widgets. See `DETECTIVE_UI_SHORTCUTS.md`.
+17. Keep contour edits separate from extraction ROI geometry. Open the Contours assistant only on request for an indexed ROI mask; stage changes, provide bounded undo/redo and explicit Save Masks, and retain drafts across navigation/Done. Reuse Score's provider/model helpers and ROI writers. Resolve dirty drafts before normal closure, preserve recovery on forced deletion, and expose incomplete multi-file saves without marking them clean. See `DETECTIVE_UI_CONTOURS.md`.
 
 ## Initial menu structure
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Recent Projects, Open Classifier..., Save Project, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
-| Edit | Copy Image, Define ROIs... |
+| File | Open Project..., Recent Projects, Open Classifier..., Save Project, Save Masks, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
+| Edit | Copy Image, Define ROIs..., Edit Contours... |
 | View | Projects, Image, Display, Pipeline, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame, Back 10 Frames, Forward 10 Frames |
 | Help | Keyboard Shortcuts..., About DetecDiv |
