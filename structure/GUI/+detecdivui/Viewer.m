@@ -6,10 +6,20 @@ classdef Viewer < handle
         Host
         Sessions = {}
         ActiveProject = 0
+        DisplayModel
     end
     properties (Access = private)
         Tree
         Channels
+        LayerTable
+        LayerKind
+        ColorField
+        MinField
+        MaxField
+        ContrastSlider
+        AutoButton
+        OpacitySlider
+        DisplayModels = {}
         Frame
         TimeSlider
         FrameCount
@@ -84,12 +94,50 @@ classdef Viewer < handle
                 'Tooltip','Browse frames', ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
-            tools = uigridlayout(obj.Host.widgetFigure('Display'),[5 1]);
-            tools.RowHeight = {22,30,30,32,'1x'};
-            uilabel(tools,'Text','Channel','FontWeight','bold');
-            obj.Channels = uidropdown(tools,'Items',{'—'},'ItemsData',1, ...
-                'Enable','off','Tag','channels','Tooltip','Display channel', ...
+            tools = uigridlayout(obj.Host.widgetFigure('Display'),[14 1]);
+            tools.RowHeight = {22,'1x',22,28,28,22,28,28,28,22,38,28,28,32};
+            uilabel(tools,'Text','Layers','FontWeight','bold');
+            obj.LayerTable = uitable(tools,'Data',cell(0,2),'ColumnName',{'','Layer'}, ...
+                'ColumnEditable',[true false],'ColumnWidth',{28,'auto'},'RowName',{}, ...
+                'Tag','layers','Tooltip','Toggle visibility or select a layer', ...
+                'CellEditCallback',@(~,event)obj.layerVisibilityChanged(event), ...
+                'CellSelectionCallback',@(~,event)obj.layerSelected(event));
+            uilabel(tools,'Text','Active layer','FontWeight','bold');
+            active = uigridlayout(tools,[1 2]); active.Padding = [0 0 0 0];
+            active.ColumnWidth = {'1x',45};
+            obj.Channels = uidropdown(active,'Items',{'—'},'ItemsData',1, ...
+                'Enable','off','Tag','channels','Tooltip','Select the layer to adjust', ...
                 'ValueChangedFcn',@(~,~)obj.render());
+            uibutton(active,'Text','Solo','Tag','solo-layer','Tooltip','Show only the active layer', ...
+                'ButtonPushedFcn',@(~,~)obj.soloLayer());
+            obj.LayerKind = uidropdown(tools,'Items',{'Intensity','Labels'},'Enable','off', ...
+                'Tag','layer-kind','Tooltip','Labels requires an integer label map', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('kind'));
+            uilabel(tools,'Text','Contrast','FontWeight','bold');
+            limits = uigridlayout(tools,[1 2]); limits.Padding = [0 0 0 0];
+            limits.ColumnWidth = {'1x','1x'};
+            obj.MinField = uieditfield(limits,'numeric','Value',0,'Enable','off', ...
+                'Tag','contrast-min','Tooltip','Minimum intensity in source units', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('limits'));
+            obj.MaxField = uieditfield(limits,'numeric','Value',1,'Enable','off', ...
+                'Tag','contrast-max','Tooltip','Maximum intensity in source units', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('limits'));
+            obj.ContrastSlider = uislider(tools,'range','Limits',[0 1],'Value',[0 1], ...
+                'Enable','off','MajorTicks',[],'MinorTicks',[],'Tag','contrast-range', ...
+                'Tooltip','Adjust contrast for the active layer', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('range'));
+            obj.AutoButton = uibutton(tools,'Text','Auto','Enable','off','Tag','auto-contrast', ...
+                'Tooltip','Set contrast from this frame and keep it while browsing', ...
+                'ButtonPushedFcn',@(~,~)obj.editLayer('auto'));
+            uilabel(tools,'Text','Opacity','FontWeight','bold');
+            obj.OpacitySlider = uislider(tools,'Limits',[0 1],'Value',1,'Enable','off', ...
+                'MajorTicks',[0 1],'Tag','layer-opacity','Tooltip','Active layer opacity / intensity weight', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('opacity'));
+            color = uigridlayout(tools,[1 2]); color.Padding = [0 0 0 0];
+            color.ColumnWidth = {40,'1x'}; uilabel(color,'Text','Color');
+            obj.ColorField = uieditfield(color,'text','Enable','off','Value','1 1 1', ...
+                'Tag','layer-color','Tooltip','RGB triplet or score colormap; Labels for label colors', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('color'));
             obj.Overlays = uicheckbox(tools,'Text','ROI outlines','Value',true, ...
                 'Enable','off','Tag','reference-zones', ...
                 'Tooltip','Show reference ROI rectangles; positions are not drift-corrected', ...
@@ -119,6 +167,7 @@ classdef Viewer < handle
             index = obj.findProject(project);
             if index == 0
                 obj.Sessions{end+1} = detecdivui.Session(project);
+                obj.DisplayModels{end+1} = detecdivui.LayerModel();
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
                 index = numel(obj.Sessions);
                 obj.rebuildTree();
@@ -135,9 +184,11 @@ classdef Viewer < handle
             active = obj.Session;
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
+            obj.DisplayModels(index) = [];
             remaining = find(cellfun(@(session)isequal(session,active),obj.Sessions),1);
             obj.ActiveProject = 0;
             obj.Session = detecdivui.Session();
+            obj.DisplayModel = [];
             obj.rebuildTree();
             if ~isempty(obj.Sessions)
                 if isempty(remaining), remaining = min(index,numel(obj.Sessions)); end
@@ -173,6 +224,8 @@ classdef Viewer < handle
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
             obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
+            obj.Host.menu(view,'Reload Image','Accelerator','R', ...
+                'MenuSelectedFcn',@(~,~)obj.reloadImage());
             obj.Host.menu(view,'Expand Projects','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)expand(obj.Tree,'all'));
             obj.Host.menu(view,'Collapse Projects', ...
@@ -259,6 +312,7 @@ classdef Viewer < handle
             if obj.ActiveProject == index, return; end
             obj.storeView();
             obj.ActiveProject = index; obj.Session = obj.Sessions{index};
+            obj.DisplayModel = obj.DisplayModels{index};
             state = obj.ViewStates{index};
             obj.Frame.Value = state.frame; obj.PreferredChannel = state.channel;
             obj.SelectedZone = state.selectedROI; obj.RenderKey = '';
@@ -307,6 +361,7 @@ classdef Viewer < handle
             try
                 [names, frames] = obj.Session.dimensions();
                 obj.setControls(names,frames);
+                obj.DisplayModel.configure(obj.Session,obj.Channels.Value);
                 obj.render();
             catch err
                 obj.setControls({},1); obj.showError(err);
@@ -327,6 +382,7 @@ classdef Viewer < handle
             if isempty(chosen), chosen = 1; end
             obj.Channels.Value = chosen;
             obj.Channels.Enable = obj.onOff(available);
+            if ~available, obj.clearLayerControls(); end
             obj.MaxFrame = frames;
             obj.Frame.Value = min(obj.Frame.Value,frames);
             obj.Frame.Enable = obj.onOff(available && frames > 1);
@@ -355,17 +411,18 @@ classdef Viewer < handle
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
                 obj.TimeSlider.Value = obj.Frame.Value;
                 obj.updateFrameActions(true);
-                plane = obj.Session.readPlane(obj.Frame.Value,obj.Channels.Value);
-                assert(~isempty(plane),'detecdivui:EmptyImage', ...
-                    'Image unavailable. Check the source and selected channel.');
+                obj.refreshLayerControls();
+                view = obj.DisplayModel.compose(obj.Frame.Value,obj.Channels.Value);
+                plane = view.pixels;
                 key = sprintf('%d:%d:%d',obj.ActiveProject,obj.Session.Position,obj.Session.Zone);
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
                 cla(obj.Axes);
-                if size(plane,3) == 3
-                    image(obj.Axes,plane);
-                else
+                if view.native
                     imagesc(obj.Axes,plane); colormap(obj.Axes,gray(256));
+                    obj.Axes.CLim = view.limits;
+                else
+                    image(obj.Axes,plane);
                 end
                 axis(obj.Axes,'image'); obj.Axes.XTick = []; obj.Axes.YTick = [];
                 title(obj.Axes,'');
@@ -377,19 +434,12 @@ classdef Viewer < handle
                     obj.Axes.XLim = [0.5 size(plane,2)+0.5];
                     obj.Axes.YLim = [0.5 size(plane,1)+0.5];
                 end
-                if size(plane,3) ~= 3
-                    finitePixels = plane(isfinite(plane)); limits = [0 1];
-                    if ~isempty(finitePixels)
-                        limits = double([min(finitePixels(:)) max(finitePixels(:))]);
-                        if limits(2) <= limits(1), limits(2) = limits(1)+1; end
-                    end
-                    obj.Axes.CLim = limits;
-                end
+                if view.native, obj.Axes.CLim = view.limits; end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end
                 obj.Status.Text = sprintf('%s | Frame %d / %d | %s',source, ...
-                    obj.Frame.Value,obj.MaxFrame,obj.Channels.Items{obj.Channels.Value});
+                    obj.Frame.Value,obj.MaxFrame,strjoin(view.names,' + '));
                 obj.Status.Tooltip = obj.Status.Text;
             catch err
                 obj.showError(err);
@@ -416,6 +466,75 @@ classdef Viewer < handle
         end
         function resetView(obj)
             obj.RenderKey = ''; obj.render();
+        end
+        function reloadImage(obj)
+            if isempty(obj.DisplayModel), return; end
+            obj.DisplayModel.invalidate(); obj.render();
+        end
+        function layerSelected(obj,event)
+            if isempty(event.Indices), return; end
+            obj.Channels.Value = event.Indices(1,1); obj.render();
+        end
+        function soloLayer(obj)
+            if isempty(obj.DisplayModel) || isempty(obj.DisplayModel.Layers), return; end
+            obj.DisplayModel.solo(obj.Channels.Value); obj.render();
+        end
+        function layerVisibilityChanged(obj,event)
+            obj.DisplayModel.setVisible(event.Indices(1),event.NewData); obj.render();
+        end
+        function editLayer(obj,action)
+            if isempty(obj.DisplayModel), return; end
+            index = obj.Channels.Value;
+            try
+                switch action
+                    case 'limits', obj.DisplayModel.setLimits(index,[obj.MinField.Value obj.MaxField.Value]);
+                    case 'range', obj.DisplayModel.setLimits(index,obj.ContrastSlider.Value);
+                    case 'auto', obj.DisplayModel.autoContrast(index,obj.Frame.Value);
+                    case 'opacity', obj.DisplayModel.setOpacity(index,obj.OpacitySlider.Value);
+                    case 'color', obj.DisplayModel.setColor(index,obj.ColorField.Value);
+                    case 'kind', obj.DisplayModel.setKind(index,obj.LayerKind.Value);
+                end
+                obj.render();
+            catch err
+                obj.refreshLayerControls(); obj.Status.Text = err.message;
+            end
+        end
+        function refreshLayerControls(obj)
+            layers = obj.DisplayModel.Layers;
+            if isempty(layers), obj.clearLayerControls(); return; end
+            obj.LayerTable.Data = [num2cell([layers.visible]'),{layers.name}'];
+            index = obj.Channels.Value;
+            layer = obj.DisplayModel.Layers(index);
+            isLabel = strcmp(layer.kind,'Labels'); isRGB = strcmp(layer.kind,'RGB');
+            if ~isLabel
+                plane = obj.DisplayModel.read(index,obj.Frame.Value);
+                layer = obj.DisplayModel.Layers(index);
+            end
+            if isRGB, obj.LayerKind.Items = {'RGB'};
+            else, obj.LayerKind.Items = {'Intensity','Labels'}; end
+            obj.LayerKind.Value = layer.kind; obj.LayerKind.Enable = obj.onOff(~isRGB);
+            obj.ColorField.Value = layer.color; obj.ColorField.Enable = obj.onOff(~isRGB);
+            obj.OpacitySlider.Value = layer.opacity; obj.OpacitySlider.Enable = 'on';
+            for control = {obj.MinField,obj.MaxField,obj.ContrastSlider,obj.AutoButton}
+                item = control{1}; item.Enable = obj.onOff(~isLabel);
+            end
+            if ~isLabel
+                obj.MinField.Value = layer.limits(1); obj.MaxField.Value = layer.limits(2);
+                values = double(plane(isfinite(plane)));
+                bounds = layer.limits;
+                if ~isempty(values), bounds = [min(min(values(:)),bounds(1)),max(max(values(:)),bounds(2))]; end
+                obj.ContrastSlider.Limits = [min(bounds(1),obj.ContrastSlider.Limits(1)), ...
+                    max(bounds(2),obj.ContrastSlider.Limits(2))];
+                obj.ContrastSlider.Value = layer.limits;
+                obj.ContrastSlider.Limits = bounds;
+            end
+        end
+        function clearLayerControls(obj)
+            obj.LayerTable.Data = cell(0,2);
+            for control = {obj.LayerKind,obj.ColorField,obj.MinField,obj.MaxField, ...
+                    obj.ContrastSlider,obj.AutoButton,obj.OpacitySlider}
+                item = control{1}; item.Enable = 'off';
+            end
         end
         function copyImage(obj)
             try

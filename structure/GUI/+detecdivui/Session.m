@@ -62,13 +62,13 @@ classdef Session < handle
         end
         function [names, frames, channels] = dimensions(obj)
             names = {}; frames = 1;
-            channels = struct('name',{},'planes',{});
+            channels = struct('name',{},'planes',{},'logicalId',{});
             if obj.Position == 0, return; end
             position = obj.Project.fov(obj.Position);
             if obj.Zone == 0
                 names = reshape(cellstr(string(position.channel)),1,[]);
                 for k = 1:numel(names)
-                    channels(k) = struct('name',names{k},'planes',k);
+                    channels(k) = struct('name',names{k},'planes',k,'logicalId',k);
                 end
                 frames = position.frames;
                 if isempty(frames) && ~isempty(position.srclist)
@@ -141,7 +141,7 @@ classdef Session < handle
             if isstruct(zone.display) && isfield(zone.display,'channel')
                 labels = cellstr(string(zone.display.channel));
             end
-            channels = struct('name',{},'planes',{});
+            channels = struct('name',{},'planes',{},'logicalId',{});
             if isnumeric(ids) && numel(ids) == count && ...
                     all(isfinite(ids) & ids >= 1 & ids == floor(ids))
                 for id = reshape(unique(ids,'stable'),1,[])
@@ -149,17 +149,17 @@ classdef Session < handle
                     label = sprintf('Channel %d',id);
                     if id <= numel(labels) && ~isempty(labels{id}), label = labels{id}; end
                     if isscalar(planes) || numel(planes) == 3
-                        channels(end+1) = struct('name',label,'planes',planes); %#ok<AGROW>
+                        channels(end+1) = struct('name',label,'planes',planes,'logicalId',id); %#ok<AGROW>
                     else
                         for j = 1:numel(planes)
                             channels(end+1) = struct('name',sprintf('%s · plane %d',label,j), ...
-                                'planes',planes(j)); %#ok<AGROW>
+                                'planes',planes(j),'logicalId',id); %#ok<AGROW>
                         end
                     end
                 end
             else
                 for k = 1:count
-                    channels(k) = struct('name',sprintf('Plane %d',k),'planes',k);
+                    channels(k) = struct('name',sprintf('Plane %d',k),'planes',k,'logicalId',0);
                 end
             end
         end

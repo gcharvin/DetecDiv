@@ -65,6 +65,8 @@ assert(strcmp(channels.Items{channels.Value},'Phase'));
 assert(isequal(getPixels(ax),gray));
 channels.Value = find(strcmp(channels.Items,'Fluorescence RGB'));
 channels.ValueChangedFcn(channels,[]);
+solo = findall(viewer.widgetFigure('Display'),'Tag','solo-layer');
+solo.ButtonPushedFcn(solo,[]);
 assert(isequal(getPixels(ax),rgb));
 % Zoom must survive temporal navigation within the same view.
 ax.XLim = [10 35]; ax.YLim = [10 40];
@@ -78,7 +80,7 @@ assert(viewer.Session.Zone == 0);
 assert(isequal(getPixels(ax),pixels+100));
 % An unreadable frame must clear old pixels, then recover on navigation.
 position.srclist{1}(2).name = 'missing-frame.tif';
-slider.ValueChangedFcn(slider,[]);
+viewer.Host.findCommand('Reload Image').invoke();
 assert(isempty(findall(ax,'Type','image')));
 status = findall(viewer.Figure,'Tag','status');
 assert(contains(status.Text,'unavailable'));
@@ -108,6 +110,8 @@ tree.SelectedNodes = roiNode; tree.SelectionChangedFcn(tree,[]);
 assert(viewer.Session.Zone == 3);
 roiNode = nodes(arrayfun(@(item)item.NodeData.roi == 2,nodes));
 tree.SelectedNodes = roiNode; tree.SelectionChangedFcn(tree,[]);
+channels.Value = find(strcmp(channels.Items,'Phase')); channels.ValueChangedFcn(channels,[]);
+solo.ButtonPushedFcn(solo,[]);
 slider.Value = 2; slider.ValueChangedFcn(slider,[]);
 assert(isequal(getPixels(ax),gray+100));
 second = shallow();

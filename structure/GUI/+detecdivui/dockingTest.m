@@ -21,6 +21,7 @@ tree.SelectionChangedFcn(tree,[]);
 ax = findall(viewer.Figure,'Tag','image-view');
 channels = findall(viewer.widgetFigure('Display'),'Tag','channels');
 channels.Value = 2; channels.ValueChangedFcn(channels,[]);
+solo = findall(viewer.widgetFigure('Display'),'Tag','solo-layer'); solo.ButtonPushedFcn(solo,[]);
 assert(isequal(getPixels(ax),pixels+100));
 % Exercise the actual HTML menu -> MATLAB timer bridge, not just a setter.
 host.syncMenus();

@@ -17,6 +17,7 @@ viewer = detecdiv_ui();
 - File, Edit, View, Navigate and Help remain at the top of the workspace.
 - Each widget has a native document tab and docking controls. View > Docking provides explicit Dock/Undock commands and Dock All.
 - View > Projects / Image / Display shows or hides a widget.
+- Within a session, a hidden docked widget returns to its previous placement if the remaining layout has not been rearranged. Explicit rearrangements made while it was hidden take priority.
 - View > Save Layout stores the current workspace. Restore Layout reloads it; Reset Layout restores the initial three-column arrangement.
 - The current layout is also saved when the workspace closes normally, and loaded at the next launch.
 

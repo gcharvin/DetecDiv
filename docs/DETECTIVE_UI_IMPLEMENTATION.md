@@ -24,6 +24,7 @@ viewer = detecdiv_ui({projectA, projectB});
 - Per-project FOV/ROI, frame and named-channel state. Closing a project restores another open project; closing the last project clears the viewport.
 - Breadcrumb and parent-FOV navigation synchronized with tree and ROI-outline selection.
 - Named logical channels, including non-contiguous RGB subchannels. Missing or incompatible channel metadata falls back to individual image planes.
+- A Layers table with independent visibility, an active layer, Solo, source-unit min/max contrast and a range slider, Auto, color and opacity. Label layers use score's renderer and stable ID colors or a selected RGB color.
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
 - Independent Projects, Image and Display widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches.
@@ -34,9 +35,9 @@ The session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI load
 
 ## Limits
 
-The current interface is an exploration prototype. Scientific editing, classifier/processor/pipeline management, guided segmentation, compositing multiple channels, persisted contrast, caches and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
+The current interface is an exploration prototype. Scientific editing, classifier/processor/pipeline management, guided segmentation, cross-session display presets and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
 
-Reading is synchronous. Monochrome contrast uses finite pixel min/max without changing pixel values. Project switching restores frame and channel but does not preserve an independent zoom for every FOV/ROI. Data is synthetic in the automated validation; real acquisitions and performance still need validation.
+Reading is synchronous, with a bounded current-frame cache for requested channels. Contrast defaults to finite pixel min/max and stays fixed while navigating until changed or reset with Auto. Display settings are separate for each project's FOV/ROI during the session, without changing source pixels or metadata. Project switching restores frame and channel but does not preserve an independent zoom for every FOV/ROI. Data is synthetic in automated validation; real acquisitions and performance still need validation.
 
 ## Initial reuse inventory
 
@@ -62,6 +63,8 @@ This inventory identifies reuse candidates, not completed integrations.
 ```matlab
 detecdivui.smokeTest();
 detecdivui.dockingTest();
+detecdivui.layerTest();
+detecdivui.displayTest();
 % Optional visible export for visual inspection:
 detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 ```
@@ -78,6 +81,6 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
-Validate browsing on real data, then integrate guided segmentation and its inspectable pipeline. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
+Validate the layered display on real data, then connect classifier management and selection before guided segmentation. The proposed browser contains typed Projects/Classifiers/Processors collections; Pipeline needs its own dockable widget. See `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
 Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

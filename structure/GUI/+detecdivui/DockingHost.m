@@ -24,12 +24,14 @@ classdef DockingHost < handle
         WebBusy = false
         VisibilityCommands = {}
         InvalidLayout = false
+        HiddenLayouts
     end
     methods
         function obj = DockingHost(layoutFile,autoSave)
             assert(ispc && strcmp(version('-release'),'2026a'), ...
                 'detecdivui:DockingRelease','The docking host currently requires Windows MATLAB R2026a.');
             obj.LayoutFile = char(layoutFile); obj.AutoSave = autoSave;
+            obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
             obj.App = matlab.ui.container.internal.AppContainer( ...
                 'Tag',['DetecDivUI_' char(matlab.lang.internal.uuid)],'Title','DetecDiv', ...
                 'PersistLayout',false,'PersistDocuments',false,'CleanStart',true, ...
@@ -107,7 +109,29 @@ classdef DockingHost < handle
             value = obj.widget(name).Docked;
         end
         function setWidgetVisible(obj,name,visible)
-            doc = obj.widget(name); doc.Visible = logical(visible);
+            id = lower(char(name)); doc = obj.widget(id);
+            if doc.Visible == logical(visible), obj.syncMenus(); return; end
+            remembered = [];
+            if ~visible && doc.Docked
+                obj.waitForLayout();
+                remembered = obj.App.DocumentLayout;
+            elseif visible && doc.Docked && isKey(obj.HiddenLayouts,id)
+                obj.waitForLayout();
+                saved = obj.HiddenLayouts(id);
+                current = obj.stableLayoutFields(obj.App.DocumentLayout);
+                if isequaln(current,saved.hidden), remembered = saved.visible; end
+                remove(obj.HiddenLayouts,id);
+            end
+            doc.Visible = logical(visible);
+            obj.waitForLayout();
+            if ~isempty(remembered)
+                if visible
+                    obj.App.DocumentLayout = remembered; obj.waitForLayout();
+                else
+                    obj.HiddenLayouts(id) = struct('visible',remembered, ...
+                        'hidden',obj.stableLayoutFields(obj.App.DocumentLayout));
+                end
+            end
             obj.settle(); obj.syncMenus();
         end
         function value = isWidgetVisible(obj,name)

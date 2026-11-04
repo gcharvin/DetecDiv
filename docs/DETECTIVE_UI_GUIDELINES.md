@@ -39,7 +39,7 @@ Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C.
 ## Remaining design decisions
 
 - Extend the tree to Classifiers, Processors, Pipelines and Runs when the corresponding integrations are implemented.
-- Define multi-layer contrast, colours, mask rendering and scientific editing tools.
+- Extend the implemented layers/contrast controls to semantic mask rendering and scientific editing tools.
 - Decide when single-click selection should be distinguished from double-click opening for grouped actions.
 - Stabilize keyboard navigation, minimum window size and multi-monitor layout migration.
 - Keep the docking shell code-owned; use the established App Designer / code-sync workflow for widget contents where useful.
@@ -49,3 +49,9 @@ Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C.
 Verify navigation, pixels, tree selection, menu callbacks, project isolation and image limits in MATLAB. Inspect an exported window. Validate on a representative real acquisition before changing the default DetecDiv entry point.
 
 The R2026a-specific integration and layout contract are described in `DETECTIVE_UI_DOCKING.md`. Classic menus are provided by an app-local menu adapter above AppContainer; the image, tree and display controls remain native MATLAB components.
+
+## Display and upcoming analysis widgets
+
+Display exposes a visibility table, an active layer, Solo, source-unit contrast, Auto, color, opacity and label rendering. Settings are local to each project's FOV/ROI view during the session. Selecting a layer edits its settings without changing visibility implicitly. See `DETECTIVE_UI_DISPLAY.md` for reuse of score and the validation scope.
+
+Before Segment Cells, add actual classifier management as a typed browser collection alongside Projects (not a new project data type). Pipeline is a separate dockable widget, synchronized with guided analysis actions. These collections/widgets remain planned until their data and execution adapters are connected.
