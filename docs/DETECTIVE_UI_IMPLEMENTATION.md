@@ -92,6 +92,8 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
+The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Prioritize read-only contour/object display and Data plots, then export; establish scientific dirty/save/undo handling before mask, tracking/linking and managed annotation editors.
+
 Validate the layered display and main-image ROI assistant on real data, then connect classifier management and selection before guided segmentation. The browser contains typed Classifiers/Processors/Pipelines collections alongside Projects. Pipeline uses its compact graph, shared settings dialog and bridged `pipeline2` editor. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
 Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

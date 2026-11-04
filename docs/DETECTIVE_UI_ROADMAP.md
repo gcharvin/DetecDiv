@@ -3,6 +3,8 @@
 Date : 4 novembre 2026. Document de cadrage issu de la discussion avec Gilles.
 Statut : orientations retenues et roadmap proposée ; prototype MATLAB de navigation en cours. Voir l'avancement en section 11.
 
+La revue fonctionnelle de Score et l'ordre de migration détaillé sont dans [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md) : 44 capacités, points d'entrée existants, statut du viewer, destinations UI, dépendances de sauvegarde/édition et critères de validation. L'inventaire source associé distingue les callbacks opérationnels des déclarations et variantes historiques vides.
+
 ## 1. Objectif
 
 Faire de DetecDiv un espace de travail scientifique centré sur les images et les intentions de l'utilisateur. La fenêtre principale s'ouvre au lancement de DetecDiv. La gestion des projets, classifiers, processors et pipelines devient un panneau de cet espace.
