@@ -91,6 +91,6 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
-Validate the layered display on real data, then connect classifier management and selection before guided segmentation. The proposed browser contains typed Projects/Classifiers/Processors collections; Pipeline needs its own dockable widget. See `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
+Validate the layered display on real data, then connect classifier management and selection before guided segmentation. The browser contains typed Classifiers/Processors/Pipelines collections alongside Projects. Pipeline now has its own dockable widget, compact New Run configuration, explicit Save Run and graphical step selection/review; execution and advanced bindings still reuse `pipeline2`. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
 Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

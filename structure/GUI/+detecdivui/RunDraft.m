@@ -2,11 +2,12 @@ classdef RunDraft < handle
     % Session-local run overrides; templates and scientific objects stay intact.
     properties (SetAccess = private)
         Overrides = struct('id',{},'params',{})
+        Settings = struct()
     end
     properties (Access = private)
         Project = []
         Template = []
-        Records = struct('project',{},'template',{},'overrides',{})
+        Records = struct('project',{},'template',{},'overrides',{},'settings',{})
         Discarded = 0
     end
     methods
@@ -14,9 +15,11 @@ classdef RunDraft < handle
             if obj.same(obj.Project,project) && obj.same(obj.Template,template), obj.reconcile(); return; end
             obj.Project = project; obj.Template = template;
             obj.Overrides = struct('id',{},'params',{});
+            obj.Settings = struct();
             for k = 1:numel(obj.Records)
                 if obj.same(obj.Records(k).project,project) && obj.same(obj.Records(k).template,template)
-                    obj.Overrides = obj.Records(k).overrides; break;
+                    obj.Overrides = obj.Records(k).overrides;
+                    obj.Settings = obj.Records(k).settings; break;
                 end
             end
             obj.reconcile();
@@ -27,6 +30,13 @@ classdef RunDraft < handle
             if ~isempty(obj.Template) && isvalid(obj.Template)
                 nodes = pipelineApplyRunNodeParams(obj.Template.nodes,obj.Overrides);
             end
+        end
+        function configure(obj,settings)
+            obj.Settings = settings; obj.store();
+        end
+        function newRun(obj)
+            obj.Overrides = struct('id',{},'params',{});
+            obj.Settings = struct(); obj.store();
         end
         function set(obj,nodeId,key,value)
             nodeId = char(string(nodeId));
@@ -111,11 +121,15 @@ classdef RunDraft < handle
         end
         function forgetProject(obj,project)
             obj.Records = obj.Records(~arrayfun(@(r)obj.same(r.project,project),obj.Records));
-            if obj.same(obj.Project,project), obj.Project = []; obj.Overrides = struct('id',{},'params',{}); end
+            if obj.same(obj.Project,project)
+                obj.Project = []; obj.Overrides = struct('id',{},'params',{}); obj.Settings = struct();
+            end
         end
         function forgetTemplate(obj,template)
             obj.Records = obj.Records(~arrayfun(@(r)obj.same(r.template,template),obj.Records));
-            if obj.same(obj.Template,template), obj.Template = []; obj.Overrides = struct('id',{},'params',{}); end
+            if obj.same(obj.Template,template)
+                obj.Template = []; obj.Overrides = struct('id',{},'params',{}); obj.Settings = struct();
+            end
         end
     end
     methods (Access = private)
@@ -135,7 +149,8 @@ classdef RunDraft < handle
                 end
             end
             if isempty(index), index = numel(obj.Records)+1; end
-            obj.Records(index) = struct('project',obj.Project,'template',obj.Template,'overrides',obj.Overrides);
+            obj.Records(index) = struct('project',obj.Project,'template',obj.Template, ...
+                'overrides',obj.Overrides,'settings',obj.Settings);
         end
     end
     methods (Static)
