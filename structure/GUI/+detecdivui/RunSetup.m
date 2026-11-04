@@ -8,8 +8,9 @@ classdef RunSetup < handle
     end
     methods
         function obj = RunSetup(parent)
-            grid = uigridlayout(parent,[22 1]); grid.Padding = [4 4 4 4];
-            grid.RowHeight = repmat({22,28},1,11); grid.RowSpacing = 2; grid.Scrollable = 'on';
+            grid = uigridlayout(parent,[11 2]); grid.Padding = [4 4 4 4];
+            grid.ColumnWidth = {115,'1x'};
+            grid.RowHeight = repmat({28},1,11); grid.RowSpacing = 6; grid.Scrollable = 'on';
             obj.text(grid,'runId','Run ID','Automatic');
             obj.choice(grid,'inputSourceMode','Input',{'Project data','Raw images'}, ...
                 {'existing_rois','raw_dataloader'});

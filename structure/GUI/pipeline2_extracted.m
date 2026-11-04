@@ -172,6 +172,96 @@ classdef pipeline2 < matlab.apps.AppBase
         MonitorEtaSeconds double = NaN
     end
 
+    properties (Access = public)
+        ViewerApplyCallback = []
+        ViewerRoiCallback = []
+        ViewerBridgeMenu = []
+        ViewerOriginalClose = []
+    end
+    methods (Access = public)
+        function busy = viewerHasActiveRun(app)
+            busy = ~isempty(app.ActiveRunMode) || app.RunLaunchInProgress;
+        end
+        function configureViewerBridge(app,onApply,onRoi)
+            app.ViewerOriginalClose = app.UIFigure.CloseRequestFcn;
+            app.ViewerApplyCallback = onApply; app.ViewerRoiCallback = onRoi;
+            if ~isempty(app.CurrentRun), app.CurrentRunIsSeed = isempty(app.CurrentRun.path); end
+            app.UIFigure.WindowStyle = 'normal';
+            app.RuntimeProjectSelectDropDown.Enable = 'off';
+            app.RuntimeProjectTargetEditField.Enable = 'off';
+            app.ViewerBridgeMenu = uimenu(app.UIFigure,'Text','Viewer');
+            uimenu(app.ViewerBridgeMenu,'Text','Apply Settings and Return', ...
+                'MenuSelectedFcn',@(~,~)app.returnToViewer());
+            app.UIFigure.CloseRequestFcn = @(~,~)app.returnToViewer();
+        end
+        function clearViewerBridge(app)
+            app.ViewerApplyCallback = []; app.ViewerRoiCallback = [];
+            if ~isempty(app.ViewerBridgeMenu) && isvalid(app.ViewerBridgeMenu), delete(app.ViewerBridgeMenu); end
+            if isvalid(app.UIFigure), app.UIFigure.CloseRequestFcn = app.ViewerOriginalClose; end
+        end
+        function state = exportViewerDraft(app)
+            state = struct('project',app.CurrentProject,'pipeline',buildPipelineStruct(app), ...
+                'ctx',struct(),'settings',struct(),'busy',~isempty(app.ActiveRunMode) || app.RunLaunchInProgress);
+            if ~isempty(app.CurrentRun) && isstruct(app.CurrentRun.ctx)
+                state.ctx = stripTransientRunContext(app,app.CurrentRun.ctx);
+            end
+            settings = struct('runId',app.TemplateidEditField.Value, ...
+                'inputSourceMode',getRuntimeValue(app,'inputSourceMode'), ...
+                'rawDataPath',getRuntimeValue(app,'rawDataPath'), ...
+                'fovs',getRuntimeValue(app,'fovs'),'rois',getRuntimeValue(app,'rois'), ...
+                'frames',getRuntimeValue(app,'frames'), ...
+                'runPolicy',resumeModeToRunPolicy(app,app.ResumeoptionsDropDown.Value), ...
+                'outputPolicy',getRuntimeValue(app,'outputPolicy'), ...
+                'gpuPolicy',app.ExecutionDropDown.Value,'executionTarget',runtimeExecutionTarget(app), ...
+                'description','');
+            settings.gpuPolicy = lower(char(string(settings.gpuPolicy)));
+            if strcmp(settings.gpuPolicy,'auto'), settings.gpuPolicy = 'module_default'; end
+            if ~isempty(app.CurrentRun), settings.description = app.CurrentRun.description; end
+            overrides = buildRunNodeParams(app); records = struct('id',{},'params',{});
+            for k = 1:numel(app.Data.nodes)
+                id = char(string(app.Data.nodes(k).id)); key = matlab.lang.makeValidName(id);
+                if isfield(overrides,key), records(end+1) = struct('id',id,'params',overrides.(key)); end %#ok<AGROW>
+            end
+            if ~isfield(state.ctx,'run'), state.ctx.run = struct(); end
+            settings.selectedNodes = selectedRunNodeIds(app);
+            state.ctx.run.selectedNodes = settings.selectedNodes;
+            state.ctx.run.nodeParams = records;
+            state.ctx.run.intent = getRuntimeValue(app,'intent');
+            state.ctx.run.control = buildRunControlPolicy(app,settings.executionTarget);
+            if strcmp(settings.executionTarget,'hub'), state.ctx.hub = hubSettingsFromUi(app); end
+            state.settings = settings;
+        end
+        function returnToViewer(app)
+            if isempty(app.ViewerApplyCallback), delete(app); return; end
+            try
+                assert(isempty(app.ActiveRunMode) && ~app.RunLaunchInProgress, ...
+                    'pipeline2:ViewerBusy','The run is active. Keep this window open until it finishes.');
+                progress = openRuntimeProgress(app,'Run Settings','Applying settings to viewer...');
+                release = onCleanup(@()closeRuntimeProgress(app,progress)); %#ok<NASGU>
+                state = app.exportViewerDraft();
+                assert(~state.busy,'pipeline2:ViewerBusy','The run is active. Keep this window open until it finishes.');
+                app.ViewerApplyCallback(state); clear release;
+                app.clearViewerBridge(); delete(app);
+            catch err
+                uialert(app.UIFigure,err.message,'Run Settings');
+            end
+        end
+        function acceptViewerRois(app,nodeId,ctx)
+            if ~isvalid(app), return; end
+            index = find(strcmp({app.Data.nodes.id},nodeId),1);
+            if isempty(index), return; end
+            applyRoiDefinitionEditorResult(app,nodeId,lower(app.Data.nodes(index).type),ctx);
+            refreshAfterModelChange(app); app.UIFigure.Visible = 'on';
+        end
+        function requestViewerRois(app,nodeId,params)
+            index = find(strcmp({app.Data.nodes.id},nodeId),1);
+            if isempty(index) || isempty(app.ViewerRoiCallback), return; end
+            nodes = pipelineApplyRunNodeParams(app.Data.nodes,buildRunNodeParams(app)); node = nodes(index);
+            if nargin >= 3, node.params = params; end
+            app.ViewerRoiCallback(app.CurrentProject,node,@(ctx)app.acceptViewerRois(nodeId,ctx));
+            app.UIFigure.Visible = 'off';
+        end
+    end
     methods (Access = private)
 
         function startupFcn(app)
@@ -9538,6 +9628,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function openRoiDefinitionEditor(app, nodeId)
+            if ~isempty(app.ViewerRoiCallback), app.requestViewerRois(nodeId); return; end
             idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
             if isempty(idx)
                 return;
@@ -9583,6 +9674,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function accepted = openRoiPatternLibrary(app, nodeId, startEdit)
+            if ~isempty(app.ViewerRoiCallback) && startEdit
+                accepted = false; app.requestViewerRois(nodeId); return;
+            end
             accepted = false;
             idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
             if isempty(idx), return; end
@@ -9612,6 +9706,9 @@ classdef pipeline2 < matlab.apps.AppBase
                             accepted = true;
                             return;
                         case 'edit'
+                            if ~isempty(app.ViewerRoiCallback)
+                                app.requestViewerRois(nodeId,result); return;
+                            end
                             [editedParams, edited] = editRoiPatternDraft(app, app.Data.nodes(idx), result);
                             if edited, draft = editedParams; end
                         otherwise
@@ -9670,6 +9767,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function openWorkflowRoiEditor(app, nodeId)
+            if ~isempty(app.ViewerRoiCallback), app.requestViewerRois(nodeId); return; end
             idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
             if isempty(idx)
                 return;

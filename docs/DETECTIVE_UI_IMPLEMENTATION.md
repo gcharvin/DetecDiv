@@ -35,7 +35,8 @@ viewer = detecdiv_ui({projectA, projectB});
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
 - Independent Projects, Image, Display and Pipeline widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches. Older three-widget layouts keep their geometry and initially hide Pipeline.
-- Pipeline selects workspace or JSON templates, inspects steps/parameter scope, validates and dry-runs the current FOV/ROI or whole project, lists associated project runs and opens their inspector. Advanced editing/execution reuse `pipeline2`; the main widget does not yet launch/monitor runs inline. See `DETECTIVE_UI_PIPELINE.md`.
+- Pipeline keeps a compact graph, run selector and live in-memory status. New Run/common settings open a separate dialog; Advanced uses `pipeline2` with the same run identity and configuration. Execution/remote monitoring remain in that editor. See `DETECTIVE_UI_PIPELINE.md`.
+- View > ROIs opens the independent assistant on the main raw image. Manual/Pattern/Grid definitions use existing backends; pipeline ROI commands reuse this assistant instead of opening Workflow. Save Project writes lightweight JSON metadata without extracting/saving ROI pixels. See `DETECTIVE_UI_ROIS.md`.
 - Run parameters with simple supported types can be edited in Pipeline without changing its template. Drafts are separate per project/template and pass through the existing run context to validation and the advanced editor. Runs also has an embedded review (Summary, Steps, Issues), loaded only on request through `pipelineRunReview`.
 - Concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
 - Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
@@ -91,6 +92,6 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
-Validate the layered display on real data, then connect classifier management and selection before guided segmentation. The browser contains typed Classifiers/Processors/Pipelines collections alongside Projects. Pipeline now has its own dockable widget, compact New Run configuration, explicit Save Run and graphical step selection/review; execution and advanced bindings still reuse `pipeline2`. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
+Validate the layered display and main-image ROI assistant on real data, then connect classifier management and selection before guided segmentation. The browser contains typed Classifiers/Processors/Pipelines collections alongside Projects. Pipeline uses its compact graph, shared settings dialog and bridged `pipeline2` editor. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
 Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

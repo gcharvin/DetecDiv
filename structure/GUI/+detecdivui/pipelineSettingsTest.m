@@ -17,7 +17,7 @@ template.nodes = struct('id','grid_1','name','Identify ROIs','type','roiGrid', .
 original = template.nodes;
 viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeViewer = onCleanup(@()delete(viewer));
-viewer.Pipeline.addTemplate(template); figure = viewer.widgetFigure('Pipeline');
+viewer.Pipeline.addTemplate(template); figure = viewer.Pipeline.SettingsFigure;
 table = findall(figure,'Tag','pipeline-parameters');
 row = find(strcmp(table.UserData,'referenceFrame'));
 table.CellSelectionCallback(table,struct('Indices',[row 1]));
@@ -69,13 +69,15 @@ assert(strcmp(runs.Data{1,2},'done'));
 runs.CellSelectionCallback(runs,struct('Indices',[1 1]));
 assert(strcmp(viewer.Pipeline.LastRunReview.status,'done'));
 if checkEditor
+    picker = findall(viewer.widgetFigure('Pipeline'),'Tag','pipeline-run-picker');
+    picker.Value = 'draft'; picker.ValueChangedFcn(picker,[]);
     projectName = matlab.lang.makeValidName(char(string(project.io.file)));
     projectName = matlab.lang.makeUniqueStrings(projectName,evalin('base','who'),namelengthmax);
     clearPublished = onCleanup(@()evalin('base',['clear ' projectName]));
     editor = viewer.Pipeline.openEditor(); assert(~isempty(editor));
     closeEditor = onCleanup(@()delete(editor)); editor.UIFigure.Visible = 'off';
     assert(contains(editor.RuntimeProjectTargetEditField.Value,project.io.file));
-    assert(~strcmp(editor.TemplateidEditField.Value,draft.runId));
+    assert(strcmp(editor.TemplateidEditField.Value,draft.runId));
     assert(strcmp(editor.ResumeoptionsDropDown.Value,'Resume previous progress'));
     assert(strcmp(editor.RuntimeOutputPolicyDropDown.Value,'skip')); clear closeEditor clearPublished;
 end

@@ -7,7 +7,8 @@ classdef RunDraft < handle
     properties (Access = private)
         Project = []
         Template = []
-        Records = struct('project',{},'template',{},'overrides',{},'settings',{})
+        Records = struct('project',{},'template',{},'overrides',{},'settings',{},'trusted',{})
+        Trusted = struct('id',{},'keys',{})
         Discarded = 0
     end
     methods
@@ -16,10 +17,12 @@ classdef RunDraft < handle
             obj.Project = project; obj.Template = template;
             obj.Overrides = struct('id',{},'params',{});
             obj.Settings = struct();
+            obj.Trusted = struct('id',{},'keys',{});
             for k = 1:numel(obj.Records)
                 if obj.same(obj.Records(k).project,project) && obj.same(obj.Records(k).template,template)
                     obj.Overrides = obj.Records(k).overrides;
-                    obj.Settings = obj.Records(k).settings; break;
+                    obj.Settings = obj.Records(k).settings;
+                    obj.Trusted = obj.Records(k).trusted; break;
                 end
             end
             obj.reconcile();
@@ -34,8 +37,23 @@ classdef RunDraft < handle
         function configure(obj,settings)
             obj.Settings = settings; obj.store();
         end
+        function import(obj,settings,overrides)
+            if ~isempty(overrides) && ~isfield(overrides,'id')
+                nodes = pipelineApplyRunNodeParams(obj.Template.nodes,overrides);
+                records = struct('id',{},'params',{});
+                for k = 1:numel(nodes), records(end+1) = struct('id',nodes(k).id,'params',nodes(k).params); end %#ok<AGROW>
+                overrides = records;
+            end
+            obj.Trusted = struct('id',{},'keys',{});
+            for k = 1:numel(overrides)
+                obj.Trusted(end+1) = struct('id',overrides(k).id,'keys',{fieldnames(overrides(k).params)});
+            end
+            obj.Settings = settings; obj.Overrides = overrides;
+            obj.reconcile(); obj.store();
+        end
         function newRun(obj)
             obj.Overrides = struct('id',{},'params',{});
+            obj.Trusted = struct('id',{},'keys',{});
             obj.Settings = struct(); obj.store();
         end
         function set(obj,nodeId,key,value)
@@ -75,10 +93,11 @@ classdef RunDraft < handle
                 obj.Overrides(end+1) = struct('id',char(nodeId),'params',struct());
                 index = numel(obj.Overrides);
             end
-            obj.Overrides(index).params.(key) = value; obj.store();
+            obj.Overrides(index).params.(key) = value; obj.untrust(nodeId,key); obj.store();
         end
         function reset(obj,nodeId,key)
             nodeId = char(string(nodeId));
+            obj.untrust(nodeId,key);
             index = find(strcmp({obj.Overrides.id},nodeId),1);
             if isempty(index), return; end
             if isfield(obj.Overrides(index).params,key)
@@ -104,9 +123,12 @@ classdef RunDraft < handle
                     if isscalar(index) && isfield(nodes(index),'params') && isfield(nodes(index).params,key)
                         base = nodes(index).params.(key); value = obj.Overrides(k).params.(key);
                         kind = obj.valueKind(base);
+                        imported = obj.trusted(obj.Overrides(k).id,key);
                         valid = strcmp(pipelineParamScope(nodes(index),key),'run') && ...
-                            ~strcmp(kind,'complex') && strcmp(kind,obj.valueKind(value)) && strcmp(class(base),class(value));
-                        if valid && strcmp(kind,'choice'), valid = isequaln(base(1:end-1),value(1:end-1)); end
+                            (imported || (strcmp(kind,obj.valueKind(value)) && strcmp(class(base),class(value))));
+                        if valid && ~imported && strcmp(kind,'choice'), valid = isequaln(base(1:end-1),value(1:end-1)); end
+                    elseif isscalar(index) && obj.trusted(obj.Overrides(k).id,key)
+                        valid = strcmp(pipelineParamScope(nodes(index),key),'run');
                     end
                     if ~valid
                         obj.Overrides(k).params = rmfield(obj.Overrides(k).params,key); removed = removed+1;
@@ -124,6 +146,12 @@ classdef RunDraft < handle
             if obj.same(obj.Project,project)
                 obj.Project = []; obj.Overrides = struct('id',{},'params',{}); obj.Settings = struct();
             end
+        end
+        function rebindProject(obj,oldProject,newProject)
+            for k = 1:numel(obj.Records)
+                if obj.same(obj.Records(k).project,oldProject), obj.Records(k).project = newProject; end
+            end
+            if obj.same(obj.Project,oldProject), obj.Project = newProject; end
         end
         function forgetTemplate(obj,template)
             obj.Records = obj.Records(~arrayfun(@(r)obj.same(r.template,template),obj.Records));
@@ -150,7 +178,16 @@ classdef RunDraft < handle
             end
             if isempty(index), index = numel(obj.Records)+1; end
             obj.Records(index) = struct('project',obj.Project,'template',obj.Template, ...
-                'overrides',obj.Overrides,'settings',obj.Settings);
+                'overrides',obj.Overrides,'settings',obj.Settings,'trusted',obj.Trusted);
+        end
+        function yes = trusted(obj,id,key)
+            index = find(strcmp({obj.Trusted.id},id),1);
+            yes = ~isempty(index) && any(strcmp(obj.Trusted(index).keys,key));
+        end
+        function untrust(obj,id,key)
+            index = find(strcmp({obj.Trusted.id},id),1);
+            if isempty(index), return; end
+            obj.Trusted(index).keys(strcmp(obj.Trusted(index).keys,key)) = [];
         end
     end
     methods (Static)

@@ -41,6 +41,17 @@ template.nodes = original; draft.takeDiscarded();
 draft.forgetProject(a); draft.select(a,template); assert(isempty(draft.Overrides));
 assert(strcmp(detecdivui.RunDraft.valueKind(uint64(intmax('uint64'))),'complex'));
 assert(isequal(template.nodes,original));
+% Advanced forms can return scalar text choices and complex run selectors.
+advanced = pipelineConstruct(); advanced.nodes = node; advanced.nodes.params.frames = [];
+draft.select(a,advanced);
+records = struct('id',node.id,'params',struct('frames',[1 3 5],'channel','GFP'));
+draft.import(struct('runId','advanced'),records);
+effective = draft.effectiveNodes();
+assert(isequal(effective.params.frames,[1 3 5]) && strcmp(effective.params.channel,'GFP'));
+draft.select(b,advanced); draft.select(a,advanced);
+assert(isequal(draft.effectiveNodes().params.frames,[1 3 5]));
+draft.reset(node.id,'channel'); assert(iscell(draft.effectiveNodes().params.channel));
+draft.newRun(); assert(isempty(draft.Overrides));
 disp('Run draft test passed: scope, types, exact IDs, reset, isolation and immutable templates.');
 end
 function reject(action)

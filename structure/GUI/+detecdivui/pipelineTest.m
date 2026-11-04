@@ -24,7 +24,7 @@ closeViewer = onCleanup(@()delete(viewer));
 assert(strcmp(viewer.Host.findCommand('Save Pipeline').Enable,'off'));
 viewer.Pipeline.addTemplate(template);
 assert(strcmp(viewer.Host.findCommand('Save Pipeline').Enable,'on'));
-figure = viewer.widgetFigure('Pipeline');
+figure = viewer.Pipeline.SettingsFigure;
 steps = findall(figure,'Tag','pipeline-steps');
 assert(strcmp(steps.Data{1,1},'Measure cells'));
 steps.CellSelectionCallback(steps,struct('Indices',[1 1]));

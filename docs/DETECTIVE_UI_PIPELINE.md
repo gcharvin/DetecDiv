@@ -1,54 +1,54 @@
-# Pipeline widget
+# Pipeline: compact control, shared run settings
 
-## Use
+The dockable widget is a compact control surface. New Run and Settings open one modeless Run Settings dialog; Advanced opens the existing pipeline2 frontend. These are views of the current configuration, not independent parameter copies.
 
-Open **View > Pipeline**, select an independent `pipeline` from the workspace, or use **File > Open Pipeline...** / **Open...** to load its JSON. Selecting a template in the Projects browser also focuses the widget. For scripted use:
+## Compact widget
+
+- Select an independent pipeline template from the workspace/browser, or File > Open Pipeline....
+- New Run starts a fresh draft and opens Run Settings. Settings reopens the current configuration.
+- The run selector switches between Draft and project-linked runs. The main graph shows the selected template/draft or the run's saved pipelineSpec snapshot, with statuses from the shared review helper.
+- Click a block for its settings/details. Step inclusion checkboxes live in the settings dialog, not the compact graph.
+- The status line follows the selected live pipelineRun handle. A lightweight timer reads in-memory status/message only; it does not read images, scan folders or poll the Hub at startup. Refresh reads the selected run review through pipelineRunReview; Details opens Summary/Steps/Issues and the existing inspector.
+- Image remains central. Pipeline and Display retain native docking and existing saved layouts.
+
+## Run Settings
+
+The Run page has aligned labels/fields for run ID, source, FOV/ROI/frames, resume/restart, output policy, device, execution target and description. Fields use the same RunSetup controls and RunDraft as checking, saving and Advanced. Done hides the dialog and keeps the session draft. There is no second Apply/Cancel parameter store.
+
+Steps contains graph/list, effective parameters and Validate/Dry Run. Basic finite scalar numbers, booleans, text and choices remain editable according to pipelineParamScope. Arrays, structured bindings and template design editing are available in Advanced. Imported advanced run overrides retain their exact node IDs and values, including complex values; backend validation remains authoritative. Basic edits/reset retain their original type checks.
+
+Define ROIs on an ROI definition step opens the ROIs assistant on the main image. It edits a working template definition; Use in Run does not generate/extract project data. The original workspace template remains unchanged until an explicit template Save. Refresh Workspace does not replace the active working definition with an older alias pointing at the same template folder.
+
+## Shared Advanced configuration
+
+Advanced uses pipeline2 with EditExistingRun and a viewer bridge. Opening it preserves the current run ID, progress policy, output policy, selection and overrides. An automatic ID is chosen without creating a run folder. A saved run is passed as its canonical project-linked handle, preserving execution/history identity.
+
+The bridge exports metadata/parameters only, without buildRunContext's image/ROI inventory scans. Closing Advanced through its window close action, or Viewer > Apply Settings and Return, applies its current settings to the viewer. Opening common settings/checking/saving also imports an idle open editor before continuing. Graph/design changes become a working template copy; template JSON is written only by explicit Save. Hub/control/runtime settings not exposed in the common form remain in the draft context.
+
+If an advanced run is active, its window keeps its own run monitor/cancel controls. Changing context detaches its viewer bridge without stopping the job. The compact UI refuses to reopen/overwrite an active run as a second editable execution; choose New Run or use its existing advanced window. Closing the viewer disposes idle child windows and the follow timer, while an active advanced monitor remains independent.
+
+Viewer-launched ROI editor commands route to the same main-image assistant. Pattern library selection remains available; editing a library draft routes to the main assistant. Standalone/legacy pipeline2 retains its previous Workflow behaviour for compatibility. The viewer bridge does not add another execution engine or submit a job by opening a settings window.
+
+## Persistence and boundaries
+
+Save Run reuses pipelineRunNew/pipelineRunSave and saves the lightweight project inventory so reopening its JSON restores the run reference. This metadata save does not write or clear ROI pixels. A new saved configuration has status new, exact selectedNodes/overrides and a pipelineSpec snapshot; live project/FOV/ROI handles and pixels are excluded. Saving the same unexecuted run updates that run instead of duplicating it. Runs with execution history require New Run or Advanced's established resume/edit flow. Existing folders/IDs are protected when creating another run.
+
+Template Save remains separate from run Save. Drafts/settings are retained per project/template for the viewer session; closing a project forgets them. Runtime templates remain independent of shallow and pipelineRun remains project-linked history. No engine, model runtime or worker changes are included here.
+
+## Scripted use and checks
 
 ```matlab
 viewer.Pipeline.addTemplate(pipeObj);
-viewer.Pipeline.openTemplate(fullfile(templateFolder,'pipeline.json'));
-viewer.Host.focusWidget('Pipeline');
-```
+viewer.Pipeline.newRun();
+viewer.Pipeline.openSettings('Steps');
+viewer.openROITool();
 
-The image remains central. In a fresh layout, Pipeline and Display share tabs on the right; both remain independently dockable. Existing three-widget layouts retain their arrangement and initially hide Pipeline. Show it through View, position it and save the layout.
-
-## Controls
-
-- The selector keeps multiple independent templates. Open uses `pipelineLoad`; Save uses `pipelineSave`. Loading the same folder updates its entry instead of duplicating it.
-- Steps defaults to a compact vertical graph with coloured blocks and the template's real dependency arrows. The graph scrolls without shrinking long pipelines into unreadable thumbnails. Click a block to inspect its parameters; use its checkbox to include/exclude it from this run. Disabled template nodes remain excluded. List retains the tabular view. Steps shows template order, type and run selection. Selecting a step displays effective parameters with readable labels and package help, reusing `classifierBinding.parameterSpecFromDefaults` and `pipelineParamScope`. Large arrays and objects are summarized instead of dumped into cells.
-- Select a run-scoped parameter to edit a finite scalar number, boolean, text or legacy choice payload in the widget. Apply changes the run draft; Reset restores the template value. `run *` identifies an override. Template/design parameters, arrays and structured values remain available through Editor. The shared contract determines scope, including fixed design settings such as grid count or pattern threshold.
-- Current FOV, Current ROI and Whole project define the validation target from the active project/browser selection. A missing FOV/ROI produces an actionable check error instead of silently checking the entire project. Checks without a project remain available for templates that do not need one. These checks use the run frame selection (all by default), independently of the frame displayed in Image.
-- Validate calls `validatePipeline`; Dry Run calls `runPipelineDry` with GUI completion disabled. Checks displays backend errors/warnings and the status bar reports the outcome. Changing target/template invalidates the previous report.
-- Runs uses the template's existing `findDependentRuns` method to list the active project's linked `pipelineRun` objects and statuses. Selecting a run shows its in-memory metadata. Review calls `pipelineRunReview` on demand and displays Summary, Steps and Issues inside Pipeline, including the backend's latest-attempt semantics. Reviews are cached until Refresh or a context change. No review file is written. More opens the existing `pipelineRunInspector` for full reports, events, parameters and execution scope. Review may query the Hub if the existing backend needs it; there is no startup scan or automatic polling.
-- Editor opens the existing `pipeline2` frontend with the selected template, project and available FOV/ROI scope. Run overrides are passed as an unsaved `pipelineRun` seed; the existing editor creates a distinct run ID. Run progress/output choices are restored through its own callbacks, with resume/skip as defaults. A free explicit run ID is preserved; an already saved ID uses the editor's suggested new ID. Graph construction, complex parameter editing, classifier bindings, execution policies, local/Hub submission, monitoring and cancellation remain in that established frontend. No processing is launched by merely opening it. The existing project workspace alias is reused; an unbound project is published under a free name so unrelated variables are preserved. After saving edits there, use Open to reload the saved JSON; Refresh only rereads live handles.
-
-New Run starts a fresh session draft, resets overrides and opens Run. Its scrollable form contains Run ID (automatic if empty), input mode/raw folder, FOV/ROI/frame selections, resume/restart, existing-output policy, device, execution target and description. Source selection is metadata-only. Numeric selectors accept comma lists and ranges; project FOV/ROI IDs resolve exactly, without evaluating MATLAB expressions. ROI IDs across multiple FOVs require consistent ROI indexing; use numeric indices or one FOV otherwise. Raw selections use numeric source indices. Invalid selections block checks/saving instead of falling back to all data.
-
-Save Run calls pipelineRunNew and pipelineRunSave to create a new project-linked run.json with status new, selectedNodes, overrides and a pipelineSpec snapshot. It requires an existing project folder and refuses existing run IDs/folders. The saved snapshot excludes live project/FOV/ROI handles and pixels. No project images are loaded and no processing is launched. Existing project loading discovers these run folders. Changes after saving are a draft for a different run ID; New Run starts over.
-
-Runs > Steps also offers Graph/List. The graph uses the run snapshot, not a subsequently edited template, and annotates nodes from pipelineRunReview. Legacy runs without a snapshot show event nodes without inventing dependency edges. Editor remains the execution entry point for local/WSL/Hub runs, detailed bindings, Hub configuration and cancellation; no placeholder Run/Stop command or second execution engine is added. Explicit run policies and output choices survive the handoff.
-
-## Data boundaries
-
-Templates remain independent of `shallow`. A `pipelineRun` belongs to execution history, and is never substituted for its template. Browsing and checking do not create runs, save projects or alter H5 data. The UI passes a value snapshot to checking because the shared binding resolver can update handle templates. Backend module validation hooks retain their existing behavior.
-
-`RunDraft` keeps overrides per live project/template in this viewer session, using exact node IDs and `pipelineApplyRunNodeParams` for effective values. Switching projects preserves their independent settings. Closing a project drops its drafts; loading a replacement template drops drafts tied to the previous object. Template Save writes only the template. Drafts are not saved across viewer restarts. In-place changes that remove a parameter, change its scope/type or alter choice options invalidate the affected override; validation then requires a fresh review. Parameter editing checks basic types/ranges; module-specific validation still belongs to the shared backend.
-
-No engine, module, Python runtime or worker deployment is changed here. File writes occur only through explicit template Save, Save Run and existing advanced-editor actions.
-
-## Validation
-
-```matlab
-detecdivui.pipelineTest();
+detecdivui.separationTest();
 detecdivui.runDraftTest();
-detecdivui.newRunTest();
-detecdivui.newRunTest('',true); % Also verify explicit run settings in the advanced editor.
-detecdivui.pipelineSettingsTest();
-detecdivui.pipelineSettingsTest('',true); % Native settings handoff to the existing editor.
-detecdivui.pipelineTest('',true); % Also verify the existing advanced-editor handoff.
+detecdivui.pipelineSettingsTest('',true);
+detecdivui.newRunTest('',true);
+detecdivui.progressTest();
 detecdivui.dockingTest();
-detecdivui.workspaceTest();
-detecdivui.smokeTest();
 ```
 
-The pipeline test checks real controls, relative custom-module code resolution, no function execution during checks, template/pixel immutability, target selection, JSON save/load, project-linked run history, preserved control handles after docking, floating-layout restore and migration from a three-widget v1 layout. Advanced-editor execution is reused, not revalidated against a real acquisition by these UI tests.
+Tests cover native controls/shapes, Advanced round-trip with the same run ID, definition transfer from Advanced to the main image, run identity, untouched source pixels/template, metadata-only project saving, status following and pattern preview isolation. They use temporary TIFF/JSON data; no real inference or Hub job is launched. See DETECTIVE_UI_ROIS.md and DETECTIVE_UI_PROGRESS.md.

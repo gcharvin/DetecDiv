@@ -11,10 +11,15 @@ classdef PipelineWidget < handle
         RunGraph
         Setup
         Progress
+        SettingsFigure
+        CompactGraph
+        AdvancedEditor = []
     end
     properties
         OnStatus = []
         OnChanged = []
+        OnDefineROIs = []
+        OnProjectUpdated = []
     end
     properties (Access = private)
         Session
@@ -53,11 +58,20 @@ classdef PipelineWidget < handle
         RunTab
         SaveRun
         NewRun
+        RunPicker
+        RunState
+        SettingsButton
+        Syncing = false
+        DefinitionContext = 0
+        FollowTimer = []
     end
     methods
         function obj = PipelineWidget(parent)
             obj.Draft = detecdivui.RunDraft();
-            root = uigridlayout(parent,[6 1]);
+            obj.SettingsFigure = uifigure('Name','Run Settings','Visible','off', ...
+                'Position',[230 140 700 580],'Tag','pipeline-settings-dialog', ...
+                'CloseRequestFcn',@(~,~)set(obj.SettingsFigure,'Visible','off'));
+            root = uigridlayout(obj.SettingsFigure,[6 1]);
             root.Padding = [8 6 8 6]; root.RowHeight = {28,62,22,28,'1x',24};
             obj.Selector = uidropdown(root,'Items',{'—'},'ItemsData',0,'Enable','off', ...
                 'Tag','pipeline-template','Tooltip','Select an independent pipeline template', ...
@@ -170,9 +184,66 @@ classdef PipelineWidget < handle
                 'ButtonPushedFcn',@(~,~)obj.refresh());
             obj.Tabs.SelectedTab = obj.StepsTab;
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','pipeline-status');
-            obj.Progress = detecdivui.Progress(root,obj.Status,'pipeline-progress');
+            % The dialog edits the same controls/model used by context/save.
+            compact = uigridlayout(parent,[8 1]); compact.Padding = [8 6 8 6];
+            compact.RowHeight = {28,22,28,28,'1x',22,28,24};
+            obj.Selector.Parent = compact; obj.Selector.Layout.Row = 1; obj.Selector.Layout.Column = 1;
+            obj.Target.Parent = compact; obj.Target.Layout.Row = 2; obj.Target.Layout.Column = 1;
+            buttons = uigridlayout(compact,[1 2]); buttons.Padding = [0 0 0 0]; buttons.Layout.Row = 3;
+            obj.NewRun.Parent = buttons; obj.NewRun.Layout.Row = 1; obj.NewRun.Layout.Column = 1;
+            obj.SettingsButton = uibutton(buttons,'Text','Settings...','Tag','pipeline-settings', ...
+                'Tooltip','Edit the current run configuration','ButtonPushedFcn',@(~,~)obj.openSettings('Run'));
+            obj.RunPicker = uidropdown(compact,'Items',{'Draft'},'ItemsData',{'draft'}, ...
+                'Tag','pipeline-run-picker','Tooltip','Select a run or the current draft', ...
+                'ValueChangedFcn',@(~,~)obj.selectCompactRun());
+            obj.RunPicker.Layout.Row = 4;
+            panel = uipanel(compact,'BorderType','none'); panel.Layout.Row = 5;
+            obj.CompactGraph = detecdivui.PipelineGraph(panel,'pipeline-compact-graph');
+            obj.CompactGraph.OnSelect = @(index)obj.openStep(index);
+            obj.RunState = uilabel(compact,'Text','Draft','Tag','pipeline-run-state','Interpreter','none');
+            obj.RunState.Layout.Row = 6;
+            buttons = uigridlayout(compact,[1 2]); buttons.Padding = [0 0 0 0]; buttons.Layout.Row = 7;
+            uibutton(buttons,'Text','Refresh','Tooltip','Refresh the selected run and its review', ...
+                'ButtonPushedFcn',@(~,~)obj.refreshSelectedRun());
+            uibutton(buttons,'Text','Details...','Tooltip','Open checks and run details', ...
+                'ButtonPushedFcn',@(~,~)obj.openSettings('Runs'));
+            obj.Status.Parent = compact; obj.Status.Layout.Row = 8; obj.Status.Layout.Column = 1;
+            obj.Progress = detecdivui.Progress(compact,obj.Status,'pipeline-progress');
+            root.RowHeight = {0,0,0,0,'1x',28};
+            footer = uigridlayout(root,[1 2]); footer.Padding = [0 0 0 0]; footer.Layout.Row = 6;
+            uibutton(footer,'Text','Done','ButtonPushedFcn',@(~,~)set(obj.SettingsFigure,'Visible','off'));
+            advanced = findall(obj.SettingsFigure,'Tag','pipeline-editor');
+            advanced.Parent = footer; advanced.Layout.Row = 1; advanced.Layout.Column = 2; advanced.Text = 'Advanced...';
+            define = uibutton(checks,'Text','Define ROIs...','Tag','pipeline-define-rois', ...
+                'Tooltip','Define ROIs on the main image','ButtonPushedFcn',@(~,~)obj.defineROIs());
+            define.Layout.Row = 1; define.Layout.Column = 3;
+            checks.ColumnWidth = {'1x','1x','1x'};
+            obj.FollowTimer = timer('ExecutionMode','fixedSpacing','Period',1.5,'BusyMode','drop', ...
+                'Tag','DetecDivPipelineFollow','TimerFcn',@(~,~)obj.followRun());
+            start(obj.FollowTimer);
+        end
+        function openSettings(obj,page)
+            if nargin < 2, page = 'Run'; end
+            if ~obj.syncAdvanced(), return; end
+            obj.loadSelectedRun();
+            tabs = obj.Tabs.Children;
+            index = find(strcmp({tabs.Title},page),1);
+            if ~isempty(index), obj.Tabs.SelectedTab = tabs(index); end
+            obj.SettingsFigure.Visible = 'on'; figure(obj.SettingsFigure);
+        end
+        function delete(obj)
+            if ~isempty(obj.FollowTimer) && isvalid(obj.FollowTimer), stop(obj.FollowTimer); delete(obj.FollowTimer); end
+            if ~isempty(obj.SettingsFigure) && isvalid(obj.SettingsFigure), delete(obj.SettingsFigure); end
+            if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
+                editor = obj.AdvancedEditor; editor.clearViewerBridge();
+                if ~editor.viewerHasActiveRun(), delete(editor); end
+            end
         end
         function setContext(obj,session)
+            if ~isempty(obj.Session) && ~isequal(obj.Session.Project,session.Project)
+                if ~obj.syncAdvanced(), return; end
+                obj.SettingsFigure.Visible = 'off';
+            end
             obj.Session = session;
             project = session.Project;
             obj.Draft.select(project,obj.Template);
@@ -189,11 +260,14 @@ classdef PipelineWidget < handle
                 obj.showParams(obj.SelectedStep);
             end
             obj.invalidate(); obj.refreshRuns();
+            obj.updateGraph();
             obj.draftNotice();
         end
         function addTemplate(obj,template)
+            if ~obj.Syncing && ~obj.syncAdvanced(), return; end
             assert(isa(template,'pipeline') && isscalar(template) && isvalid(template), ...
                 'detecdivui:Pipeline','A live pipeline template is required.');
+            if isempty(obj.Template) || obj.Template ~= template, obj.DefinitionContext = obj.DefinitionContext+1; end
             index = [];
             for k = 1:numel(obj.Templates)
                 other = obj.Templates{k};
@@ -208,8 +282,14 @@ classdef PipelineWidget < handle
             obj.refresh();
         end
         function importWorkspace(obj,entries)
+            if ~obj.syncAdvanced(), return; end
             active = obj.Template;
-            for k = find(strcmp({entries.kind},'pipeline')), obj.addTemplate(entries(k).object); end
+            for k = find(strcmp({entries.kind},'pipeline'))
+                entry = entries(k).object;
+                if ~isempty(active) && isvalid(active) && ~isempty(active.path) && ...
+                        entry ~= active && strcmpi(entry.path,active.path), continue; end
+                obj.addTemplate(entry);
+            end
             if ~isempty(active) && isvalid(active), obj.addTemplate(active); end
         end
         function openTemplate(obj,path)
@@ -250,6 +330,7 @@ classdef PipelineWidget < handle
             obj.loadSettings();
             available = ~isempty(obj.Template);
             obj.Save.Enable = obj.onOff(available && ~isempty(obj.Template.path));
+            obj.SettingsButton.Enable = obj.onOff(available);
             obj.NewRun.Enable = obj.onOff(available && ~isempty(project));
             obj.SaveRun.Enable = obj.NewRun.Enable;
             obj.Validate.Enable = obj.onOff(available); obj.DryRun.Enable = obj.onOff(available);
@@ -272,6 +353,7 @@ classdef PipelineWidget < handle
         end
         function [ok,report] = check(obj,mode)
             ok = false; report = struct();
+            if ~obj.syncAdvanced(), return; end
             if obj.Busy || isempty(obj.Template), return; end
             obj.Busy = true; finish = onCleanup(@()obj.endCheck());
             activity = obj.Progress.begin('Checking pipeline...'); %#ok<NASGU>
@@ -391,10 +473,18 @@ classdef PipelineWidget < handle
                 assert(~isempty(strtrim(settings.rawDataPath)),'detecdivui:RawDataPath','Choose a raw data folder in Run.');
                 ctx = rmfield(ctx,intersect(fieldnames(ctx),{'fovList','images','roiList','rois'}));
             end
+            if isfield(obj.Draft.Settings,'extraContext')
+                extra = obj.Draft.Settings.extraContext;
+                if isfield(extra,'run'), ctx.run = obj.overlay(extra.run,ctx.run); end
+                if isfield(extra,'io'), ctx.io = obj.overlay(extra.io,ctx.io); end
+                for key = {'hub','exec','names','executionPolicy'}
+                    if isfield(extra,key{1}), ctx.(key{1}) = extra.(key{1}); end
+                end
+            end
         end
         function run = draftRun(obj)
             assert(~isempty(obj.Template),'detecdivui:Pipeline','Select a pipeline.');
-            run = pipelineRun(); run.runId = [matlab.lang.makeValidName(obj.Template.strid) '_draft'];
+            run = pipelineRun(); run.runId = obj.nextRunId();
             run.templateId = obj.Template.strid; run.templatePath = obj.Template.path;
             run.pipelineRef = struct('id',obj.Template.strid,'path',obj.Template.path,'version',obj.Template.version);
             ctx = obj.context();
@@ -412,9 +502,11 @@ classdef PipelineWidget < handle
             end
         end
         function forgetProject(obj,project)
+            if ~isempty(obj.Session) && isequal(obj.Session.Project,project), obj.syncAdvanced(); end
             obj.Draft.forgetProject(project);
         end
         function newRun(obj)
+            if ~obj.syncAdvanced(), return; end
             if isempty(obj.Template) || isempty(obj.Session) || isempty(obj.Session.Project), return; end
             % Starting over is explicit; it never creates a folder or starts work.
             obj.Draft.newRun(); obj.Setup.load(struct());
@@ -424,9 +516,12 @@ classdef PipelineWidget < handle
             obj.Draft.configure(settings); obj.loadSettings();
             obj.Scope.Value = 'Run selection'; obj.refresh(); obj.Tabs.SelectedTab = obj.RunTab;
             obj.setStatus('New run draft');
+            obj.RunPicker.Value = 'draft'; obj.openSettings('Run');
+            obj.updateGraph();
         end
         function run = saveRun(obj)
             run = [];
+            if ~obj.syncAdvanced(), return; end
             activity = obj.Progress.begin('Saving run...'); %#ok<NASGU>
             try
                 draft = obj.draftRun(); project = obj.Session.Project;
@@ -437,7 +532,12 @@ classdef PipelineWidget < handle
                     'detecdivui:RunId','Use letters, numbers, dots, underscores or hyphens for the run ID.');
                 existing = project.processing.pipelineRun; names = {};
                 if ~isempty(existing), names = {existing.runId}; end
-                if ~isempty(id)
+                update = [];
+                if ~isempty(id) && any(strcmp(names,id))
+                    update = existing(find(strcmp(names,id),1));
+                    assert(strcmp(update.status,'new'),'detecdivui:RunExists', ...
+                        'This run has execution history. Use New Run or Advanced to resume it.');
+                elseif ~isempty(id)
                     assert(~any(strcmp(names,id)) && ~isfolder(fullfile(project.io.path,project.io.file,'pipeline',id)), ...
                         'detecdivui:RunExists','Run ID already exists. Choose a new ID.');
                 else
@@ -447,19 +547,27 @@ classdef PipelineWidget < handle
                         n = n+1; id = sprintf('%s_%d',base,n);
                     end
                 end
-                run = pipelineRunNew(project,obj.Template.strid,obj.Template.path,'runId',id, ...
+                if isempty(update)
+                    run = pipelineRunNew(project,obj.Template.strid,obj.Template.path,'runId',id, ...
                     'ctx',draft.ctx,'description',draft.description,'pipelineRef',draft.pipelineRef, ...
                     'targetRef',draft.targetRef,'notifyWorkspace',false);
+                else
+                    run = update; run.ctx = draft.ctx; run.description = draft.description;
+                    run.pipelineRef = draft.pipelineRef; run.targetRef = draft.targetRef;
+                end
                 pipelineRunSave(run,struct('sidecars',false,'verbose',false));
+                shallowSave(project,'shallowObj');
                 settings.runId = run.runId;
                 if isfield(obj.Draft.Settings,'selectedNodes'), settings.selectedNodes = obj.Draft.Settings.selectedNodes; end
                 obj.Draft.configure(settings); obj.Setup.load(settings);
                 obj.refreshRuns(); obj.setStatus(['Run saved: ' run.runId]);
+                obj.RunPicker.Value = run.runId; obj.selectCompactRun();
             catch err
                 obj.setStatus(err.message);
             end
         end
         function saveTemplate(obj)
+            if ~obj.syncAdvanced(), return; end
             if isempty(obj.Template), return; end
             activity = obj.Progress.begin('Saving pipeline...'); %#ok<NASGU>
             try
@@ -469,6 +577,10 @@ classdef PipelineWidget < handle
             end
         end
         function editor = openEditor(obj)
+            if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
+                editor = obj.AdvancedEditor; editor.UIFigure.Visible = 'on'; return;
+            end
+            obj.loadSelectedRun();
             editor = [];
             activity = obj.Progress.begin('Opening pipeline editor...'); %#ok<NASGU>
             try
@@ -486,12 +598,24 @@ classdef PipelineWidget < handle
                         end
                     end
                 end
-                hasDraft = ~isempty(obj.Draft.Overrides) || ~isempty(fieldnames(obj.Draft.Settings));
+                hasDraft = ~isempty(obj.Template) && ~isempty(obj.Session) && ~isempty(obj.Session.Project);
                 if hasDraft
                     ids = matlab.lang.makeValidName({obj.Template.nodes.id});
                     assert(numel(unique(ids)) == numel(ids),'detecdivui:EditorNodeIds', ...
                         'Step IDs collide in the advanced editor. Reset run overrides and rename the step IDs.');
-                    args{end+1} = obj.draftRun();
+                    draft = obj.draftRun();
+                    existing = obj.Session.Project.processing.pipelineRun;
+                    if ~isempty(existing)
+                        index = find(strcmp({existing.runId},draft.runId),1);
+                        if ~isempty(index)
+                            assert(~any(strcmp(existing(index).status,{'running','queued','hub_running','hub_queued','preflight'})), ...
+                                'detecdivui:RunActive','This run is active. Use its advanced window to monitor it or choose New Run.');
+                            existing(index).ctx = obj.overlay(existing(index).ctx,draft.ctx);
+                            draft = existing(index);
+                        end
+                    end
+                    args{end+1} = draft;
+                    args = [args {'EditExistingRun',true}];
                 end
                 editor = pipeline2(args{:});
                 if hasDraft
@@ -505,6 +629,11 @@ classdef PipelineWidget < handle
                     editor.ResumeoptionsDropDown.ValueChangedFcn(editor.ResumeoptionsDropDown,[]);
                     editor.RuntimeOutputPolicyDropDown.Value = settings.outputPolicy;
                     editor.RuntimeOutputPolicyDropDown.ValueChangedFcn(editor.RuntimeOutputPolicyDropDown,[]);
+                    values = editor.ExecutionDropDown.ItemsData;
+                    if isempty(values), values = editor.ExecutionDropDown.Items; end
+                    device = settings.gpuPolicy; if strcmp(device,'module_default'), device = 'auto'; end
+                    index = find(strcmpi(values,device),1);
+                    if ~isempty(index), editor.ExecutionDropDown.Value = values{index}; end
                     existing = []; names = {}; occupied = false;
                     if ~isempty(obj.Session) && ~isempty(obj.Session.Project)
                         project = obj.Session.Project; existing = project.processing.pipelineRun;
@@ -516,9 +645,81 @@ classdef PipelineWidget < handle
                         editor.TemplateidEditField.ValueChangedFcn(editor.TemplateidEditField,[]);
                     end
                 end
+                if hasDraft
+                    obj.AdvancedEditor = editor;
+                    editor.configureViewerBridge(@(state)obj.acceptAdvanced(state),obj.OnDefineROIs);
+                    obj.SettingsFigure.Visible = 'off';
+                end
             catch err
                 obj.setStatus(err.message);
             end
+        end
+        function ok = syncAdvanced(obj)
+            ok = true;
+            if obj.Syncing || isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor), return; end
+            activity = obj.Progress.begin('Applying advanced settings...'); %#ok<NASGU>
+            try
+                state = obj.AdvancedEditor.exportViewerDraft();
+                if state.busy
+                    obj.AdvancedEditor.clearViewerBridge(); obj.AdvancedEditor = []; return;
+                end
+                editor = obj.AdvancedEditor; obj.AdvancedEditor = [];
+                obj.acceptAdvanced(state); editor.clearViewerBridge(); delete(editor);
+            catch err
+                if exist('editor','var') && isvalid(editor), obj.AdvancedEditor = editor; end
+                ok = false; obj.setStatus(err.message);
+            end
+        end
+        function acceptAdvanced(obj,state)
+            obj.Syncing = true; release = onCleanup(@()obj.endSync());
+            if ~isempty(obj.Session) && ~isequal(state.project,obj.Session.Project) && ~isempty(obj.OnProjectUpdated)
+                old = obj.Session.Project; fresh = state.project;
+                sameId = ~isempty(old) && strlength(string(old.projectId)) > 0 && strcmp(old.projectId,fresh.projectId);
+                samePath = ~isempty(old) && strlength(string(old.io.path)) > 0 && ...
+                    strcmpi(fullfile(old.io.path,old.io.file),fullfile(fresh.io.path,fresh.io.file));
+                if sameId || samePath, obj.OnProjectUpdated(fresh); end
+            end
+            assert(~isempty(obj.Session) && isequal(state.project,obj.Session.Project), ...
+                'detecdivui:RunContext','Select the original project before applying advanced settings.');
+            spec = state.pipeline;
+            if ~isequaln(spec.nodes,obj.Template.nodes) || ~isequaln(spec.edges,obj.Template.edges) || ...
+                    ~isequaln(spec.branches,obj.Template.branches)
+                copy = pipeline();
+                for field = properties(obj.Template)', copy.(field{1}) = obj.Template.(field{1}); end
+                copy.nodes = spec.nodes; copy.edges = spec.edges; copy.branches = spec.branches;
+                index = find(cellfun(@(p)p == obj.Template,obj.Templates),1);
+                obj.Templates{index} = copy; obj.Template = copy;
+            end
+            settings = state.settings; settings.extraContext = state.ctx;
+            obj.Draft.select(obj.Session.Project,obj.Template);
+            obj.Draft.import(settings,state.ctx.run.nodeParams);
+            obj.refresh(); obj.setStatus('Advanced settings applied');
+            obj.RunPicker.Value = 'draft'; obj.updateGraph();
+        end
+        function defineROIs(obj)
+            if isempty(obj.OnDefineROIs) || isempty(obj.Template) || obj.SelectedStep < 1, return; end
+            node = obj.Template.nodes(obj.SelectedStep);
+            if ~any(strcmpi(node.type,{'roiManual','roiPattern','roiIdentify','roiGrid','roiTracked'}))
+                obj.setStatus('Select an ROI definition step'); return;
+            end
+            obj.SettingsFigure.Visible = 'off';
+            project = obj.Session.Project; token = obj.DefinitionContext;
+            obj.OnDefineROIs(project,node,@(ctx)obj.acceptRoiDefinition(token,project,node,ctx));
+        end
+        function acceptRoiDefinition(obj,token,project,node,ctx)
+            assert(token == obj.DefinitionContext && isequal(project,obj.Session.Project), ...
+                'detecdivui:ROIContext','The project or pipeline changed. Open Define ROIs again.');
+            index = find(strcmp({obj.Template.nodes.id},node.id),1);
+            assert(~isempty(index) && strcmpi(obj.Template.nodes(index).type,node.type), ...
+                'detecdivui:ROIContext','The ROI step changed. Open Define ROIs again.');
+            % ROI geometry is a definition; edit a working template copy only.
+            state = struct('project',obj.Session.Project,'pipeline',struct('nodes',obj.Template.nodes, ...
+                'edges',obj.Template.edges,'branches',obj.Template.branches),'settings',obj.Draft.Settings, ...
+                'ctx',struct('run',struct('nodeParams',obj.Draft.Overrides)));
+            values = obj.Setup.values();
+            for field = fieldnames(values)', state.settings.(field{1}) = values.(field{1}); end
+            state.pipeline.nodes(index).params = ctx.params;
+            obj.acceptAdvanced(state);
         end
         function review = reviewRun(obj)
             review = struct(); index = obj.Inspect.UserData;
@@ -539,8 +740,82 @@ classdef PipelineWidget < handle
         end
     end
     methods (Access = private)
+        function id = nextRunId(obj)
+            base = matlab.lang.makeValidName(char(string(obj.Template.strid))); n = 1; names = {}; root = '';
+            if isempty(base), base = 'pipeline'; end
+            if ~isempty(obj.Session) && ~isempty(obj.Session.Project)
+                project = obj.Session.Project; runs = project.processing.pipelineRun;
+                if ~isempty(runs), names = {runs.runId}; end
+                if ~isempty(project.io.path), root = fullfile(project.io.path,project.io.file,'pipeline'); end
+            end
+            id = sprintf('%s_%d',base,n);
+            while any(strcmp(names,id)) || (~isempty(root) && isfolder(fullfile(root,id)))
+                n = n+1; id = sprintf('%s_%d',base,n);
+            end
+        end
+        function followRun(obj)
+            if obj.Busy || obj.Syncing || isempty(obj.RunPicker) || ~isvalid(obj.RunPicker) || ...
+                    strcmp(obj.RunPicker.Value,'draft') || isempty(obj.RunObjects), return; end
+            index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
+            if isempty(index) || ~isvalid(obj.RunObjects(index)), return; end
+            run = obj.RunObjects(index); obj.RunState.Text = char(string(run.status));
+            if isfield(run.progress,'message') && ~isempty(run.progress.message)
+                obj.RunState.Tooltip = char(string(run.progress.message));
+            end
+            obj.Runs.Data{index,2} = run.status;
+        end
+        function loadSelectedRun(obj)
+            if strcmp(obj.RunPicker.Value,'draft') || strcmp(obj.RunPicker.Value,obj.Setup.Controls.runId.Value), return; end
+            index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
+            if isempty(index), return; end
+            run = obj.RunObjects(index); ctx = run.ctx; settings = obj.Setup.values();
+            settings.runId = run.runId; settings.description = run.description;
+            settings.fovs = 'all'; settings.rois = 'all'; settings.frames = 'all';
+            if isfield(ctx,'sel')
+                for field = {'fovs','rois','frames'}
+                    if isfield(ctx.sel,field{1}) && ~isempty(ctx.sel.(field{1}))
+                        value = ctx.sel.(field{1});
+                        if isnumeric(value), settings.(field{1}) = mat2str(value(:)');
+                        else, settings.(field{1}) = strjoin(cellstr(string(value)),','); end
+                    end
+                end
+            end
+            if ~isfield(ctx,'run'), ctx.run = struct(); end
+            for field = {'runPolicy','gpuPolicy','executionTarget','inputSourceMode','rawDataPath','selectedNodes'}
+                if isfield(ctx.run,field{1}), settings.(field{1}) = ctx.run.(field{1}); end
+            end
+            if isfield(ctx,'io') && isfield(ctx.io,'existingPolicy'), settings.outputPolicy = ctx.io.existingPolicy; end
+            if ~isfield(ctx.run,'nodeParams'), ctx.run.nodeParams = struct('id',{},'params',{}); end
+            spec = struct('nodes',obj.Template.nodes,'edges',obj.Template.edges,'branches',obj.Template.branches);
+            if isfield(ctx,'pipelineSpec'), spec = ctx.pipelineSpec; end
+            obj.acceptAdvanced(struct('project',obj.Session.Project,'pipeline',spec,'settings',settings,'ctx',ctx));
+        end
+        function endSync(obj)
+            obj.Syncing = false;
+        end
+        function openStep(obj,index)
+            if strcmp(obj.RunPicker.Value,'draft')
+                obj.openSettings('Steps'); obj.showParams(index);
+            else
+                obj.openSettings('Runs');
+            end
+        end
+        function selectCompactRun(obj)
+            if strcmp(obj.RunPicker.Value,'draft')
+                obj.Inspect.UserData = []; obj.RunState.Text = 'Draft'; obj.updateGraph(); return;
+            end
+            index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
+            if ~isempty(index), obj.selectRun(struct('Indices',[index 1])); end
+        end
+        function refreshSelectedRun(obj)
+            obj.refresh();
+            if ~strcmp(obj.RunPicker.Value,'draft'), obj.selectCompactRun(); obj.reviewRun(); end
+        end
         function selectTemplate(obj)
-            obj.Template = obj.Templates{obj.Selector.Value}; obj.refresh();
+            index = obj.Selector.Value;
+            if ~obj.syncAdvanced(), return; end
+            if obj.Template ~= obj.Templates{index}, obj.DefinitionContext = obj.DefinitionContext+1; end
+            obj.Template = obj.Templates{index}; obj.refresh();
         end
         function selectStep(obj,event)
             if isempty(event.Indices), return; end
@@ -588,6 +863,7 @@ classdef PipelineWidget < handle
         end
         function settingsChanged(obj)
             settings = obj.Setup.values();
+            if isfield(obj.Draft.Settings,'extraContext'), settings.extraContext = obj.Draft.Settings.extraContext; end
             if isfield(obj.Draft.Settings,'selectedNodes'), settings.selectedNodes = obj.Draft.Settings.selectedNodes; end
             obj.Draft.configure(settings); obj.Scope.Value = 'Run selection'; obj.invalidate(); obj.updateGraph();
         end
@@ -602,9 +878,13 @@ classdef PipelineWidget < handle
         end
         function updateGraph(obj)
             if isempty(obj.Template)
-                obj.Graph.show(struct([]),struct([]),0); return;
+                obj.Graph.show(struct([]),struct([]),0); obj.CompactGraph.show(struct([]),struct([]),0); return;
             end
             obj.Graph.show(obj.Template.nodes,obj.Template.edges,obj.SelectedStep,obj.includedSteps());
+            if strcmp(obj.RunPicker.Value,'draft')
+                obj.CompactGraph.show(obj.Template.nodes,obj.Template.edges,obj.SelectedStep,obj.includedSteps());
+                obj.RunState.Text = sprintf('Draft · %d / %d steps',nnz(obj.includedSteps()),numel(obj.Template.nodes));
+            end
             included = obj.includedSteps();
             for k = 1:numel(included)
                 state = 'Excluded'; if included(k), state = 'Included'; end
@@ -703,7 +983,10 @@ classdef PipelineWidget < handle
             obj.ApplyParam.Enable = 'off'; obj.ResetParam.Enable = 'off';
         end
         function refreshRuns(obj)
+            selected = obj.RunPicker.Value;
             obj.RunObjects = []; obj.Runs.Data = cell(0,2); obj.Inspect.Enable = 'off';
+            obj.RunPicker.ItemsData = {}; obj.RunPicker.Items = {'Draft'}; obj.RunPicker.ItemsData = {'draft'};
+            obj.RunPicker.Value = 'draft'; obj.RunState.Text = 'Draft';
             obj.Inspect.UserData = [];
             obj.MoreRun.Enable = 'off'; obj.LastRunReview = struct();
             obj.RunReviews = {};
@@ -716,16 +999,25 @@ classdef PipelineWidget < handle
             data = cell(numel(runs),2);
             for k = 1:numel(runs), data(k,:) = {runs(k).runId,runs(k).status}; end
             obj.Runs.Data = data;
+            if ~isempty(runs)
+                obj.RunPicker.ItemsData = {}; obj.RunPicker.Items = [{'Draft'} {runs.runId}];
+                obj.RunPicker.ItemsData = [{'draft'} {runs.runId}];
+                if any(strcmp(obj.RunPicker.ItemsData,selected))
+                    obj.RunPicker.Value = selected; obj.selectCompactRun();
+                end
+            end
         end
         function selectRun(obj,event)
             if isempty(event.Indices), return; end
             obj.Inspect.UserData = event.Indices(1,1); obj.Inspect.Enable = 'on';
+            obj.RunPicker.Value = obj.RunObjects(obj.Inspect.UserData).runId;
             if ~isempty(obj.RunReviews{obj.Inspect.UserData})
                 obj.MoreRun.Enable = 'on'; obj.showRunReview(obj.RunReviews{obj.Inspect.UserData}); return;
             end
             obj.MoreRun.Enable = 'on'; obj.LastRunReview = struct();
             obj.RunNodes.Data = cell(0,3); obj.RunIssues.Data = cell(0,1);
             run = obj.RunObjects(obj.Inspect.UserData);
+            obj.RunState.Text = run.status;
             obj.showRunGraph(run,struct());
             obj.RunSummary.Data = {'Run',run.runId;'Status',run.status;'Created',run.createdAt; ...
                 'Updated',run.updatedAt;'Folder',run.path};
@@ -764,6 +1056,11 @@ classdef PipelineWidget < handle
                 end
             end
             obj.RunGraph.show(nodes,edges,0,included,statuses);
+            if ~strcmp(obj.RunPicker.Value,'draft')
+                obj.CompactGraph.show(nodes,edges,0,included,statuses);
+                status = run.status; if isfield(review,'status'), status = review.status; end
+                obj.RunState.Text = char(string(status));
+            end
         end
         function inspectRun(obj)
             index = obj.Inspect.UserData;
@@ -794,6 +1091,9 @@ classdef PipelineWidget < handle
         end
     end
     methods (Static, Access = private)
+        function value = overlay(value,fields)
+            for key = fieldnames(fields)', value.(key{1}) = fields.(key{1}); end
+        end
         function value = field(item,name,default)
             value = default;
             if isstruct(item) && isfield(item,name), value = item.(name); end

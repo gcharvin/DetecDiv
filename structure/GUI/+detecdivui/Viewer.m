@@ -12,6 +12,7 @@ classdef Viewer < handle
         Progress
         ProjectProgress
         DisplayProgress
+        ROIs
     end
     properties (Access = private)
         Tree
@@ -60,6 +61,11 @@ classdef Viewer < handle
         RenderKey = ''
         MaxFrame = 1
         Closing = false
+        DisplayTabs
+        ROIsTab
+        ImageMenu
+        SaveProjectMenu
+        DrawingROI = false
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave)
@@ -114,6 +120,9 @@ classdef Viewer < handle
             canvas = uigridlayout(root,[2 1]);
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
+            obj.ImageMenu = uicontextmenu(obj.Figure);
+            uimenu(obj.ImageMenu,'Text','ROI Tools...','MenuSelectedFcn',@(~,~)obj.openROITool());
+            obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             obj.Axes.Toolbar.Visible = 'on';
             timeline = uigridlayout(canvas,[2 5]);
@@ -135,7 +144,12 @@ classdef Viewer < handle
                 'Tooltip','Browse frames', ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
-            tools = uigridlayout(obj.Host.widgetFigure('Display'),[15 1]);
+            displayRoot = uigridlayout(obj.Host.widgetFigure('Display'),[1 1]);
+            displayRoot.Padding = [0 0 0 0];
+            obj.DisplayTabs = uitabgroup(displayRoot);
+            displayTab = uitab(obj.DisplayTabs,'Title','Display');
+            obj.ROIsTab = uitab(obj.DisplayTabs,'Title','ROIs');
+            tools = uigridlayout(displayTab,[15 1]);
             tools.RowHeight = {22,'1x',22,28,28,22,28,28,28,22,38,28,28,32,22};
             uilabel(tools,'Text','Layers','FontWeight','bold');
             obj.LayerTable = uitable(tools,'Data',cell(0,2),'ColumnName',{'','Layer'}, ...
@@ -190,6 +204,10 @@ classdef Viewer < handle
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
             obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
+            obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
+            obj.ROIs.Progress.Route = @()obj.progressOwner('Display');
+            obj.Pipeline.OnDefineROIs = @(project,node,callback)obj.openROITool(project,node,callback);
+            obj.Pipeline.OnProjectUpdated = @(project)obj.addProject(project);
             obj.ProjectProgress.Route = @()obj.progressOwner('Projects');
             obj.Pipeline.Progress.Route = @()obj.progressOwner('Pipeline');
             obj.Progress.Route = @()obj.progressOwner('Image');
@@ -224,6 +242,16 @@ classdef Viewer < handle
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
                 index = numel(obj.Sessions);
                 obj.rebuildTree();
+            elseif ~isequal(obj.Sessions{index}.Project,project)
+                session = obj.Sessions{index}; old = session.Project;
+                position = session.Position; zone = session.Zone;
+                obj.Pipeline.Draft.rebindProject(old,project); obj.ROIs.forgetProject(old);
+                session.setProject(project);
+                if position > 0 && position <= numel(project.fov)
+                    session.selectPosition(position);
+                    if zone > 0 && zone <= numel(project.fov(position).roi), session.selectZone(zone); end
+                end
+                obj.DisplayModels{index}.invalidate(); obj.rebuildTree();
             end
             obj.activate(index);
             obj.selectProjectNode();
@@ -238,6 +266,7 @@ classdef Viewer < handle
             active = obj.Session;
             wasActive = index == obj.ActiveProject;
             obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
+            obj.ROIs.forgetProject(obj.Sessions{index}.Project);
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             obj.DisplayModels(index) = [];
@@ -275,6 +304,20 @@ classdef Viewer < handle
                 obj.showError(err);
             end
         end
+        function ok = saveProject(obj)
+            ok = false; if obj.ActiveProject == 0, return; end
+            activity = obj.ProjectProgress.begin('Saving project metadata...'); %#ok<NASGU>
+            try
+                project = obj.Session.Project;
+                assert(strlength(string(project.io.path)) > 0 && strlength(string(project.io.file)) > 0, ...
+                    'detecdivui:ProjectPath','Set a project name and folder before saving.');
+                shallowSave(project,'shallowObj');
+                obj.Status.Text = 'Project saved'; ok = true;
+            catch err
+                obj.Status.Text = err.message;
+            end
+            obj.Status.Tooltip = obj.Status.Text;
+        end
         function loadCurrentImage(obj)
             if obj.Session.Position == 0, return; end
             obj.selectCurrentNode();
@@ -309,6 +352,54 @@ classdef Viewer < handle
         function figure = widgetFigure(obj,name)
             figure = obj.Host.widgetFigure(name);
         end
+        function openROITool(obj,project,node,callback)
+            if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
+            if nargin >= 3 && ~isempty(node)
+                if obj.Session.Position == 0 && isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
+                    if obj.Session.Position ~= node.params.fovIndex(1) || obj.Session.Zone > 0
+                        obj.Session.selectPosition(node.params.fovIndex(1)); obj.refreshView(false);
+                    end
+                end
+                obj.ROIs.bind(node,callback);
+            else
+                obj.ROIs.standalone();
+            end
+            obj.DisplayTabs.SelectedTab = obj.ROIsTab;
+            obj.Host.focusWidget('Display'); obj.Host.show();
+        end
+        function ax = roiAxes(obj)
+            ax = obj.Axes;
+        end
+        function scope = beginROIGesture(obj)
+            obj.DrawingROI = true;
+            scope = onCleanup(@()obj.finishROIGesture());
+        end
+        function ax = prepareROIView(obj)
+            assert(obj.Session.Position > 0,'detecdivui:ROIFov','Select a FOV first.');
+            if obj.Session.Zone > 0, obj.openZone(0);
+            elseif ~obj.ImageRequested, obj.loadCurrentImage(); end
+            assert(~isempty(findall(obj.Axes,'Type','image')),'detecdivui:RawImage','Load the raw image or relink its source first.');
+            ax = obj.Axes;
+        end
+        function [plane,frame,channel] = roiSource(obj)
+            obj.prepareROIView(); frame = obj.Frame.Value; channel = obj.Channels.Value;
+            plane = obj.DisplayModel.read(channel,frame);
+        end
+        function roisChanged(obj)
+            obj.rebuildTree(); obj.selectCurrentNode(); obj.refreshProjectInfo(); obj.render();
+        end
+        function showRoiPreview(obj,detections)
+            delete(findall(obj.Axes,'Tag','roi-preview'));
+            hold(obj.Axes,'on');
+            for k = 1:numel(detections)
+                if ~isfield(detections(k),'scaled'), continue; end
+                rects = detections(k).scaled;
+                for j = 1:size(rects,1)
+                    rectangle(obj.Axes,'Position',rects(j,1:4),'EdgeColor',[.7 .3 1],'LineWidth',1.2,'Tag','roi-preview');
+                end
+            end
+            hold(obj.Axes,'off');
+        end
         function refreshWorkspace(obj)
             % Import live handles; never load files or alter workspace variables.
             activity = obj.ProjectProgress.begin('Scanning workspace...'); %#ok<NASGU>
@@ -332,11 +423,16 @@ classdef Viewer < handle
         function delete(obj)
             if obj.Closing, return; end
             obj.Closing = true;
+            if ~isempty(obj.ROIs) && isvalid(obj.ROIs), delete(obj.ROIs); end
+            if ~isempty(obj.Pipeline) && isvalid(obj.Pipeline), delete(obj.Pipeline); end
             if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.OnActivity = []; end
             if ~isempty(obj.Host) && isvalid(obj.Host), delete(obj.Host); end
         end
     end
     methods (Access = private)
+        function finishROIGesture(obj)
+            if isvalid(obj), obj.DrawingROI = false; end
+        end
         function progress = progressOwner(obj,widget)
             progress = obj.Progress;
             if obj.Closing, return; end
@@ -371,6 +467,8 @@ classdef Viewer < handle
             file = obj.Host.menu([],'File');
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
+            obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.saveProject());
             obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
             obj.SavePipelineMenu = obj.Host.menu(file,'Save Pipeline','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.Pipeline.saveTemplate());
@@ -384,6 +482,7 @@ classdef Viewer < handle
             obj.CopyMenu = obj.Host.menu(edit,'Copy Image','Accelerator','C', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
             view = obj.Host.menu([],'View');
+            obj.Host.menu(view,'ROIs','MenuSelectedFcn',@(~,~)obj.openROITool());
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
@@ -627,6 +726,7 @@ classdef Viewer < handle
             end
         end
         function openZone(obj,index)
+            if obj.DrawingROI, return; end
             obj.Session.selectZone(index);
             if index > 0, obj.SelectedZone = index; end
             obj.selectCurrentNode(); obj.refreshView();
@@ -638,10 +738,13 @@ classdef Viewer < handle
         function refreshView(obj,loadImage)
             if nargin < 2, loadImage = true; end
             obj.refreshProjectInfo();
+            obj.ROIs.setContext(obj.Session);
             obj.Pipeline.setContext(obj.Session);
             obj.Crumb.Text = obj.Session.breadcrumb();
             obj.Crumb.Tooltip = obj.Crumb.Text;
             obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
+            obj.SaveProjectMenu.Enable = obj.onOff(obj.ActiveProject > 0 && ...
+                strlength(string(obj.Session.Project.io.path)) > 0 && strlength(string(obj.Session.Project.io.file)) > 0);
             obj.RelinkMenu.Enable = obj.onOff(obj.Session.Position > 0);
             obj.LoadImage.Enable = obj.onOff(obj.Session.Position > 0);
             obj.RelinkImage.Visible = 'off'; obj.MissingRaw = false;
@@ -741,6 +844,7 @@ classdef Viewer < handle
                     image(obj.Axes,plane);
                 end
                 axis(obj.Axes,'image'); obj.Axes.XTick = []; obj.Axes.YTick = [];
+                set(findall(obj.Axes,'Type','image'),'ContextMenu',obj.ImageMenu);
                 title(obj.Axes,'');
                 if obj.Session.Zone == 0 && obj.Overlays.Value, obj.drawRegions(); end
                 obj.Axes.YDir = 'reverse';
@@ -751,6 +855,7 @@ classdef Viewer < handle
                     obj.Axes.YLim = [0.5 size(plane,1)+0.5];
                 end
                 if view.native, obj.Axes.CLim = view.limits; end
+                obj.ROIs.onRender();
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end

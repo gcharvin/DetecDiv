@@ -19,8 +19,8 @@ template.nodes = [node node]; template.nodes(2).id = 'grid_2'; template.nodes(2)
 template.edges = struct('from','grid_1','to','grid_2'); original = template.nodes;
 viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeViewer = onCleanup(@()delete(viewer)); viewer.Pipeline.addTemplate(template);
-widget = viewer.Pipeline; figure = viewer.widgetFigure('Pipeline');
-new = findall(figure,'Tag','pipeline-new-run'); new.ButtonPushedFcn(new,[]);
+widget = viewer.Pipeline; figure = widget.SettingsFigure;
+new = findall(viewer.widgetFigure('Pipeline'),'Tag','pipeline-new-run'); new.ButtonPushedFcn(new,[]);
 assert(isempty(project.processing.pipelineRun) && ~isfolder(fullfile(folder,project.io.file,'pipeline')));
 fields = widget.Setup.Controls;
 setField(fields.runId,'analysis_1'); setField(fields.fovs,'PosB'); setField(fields.rois,'trap_b');
@@ -73,7 +73,7 @@ assert(strcmp(saved.status,'new') && isfile(fullfile(saved.path,'run.json')));
 assert(isequal(loaded.ctx.run.selectedNodes,{'grid_2'}) && strcmp(loaded.ctx.io.existingPolicy,'replace'));
 assert(isequal(loaded.ctx.sel.frames(:)',[1 3 5]) && loaded.ctx.run.nodeParams(1).params.referenceFrame == 3);
 assert(isequal(template.nodes,original) && ~isfield(loaded.ctx,'images'));
-assert(isscalar(project.processing.pipelineRun) && isempty(widget.saveRun()));
+assert(isscalar(project.processing.pipelineRun) && isequal(saved,widget.saveRun()));
 % Historic graph uses the saved snapshot, never an edited current template.
 template.nodes(2).name = 'Changed after save'; widget.refresh();
 runs = findall(figure,'Tag','pipeline-runs'); runs.CellSelectionCallback(runs,struct('Indices',[1 1]));
@@ -101,8 +101,8 @@ if ~isempty(previewPath)
         if k > 1, edges(end+1) = struct('from',sprintf('step_%d',k-1),'to',preview(k).id); end %#ok<AGROW>
     end
     edges(end+1) = struct('from','step_3','to','step_7');
-    widget.Graph.show(preview,edges,5,true(1,8)); drawnow; pause(.3);
-    assert(widget.Graph.Axes.Parent.Position(4) >= 8*60);
+    widget.CompactGraph.show(preview,edges,5,true(1,8)); drawnow; pause(.3);
+    assert(widget.CompactGraph.Axes.Parent.Position(4) >= 8*60);
     viewer.Host.capture(fullfile(parent,[name '_long_graph' extension]));
     widget.refresh();
 end

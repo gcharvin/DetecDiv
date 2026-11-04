@@ -24,14 +24,16 @@ The requirements below supersede the earlier French labels, renamed data concept
 7. Treatment commands must make selection, output naming and replacement behavior clear. Scientific logic stays in backend modules; pipelines retain provenance.
 8. Native tooltips and enabled/disabled commands communicate availability. The colour of a contour is not the only selection cue; the project tree also identifies the active ROI.
 9. Every integration from Score, DetecDiv, Workflow or Pipeline must review progress UI and caller/destination ownership. Long operations show a scoped widget/footer indicator before blocking; reuse real backend callbacks and preserve cancellation where supported. Use indeterminate progress without a measurable fraction. Hidden-widget work falls back to a visible owner. See `DETECTIVE_UI_PROGRESS.md` and regenerate the audit when adding a handoff.
+10. Keep Pipeline compact: graph, run selection and status. New Run/common settings belong in a dialog; Advanced reuses pipeline2 with the same configuration and run identity. Do not embed a full editor in the dockable panel or create a parallel settings store.
+11. Define ROIs on the main Image viewport, through the independent ROIs assistant. Reuse it from pipeline steps; no Workflow image window in the new viewer path. Distinguish preview, project ROI creation and definition transfer to a run. Reuse engine packages, and keep pixel extraction explicit.
 
 ## Initial menu structure
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
+| File | Open Project..., Save Project, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
 | Edit | Copy Image |
-| View | Projects, Image, Display, Pipeline, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
+| View | Projects, Image, Display, Pipeline, ROIs, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame |
 | Help | About DetecDiv |
 
@@ -57,4 +59,4 @@ The R2026a-specific integration and layout contract are described in `DETECTIVE_
 
 Display exposes a visibility table, an active layer, Solo, source-unit contrast, Auto, color, opacity and label rendering. Settings are local to each project's FOV/ROI view during the session. Selecting a layer edits its settings without changing visibility implicitly. See `DETECTIVE_UI_DISPLAY.md` for reuse of score and the validation scope.
 
-Workspace discovery now exposes typed Classifiers, Processors and Pipelines collections alongside Projects. The dockable Pipeline widget provides template selection, graph-based step selection, native run settings, run saving, parameter inspection, validation, dry run and project-linked run history. Use a scrollable form for run settings and a vertical graph for compact layouts; keep an optional List view. Detailed bindings and execution reuse the existing advanced editor. Before Segment Cells, add compatible-classifier selection and connect guided actions to the same inspectable templates/runs. See `DETECTIVE_UI_PIPELINE.md` for the current boundary.
+Workspace discovery exposes typed Classifiers, Processors and Pipelines collections alongside Projects. Keep the dockable Pipeline widget to its graph, run selector and status. New Run/common settings belong in the shared settings dialog; advanced bindings and execution reuse pipeline2 with the same run identity/configuration. ROI definition uses the independent ROIs assistant on the main image. Before Segment Cells, add compatible-classifier selection and connect guided actions to the same inspectable templates/runs. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_ROIS.md`.

@@ -53,6 +53,8 @@ Callback changes were packed back into detecdiv/pipeline2/workflow/workflow2 usi
 
 ## Verification and maintenance
 
+The ROIs assistant scopes drawing preparation, preview and creation in its visible footer, falling back to the main image when hidden. Scratch previews call existing ROI packages without mutating source ROI collections. Run Settings and the advanced-editor handoff share the Pipeline progress owner; applying advanced settings is scoped before disposing the child window. The compact run-follow timer reads in-memory status only: explicit Refresh uses the existing review helper, and remote job monitoring remains in pipeline2. Metadata-only Save Project and Save Run also expose scoped progress.
+
 ```matlab
 detecdivui.progressTest();
 detecdivui.progressLegacyTest(fullfile(pwd,'docs','DETECTIVE_UI_PROGRESS_INVENTORY.csv'));
