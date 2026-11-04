@@ -367,9 +367,8 @@ end
             double(croppedBrush)*app.Transparency.Value;
 
         % Peindre dans le masque GT
-        roi.image(yRange,xRange,pix,frm) = ...
-            uint16(~croppedBrush).*roi.image(yRange,xRange,pix,frm) + ...
-            uint16(croppedBrush)*paintValue;
+        roi.image(:,:,pix,frm) = score_editMaskPlane('paint', ...
+            roi.image(:,:,pix,frm),[x y],paintValue,brushRadius);
 
         drawnow limitrate nocallbacks;
     end

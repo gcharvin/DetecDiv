@@ -434,6 +434,7 @@
 "Helper","score_drawImage","structure/GUI/score/score_drawImage.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_drawMovieEventLines","structure/GUI/score/score_drawMovieEventLines.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_drawMovieEventText","structure/GUI/score/score_drawMovieEventText.m","1","","Top-level helper; may still depend on a Score app handle"
+"Helper","score_editMaskPlane","structure/GUI/score/score_editMaskPlane.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_editSelectedTrackCensoring","structure/GUI/score/score_editSelectedTrackCensoring.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_encodeChannelValues","structure/GUI/score/score_encodeChannelValues.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_exportSequence","structure/GUI/score/score_exportSequence.m","1","","Top-level helper; may still depend on a Score app handle"
