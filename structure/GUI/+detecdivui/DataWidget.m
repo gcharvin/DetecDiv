@@ -185,7 +185,7 @@ classdef DataWidget < handle
         function clearPlot(obj)
             if isvalid(obj.Axes)
                 cla(obj.Axes); colorbar(obj.Axes,'off'); legend(obj.Axes,'off');
-                set(obj.Axes,'XLimMode','auto','YLimMode','auto','NextPlot','replace');
+                set(obj.Axes,'XLimMode','auto','YLimMode','auto','YDir','normal','NextPlot','replace');
             end
             obj.Marker = []; obj.PlotLines = gobjects(0); obj.Sync = false;
         end
