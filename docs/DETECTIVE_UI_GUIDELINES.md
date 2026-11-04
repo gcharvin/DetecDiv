@@ -48,6 +48,14 @@ Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C.
 
 Opening the workspace/project is metadata-only. Image I/O follows FOV/ROI selection or Load Image / Reload Image. A missing raw source offers Relink Raw Data... through the existing path tools; do not start a root search as a side effect of opening the application. No automatic analysis or pixel preload is scheduled after startup.
 
+## Intent-driven workflow integration
+
+Integrate business capabilities through **intent → state-aware pipeline proposal → execution**, as specified in `DETECTIVE_UI_INTENT_WORKFLOWS.md`. Segment Cells is an example, not a dedicated priority. The pipeline is a visible evolving plan that can be constructed or amended through user choices; it is more than a hidden implementation detail. The compact graph and advanced editor expose that same configuration.
+
+Reuse compatible existing resources, ask only unresolved scientific questions, and show downstream impact before changing results. Creating a run is automatic when a task launches. Plan edits do not execute processing; keep historical execution configurations frozen while recording status changes and compatible resume attempts. View operations and scientific draft edits retain their own appropriate controllers.
+
+Project import, drag-and-drop, ROI construction and analysis actions share this mechanism. Keep guidance contextual and maintain a semantic action history linked to existing run events/reports. Metadata discovery must not load models, activate Python or search raw roots.
+
 ## Remaining design decisions
 
 - Extend the tree to Classifiers, Processors, Pipelines and Runs when the corresponding integrations are implemented.

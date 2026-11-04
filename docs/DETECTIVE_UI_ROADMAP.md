@@ -9,6 +9,8 @@ Le découpage prévoit de nouveaux widgets dockables selon les besoins : Objects
 
 La connexion Hub devient également un widget indépendant et un contrôleur de session commun, réutilisant les helpers de connexion/préférences/authentification et le broker existants. Pipeline et Export conservent leurs paramètres de job, mais consomment cette même connexion ; aucun lancement de pipeline n'est nécessaire pour se connecter. Voir [DETECTIVE_UI_HUB.md](DETECTIVE_UI_HUB.md) pour les sources existantes, les responsabilités, les contraintes de démarrage et les tests à prévoir.
 
+Précision de Gilles : les intentions utilisateur doivent construire ou amender progressivement un **pipeline vivant**, en fonction de l'état du projet. « Segment Cells » est un exemple, pas une priorité isolée ni un formulaire à coder séparément. Le prochain chantier transversal est l'intégration des fonctions métier via des propositions de plan, des contrats de ressources et un historique lié aux runs. Voir [DETECTIVE_UI_INTENT_WORKFLOWS.md](DETECTIVE_UI_INTENT_WORKFLOWS.md) pour la conception, les points de réutilisation et les prérequis encore à définir, dont le drag-and-drop et l'inventaire de cavitylineagemap.
+
 ## 1. Objectif
 
 Faire de DetecDiv un espace de travail scientifique centré sur les images et les intentions de l'utilisateur. La fenêtre principale s'ouvre au lancement de DetecDiv. La gestion des projets, classifiers, processors et pipelines devient un panneau de cet espace.
@@ -135,13 +137,15 @@ Ne pas supprimer les extractions existantes et ne pas changer globalement les co
 
 **Critère :** le parcours brut → zone → retour fonctionne sur des données réelles sans lancer une deuxième fenêtre de travail.
 
-### Étape 2 — première action guidée avec pipeline
+### Étape 2 — intégration commune des intentions et des pipelines
 
-- Intégrer « Segmenter ces cellules » avec configuration proposée et portée explicite.
-- Relier l'action aux modules et au runner existants.
-- Afficher progression, résultats, erreurs et provenance ; rendre le pipeline inspectable.
+- Cartographier les intentions, ressources requises, modules réutilisables et assistants, plutôt que copier les callbacks des anciennes apps.
+- Proposer une création ou un amendement du graphe à partir de l'état du projet ; préserver les résultats compatibles, les choix avancés et les runs historiques.
+- Mettre en place un contrôleur d'action commun et un historique sémantique lié aux révisions de workflow et aux `pipelineRun`.
+- Valider d'abord un parcours de construction de projet/import → définition de ROIs, puis des analyses représentatives. La segmentation n'est qu'un exemple d'intention.
+- Donner accès au graphe et aux paramètres avancés de la même configuration, sans exiger New Run puis Save Run avant une action courante.
 
-**Critère :** ouvrir → sélectionner une zone → segmenter → examiner et corriger un résultat dans un parcours cohérent et traçable.
+**Critère :** une intention propose un delta de graphe explicite, tient compte des ressources existantes et produit une exécution traçable après résolution des seuls choix manquants. Un changement de paramètres conserve les runs passés et identifie les résultats dépendants concernés.
 
 ### Étape 3 — couverture fonctionnelle progressive
 
