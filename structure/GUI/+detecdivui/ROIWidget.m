@@ -147,7 +147,7 @@ classdef ROIWidget < handle
                     'io',struct('existingPolicy','append'));
                 ctx.(package) = p;
                 if ~isempty(obj.Binding)
-                    obj.Binding(ctx);
+                    detecdivui.Callback.call(obj.Binding,ctx);
                     if ~isempty(obj.Crop), obj.Project.fov(obj.Position).crop = obj.Crop; end
                     obj.status('ROI definition applied to run');
                 else

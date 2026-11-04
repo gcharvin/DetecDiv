@@ -80,44 +80,44 @@ structure/GUI/loadData_extracted_tmp.m,922,"function ChoosefilesButtonPushed(app
 structure/GUI/loadData_extracted_tmp.m,1217,"function DetectROIsincurrentposButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
 structure/GUI/loadData_extracted_tmp.m,1281,"function DetectROIsinallpositionsButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
 structure/GUI/pipeline2_extracted.m,239,"function returnToViewer(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,1606,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,2676,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,3605,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,3638,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,4014,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,4286,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,4427,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,4585,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
-structure/GUI/pipeline2_extracted.m,4857,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
-structure/GUI/pipeline2_extracted.m,4910,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,source
-structure/GUI/pipeline2_extracted.m,5509,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,7655,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,7702,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,7740,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,8386,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,9219,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,source
-structure/GUI/pipeline2_extracted.m,9739,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,9805,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,source
-structure/GUI/pipeline2_extracted.m,9959,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,12386,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,13245,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,14649,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,15697,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,16081,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,16122,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,16934,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,17278,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,18561,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
-structure/GUI/pipeline2_extracted.m,19809,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,19931,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,source
-structure/GUI/pipeline2_extracted.m,21012,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,22187,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,22460,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,22610,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,22965,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,23037,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,23335,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
-structure/GUI/pipeline2_extracted.m,23958,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,1607,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,2677,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,3606,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,3639,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4015,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4287,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4428,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4586,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,4858,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,4911,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,source
+structure/GUI/pipeline2_extracted.m,5510,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7656,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7703,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7741,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,8387,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,9220,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/pipeline2_extracted.m,9740,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,9806,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipeline2_extracted.m,9960,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,12387,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,13246,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,14650,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,15698,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,16082,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,16123,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,16935,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,17279,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,18562,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,19810,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,19932,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/pipeline2_extracted.m,21013,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22188,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22461,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22611,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22966,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,23038,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,23336,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,23959,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
 structure/GUI/pipelineGUI_extracted.m,6222,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
 structure/GUI/pipelineGUI_extracted.m,6243,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
 structure/GUI/pipelineGUI_extracted.m,6337,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
@@ -145,32 +145,31 @@ structure/GUI/workflow_extracted.m,5615,"function GenerateROIsButtonPushed(app, 
 structure/GUI/workflow_extracted.m,5635,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,5705,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
 structure/GUI/workflow_extracted.m,6041,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
-structure/GUI/+detecdivui/PipelineWidget.m,304,"function template = openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,317,"function refresh(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,365,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,531,"function run = saveRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,578,"function saveTemplate(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,591,"function editor = openEditor(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,626,"function editor = openEditor(obj)",pipeline2,destination frontend; caller covers launch,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,666,"function ok = syncAdvanced(obj)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
-structure/GUI/+detecdivui/PipelineWidget.m,733,"function review = reviewRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,1074,"function inspectRun(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/PipelineWidget.m,1076,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,326,"function template = openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,339,"function refresh(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,387,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,553,"function run = saveRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,600,"function saveTemplate(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,613,"function editor = openEditor(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,648,"function editor = openEditor(obj)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,688,"function ok = syncAdvanced(obj)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
+structure/GUI/+detecdivui/PipelineWidget.m,756,"function review = reviewRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,1097,"function inspectRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,1099,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
 structure/GUI/+detecdivui/ROIWidget.m,141,"function ctx = apply(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/ROIWidget.m,166,"function preview(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,239,"function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
-structure/GUI/+detecdivui/Viewer.m,261,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,291,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,328,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,345,"function classifier = openClassifier(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,362,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,390,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,461,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,944,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,994,"function render(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1071,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1156,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1178,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,252,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,282,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,319,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,336,"function classifier = openClassifier(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,353,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,381,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,486,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,970,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1020,"function render(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1097,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1182,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1204,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
@@ -349,44 +348,44 @@ structure/GUI/loadData.mlapp,1217,"function DetectROIsincurrentposButtonPushed(a
 structure/GUI/loadData.mlapp,1281,"function DetectROIsinallpositionsButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
 structure/GUI/movieGUI.mlapp,98,"function display2(app,datapicker)",uiprogressdlg,app.MoviemakerUIFigure,manual close/delete; verify early exits,embedded runtime
 structure/GUI/pipeline2.mlapp,239,"function returnToViewer(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,1606,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,2676,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,3605,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,3638,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,4014,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,4286,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,4427,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,4585,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
-structure/GUI/pipeline2.mlapp,4857,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
-structure/GUI/pipeline2.mlapp,4910,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,embedded runtime
-structure/GUI/pipeline2.mlapp,5509,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,7655,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,7702,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,7740,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,8386,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,9219,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
-structure/GUI/pipeline2.mlapp,9739,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,9805,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
-structure/GUI/pipeline2.mlapp,9959,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,12386,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,13245,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,14649,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,15697,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,16081,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,16122,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,16934,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,17278,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,18561,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
-structure/GUI/pipeline2.mlapp,19809,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,19931,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
-structure/GUI/pipeline2.mlapp,21012,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,22187,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,22460,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,22610,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,22965,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,23037,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,23335,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
-structure/GUI/pipeline2.mlapp,23958,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,1607,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,2677,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,3606,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,3639,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4015,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4287,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4428,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4586,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,4858,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,4911,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,embedded runtime
+structure/GUI/pipeline2.mlapp,5510,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7656,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7703,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7741,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,8387,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,9220,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/pipeline2.mlapp,9740,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,9806,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipeline2.mlapp,9960,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,12387,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,13246,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,14650,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,15698,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,16082,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,16123,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,16935,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,17279,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,18562,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,19810,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,19932,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/pipeline2.mlapp,21013,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22188,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22461,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22611,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22966,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,23038,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,23336,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,23959,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
 structure/GUI/pipelineGUI.mlapp,6222,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
 structure/GUI/pipelineGUI.mlapp,6243,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
 structure/GUI/pipelineGUI.mlapp,6337,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime

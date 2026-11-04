@@ -86,7 +86,7 @@ classdef Viewer < handle
             obj.RecentProjects = detecdivui.RecentProjects(recentFile);
             obj.Session = detecdivui.Session();
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
-            obj.Host.OnClosed = @()delete(obj);
+            obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
             obj.Figure = obj.Host.widgetFigure('Image');
             obj.createMenus();
             root = uigridlayout(obj.Figure,[3 1]);
@@ -167,7 +167,7 @@ classdef Viewer < handle
             tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
             uilabel(tools,'Text','Layers','FontWeight','bold');
             obj.LayerTable = detecdivui.LayerTable(tools);
-            obj.LayerTable.OnEdit = @(action,index,value)obj.editLayerRow(action,index,value);
+            obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
             active = uigridlayout(tools,[1 3]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
             active.ColumnWidth = {'1x',42,36};
             obj.Channels = uidropdown(active,'Items',{'—'},'ItemsData',1, ...
@@ -189,7 +189,7 @@ classdef Viewer < handle
                 'Tag','mask-width','Tooltip','Contour line width in points', ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('mask-style'));
             obj.Histogram = detecdivui.HistogramView(tools);
-            obj.Histogram.OnEdit = @(action,index,value)obj.editLayerRow(action,index,value);
+            obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
             limits = uigridlayout(tools,[1 2]); limits.Padding = [0 0 0 0];
             limits.ColumnWidth = {'1x','1x'};
             obj.MinField = uieditfield(limits,'numeric','Value',0,'Enable','off', ...
@@ -229,16 +229,7 @@ classdef Viewer < handle
             obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
-            obj.Pipeline.OnDefineROIs = @(project,node,callback)obj.openROITool(project,node,callback);
-            obj.Pipeline.OnProjectUpdated = @(project)obj.addProject(project);
-            obj.Pipeline.OnTemplateOpened = @(template)obj.registerLoadedObject(template,'pipeline');
-            obj.ProjectProgress.Route = @()obj.progressOwner('Projects');
-            obj.Pipeline.Progress.Route = @()obj.progressOwner('Pipeline');
-            obj.Progress.Route = @()obj.progressOwner('Image');
-            obj.DisplayProgress.Route = @()obj.progressOwner('Display');
-            obj.Host.OnActivity = @(message)obj.Progress.begin(message);
-            obj.Pipeline.OnStatus = @(message)set(obj.Status,'Text',message,'Tooltip',message);
-            obj.Pipeline.OnChanged = @()obj.syncPipelineMenu();
+            obj.rebindCallbacks();
             try
                 obj.Host.start(visibility);
                 if iscell(project)
@@ -406,6 +397,40 @@ classdef Viewer < handle
         end
         function figure = widgetFigure(obj,name)
             figure = obj.Host.widgetFigure(name);
+        end
+        function rebindCallbacks(obj)
+            % Can repair an already-open viewer without changing project data.
+            obj.Pipeline.OnStatus = detecdivui.Callback(obj,'widgetEvent','status');
+            obj.Pipeline.OnChanged = detecdivui.Callback(obj,'widgetEvent','pipelineChanged');
+            obj.Pipeline.OnDefineROIs = detecdivui.Callback(obj,'widgetEvent','defineROIs');
+            obj.Pipeline.OnProjectUpdated = detecdivui.Callback(obj,'addProject');
+            obj.Pipeline.OnTemplateOpened = detecdivui.Callback(obj,'widgetEvent','templateOpened');
+            obj.Pipeline.rebindCallbacks();
+            obj.ProjectProgress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Projects');
+            obj.Pipeline.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Pipeline');
+            obj.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Image');
+            obj.DisplayProgress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+            obj.Host.OnActivity = detecdivui.Callback(obj.Progress,'begin');
+            obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
+            if isa(obj.LayerTable,'detecdivui.LayerTable')
+                obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
+                obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
+            end
+            if obj.hasROIWidget(), obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display'); end
+        end
+        function result = widgetEvent(obj,action,varargin)
+            result = [];
+            if obj.Closing, return; end
+            switch action
+                case 'status'
+                    message = varargin{1}; obj.Status.Text = message; obj.Status.Tooltip = message;
+                case 'pipelineChanged', obj.syncPipelineMenu();
+                case 'defineROIs', obj.openROITool(varargin{:});
+                case 'templateOpened', obj.registerLoadedObject(varargin{1},'pipeline');
+                case 'progressOwner', result = obj.progressOwner(varargin{1});
+                case 'layerEdit', obj.editLayerRow(varargin{:});
+                otherwise, error('detecdivui:WidgetEvent','Unknown viewer widget event.');
+            end
         end
         function openROITool(obj,project,node,callback)
             if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
@@ -576,7 +601,7 @@ classdef Viewer < handle
             % A deleted assistant may have left its controls in the tab.
             delete(obj.ROIsTab.Children);
             obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
-            obj.ROIs.Progress.Route = @()obj.progressOwner('Display');
+            obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
             obj.ROIs.setContext(obj.Session); obj.ROIs.onRender();
         end
         function displayTabSelected(obj)
@@ -903,6 +928,7 @@ classdef Viewer < handle
         end
         function refreshView(obj,loadImage)
             if nargin < 2, loadImage = true; end
+            if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
             if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
             obj.Pipeline.setContext(obj.Session);

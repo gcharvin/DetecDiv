@@ -72,10 +72,10 @@ classdef PipelineGraph < handle
     end
     methods (Access = private)
         function select(obj,index)
-            if ~isempty(obj.OnSelect), obj.OnSelect(index); end
+            detecdivui.Callback.call(obj.OnSelect,index);
         end
         function toggle(obj,index)
-            if ~isempty(obj.OnToggle), obj.OnToggle(index); end
+            detecdivui.Callback.call(obj.OnToggle,index);
         end
     end
     methods (Static, Access = private)

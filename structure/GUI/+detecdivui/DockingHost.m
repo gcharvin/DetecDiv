@@ -289,7 +289,7 @@ classdef DockingHost < handle
     methods (Access = private)
         function scope = activity(obj,message)
             scope = [];
-            if ~isempty(obj.OnActivity), scope = obj.OnActivity(message); end
+            if ~isempty(obj.OnActivity), scope = detecdivui.Callback.call(obj.OnActivity,message); end
         end
         function result = executeJS(obj,script)
             obj.WebBusy = true;
@@ -382,7 +382,7 @@ classdef DockingHost < handle
             if obj.Closing, return; end
             if obj.App.State == matlab.ui.container.internal.appcontainer.AppState.TERMINATED
                 obj.stopPump();
-                if ~isempty(obj.OnClosed), obj.OnClosed(); end
+                if ~isempty(obj.OnClosed), detecdivui.Callback.call(obj.OnClosed); end
             end
         end
         function stopPump(obj)

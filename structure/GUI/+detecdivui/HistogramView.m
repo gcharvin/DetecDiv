@@ -52,11 +52,11 @@ classdef HistogramView < handle
                     obj.XScale = char(event.value);
                 case 'logcounts', obj.LogCounts = logical(event.value);
                 case 'limits'
-                    if ~isempty(obj.OnEdit), obj.OnEdit('limits',obj.State.selected,event.value); end
+                    detecdivui.Callback.call(obj.OnEdit,'limits',obj.State.selected,event.value);
                     return;
                 otherwise, return;
             end
-            if ~isempty(obj.OnEdit), obj.OnEdit('histogram',obj.State.selected,[]); end
+            detecdivui.Callback.call(obj.OnEdit,'histogram',obj.State.selected,[]);
         end
     end
 end

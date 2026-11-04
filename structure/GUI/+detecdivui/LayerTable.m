@@ -23,7 +23,7 @@ classdef LayerTable < handle
         function receive(obj,event)
             if ~isstruct(event) || ~all(isfield(event,{'revision','action','index','value'})) || ...
                     event.revision ~= obj.Revision, return; end
-            if ~isempty(obj.OnEdit), obj.OnEdit(char(event.action),event.index,event.value); end
+            detecdivui.Callback.call(obj.OnEdit,char(event.action),event.index,event.value);
         end
     end
 end

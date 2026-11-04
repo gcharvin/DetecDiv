@@ -99,7 +99,7 @@ classdef PipelineWidget < handle
             runGrid = uigridlayout(obj.RunTab,[2 1]); runGrid.Padding = [4 4 4 4];
             runGrid.RowHeight = {'1x',28};
             obj.Setup = detecdivui.RunSetup(runGrid);
-            obj.Setup.OnChanged = @()obj.settingsChanged();
+            obj.Setup.OnChanged = detecdivui.Callback(obj,'widgetEvent','settings');
             obj.SaveRun = uibutton(runGrid,'Text','Save Run','Enable','off','Tag','pipeline-save-run', ...
                 'Tooltip','Save a new run configuration without starting processing', ...
                 'ButtonPushedFcn',@(~,~)obj.saveRun());
@@ -110,8 +110,8 @@ classdef PipelineWidget < handle
             views = uitabgroup(stepsGrid);
             graphTab = uitab(views,'Title','Graph'); listTab = uitab(views,'Title','List');
             obj.Graph = detecdivui.PipelineGraph(graphTab,'pipeline-graph');
-            obj.Graph.OnSelect = @(index)obj.showParams(index);
-            obj.Graph.OnToggle = @(index)obj.toggleStep(index);
+            obj.Graph.OnSelect = detecdivui.Callback(obj,'widgetEvent','select');
+            obj.Graph.OnToggle = detecdivui.Callback(obj,'widgetEvent','toggle');
             listGrid = uigridlayout(listTab,[1 1]); listGrid.Padding = [0 0 0 0];
             obj.Steps = uitable(listGrid,'Data',cell(0,3),'RowName',{}, ...
                 'ColumnName',{'Step','Type','State'},'ColumnWidth',{'auto',70,65}, ...
@@ -200,7 +200,7 @@ classdef PipelineWidget < handle
             obj.RunPicker.Layout.Row = 4;
             panel = uipanel(compact,'BorderType','none'); panel.Layout.Row = 5;
             obj.CompactGraph = detecdivui.PipelineGraph(panel,'pipeline-compact-graph');
-            obj.CompactGraph.OnSelect = @(index)obj.openStep(index);
+            obj.CompactGraph.OnSelect = detecdivui.Callback(obj,'widgetEvent','openStep');
             obj.RunState = uilabel(compact,'Text','Draft','Tag','pipeline-run-state','Interpreter','none');
             obj.RunState.Layout.Row = 6;
             buttons = uigridlayout(compact,[1 2]); buttons.Padding = [0 0 0 0]; buttons.Layout.Row = 7;
@@ -220,7 +220,8 @@ classdef PipelineWidget < handle
             define.Layout.Row = 1; define.Layout.Column = 3;
             checks.ColumnWidth = {'1x','1x','1x'};
             obj.FollowTimer = timer('ExecutionMode','fixedSpacing','Period',1.5,'BusyMode','drop', ...
-                'Tag','DetecDivPipelineFollow','TimerFcn',@(~,~)obj.followRun());
+                'Tag','DetecDivPipelineFollow','TimerFcn', ...
+                {@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','follow')});
             start(obj.FollowTimer);
         end
         function openSettings(obj,page)
@@ -238,6 +239,27 @@ classdef PipelineWidget < handle
             if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
                 editor = obj.AdvancedEditor; editor.clearViewerBridge();
                 if ~editor.viewerHasActiveRun(), delete(editor); end
+            end
+        end
+        function rebindCallbacks(obj)
+            obj.Setup.OnChanged = detecdivui.Callback(obj,'widgetEvent','settings');
+            obj.Graph.OnSelect = detecdivui.Callback(obj,'widgetEvent','select');
+            obj.Graph.OnToggle = detecdivui.Callback(obj,'widgetEvent','toggle');
+            obj.CompactGraph.OnSelect = detecdivui.Callback(obj,'widgetEvent','openStep');
+            if ~isempty(obj.FollowTimer) && isvalid(obj.FollowTimer)
+                obj.FollowTimer.TimerFcn = {@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','follow')};
+            end
+        end
+        function widgetEvent(obj,action,varargin)
+            switch action
+                case 'settings', obj.settingsChanged();
+                case 'select', obj.showParams(varargin{:});
+                case 'toggle', obj.toggleStep(varargin{:});
+                case 'openStep', obj.openStep(varargin{:});
+                case 'advanced', obj.acceptAdvanced(varargin{:});
+                case 'roiDefinition', obj.acceptRoiDefinition(varargin{:});
+                case 'follow', obj.followRun();
+                otherwise, error('detecdivui:WidgetEvent','Unknown pipeline widget event.');
             end
         end
         function setContext(obj,session)
@@ -306,7 +328,7 @@ classdef PipelineWidget < handle
                 assert(~isempty(template),'detecdivui:PipelineLoad','%s',message);
                 obj.addTemplate(template);
                 if ~isequal(obj.Template,template), template = []; return; end
-                if ~isempty(obj.OnTemplateOpened), obj.OnTemplateOpened(template); end
+                detecdivui.Callback.call(obj.OnTemplateOpened,template);
                 obj.setStatus('Pipeline opened');
             catch err
                 template = [];
@@ -355,7 +377,7 @@ classdef PipelineWidget < handle
             obj.invalidate(); obj.refreshRuns();
             obj.updateGraph();
             obj.draftNotice();
-            if ~isempty(obj.OnChanged), obj.OnChanged(); end
+            detecdivui.Callback.call(obj.OnChanged);
         end
         function [ok,report] = check(obj,mode)
             ok = false; report = struct();
@@ -653,7 +675,7 @@ classdef PipelineWidget < handle
                 end
                 if hasDraft
                     obj.AdvancedEditor = editor;
-                    editor.configureViewerBridge(@(state)obj.acceptAdvanced(state),obj.OnDefineROIs);
+                    editor.configureViewerBridge(detecdivui.Callback(obj,'widgetEvent','advanced'),obj.OnDefineROIs);
                     obj.SettingsFigure.Visible = 'off';
                 end
             catch err
@@ -683,7 +705,7 @@ classdef PipelineWidget < handle
                 sameId = ~isempty(old) && strlength(string(old.projectId)) > 0 && strcmp(old.projectId,fresh.projectId);
                 samePath = ~isempty(old) && strlength(string(old.io.path)) > 0 && ...
                     strcmpi(fullfile(old.io.path,old.io.file),fullfile(fresh.io.path,fresh.io.file));
-                if sameId || samePath, obj.OnProjectUpdated(fresh); end
+                if sameId || samePath, detecdivui.Callback.call(obj.OnProjectUpdated,fresh); end
             end
             assert(~isempty(obj.Session) && isequal(state.project,obj.Session.Project), ...
                 'detecdivui:RunContext','Select the original project before applying advanced settings.');
@@ -710,7 +732,8 @@ classdef PipelineWidget < handle
             end
             obj.SettingsFigure.Visible = 'off';
             project = obj.Session.Project; token = obj.DefinitionContext;
-            obj.OnDefineROIs(project,node,@(ctx)obj.acceptRoiDefinition(token,project,node,ctx));
+            callback = detecdivui.Callback(obj,'widgetEvent','roiDefinition',token,project,node);
+            detecdivui.Callback.call(obj.OnDefineROIs,project,node,callback);
         end
         function acceptRoiDefinition(obj,token,project,node,ctx)
             assert(token == obj.DefinitionContext && isequal(project,obj.Session.Project), ...
@@ -1090,7 +1113,7 @@ classdef PipelineWidget < handle
         end
         function setStatus(obj,message)
             obj.Status.Text = message; obj.Status.Tooltip = message;
-            if ~isempty(obj.OnStatus), obj.OnStatus(message); end
+            detecdivui.Callback.call(obj.OnStatus,message);
         end
         function draftNotice(obj)
             if obj.Draft.takeDiscarded() > 0, obj.setStatus('Run settings reset after template changes'); end

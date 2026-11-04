@@ -111,13 +111,13 @@ assert(strcmp(widget.Setup.Controls.runId.Value,'') && isscalar(project.processi
 assert(isequal(detecdivui.RunSetup.selection('2,1:2'),[2 1]));
 assert(isequal(detecdivui.RunSetup.selection('FOV B,FOV A',{'FOV A','FOV B'}),[2 1]));
 % Empty module selection is an error, never the backend's shorthand for all.
-widget.Graph.OnToggle(1); widget.Graph.OnToggle(2); failed = false;
+detecdivui.Callback.call(widget.Graph.OnToggle,1); detecdivui.Callback.call(widget.Graph.OnToggle,2); failed = false;
 try
     widget.context();
 catch
     failed = true;
 end
-assert(failed); widget.Graph.OnToggle(2);
+assert(failed); detecdivui.Callback.call(widget.Graph.OnToggle,2);
 % Raw-source settings do not inspect/restrict source positions to the current project.
 template.nodes(1).type = 'dataLoader';
 setField(fields.inputSourceMode,'raw_dataloader'); setField(fields.rawDataPath,fullfile(folder,'missing raw'));

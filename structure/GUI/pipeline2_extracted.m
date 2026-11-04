@@ -240,7 +240,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 release = onCleanup(@()closeRuntimeProgress(app,progress)); %#ok<NASGU>
                 state = app.exportViewerDraft();
                 assert(~state.busy,'pipeline2:ViewerBusy','The run is active. Keep this window open until it finishes.');
-                app.ViewerApplyCallback(state); clear release;
+                detecdivui.Callback.call(app.ViewerApplyCallback,state); clear release;
                 app.clearViewerBridge(); delete(app);
             catch err
                 uialert(app.UIFigure,err.message,'Run Settings');
@@ -258,7 +258,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(index) || isempty(app.ViewerRoiCallback), return; end
             nodes = pipelineApplyRunNodeParams(app.Data.nodes,buildRunNodeParams(app)); node = nodes(index);
             if nargin >= 3, node.params = params; end
-            app.ViewerRoiCallback(app.CurrentProject,node,@(ctx)app.acceptViewerRois(nodeId,ctx));
+            callback = detecdivui.Callback(app,'acceptViewerRois',nodeId);
+            detecdivui.Callback.call(app.ViewerRoiCallback,app.CurrentProject,node,callback);
             app.UIFigure.Visible = 'off';
         end
     end

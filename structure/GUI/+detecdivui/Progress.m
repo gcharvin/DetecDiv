@@ -61,7 +61,7 @@ classdef Progress < handle
             value = obj;
             if isempty(obj.Stack) && ~isempty(obj.Route)
                 try
-                    candidate = obj.Route();
+                    candidate = detecdivui.Callback.call(obj.Route);
                 catch
                     return;
                 end

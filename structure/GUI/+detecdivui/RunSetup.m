@@ -58,7 +58,7 @@ classdef RunSetup < handle
         end
         function changed(obj)
             obj.Controls.rawDataPath.Enable = detecdivui.RunSetup.onOff(strcmp(obj.Controls.inputSourceMode.Value,'raw_dataloader'));
-            if ~isempty(obj.OnChanged), obj.OnChanged(); end
+            detecdivui.Callback.call(obj.OnChanged);
         end
     end
     methods (Static)
