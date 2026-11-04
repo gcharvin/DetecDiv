@@ -80,6 +80,14 @@ classdef Viewer < handle
         TreeROIMenu
         SaveProjectMenu
         DrawingROI = false
+        KeyboardView
+        KeyboardState = struct()
+        KeyboardSelection = {}
+        KeyboardGeneration = 0
+        JumpKeys = {'l','m'}
+        JumpBackMenu
+        JumpForwardMenu
+        ShortcutFigure = []
         LoadedObjects = struct('object',{},'variables',{},'kind',{})
         RecentMenu
         RecentCommands = {}
@@ -96,9 +104,14 @@ classdef Viewer < handle
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
             obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
             obj.Figure = obj.Host.widgetFigure('Image');
+            [~,specialKeys] = detecdiv_prefs_get_shortcuts();
+            if numel(specialKeys{3}) == 2 && numel(unique(lower(string(specialKeys{3})))) == 2 && ...
+                    all(cellfun(@(key)~isempty(key),specialKeys{3}))
+                obj.JumpKeys = cellfun(@lower,specialKeys{3},'UniformOutput',false);
+            end
             obj.createMenus();
-            root = uigridlayout(obj.Figure,[3 1]);
-            root.RowHeight = {32,'1x',24};
+            root = uigridlayout(obj.Figure,[4 1]);
+            root.RowHeight = {32,'1x',24,0};
             root.Padding = [8 6 8 6];
             root.BackgroundColor = [0.95 0.96 0.97];
             location = uigridlayout(root,[1 4]);
@@ -158,10 +171,10 @@ classdef Viewer < handle
             timeline.RowHeight = {26,20};
             timeline.ColumnWidth = {32,32,80,'1x',90}; timeline.Padding = [0 0 0 0];
             obj.Previous = uibutton(timeline,'Text','‹','Enable','off', ...
-                'Tag','previous-frame','Tooltip','Previous frame', ...
+                'Tag','previous-frame','Tooltip','Previous frame (Left Arrow)', ...
                 'ButtonPushedFcn',@(~,~)obj.stepFrame(-1));
             obj.Next = uibutton(timeline,'Text','›','Enable','off', ...
-                'Tag','next-frame','Tooltip','Next frame', ...
+                'Tag','next-frame','Tooltip','Next frame (Right Arrow)', ...
                 'ButtonPushedFcn',@(~,~)obj.stepFrame(1));
             obj.Frame = uieditfield(timeline,'numeric','Value',1,'Limits',[1 Inf], ...
                 'RoundFractionalValues','on','Enable','off','Tag','frame-number', ...
@@ -246,6 +259,11 @@ classdef Viewer < handle
             obj.DisplayProgress = detecdivui.Progress(tools,displayStatus,'display-progress');
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
             obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
+            obj.KeyboardView = uihtml(root,'Tag','image-keyboard', ...
+                'HTMLSource',fullfile(fileparts(mfilename('fullpath')),'imageKeyboard.html'), ...
+                'DataChangedFcn',@(~,event)obj.imageKey(event.Data));
+            obj.KeyboardView.Layout.Row = 4;
+            root.RowHeight = {32,'1x',24,0};
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.rebindCallbacks();
@@ -478,6 +496,7 @@ classdef Viewer < handle
             obj.ROIsTab.Parent = obj.DisplayTabs;
             obj.DisplayTabs.SelectedTab = obj.ROIsTab;
             obj.ROIs.setActive(true);
+            obj.refreshKeyboard();
             obj.Host.focusWidget('Display'); obj.Host.show();
         end
         function closeROITool(obj)
@@ -486,12 +505,14 @@ classdef Viewer < handle
                 % Detach rather than delete: retain controls and the pending draft.
                 obj.ROIsTab.Parent = [];
             end
+            obj.refreshKeyboard();
         end
         function ax = roiAxes(obj)
             ax = obj.Axes;
         end
         function scope = beginROIGesture(obj)
             obj.DrawingROI = true;
+            obj.refreshKeyboard();
             scope = onCleanup(@()obj.finishROIGesture());
         end
         function ax = prepareROIView(obj)
@@ -548,6 +569,7 @@ classdef Viewer < handle
             if obj.Closing, return; end
             obj.Closing = true;
             if obj.hasROIWidget(), delete(obj.ROIs); end
+            if ~isempty(obj.ShortcutFigure) && isvalid(obj.ShortcutFigure), delete(obj.ShortcutFigure); end
             if ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab), delete(obj.ROIsTab); end
             if ~isempty(obj.Pipeline) && isvalid(obj.Pipeline), delete(obj.Pipeline); end
             if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.OnActivity = []; end
@@ -658,9 +680,10 @@ classdef Viewer < handle
             if obj.hasROIWidget()
                 obj.ROIs.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab));
             end
+            obj.refreshKeyboard();
         end
         function finishROIGesture(obj)
-            if isvalid(obj), obj.DrawingROI = false; end
+            if isvalid(obj), obj.DrawingROI = false; obj.refreshKeyboard(); end
         end
         function progress = progressOwner(obj,widget)
             progress = obj.Progress;
@@ -744,10 +767,18 @@ classdef Viewer < handle
             obj.ParentMenu = obj.Host.menu(navigate,'Parent FOV','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.returnToPosition());
             obj.PreviousMenu = obj.Host.menu(navigate,'Previous Frame','Enable','off', ...
+                'Shortcut','Left Arrow', ...
                 'MenuSelectedFcn',@(~,~)obj.stepFrame(-1));
             obj.NextMenu = obj.Host.menu(navigate,'Next Frame','Enable','off', ...
+                'Shortcut','Right Arrow', ...
                 'MenuSelectedFcn',@(~,~)obj.stepFrame(1));
+            obj.JumpBackMenu = obj.Host.menu(navigate,'Back 10 Frames','Enable','off', ...
+                'Shortcut',upper(obj.JumpKeys{1}),'MenuSelectedFcn',@(~,~)obj.stepFrame(-10));
+            obj.JumpForwardMenu = obj.Host.menu(navigate,'Forward 10 Frames','Enable','off', ...
+                'Shortcut',upper(obj.JumpKeys{2}),'MenuSelectedFcn',@(~,~)obj.stepFrame(10));
             helpMenu = obj.Host.menu([],'Help');
+            obj.Host.menu(helpMenu,'Keyboard Shortcuts...', ...
+                'MenuSelectedFcn',@(~,~)obj.showShortcuts());
             obj.Host.menu(helpMenu,'About DetecDiv', ...
                 'MenuSelectedFcn',@(~,~)uialert(obj.Figure, ...
                     'DetecDiv — microscopy image analysis','About DetecDiv','Icon','info'));
@@ -1067,6 +1098,54 @@ classdef Viewer < handle
             obj.Next.Enable = obj.onOff(available && obj.Frame.Value < obj.MaxFrame);
             obj.PreviousMenu.Enable = obj.Previous.Enable;
             obj.NextMenu.Enable = obj.Next.Enable;
+            obj.JumpBackMenu.Enable = obj.Previous.Enable;
+            obj.JumpForwardMenu.Enable = obj.Next.Enable;
+            obj.refreshKeyboard();
+        end
+        function refreshKeyboard(obj)
+            if isempty(obj.KeyboardView) || ~isvalid(obj.KeyboardView) || obj.Closing, return; end
+            toolActive = obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab);
+            enabled = obj.ImageRequested && obj.Session.Position > 0 && ...
+                strcmp(obj.Frame.Enable,'on') && ~obj.DrawingROI && ~toolActive;
+            selection = {obj.Session.Project,obj.Session.Position,obj.Session.Zone,enabled};
+            if ~isequal(selection,obj.KeyboardSelection)
+                obj.KeyboardSelection = selection; obj.KeyboardGeneration = obj.KeyboardGeneration+1;
+            end
+            state = struct('context',sprintf('%d',obj.KeyboardGeneration),'enabled',enabled, ...
+                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}});
+            if isequal(state,obj.KeyboardState), return; end
+            obj.KeyboardState = state; obj.KeyboardView.Data = state;
+        end
+        function imageKey(obj,event)
+            if obj.Closing || ~isstruct(event) || ~all(isfield(event,{'action','context','key'})) || ...
+                    ~strcmp(event.action,'key'), return; end
+            obj.refreshKeyboard();
+            state = obj.KeyboardState;
+            if ~state.enabled || ~strcmp(event.context,state.context), return; end
+            index = find(strcmpi(char(event.key),state.keys),1);
+            if isempty(index), return; end
+            offsets = [-1 1 -10 10];
+            frame = min(obj.MaxFrame,max(1,obj.Frame.Value+offsets(index)));
+            if frame ~= obj.Frame.Value, obj.setFrame(frame); end
+        end
+        function showShortcuts(obj)
+            if ~isempty(obj.ShortcutFigure) && isvalid(obj.ShortcutFigure)
+                figure(obj.ShortcutFigure); return;
+            end
+            obj.ShortcutFigure = uifigure('Name','Keyboard Shortcuts','Tag','keyboard-shortcuts', ...
+                'Position',[200 200 580 360]);
+            grid = uigridlayout(obj.ShortcutFigure,[2 1]); grid.RowHeight = {'1x',28};
+            rows = {'Left Arrow','Previous frame','Image browsing'; ...
+                'Right Arrow','Next frame','Image browsing'; ...
+                upper(obj.JumpKeys{1}),'Back 10 frames','Image browsing'; ...
+                upper(obj.JumpKeys{2}),'Forward 10 frames','Image browsing'; ...
+                'Ctrl+O','Open project','Main window'; 'Ctrl+S','Save project','Main window'; ...
+                'Ctrl+W','Close project','Main window'; 'Ctrl+C','Copy image','Main window'; ...
+                'Ctrl+R','Reload image','Main window'};
+            uitable(grid,'Data',rows,'ColumnName',{'Shortcut','Action','Context'}, ...
+                'ColumnWidth',{110,'auto',140},'RowName',{},'ColumnEditable',false, ...
+                'Tag','keyboard-shortcuts-table');
+            uibutton(grid,'Text','Close','ButtonPushedFcn',@(~,~)delete(obj.ShortcutFigure));
         end
         function setFrame(obj,frame)
             obj.Frame.Value = min(max(1,frame),obj.MaxFrame); obj.render();

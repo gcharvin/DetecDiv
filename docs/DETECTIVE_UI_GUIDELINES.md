@@ -30,6 +30,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 13. Preserve Score functionality against the capability IDs in `DETECTIVE_UI_SCORE_PARITY.md`. Keep raw-FOV ROI geometry, ROI mask editing, quantitative dataseries variables and classifier training datasets distinct. Scientific editors require explicit dirty/save and reversible-action handling; metadata-only Save Project must never be presented as saving mask/data/model edits.
 14. Introduce task-specific dockable widgets when needed: Objects, Data and Annotation, with Lineage/Measurements separable when useful. Keep them on a shared session/selection and one image viewport. Instantiate usable widgets on demand through View, preserve older layouts when adding documents, and use dialogues for occasional detailed configuration/export. Do not add empty widgets in anticipation of unimplemented functions.
 15. Centralize Hub connection/identity in a shared session controller and independent Hub widget. Reuse existing settings/auth/dialog/broker helpers; Pipeline, Export and project clients consume this session and retain only their job-specific settings. No duplicate credentials forms, blocking startup checks or job cancellation merely from hiding/disconnecting the connection UI. See `DETECTIVE_UI_HUB.md`.
+16. Preserve Score keyboard conventions and shared preferences. Bare browsing keys act on the focused Image canvas, including floating documents, without intercepting typing or native/widget navigation. Editing tools own their context-specific bindings. Show active navigation keys in Navigate and list available shortcuts in Help; keep an inventory of annotation bindings for their corresponding widgets. See `DETECTIVE_UI_SHORTCUTS.md`.
 
 ## Initial menu structure
 
@@ -38,8 +39,8 @@ The requirements below supersede the earlier French labels, renamed data concept
 | File | Open Project..., Recent Projects, Open Classifier..., Save Project, Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
 | Edit | Copy Image, Define ROIs... |
 | View | Projects, Image, Display, Pipeline, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
-| Navigate | Parent FOV, Previous Frame, Next Frame |
-| Help | About DetecDiv |
+| Navigate | Parent FOV, Previous Frame, Next Frame, Back 10 Frames, Forward 10 Frames |
+| Help | Keyboard Shortcuts..., About DetecDiv |
 
 Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C. Save/edit/analysis commands will be added with their actual implementations.
 

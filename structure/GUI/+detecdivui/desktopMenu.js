@@ -63,7 +63,7 @@
             check.textContent = item.checked ? '✓' : '';
             const label = document.createElement('span'); label.className = 'dd-label'; label.textContent = item.text;
             const shortcut = document.createElement('span'); shortcut.className = 'dd-shortcut';
-            shortcut.textContent = item.children.length ? '›' : (item.accelerator ? 'Ctrl+'+item.accelerator.toUpperCase() : '');
+            shortcut.textContent = item.children.length ? '›' : (item.shortcut || (item.accelerator ? 'Ctrl+'+item.accelerator.toUpperCase() : ''));
             button.append(check,label,shortcut); entry.appendChild(button);
             if (item.children.length) {
                 button.setAttribute('aria-haspopup','menu'); entry.appendChild(makeMenu(item.children));

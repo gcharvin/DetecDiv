@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"></head><body><script>
+// R2026a FigureDocument boundary. Listen only to this figure's image canvas;
+// native editors, sliders, trees, menus and custom widgets retain their keys.
+function setup(component) {
+    let state = {}, owner = null, sequence = 0;
+    function keydown(event) {
+        const frame = window.frameElement;
+        const scope = frame && frame.closest('.figureContainerNode');
+        const target = event.target;
+        if (!state.enabled || !scope || !scope.contains(target) ||
+            !target.closest('.GraphicsView') || event.defaultPrevented || event.isComposing ||
+            event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+        const raw = event.key.toLowerCase();
+        const key = ({arrowleft:'leftarrow',arrowright:'rightarrow',arrowup:'uparrow',
+            arrowdown:'downarrow',enter:'return',' ':'space'})[raw] || raw;
+        if (!state.keys.includes(key)) return;
+        event.preventDefault(); event.stopPropagation();
+        // Keep configuration in Data: a floating document can reload this iframe.
+        component.Data = {...state, action:'key', key, sequence:++sequence};
+    }
+    function unbind() {
+        if (owner) owner.removeEventListener('keydown',keydown,true);
+        owner = null;
+    }
+    function update() {
+        const incoming = component.Data;
+        sequence = Math.max(sequence, Number(incoming && incoming.sequence) || 0);
+        if (incoming && Array.isArray(incoming.keys)) state = incoming;
+        const current = window.frameElement && window.frameElement.ownerDocument;
+        if (current !== owner) {
+            unbind(); owner = current;
+            if (owner) owner.addEventListener('keydown',keydown,true);
+        }
+    }
+    component.addEventListener('DataChanged',update);
+    window.addEventListener('beforeunload',unbind);
+    update();
+    document.body.dataset.ready = 'true';
+}
+</script></body></html>

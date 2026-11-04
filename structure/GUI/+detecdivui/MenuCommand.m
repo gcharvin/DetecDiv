@@ -6,6 +6,7 @@ classdef MenuCommand < handle
         Enable = 'on'
         Checked = 'off'
         Accelerator = ''
+        Shortcut = ''
         Separator = 'off'
         MenuSelectedFcn = []
         Children = {}
@@ -27,7 +28,7 @@ classdef MenuCommand < handle
         function data = serialize(obj)
             data = struct('id',obj.Id,'text',obj.Text, ...
                 'enabled',strcmp(obj.Enable,'on'),'checked',strcmp(obj.Checked,'on'), ...
-                'accelerator',obj.Accelerator,'separator',strcmp(obj.Separator,'on'), ...
+                'accelerator',obj.Accelerator,'shortcut',obj.Shortcut,'separator',strcmp(obj.Separator,'on'), ...
                 'children',{{}});
             data.children = cellfun(@(item)item.serialize(),obj.Children,'UniformOutput',false);
         end
