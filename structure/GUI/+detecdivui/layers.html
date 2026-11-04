@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;font:12px Arial,sans-serif;color:#252a30;background:#fafafa}
+body{overflow:auto;border:1px solid #aab0b5}button,input{font:inherit}button{cursor:pointer}
+.row{border-bottom:1px solid #dce1e5;padding:5px 6px;background:#fafafa}.row.selected{background:#e7f1f8;box-shadow:inset 3px 0 #287db2}
+.head{display:grid;grid-template-columns:20px minmax(0,1fr) 30px;align-items:center;gap:5px}
+.name{border:0;text-align:left;background:transparent;padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit}
+input[type=checkbox]{margin:0;accent-color:#287db2}.swatch{width:28px;height:22px;border:1px solid #aab0b5;background:white;padding:1px;cursor:pointer}
+.info{display:flex;gap:6px;margin:3px 0 0 25px;font-size:10px;color:#596976;justify-content:space-between}
+.info span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.edit{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 48px;gap:4px;margin:6px 0 1px 25px}
+.edit input{min-width:0;width:100%;height:23px;padding:2px;border:1px solid #aab0b5;border-radius:2px;background:white}
+.swatch.mapped::-webkit-color-swatch{background:linear-gradient(90deg,#663399,#21b79c,#f4dc40)!important}
+.edit label{font-size:10px;color:#596976;display:block}.empty{padding:10px;color:#697681}
+button:focus-visible,input:focus-visible{outline:2px solid #287db2;outline-offset:1px}
+</style></head><body><div id="rows" role="listbox" aria-label="Image layers"></div><script>
+function setup(component){
+ let state={layers:[],selected:0},revision=0;const root=document.getElementById('rows');
+ function send(action,index,value){component.Data={revision,action,index,value};}
+ function element(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+ function rgb(spec){const a=String(spec).trim().replace(/,/g,' ').split(/\s+/).map(Number);return a.length===3&&a.every(x=>Number.isFinite(x)&&x>=0&&x<=1)?'#'+a.map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join(''):null;}
+ function format(x){return Number(x).toLocaleString('en-US',{maximumSignificantDigits:5,useGrouping:false});}
+ function render(){const incoming=component.Data;if(!incoming||!Object.hasOwn(incoming,'layers'))return;state=incoming;revision=state.revision;
+ const scroll=document.documentElement.scrollTop;root.replaceChildren();const layers=Array.isArray(state.layers)?state.layers:(state.layers&&state.layers.name?[state.layers]:[]);
+ if(!layers.length){root.append(element('div','empty','No layers'));return;}
+ layers.forEach((layer,j)=>{const i=j+1,selected=i===state.selected,row=element('div','row'+(selected?' selected':''));row.setAttribute('role','option');row.setAttribute('aria-selected',selected);row.title=layer.name;
+ const head=element('div','head'),visible=element('input');visible.type='checkbox';visible.checked=layer.visible;visible.title='Show / hide '+layer.name;visible.setAttribute('aria-label',visible.title);visible.onchange=()=>send('visible',i,visible.checked);
+ const name=element('button','name',layer.name);name.title='Select '+layer.name;name.onclick=()=>send('select',i,true);name.onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();send('select',Math.max(1,Math.min(layers.length,i+(e.key==='ArrowDown'?1:-1))),true);}};
+ const color=element('input','swatch');color.type='color';color.value=rgb(layer.color)||'#ffffff';color.disabled=layer.kind==='RGB';color.title='Choose color for '+layer.name; color.setAttribute('aria-label',color.title);
+ if(!rgb(layer.color))color.classList.add('mapped');
+ color.onchange=()=>{const h=color.value;send('color',i,[1,3,5].map(k=>parseInt(h.slice(k,k+2),16)/255));};
+ head.append(visible,name,color);row.append(head);
+ const info=element('div','info'),limits=Array.isArray(layer.limits)?layer.limits:[];
+ info.append(element('span','',layer.kind+(limits.length===2?' · '+limits.map(format).join(' – '):'')),element('span','',Math.round(100*layer.opacity)+'%'));row.append(info);
+ if(selected){const edit=element('div','edit');['Low','High','Weight'].forEach((label,k)=>{const wrap=element('label','',label),input=element('input');input.type='number';input.step='any';input.setAttribute('aria-label',label+' for '+layer.name);
+ if(k<2){input.disabled=layer.kind==='Labels'||limits.length!==2;input.value=limits.length===2?limits[k]:'';input.title=label+' display level in source pixel units';input.onchange=()=>{const v=limits.slice();v[k]=Number(input.value);send('limits',i,v);};}
+ else{input.min=0;input.max=1;input.step=.05;input.value=layer.opacity;input.title='Opacity / intensity weight (0–1)';input.onchange=()=>send('opacity',i,Number(input.value));}
+ wrap.append(input);edit.append(wrap);});row.append(edit);}
+ root.append(row);});document.documentElement.scrollTop=scroll;
+ }
+ component.addEventListener('DataChanged',render);render();
+}
+</script></body></html>

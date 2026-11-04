@@ -9,6 +9,7 @@ classdef LayerModel < handle
         Key = ''
         Frame = 0
         Planes = {}
+        Histograms = {}
         Scratch
     end
     methods
@@ -66,11 +67,11 @@ classdef LayerModel < handle
             obj.Layers = layers; obj.store();
         end
         function invalidate(obj)
-            obj.Frame = 0; obj.Planes = {};
+            obj.Frame = 0; obj.Planes = {}; obj.Histograms = {};
         end
         function plane = read(obj,index,frame)
             if obj.Frame ~= frame
-                obj.Planes = cell(1,numel(obj.Layers)); obj.Frame = frame;
+                obj.Planes = cell(1,numel(obj.Layers)); obj.Histograms = cell(1,numel(obj.Layers)); obj.Frame = frame;
             end
             if numel(obj.Planes) < index || isempty(obj.Planes{index})
                 plane = obj.Session.readPlane(frame,index);
@@ -94,6 +95,11 @@ classdef LayerModel < handle
             plane = obj.read(index,frame);
             assert(~strcmp(obj.Layers(index).kind,'Labels'),'detecdivui:LabelContrast','Label layers do not use intensity contrast.');
             obj.Layers(index).limits = obj.dataLimits(plane); obj.store();
+        end
+        function data = histogram(obj,index,frame)
+            plane = obj.read(index,frame);
+            if isempty(obj.Histograms{index}), obj.Histograms{index} = score_histogramData(plane); end
+            data = obj.Histograms{index};
         end
         function setVisible(obj,index,value)
             obj.Layers(index).visible = logical(value); obj.store();

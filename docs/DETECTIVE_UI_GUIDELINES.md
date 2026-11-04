@@ -26,6 +26,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 9. Every integration from Score, DetecDiv, Workflow or Pipeline must review progress UI and caller/destination ownership. Long operations show a scoped widget/footer indicator before blocking; reuse real backend callbacks and preserve cancellation where supported. Use indeterminate progress without a measurable fraction. Hidden-widget work falls back to a visible owner. See `DETECTIVE_UI_PROGRESS.md` and regenerate the audit when adding a handoff.
 10. Keep Pipeline compact: graph, run selection and status. New Run/common settings belong in a dialog; Advanced reuses pipeline2 with the same configuration and run identity. Do not embed a full editor in the dockable panel or create a parallel settings store.
 11. Define ROIs on the main Image viewport, through the independent ROIs assistant. Reuse it from pipeline steps; no Workflow image window in the new viewer path. Distinguish preview, project ROI creation and definition transfer to a run. Reuse engine packages, and keep pixel extraction explicit.
+12. Use Score as the reference for Display functionality: rich channel rows, direct color selection, levels/weights and histograms. Keep scientific pixels unchanged and share rendering/statistics helpers. Rich web controls must stay inside the existing dockable document, work offline and reject stale context events.
 
 ## Initial menu structure
 

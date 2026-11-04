@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;font:11px Arial,sans-serif;color:#36444f;background:#f6f6f6;overflow:hidden}
+body{display:flex;flex-direction:column;gap:4px}.toolbar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}select{font:inherit;max-width:66px;border:1px solid #adb5bc;background:white}
+label{white-space:nowrap}input{vertical-align:middle;margin:0 3px 0 0;accent-color:#287db2}#chart{flex:1;min-height:65px;width:100%;background:#fff;border:1px solid #d2d9df;touch-action:none}#stats{height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+.level{cursor:ew-resize}.level line{stroke:#347fa9;stroke-width:1.5;stroke-dasharray:4 2}.level rect{fill:transparent}.level polygon{fill:#347fa9}
+</style></head><body><div class="toolbar"><strong>Histogram</strong><select id="scale" aria-label="Histogram X scale" title="Intensity axis"><option value="auto">Auto X</option><option value="linear">Linear X</option><option value="log">Log X</option></select><label title="Logarithmic pixel counts"><input id="log" type="checkbox">Log Y</label><label title="Overlay visible intensity layers"><input id="visible" type="checkbox">Visible</label></div>
+<svg id="chart" role="img" aria-label="Intensity histogram and display levels"></svg><div id="stats"></div><script>
+function setup(component){
+ const chart=document.getElementById('chart'),scale=document.getElementById('scale'),log=document.getElementById('log'),visible=document.getElementById('visible'),stats=document.getElementById('stats');
+ const ns='http://www.w3.org/2000/svg';let state={},revision=0,drag=null,geometry=null;
+ function send(action,value){component.Data={revision,action,value};}
+ scale.onchange=()=>send('xscale',scale.value);log.onchange=()=>send('logcounts',log.checked);visible.onchange=()=>send('visible',visible.checked);
+ function svg(tag,attrs,text){const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;return e;}
+ function fmt(x){return Number(x).toLocaleString('en-US',{maximumSignificantDigits:4,useGrouping:false});}
+ function color(spec){const a=String(spec).replace(/,/g,' ').trim().split(/\s+/).map(Number);return a.length===3&&a.every(Number.isFinite)?(a.every(x=>x>.95)?'#35444e':`rgb(${a.map(x=>Math.round(255*x)).join(',')})`):'#6c65a5';}
+ function draw(){if(drag)return;const d=component.Data;if(d&&Object.hasOwn(d,'series')){state=d;revision=d.revision;}chart.replaceChildren();geometry=null;
+ scale.value=state.xScale||'auto';log.checked=state.logCounts;visible.checked=state.showVisible;
+ let series=Array.isArray(state.series)?state.series:(state.series&&state.series.name?[state.series]:[]);series=series.filter(s=>s.edges&&s.edges.length>1);
+ const w=Math.max(170,chart.clientWidth),h=Math.max(65,chart.clientHeight);chart.setAttribute('viewBox',`0 0 ${w} ${h}`);
+ stats.textContent='';if(state.stats&&state.stats.count){stats.textContent=state.name+' · Median '+fmt(state.stats.median)+' · N '+state.stats.count;stats.title=stats.textContent;}
+ if(!series.length){chart.append(svg('text',{x:10,y:25,fill:'#687985','font-size':11},state.kind==='Labels'?'Label layer':(state.name?'No finite pixels':'No image')));return;}
+ let lo=Math.min(...series.map(s=>s.edges[0])),hi=Math.max(...series.map(s=>s.edges.at(-1)));
+ const limits=Array.isArray(state.limits)?state.limits:[];if(limits.length===2&&state.kind!=='Labels'){lo=Math.min(lo,limits[0]);hi=Math.max(hi,limits[1]);}
+ if(!(hi>lo))hi=lo+1;const logX=(state.xScale==='log'||state.xScale==='auto'&&lo>0)&&lo>0;
+ if(state.xScale==='log'&&lo<=0)scale.title='Nonpositive intensities: linear axis';else scale.title='Intensity axis';
+ const tx=x=>logX?Math.log10(x):x,ix=x=>logX?10**x:x,left=31,right=w-10,top=10,bottom=h-22;
+ const x=x=>left+(tx(x)-tx(lo))/(tx(hi)-tx(lo))*(right-left),unx=p=>ix(tx(lo)+(p-left)/(right-left)*(tx(hi)-tx(lo)));
+ const max=Math.max(1,...series.flatMap(s=>s.counts)),ty=n=>state.logCounts?Math.log10(n+1):n,y=n=>bottom-ty(n)/ty(max)*(bottom-top);
+ geometry={x,unx,left,right,lo,hi,w,h,limits:limits.slice()};
+ chart.append(svg('path',{d:`M${left},${top}V${bottom}H${right}`,fill:'none',stroke:'#9daab3'}));
+ [lo,ix((tx(lo)+tx(hi))/2),hi].forEach((v,k)=>chart.append(svg('text',{x:x(v),y:h-6,'text-anchor':k===0?'start':k===2?'end':'middle','font-size':10,fill:'#647582'},fmt(v))));
+ chart.append(svg('text',{x:left-4,y:top+5,'text-anchor':'end','font-size':9,fill:'#647582'},fmt(max)));
+ series.forEach(s=>{let path='';s.counts.forEach((n,i)=>{path+=(i?'L':'M')+x(s.edges[i])+','+y(n);});chart.append(svg('path',{d:path,fill:'none',stroke:color(s.color),'stroke-width':s.active?1.7:1,'opacity':s.active?1:.45}));});
+ if(limits.length===2&&state.kind!=='Labels')limits.forEach((v,i)=>{const g=svg('g',{'class':'level','data-limit':i,tabindex:0,role:'slider','aria-label':i?'High display level':'Low display level','aria-valuenow':v,'aria-valuemin':lo,'aria-valuemax':hi});
+ g.append(svg('rect',{x:x(v)-7,y:0,width:14,height:bottom}),svg('line',{x1:x(v),x2:x(v),y1:top,y2:bottom}),svg('polygon',{points:`${x(v)-5},0 ${x(v)+5},0 ${x(v)},8`}));
+ g.onpointerdown=e=>{e.preventDefault();drag={index:i,pointer:e.pointerId,limits:limits.slice(),group:g};chart.setPointerCapture(e.pointerId);};
+ g.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const a=limits.slice(),step=(hi-lo)/200;a[i]+=e.key==='ArrowLeft'?-step:step;if(a[0]<a[1])send('limits',a);};chart.append(g);});
+ }
+ chart.onpointermove=e=>{if(!drag||!geometry)return;const rect=chart.getBoundingClientRect(),p=(e.clientX-rect.left)/rect.width*geometry.w;
+ const i=drag.index,v=geometry.unx(Math.max(geometry.left,Math.min(geometry.right,p)));if(i===0&&v>=drag.limits[1]||i===1&&v<=drag.limits[0])return;
+ drag.limits[i]=v;drag.group.setAttribute('transform',`translate(${geometry.x(v)-geometry.x(geometry.limits[i])} 0)`);};
+ chart.onpointerup=e=>{if(!drag)return;const a=drag.limits;drag=null;chart.releasePointerCapture(e.pointerId);send('limits',a);};
+ chart.onpointercancel=()=>{drag=null;draw();};
+ component.addEventListener('DataChanged',draw);new ResizeObserver(draw).observe(chart);draw();
+}
+</script></body></html>

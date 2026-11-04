@@ -140,29 +140,18 @@ function score_updateHistogram(app, mode)
         end
         
         imgChannel = score_decodeChannelValues(selectedROI, channelIdx, imgChannel);
-        vals = imgChannel(:);
-        vals = vals(isfinite(vals));
-        if isempty(vals)
+        stats = score_histogramData(imgChannel,numBins);
+        if stats.count == 0
             continue;
         end
-        minValForEdges = min(vals);
-        maxValForEdges = max(vals);
-        if maxValForEdges <= minValForEdges
-            maxValForEdges = minValForEdges + eps(max(1, abs(minValForEdges)));
-        end
-        if minValForEdges > 0
-            edges = logspace(log10(max(minValForEdges, realmin)), log10(maxValForEdges), numBins);
-        else
-            edges = linspace(minValForEdges, maxValForEdges, numBins);
-        end
-        [counts, ~] = histcounts(vals, edges);
+        edges = stats.edges; counts = stats.counts;
         counts(counts == 0) = NaN;  % éviter des zéros sur une échelle logarithmique
         histogramData{k} = counts;
         histogramEdges{k} = edges;
-        allPixelValues = [allPixelValues; vals(:)];
+        allPixelValues = [allPixelValues; stats.range(:)];
         
         % Calculer la médiane des pixels pour ce canal
-        medianVal = median(vals(:));
+        medianVal = stats.median;
         medianValues{k} = medianVal;
         
         % Préparer le nom du canal pour la légende, avec la médiane
