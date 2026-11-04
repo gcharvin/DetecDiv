@@ -2,6 +2,8 @@ function viewer = detecdiv_ui(project, varargin)
 %DETECDIV_UI Launch the isolated unified-viewer prototype.
 %   viewer = detecdiv_ui() opens an empty workspace.
 %   viewer = detecdiv_ui(shallowObj) explores an existing project.
+%   viewer = detecdiv_ui({projectA,projectB}) opens multiple projects.
+%   viewer.addProject(projectC) adds another project to the same tree.
 % Configure this worktree with detecdiv_setup_path before calling.
 if nargin < 1, project = []; end
 p = inputParser;

@@ -1,56 +1,48 @@
-# Guidelines UX de la nouvelle interface
+# DetecDiv UI guidelines
 
-Référence : discussion avec Gilles du 4 novembre 2026 et `DETECTIVE_UI_ROADMAP.md`.
-Ce document fixe les orientations retenues ; les détails d'implémentation restent évolutifs.
+Reference: discussion with Gilles, 4 November 2026, and `DETECTIVE_UI_ROADMAP.md`.
+The requirements below supersede the earlier French labels, renamed data concepts and permanently visible guidance text.
 
-## Priorité confirmée
+## Required desktop conventions
 
-**Image centrale et outils contextuels.** Choix explicite de Gilles le 4 novembre 2026.
+- **English UI.** Menus, labels, tooltips, status messages and app-generated errors use English. Preserve user-provided project, FOV, ROI and channel names verbatim.
+- **Conventional menu bar.** Use File, Edit, View, Navigate and Help. Commands must invoke available actions; do not add placeholder commands suggesting unsupported capabilities.
+- **DetecDiv vocabulary.** Use Project, FOV, ROI, Classifier, Processor and Pipeline. Do not replace FOV and ROI with a new naming scheme.
+- **One project tree.** Show the actual Project → FOV → ROI hierarchy, with multiple open projects in the same tree. Project navigation and task-oriented tools complement one another.
+- **Image first.** Keep the central viewport dominant. The Projects and Display panels can be hidden through View.
+- **No explanatory paragraphs in the layout.** Remove onboarding text, next-step essays, disclaimers and decorative workflow slogans. Use concise control labels and MATLAB tooltips. Keep the bottom status bar for the current view or an actionable error. Hover-driven status help can be added if it works reliably with native components; standard tooltips are the initial implementation.
 
-L'image occupe la plus grande surface disponible. Les panneaux de données et d'outils sont repliables. Le parcours guide sans occuper une grande partie de l'écran ni imposer un assistant modal.
+## Interaction rules
 
-## Principes d'interaction
+1. Selecting a FOV or ROI updates the same viewport and synchronizes the tree and breadcrumb. Clicking an ROI outline selects that ROI in the tree.
+2. Opening a project adds it to the workspace. Focusing an already open project does not create another copy. Closing removes it from this window without saving or deleting scientific data.
+3. Keep each project's current FOV/ROI, frame and named channel while browsing other projects. Preserve zoom within temporal navigation of one view; fitting the image is an explicit command.
+4. Empty legacy placeholders are hidden, while object indices remain unchanged. Display user names alongside FOV/ROI indices.
+5. Show reference ROI geometry as reference geometry. Do not infer tracking or drift correction. Clear old pixels after a failed read.
+6. Contextual tools expose useful defaults first, with detailed parameters and the pipeline available on demand. Guiding an action must not require a permanent tutorial beside the image.
+7. Treatment commands must make selection, output naming and replacement behavior clear. Scientific logic stays in backend modules; pipelines retain provenance.
+8. Native tooltips and enabled/disabled commands communicate availability. The colour of a contour is not the only selection cue; the project tree also identifies the active ROI.
 
-1. **Partir d'une intention.** Présenter « Examiner une zone », « Segmenter les cellules », « Corriger un résultat » ou « Mesurer une fluorescence ». Les noms des classes et fonctions internes ne structurent pas le parcours courant.
-2. **Garder une fenêtre principale.** Explorer une position, entrer dans une zone et revenir au champ dans la même vue. Les outils apparaissent autour de cette vue.
-3. **Savoir où l'on est.** Le fil d'Ariane indique expérience, position et zone, avec leurs noms lorsque disponibles. Le retour au niveau précédent reste visible et ne ferme pas le projet.
-4. **Savoir quoi faire ensuite.** Une indication courte dépend de la sélection et de la disponibilité des données. Ne pas présenter comme accomplie une étape dont l'état n'a pas été vérifié.
-5. **Révéler progressivement.** Afficher d'abord une configuration pertinente et ses réglages essentiels. Donner accès aux détails et au pipeline dans l'outil concerné, sans mode expert global obligatoire.
-6. **Préserver la continuité.** Conserver le temps et le canal nommé si possible entre champ et zone. Conserver le zoom lors du parcours temporel d'une même vue. Un changement de contexte incompatible réajuste la vue.
-7. **Distinguer observation et modification.** Naviguer et régler l'affichage ne sauvegarde pas de nouvelles données scientifiques. Une action de traitement décrit sa portée et les résultats créés ou remplacés avant exécution.
-8. **Éviter les ambiguïtés scientifiques.** Indiquer brut, extraction ou résultat dérivé. Les contours de référence ne sont pas présentés comme des trajectoires corrigées dans le temps. Un échec de lecture efface les anciens pixels.
-9. **Respecter les données existantes.** Masquer les placeholders historiques sans supprimer d'objets ni renuméroter les références internes. Afficher les canaux logiques nommés et conserver l'intégrité des sous-canaux RGB.
-10. **Rendre l'exécution explicable.** L'utilisateur lance une action simple ; il peut inspecter le pipeline, les paramètres effectifs, l'avancement, les erreurs et la provenance.
+## Initial menu structure
 
-## Structure visuelle de départ
+| Menu | Available commands |
+| --- | --- |
+| File | Open Project..., Close Project, Exit |
+| Edit | Copy Image |
+| View | Projects, Display, ROI Outlines, Fit Image, Expand Projects, Collapse Projects |
+| Navigate | Parent FOV, Previous Frame, Next Frame |
+| Help | About DetecDiv |
 
-- En-tête sobre : identité de l'application, ouverture d'expérience et contrôle des panneaux.
-- Navigation : retour au champ et fil d'Ariane, immédiatement au-dessus de l'image.
-- Gauche : positions et zones, avec les noms des données ; gestion étendue des projets à intégrer progressivement.
-- Centre : image et outils natifs de zoom/déplacement ; navigation temporelle directement sous l'image.
-- Droite : affichage et actions adaptées au contexte courant.
-- Bas : origine des pixels, temps et canal, ou message d'erreur utile.
+Open Project uses Ctrl+O, Close Project uses Ctrl+W, and Copy Image uses Ctrl+C. Save/edit/analysis commands will be added with their actual implementations.
 
-Le prototype utilise un fond d'image sombre et des panneaux clairs. La palette définitive, les espacements et les composants App Designer seront stabilisés après essai sur données réelles. La couleur ne doit pas constituer le seul indice d'état.
+## Remaining design decisions
 
-## Comportements déjà matérialisés
+- Extend the tree to Classifiers, Processors, Pipelines and Runs when the corresponding integrations are implemented.
+- Define multi-layer contrast, colours, mask rendering and scientific editing tools.
+- Decide when single-click selection should be distinguished from double-click opening for grouped actions.
+- Stabilize keyboard navigation, minimum window size and saved workspace layouts.
+- Transfer the validated layout to the established App Designer / code-sync workflow.
 
-- Repli des panneaux Données et Outils.
-- Ouverture d'une zone par sa liste ou un clic sur son contour de référence.
-- Retour au champ, maintien du temps lorsque compatible et du canal si son nom correspond.
-- Navigation temporelle par numéro, curseur et boutons précédent/suivant.
-- Masquage des objets vides et erreurs sans conservation d'une ancienne image.
+## Validation
 
-## Points à préciser avec les essais
-
-- Organisation de plusieurs expériences et accès aux modèles et pipelines sans détourner la vue centrale.
-- Simple clic pour sélectionner et double clic pour ouvrir, si des opérations groupées rendent cette distinction nécessaire. Le prototype ouvre directement au clic.
-- Raccourcis clavier et arbitrage entre sélection, zoom, déplacement et édition.
-- Présentation de plusieurs couches, contrastes, couleurs et masques.
-- Indication de l'état réel des étapes et choix des configurations proposées.
-- Taille minimale utilisable et dispositions mémorisées par activité.
-- Langue et vocabulaire définitifs. Le prototype utilise le français pour les libellés utilisateur.
-
-## Vérification à chaque tranche
-
-L'utilisateur peut identifier ce qu'il regarde, revenir au contexte précédent et comprendre l'action suivante. Aucun nouveau panneau ne doit obliger à connaître la hiérarchie des objets MATLAB. Les améliorations doivent être vérifiées sur les pixels affichés et les parcours réels, puis sur une acquisition représentative avant adoption.
+Verify navigation, pixels, tree selection, menu callbacks, project isolation and image limits in MATLAB. Inspect an exported window. Validate on a representative real acquisition before changing the default DetecDiv entry point.

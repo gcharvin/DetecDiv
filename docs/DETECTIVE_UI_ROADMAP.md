@@ -19,6 +19,8 @@ L'inspiration napari concerne la place de l'image, les couches et les outils con
 - Tenir compte du fait que la segmentation, le tracking et d'autres traitements utilisent déjà Python et que cette part doit augmenter. MATLAB assure aujourd'hui notamment l'interface et l'affichage ; la transition doit suivre les dépendances réelles, à inventorier.
 - Garder les pipelines au cœur de l'exécution reproductible, tout en masquant leur complexité dans les usages courants.
 - Révéler progressivement les paramètres et les outils avancés.
+- Utiliser une interface intégralement en anglais, des menus classiques et le vocabulaire DetecDiv (Project, FOV, ROI). Un arbre unique permet de parcourir plusieurs projets ouverts.
+- Réserver l'aide contextuelle aux tooltips MATLAB et à la barre d'état ; ne pas ajouter de paragraphes explicatifs permanents dans la fenêtre.
 - Étudier la possibilité de ne plus dupliquer systématiquement les pixels bruts dans les H5 de chaque ROI, sans imposer dès maintenant un changement de stockage.
 
 ## 3. Philosophie UX
@@ -33,12 +35,12 @@ Les entrées principales doivent exprimer des objectifs :
 4. Examiner et corriger les résultats.
 5. Mesurer, comparer et exporter.
 
-La hiérarchie `shallow → fov → roi → dataseries` reste compatible en interne. Le vocabulaire courant présente des expériences, positions, zones d'analyse, cellules et mesures. Une zone d'analyse ne désigne pas nécessairement une cellule unique.
+La hiérarchie `shallow → fov → roi → dataseries` reste compatible en interne et visible dans le navigateur Project → FOV → ROI. À la demande explicite de Gilles, conserver le vocabulaire DetecDiv, avec tous les libellés d'interface en anglais. Une ROI ne désigne pas nécessairement une cellule unique. Les intentions guident les outils sans remplacer la hiérarchie du projet par de nouveaux termes.
 
 ### Fournir deux repères complémentaires
 
-- **Localisation** : fil d'Ariane, par exemple `Expérience → Position 3 → Zone 12 → Cellule 7`.
-- **Avancement** : parcours `Données → Zones d'analyse → Segmentation et suivi → Révision → Mesures`, avec états et prochaine action pertinente.
+- **Localisation** : arbre multi-projets et fil d'Ariane, par exemple `Project → FOV 3 → ROI 12`.
+- **Avancement** : actions disponibles et outils contextuels, avec états utiles. Les explications restent dans les tooltips ou la barre d'état ; aucun bandeau didactique permanent n'est requis.
 
 Le parcours ne doit pas devenir un assistant rigide. Il reste possible de revenir aux images, de corriger un résultat, de reprendre une analyse existante ou de travailler sur une sélection partielle.
 
@@ -53,10 +55,10 @@ Les valeurs proposées doivent être explicites et adaptées au contexte. Le pé
 | Zone | Rôle |
 | --- | --- |
 | Centre | Images, couches, sélection, zoom et déplacement |
-| Gauche, repliable | Navigation dans les données et gestion des projets et objets de traitement |
+| Gauche, repliable | Arbre multi-projets Project → FOV → ROI, extensible aux objets de traitement |
 | Droite, contextuelle | Widgets correspondant à l'action : canaux, zones, segmentation, correction, mesures |
 | Bas | Navigation temporelle et panneaux de signaux ou de lignées activables |
-| Haut | Actions principales, repères de navigation, enregistrement et suivi des traitements |
+| Haut | Menus classiques File / Edit / View / Navigate / Help, puis fil d'Ariane et retour au FOV |
 
 Les outils doivent pouvoir être mobilisés dans la fenêtre principale. Commencer par des panneaux repliables et des dispositions mémorisables ; évaluer ensuite le détachement et le déplacement libre selon les capacités de MATLAB.
 
@@ -180,3 +182,4 @@ Un inventaire des fonctionnalités et une première fenêtre MATLAB démontrant 
 - Priorité visuelle confirmée par Gilles : **image centrale et outils contextuels**. Voir `DETECTIVE_UI_GUIDELINES.md`.
 - Premier inventaire de réutilisation et procédure de lancement dans `DETECTIVE_UI_IMPLEMENTATION.md`.
 - Validation automatisée sur données synthétiques TIFF et zones en mémoire ; l'étape 1 reste à valider sur une acquisition réelle. Aucun pipeline guidé, changement de stockage ou migration de données n'est encore réalisé.
+- Révision UX demandée par Gilles : menus conventionnels, interface en anglais, suppression des textes explicatifs permanents et restauration du vocabulaire DetecDiv. Un arbre unique Project → FOV → ROI permet d'ouvrir, parcourir et fermer plusieurs projets, avec conservation du temps et du canal par projet. Les nouvelles guidelines remplacent les choix de vocabulaire du premier prototype.

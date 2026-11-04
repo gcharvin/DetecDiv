@@ -1,80 +1,75 @@
-# Detective-UI — prototype MATLAB de navigation
+# DetecDiv UI — MATLAB prototype
 
-## Démarrage
+## Launch
 
-Utiliser une session MATLAB dédiée à ce worktree :
+Use a MATLAB session dedicated to this worktree:
 
 ```matlab
 cd('C:\Users\Gilles\Documents\MATLAB\Detective-UI');
 detecdiv_setup_path(pwd, 'DetecDivRoot', pwd);
 viewer = detecdiv_ui();
-% Ou, avec un projet déjà chargé dans cette session :
-viewer = detecdiv_ui(shallowObj);
+% Existing projects can also be supplied:
+viewer = detecdiv_ui(projectA);
+viewer.addProject(projectB);
+% Or open multiple projects at launch:
+viewer = detecdiv_ui({projectA, projectB});
 ```
 
-Le paramètre `DetecDivRoot` est nécessaire : le helper peut sinon sélectionner automatiquement le checkout voisin `DetecDiv` comme moteur et omettre les nouvelles classes GUI du worktree. L'entrée habituelle `detecdiv` reste inchangée. Le prototype est une fenêtre MATLAB programmée ; son organisation reste exploratoire avant de stabiliser une source de layout App Designer. Il ne modifie pas les MLAPP existants.
+`DetecDivRoot` must explicitly select this worktree: the path helper can otherwise choose the sibling DetecDiv checkout. The regular `detecdiv` entry point and existing MLAPPs are unchanged. The prototype layout is code-owned until interactions are validated, then will follow the App Designer / code-sync workflow.
 
-## Capacités du premier socle
+## Current interface
 
-- Ouverture d'un projet par `shallowLoad`, navigation par positions et zones nommées, fil d'Ariane. Les placeholders historiques vides sont masqués sans modifier les indices des objets.
-- Une seule vue pour les images brutes et les zones extraites ; retour à la position et conservation du temps lorsque possible.
-- Choix d'un canal brut ou d'un canal logique nommé de zone, avec regroupement des trois sous-canaux RGB, y compris lorsqu'ils ne sont pas contigus. Les métadonnées absentes ou incompatibles donnent accès aux plans individuels.
-- Contours des zones de référence sur le champ, avec ouverture au clic ; leur visibilité est réglable. Aucun déplacement temporel de ces contours n'est inféré.
-- Navigation temporelle par numéro, curseur et boutons ; conservation du zoom entre images d'une même vue et du canal nommé entre contextes si possible.
-- Panneaux Données et Outils repliables et indications contextuelles pour continuer.
-- Messages d'indisponibilité à la place de l'image précédente, pour éviter toute confusion après un échec de lecture.
-- État de navigation séparé de la fenêtre (`detecdivui.Session`) et lecteur historique derrière une première interface `readPlane`.
+- File, Edit, View, Navigate and Help menus, with standard open/close/copy accelerators.
+- One Projects tree containing Project → FOV → ROI nodes. Multiple projects remain open; selecting a node updates the central image. Opening the same handle, stable project ID or project path focuses the existing project.
+- Per-project FOV/ROI, frame and named-channel state. Closing a project restores another open project; closing the last project clears the viewport.
+- Breadcrumb and parent-FOV navigation synchronized with tree and ROI-outline selection.
+- Named logical channels, including non-contiguous RGB subchannels. Missing or incompatible channel metadata falls back to individual image planes.
+- Reference ROI outlines that can be hidden; no temporal geometry is inferred.
+- Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
+- Collapsible Projects and Display panels, concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
+- Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
 
-Le chargement d'une zone utilise son image en mémoire ou `roi.load('Data',false)` : il peut charger toute son extraction en mémoire et mettre à jour ses métadonnées d'affichage. Aucun enregistrement, extraction ni traitement n'est lancé par ce prototype. Le lecteur brut historique peut effectuer ses réparations habituelles de chemins en mémoire.
+The session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI loading can load a whole extraction and update in-memory display metadata; the legacy raw reader can repair paths in memory. Browsing does not save, extract or process scientific data. Closing a project only removes its UI reference.
 
-## Limites explicites
+## Limits
 
-L'indication du parcours reste discrète et ne calcule pas encore les états des étapes. Les outils d'analyse, composition de plusieurs canaux, contraste mémorisé, annotations, sauvegarde et pipelines guidés ne sont pas encore intégrés. Un canal logique composé de trois plans est affiché comme une image RGB ; les autres groupes de plusieurs plans sont exposés individuellement. Les zones non extraites ne sont pas reconstruites depuis le brut. Les contours reprennent les rectangles de référence comme dans workflow ; les trajectoires mobiles ne sont pas reconstruites. La lecture reste synchrone, sans cache ni préchargement.
+The current interface is an exploration prototype. Scientific editing, classifier/processor/pipeline management, guided segmentation, compositing multiple channels, persisted contrast, caches and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
 
-Les données de validation sont synthétiques. La validation sur un projet réel et les mesures de performance restent à effectuer.
+Reading is synchronous. Monochrome contrast uses finite pixel min/max without changing pixel values. Project switching restores frame and channel but does not preserve an independent zoom for every FOV/ROI. Data is synthetic in the automated validation; real acquisitions and performance still need validation.
 
-Le contraste monochrome est ajusté au minimum et au maximum finis de l'image affichée ; il ne modifie pas les pixels. Les réglages de contraste persistants et les palettes de masques restent à intégrer.
+## Initial reuse inventory
 
-## Premier inventaire des points de réutilisation
-
-Cette table est un repérage initial du code, pas une certification de couverture fonctionnelle.
-
-| Intention | Source existante | Adaptation à préparer |
+| Intent | Existing source | Adaptation needed |
 | --- | --- | --- |
-| Ouvrir une expérience | `structure/io/shallowLoad.m` | Ajouter le contexte de progression et les chemins/accès Hub pertinents |
-| Explorer les images brutes | `structure/classes/@fov/readImage.m` | Lecture groupée, cache et distinction temps/canaux |
-| Examiner une zone extraite | `structure/classes/@roi/load.m` | Lecture sélective et gestion des canaux logiques |
-| Définir les zones | Packages `engine/dataloading/+roiManual`, `+roiPattern`, `+roiGrid`, `+roiTracked` | Paramètres et prévisualisation contextuelle sans importer les callbacks de workflow |
-| Prévisualiser les zones et la dérive | `structure/GUI/workflow_extracted.m` : `renderCurrentFrame`, éditeurs et navigation | Identifier la référence runtime active et isoler transformations et interactions |
-| Afficher les couches et résultats | `structure/GUI/score/score_display.m` et helpers de rendu | Détacher les dépendances aux tables, propriétés et figures de score |
-| Corriger masques et tracking | Helpers `score_setEditMode`, `score_splitMaskObject`, `score_swapSelectedTrackIds` | Inventorier prérequis, sélection, sauvegarde et annulation avant intégration |
-| Annoter et réviser | `structure/GUI/score/private/score_runtime_code.m` et tests de sessions d'annotation | Extraire actions et états du contrôleur graphique |
-| Examiner lignées et signaux | Helpers de score, méthodes de `@dataseries` | Synchroniser temps et sélection avec la session unifiée |
-| Lancer une analyse reproductible | `structure/io/runPipeline.m`, `@pipeline`, `pipelineRun` | Une action utilisateur configure un pipeline inspectable |
-| Synchroniser les frontends | `helpers/detecdiv_event.m`, `detecdiv_frontend_plugins.m` | Définir le cycle de vie et les événements de la nouvelle fenêtre |
-| Stabiliser le layout | `score_gui_layout.m`, `sync_score_layout.m` et équivalents | Préserver les sources design et code séparées lors du passage App Designer |
+| Open Project | `structure/io/shallowLoad.m` | Progress and Hub access context |
+| Browse raw images | `structure/classes/@fov/readImage.m` | Block reading, cache, time/channel mapping |
+| View extracted ROIs | `structure/classes/@roi/load.m` | Selective reads and channel loading |
+| Define ROIs | `+roiManual`, `+roiPattern`, `+roiGrid`, `+roiTracked` | Contextual parameters and preview |
+| Preview geometry/drift | `structure/GUI/workflow_extracted.m` | Identify active runtime source, isolate transforms |
+| Display layers/results | `structure/GUI/score/score_display.m` and render helpers | Remove dependencies on score components |
+| Edit masks/tracks | `score_setEditMode`, `score_splitMaskObject`, `score_swapSelectedTrackIds` | Selection, preconditions, save and undo |
+| Annotate/review | `score/private/score_runtime_code.m`, annotation tests | Separate actions/state from UI |
+| View lineages/signals | score helpers and `@dataseries` | Synchronize session selection and time |
+| Reproducible analysis | `runPipeline.m`, `@pipeline`, `pipelineRun` | An inspectable pipeline behind each guided action |
+| Frontend synchronization | `detecdiv_event.m`, `detecdiv_frontend_plugins.m` | Lifecycle and event contracts |
+| App Designer layout | Existing `*_gui_layout` / `sync_*_layout` helpers | Preserve separate layout and code sources |
 
-## Validation reproductible
+This inventory identifies reuse candidates, not completed integrations.
+
+## Validation
 
 ```matlab
 detecdivui.smokeTest();
+% Optional visible export for visual inspection:
+detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 ```
 
-Le test utilise deux TIFF temporaires et des zones en mémoire. Il vérifie les pixels bruts, le filtrage des placeholders en conservant leurs indices, l'ouverture par un contour, les canaux logiques et RGB non contigus, le maintien du canal et du zoom, la navigation temporelle, le retour au champ, le masquage des contours, le repli des panneaux, l'effacement des pixels après une lecture impossible et la récupération au changement de temps. Il ne valide pas encore les extractions H5 ni les données réelles. Un chemin PNG facultatif permet d'exporter la fenêtre pour vérification visuelle ; dans ce cas seulement, le test rend brièvement la fenêtre visible.
+The smoke test creates temporary TIFFs and in-memory ROIs. It exercises pixels, logical/RGB channels, image/contrast limits, outlines, timeline, failed-read recovery, menu callbacks, tree selection, multiple projects, duplicate opening, closing active/inactive/last projects and empty projects. It does not yet validate real acquisitions or extracted H5 data. The optional PNG export briefly shows the window.
 
-Validation du 4 novembre 2026 sous MATLAB R2026a : test réussi, Code Analyzer sans diagnostic sur les trois fichiers du package, et export de la fenêtre inspecté visuellement. La vérification couvre aussi les limites des axes et du contraste après récupération d'une erreur de lecture.
+Validated on 4 November 2026 with MATLAB R2026a: smoke test passed, Code Analyzer clean for the entry point and package, and the exported desktop window inspected visually with two projects open.
 
-```matlab
-detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-preview.png'));
-```
+## Next implementation tranche
 
-## Prochaine tranche
+Validate browsing on real data, then integrate guided segmentation and its inspectable pipeline. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
-1. Faire essayer la navigation sur une acquisition représentative et recueillir les observations UX.
-2. Compléter les couches composites et les réglages de contraste selon les retours.
-3. Auditer les contrats d'un segmenter existant pour intégrer la première action guidée et son pipeline.
-4. Reprendre le layout dans App Designer une fois les interactions essentielles validées.
-
-Les orientations visuelles et les règles d'interaction sont consignées dans `DETECTIVE_UI_GUIDELINES.md`. La priorité confirmée est « Image centrale et outils contextuels ».
-
-Les modifications non commitées du checkout initial ne sont toujours pas intégrées ici ; les comparer avant de reprendre les chemins de chargement ou d'affichage concernés.
+Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

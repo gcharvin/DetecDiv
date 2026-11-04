@@ -33,7 +33,7 @@ classdef Session < handle
                 end
                 if populated
                     indices(end+1) = k; %#ok<AGROW>
-                    labels{end+1} = obj.itemLabel('Position',k,p.id); %#ok<AGROW>
+                    labels{end+1} = obj.itemLabel('FOV',k,p.id); %#ok<AGROW>
                 end
             end
         end
@@ -44,20 +44,20 @@ classdef Session < handle
             for k = 1:numel(zones)
                 if obj.isZone(zones(k))
                     indices(end+1) = k; %#ok<AGROW>
-                    labels{end+1} = obj.itemLabel('Zone',k,zones(k).id); %#ok<AGROW>
+                    labels{end+1} = obj.itemLabel('ROI',k,zones(k).id); %#ok<AGROW>
                 end
             end
         end
         function selectPosition(obj, index)
             [~, indices] = obj.positionItems();
             assert(isscalar(index) && any(index == indices), ...
-                'detecdivui:Position', 'Position indisponible.');
+                'detecdivui:Position', 'FOV unavailable.');
             obj.Position = index; obj.Zone = 0;
         end
         function selectZone(obj, index)
             [~, indices] = obj.zoneItems();
             assert(obj.Position > 0 && isscalar(index) && any(index == [0 indices]), ...
-                'detecdivui:Zone', 'Zone indisponible.');
+                'detecdivui:Zone', 'ROI unavailable.');
             obj.Zone = index;
         end
         function [names, frames, channels] = dimensions(obj)
@@ -88,7 +88,7 @@ classdef Session < handle
         function plane = readPlane(obj, frame, channel)
             [names, frames, channels] = obj.dimensions();
             assert(~isempty(names),'detecdivui:NoChannels', ...
-                'Aucune image disponible pour cette position.');
+                'No image channels available for this FOV.');
             validateattributes(frame, {'numeric'}, {'scalar','integer','positive','<=',frames});
             validateattributes(channel, {'numeric'}, {'scalar','integer','positive','<=',numel(names)});
             position = obj.Project.fov(obj.Position);
@@ -114,16 +114,16 @@ classdef Session < handle
             end
         end
         function text = breadcrumb(obj)
-            if isempty(obj.Project), text = 'Votre espace de travail'; return; end
+            if isempty(obj.Project), text = ''; return; end
             name = string(obj.Project.io.file);
-            if strlength(name) == 0, name = "Expérience"; end
+            if strlength(name) == 0, name = "Untitled Project"; end
             text = char(name);
             if obj.Position > 0
                 p = obj.Project.fov(obj.Position);
-                text = sprintf('%s  /  %s',text,obj.itemLabel('Position',obj.Position,p.id));
+                text = sprintf('%s  /  %s',text,obj.itemLabel('FOV',obj.Position,p.id));
                 if obj.Zone > 0
                     text = sprintf('%s  /  %s',text, ...
-                        obj.itemLabel('Zone',obj.Zone,p.roi(obj.Zone).id));
+                        obj.itemLabel('ROI',obj.Zone,p.roi(obj.Zone).id));
                 end
             end
         end
@@ -132,7 +132,7 @@ classdef Session < handle
         function ensureZoneImages(~, zone)
             if isempty(zone.image), zone.load('Data',false); end
             assert(~isempty(zone.image), 'detecdivui:MissingPixels', ...
-                'Cette zone n''a pas de pixels extraits accessibles. Revenez à la position.');
+                'ROI pixels unavailable. Check the extraction or return to the FOV.');
         end
         function channels = zoneChannels(~, zone)
             count = size(zone.image,3);
@@ -146,20 +146,20 @@ classdef Session < handle
                     all(isfinite(ids) & ids >= 1 & ids == floor(ids))
                 for id = reshape(unique(ids,'stable'),1,[])
                     planes = find(ids == id);
-                    label = sprintf('Canal %d',id);
+                    label = sprintf('Channel %d',id);
                     if id <= numel(labels) && ~isempty(labels{id}), label = labels{id}; end
                     if isscalar(planes) || numel(planes) == 3
                         channels(end+1) = struct('name',label,'planes',planes); %#ok<AGROW>
                     else
                         for j = 1:numel(planes)
-                            channels(end+1) = struct('name',sprintf('%s · plan %d',label,j), ...
+                            channels(end+1) = struct('name',sprintf('%s · plane %d',label,j), ...
                                 'planes',planes(j)); %#ok<AGROW>
                         end
                     end
                 end
             else
                 for k = 1:count
-                    channels(k) = struct('name',sprintf('Plan %d',k),'planes',k);
+                    channels(k) = struct('name',sprintf('Plane %d',k),'planes',k);
                 end
             end
         end

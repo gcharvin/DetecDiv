@@ -1,12 +1,13 @@
 classdef Viewer < handle
-    % Experimental shell. UI widgets adapt legacy readers through Session.
+    % Conventional desktop shell; legacy readers are accessed through Session.
     properties (SetAccess = private)
         Session
         Figure
+        Sessions = {}
+        ActiveProject = 0
     end
     properties (Access = private)
-        Positions
-        Zones
+        Tree
         Channels
         Frame
         TimeSlider
@@ -15,13 +16,22 @@ classdef Viewer < handle
         Next
         Crumb
         Status
-        Guidance
         Back
         Axes
         Main
         Browser
         Tools
         Overlays
+        BrowserMenu
+        ToolsMenu
+        OverlayMenu
+        CloseMenu
+        CopyMenu
+        ParentMenu
+        PreviousMenu
+        NextMenu
+        ViewStates = {}
+        PreferredChannel = ''
         SelectedZone = 0
         RenderKey = ''
         MaxFrame = 1
@@ -31,131 +41,237 @@ classdef Viewer < handle
             if nargin < 1, project = []; end
             if nargin < 2, visibility = 'on'; end
             obj.Session = detecdivui.Session();
-            obj.Figure = uifigure('Name','DetecDiv — Explorer', ...
+            obj.Figure = uifigure('Name','DetecDiv', ...
                 'Position',[80 80 1380 840], 'Visible',visibility, ...
                 'Color',[0.95 0.96 0.97]);
             obj.Figure.CloseRequestFcn = @(~,~)delete(obj);
-            root = uigridlayout(obj.Figure,[4 1]);
-            root.RowHeight = {48,36,'1x',28};
-            root.Padding = [12 8 12 8];
+            obj.createMenus();
+            root = uigridlayout(obj.Figure,[3 1]);
+            root.RowHeight = {32,'1x',24};
+            root.Padding = [8 6 8 6];
             root.BackgroundColor = [0.95 0.96 0.97];
-            header = uigridlayout(root,[1 5]);
-            header.ColumnWidth = {120,200,'1x',100,100};
-            header.Padding = [0 0 0 0];
-            uilabel(header,'Text','DetecDiv','FontSize',23,'FontWeight','bold');
-            uibutton(header,'Text','Ouvrir une expérience', ...
-                'ButtonPushedFcn',@(~,~)obj.openProject());
-            uilabel(header,'Text','Explorer les images','FontSize',16,'FontColor',[0.1 0.4 0.5]);
-            uibutton(header,'state','Text','Données','Value',true, ...
-                'ValueChangedFcn',@(src,~)obj.togglePanel('browser',src.Value));
-            uibutton(header,'state','Text','Outils','Value',true, ...
-                'ValueChangedFcn',@(src,~)obj.togglePanel('tools',src.Value));
             location = uigridlayout(root,[1 2]);
-            location.ColumnWidth = {150,'1x'}; location.Padding = [0 0 0 0];
-            obj.Back = uibutton(location,'Text','← Position','Enable','off', ...
+            location.ColumnWidth = {100,'1x'}; location.Padding = [0 0 0 0];
+            obj.Back = uibutton(location,'Text','← FOV','Enable','off', ...
+                'Tag','parent-fov','Tooltip','Return to the parent FOV', ...
                 'ButtonPushedFcn',@(~,~)obj.returnToPosition());
-            obj.Crumb = uilabel(location,'Text','Votre espace de travail', ...
-                'Interpreter','none','FontSize',13);
+            obj.Crumb = uilabel(location,'Text','', ...
+                'Interpreter','none','FontSize',12,'Tag','breadcrumb');
             obj.Main = uigridlayout(root,[1 3]);
-            obj.Main.ColumnWidth = {224,'1x',252}; obj.Main.Padding = [0 0 0 0];
-            obj.Browser = uipanel(obj.Main,'Title','Données de l’expérience');
-            nav = uigridlayout(obj.Browser,[5 1]);
-            nav.RowHeight = {22,'1x',22,'1x',42};
-            uilabel(nav,'Text','Positions','FontWeight','bold');
-            obj.Positions = uilistbox(nav,'Items',{},'Enable','off','Tag','positions', ...
-                'ValueChangedFcn',@(~,~)obj.changePosition());
-            uilabel(nav,'Text','Zones d’analyse','FontWeight','bold');
-            obj.Zones = uilistbox(nav,'Items',{},'Enable','off','Tag','zones', ...
-                'ValueChangedFcn',@(~,~)obj.changeZone());
-            uilabel(nav,'Text','Cliquez sur une zone dans la liste ou directement dans l’image.', ...
-                'WordWrap','on','FontColor',[0.4 0.45 0.5]);
+            obj.Main.ColumnWidth = {260,'1x',220}; obj.Main.Padding = [0 0 0 0];
+            obj.Browser = uipanel(obj.Main,'Title','Projects');
+            nav = uigridlayout(obj.Browser,[1 1]);
+            nav.Padding = [4 4 4 4];
+            obj.Tree = uitree(nav,'Tag','projects-tree', ...
+                'SelectionChangedFcn',@(~,~)obj.browseSelection());
+            obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
             canvas = uigridlayout(obj.Main,[2 1]);
-            canvas.RowHeight = {'1x',66}; canvas.Padding = [0 0 0 0];
+            canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             obj.Axes.Toolbar.Visible = 'on';
-            title(obj.Axes,'Ouvrez une expérience pour explorer ses images');
             timeline = uigridlayout(canvas,[2 5]);
-            timeline.RowHeight = {26,22};
+            timeline.RowHeight = {26,20};
             timeline.ColumnWidth = {32,32,80,'1x',90}; timeline.Padding = [0 0 0 0];
             obj.Previous = uibutton(timeline,'Text','‹','Enable','off', ...
-                'Tooltip','Image précédente','ButtonPushedFcn',@(~,~)obj.stepFrame(-1));
+                'Tag','previous-frame','Tooltip','Previous frame', ...
+                'ButtonPushedFcn',@(~,~)obj.stepFrame(-1));
             obj.Next = uibutton(timeline,'Text','›','Enable','off', ...
-                'Tooltip','Image suivante','ButtonPushedFcn',@(~,~)obj.stepFrame(1));
+                'Tag','next-frame','Tooltip','Next frame', ...
+                'ButtonPushedFcn',@(~,~)obj.stepFrame(1));
             obj.Frame = uieditfield(timeline,'numeric','Value',1,'Limits',[1 Inf], ...
                 'RoundFractionalValues','on','Enable','off','Tag','frame-number', ...
-                'Tooltip','Image temporelle','ValueChangedFcn',@(~,~)obj.render());
+                'Tooltip','Frame number','ValueChangedFcn',@(~,~)obj.render());
             obj.FrameCount = uilabel(timeline,'Text','/ 1');
             obj.FrameCount.Layout.Column = 5;
             obj.TimeSlider = uislider(timeline,'Limits',[1 2],'Value',1, ...
                 'MajorTicks',[],'MinorTicks',[],'Enable','off','Tag','time-slider', ...
+                'Tooltip','Browse frames', ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
-            obj.Tools = uipanel(obj.Main,'Title','Affichage et navigation');
-            tools = uigridlayout(obj.Tools,[9 1]);
-            tools.RowHeight = {22,30,30,32,22,120,30,'1x',50};
-            uilabel(tools,'Text','Canal','FontWeight','bold');
+            obj.Tools = uipanel(obj.Main,'Title','Display');
+            tools = uigridlayout(obj.Tools,[5 1]);
+            tools.RowHeight = {22,30,30,32,'1x'};
+            uilabel(tools,'Text','Channel','FontWeight','bold');
             obj.Channels = uidropdown(tools,'Items',{'—'},'ItemsData',1, ...
-                'Enable','off','Tag','channels', ...
+                'Enable','off','Tag','channels','Tooltip','Display channel', ...
                 'ValueChangedFcn',@(~,~)obj.render());
-            obj.Overlays = uicheckbox(tools,'Text','Zones de référence','Value',true, ...
-                'Enable','off','Tag','reference-zones','ValueChangedFcn',@(~,~)obj.render());
-            obj.Overlays.Tooltip = 'Contours de référence enregistrés, sans correction temporelle de dérive.';
-            uibutton(tools,'Text','Ajuster l’image à la vue', ...
-                'ButtonPushedFcn',@(~,~)obj.resetView());
-            uilabel(tools,'Text','Pour continuer','FontWeight','bold');
-            obj.Guidance = uilabel(tools,'Text', ...
-                'Ouvrez une expérience existante, puis choisissez une position.', ...
-                'WordWrap','on','VerticalAlignment','top');
-            uilabel(tools,'Text','Explorer → Zones → Analyser','FontColor',[0.4 0.45 0.5]);
-            note = uilabel(tools,'Text','Les réglages de cette vue ne modifient pas les données.', ...
-                'WordWrap','on','FontColor',[0.4 0.45 0.5]);
-            note.Layout.Row = 9;
-            obj.Status = uilabel(root,'Text','Aucune expérience ouverte', ...
-                'Interpreter','none','Tag','status');
-            if ~isempty(project), obj.attachProject(project); end
+            obj.Overlays = uicheckbox(tools,'Text','ROI outlines','Value',true, ...
+                'Enable','off','Tag','reference-zones', ...
+                'Tooltip','Show reference ROI rectangles; positions are not drift-corrected', ...
+                'ValueChangedFcn',@(src,~)obj.setOutlines(src.Value));
+            uibutton(tools,'Text','Fit image','Tooltip','Fit the complete image to the viewport', ...
+                'Tag','fit-image','ButtonPushedFcn',@(~,~)obj.resetView());
+            obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
+            if iscell(project)
+                for k = 1:numel(project), obj.addProject(project{k}); end
+            elseif ~isempty(project)
+                for k = 1:numel(project), obj.addProject(project(k)); end
+            end
+        end
+        function addProject(obj,project)
+            % Add or focus a project; existing projects stay in the tree.
+            assert(isa(project,'shallow') && isscalar(project), ...
+                'detecdivui:Project','A shallow project is required.');
+            index = obj.findProject(project);
+            if index == 0
+                obj.Sessions{end+1} = detecdivui.Session(project);
+                obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
+                index = numel(obj.Sessions);
+                obj.rebuildTree();
+            end
+            obj.activate(index);
+            obj.selectCurrentNode();
+            obj.refreshView();
+        end
+        function closeProject(obj,index)
+            % Closing removes the UI reference only; scientific data is unchanged.
+            if nargin < 2, index = obj.ActiveProject; end
+            if index == 0, return; end
+            validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
+            active = obj.Session;
+            obj.storeView();
+            obj.Sessions(index) = []; obj.ViewStates(index) = [];
+            remaining = find(cellfun(@(session)isequal(session,active),obj.Sessions),1);
+            obj.ActiveProject = 0;
+            obj.Session = detecdivui.Session();
+            obj.rebuildTree();
+            if ~isempty(obj.Sessions)
+                if isempty(remaining), remaining = min(index,numel(obj.Sessions)); end
+                obj.activate(remaining); obj.selectCurrentNode();
+            end
+            obj.refreshView();
         end
         function delete(obj)
             if ~isempty(obj.Figure) && isvalid(obj.Figure), delete(obj.Figure); end
         end
     end
     methods (Access = private)
+        function createMenus(obj)
+            file = uimenu(obj.Figure,'Text','File');
+            uimenu(file,'Text','Open Project...','Accelerator','O', ...
+                'MenuSelectedFcn',@(~,~)obj.openProject());
+            obj.CloseMenu = uimenu(file,'Text','Close Project','Accelerator','W', ...
+                'Enable','off','MenuSelectedFcn',@(~,~)obj.closeProject());
+            uimenu(file,'Text','Exit','Separator','on', ...
+                'MenuSelectedFcn',@(~,~)delete(obj));
+            edit = uimenu(obj.Figure,'Text','Edit');
+            obj.CopyMenu = uimenu(edit,'Text','Copy Image','Accelerator','C', ...
+                'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
+            view = uimenu(obj.Figure,'Text','View');
+            obj.BrowserMenu = uimenu(view,'Text','Projects','Checked','on', ...
+                'MenuSelectedFcn',@(~,~)obj.togglePanel('browser'));
+            obj.ToolsMenu = uimenu(view,'Text','Display','Checked','on', ...
+                'MenuSelectedFcn',@(~,~)obj.togglePanel('tools'));
+            obj.OverlayMenu = uimenu(view,'Text','ROI Outlines','Checked','on','Separator','on', ...
+                'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
+            uimenu(view,'Text','Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
+            uimenu(view,'Text','Expand Projects','Separator','on', ...
+                'MenuSelectedFcn',@(~,~)expand(obj.Tree,'all'));
+            uimenu(view,'Text','Collapse Projects', ...
+                'MenuSelectedFcn',@(~,~)collapse(obj.Tree,'all'));
+            navigate = uimenu(obj.Figure,'Text','Navigate');
+            obj.ParentMenu = uimenu(navigate,'Text','Parent FOV','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.returnToPosition());
+            obj.PreviousMenu = uimenu(navigate,'Text','Previous Frame','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.stepFrame(-1));
+            obj.NextMenu = uimenu(navigate,'Text','Next Frame','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.stepFrame(1));
+            helpMenu = uimenu(obj.Figure,'Text','Help');
+            uimenu(helpMenu,'Text','About DetecDiv', ...
+                'MenuSelectedFcn',@(~,~)uialert(obj.Figure, ...
+                    'DetecDiv — microscopy image analysis','About DetecDiv','Icon','info'));
+        end
         function openProject(obj)
             try
-                project = shallowLoad();
-                if ~isempty(project), obj.attachProject(project); end
+                [file,folder] = uigetfile( ...
+                    {'*.json;*.mat','DetecDiv Projects (*.json, *.mat)'},'Open Project');
+                if isequal(file,0), return; end
+                project = shallowLoad(fullfile(folder,file));
+                if ~isempty(project), obj.addProject(project); end
             catch err
                 obj.showError(err);
             end
         end
-        function attachProject(obj, project)
-            obj.Session.setProject(project);
-            obj.SelectedZone = 0; obj.RenderKey = '';
-            [labels, indices] = obj.Session.positionItems();
-            obj.setList(obj.Positions,labels,indices,obj.Session.Position);
-            obj.refreshZones(); obj.refreshView();
-        end
-        function changePosition(obj)
-            obj.Session.selectPosition(obj.Positions.Value);
-            obj.SelectedZone = 0;
-            obj.refreshZones(); obj.refreshView();
-        end
-        function refreshZones(obj)
-            [labels, indices] = obj.Session.zoneItems();
-            if obj.Session.Position == 0
-                obj.setList(obj.Zones,{},[],0);
-            else
-                obj.setList(obj.Zones,[{'Vue de la position'},labels],[0 indices],obj.Session.Zone);
+        function index = findProject(obj,project)
+            index = 0;
+            for k = 1:numel(obj.Sessions)
+                other = obj.Sessions{k}.Project;
+                sameId = strlength(string(project.projectId)) > 0 && strcmp(project.projectId,other.projectId);
+                samePath = strlength(string(project.io.path)) > 0 && strlength(string(project.io.file)) > 0 && ...
+                    strcmpi(fullfile(project.io.path,project.io.file),fullfile(other.io.path,other.io.file));
+                if isequal(project,other) || sameId || samePath, index = k; return; end
             end
         end
-        function changeZone(obj)
-            obj.openZone(obj.Zones.Value);
+        function rebuildTree(obj)
+            delete(obj.Tree.Children);
+            for k = 1:numel(obj.Sessions)
+                session = obj.Sessions{k};
+                projectNode = uitreenode(obj.Tree,'Text',obj.projectName(session.Project), ...
+                    'NodeData',struct('project',k,'fov',0,'roi',0),'Tag','project-node');
+                [labels, indices] = session.positionItems();
+                for j = 1:numel(indices)
+                    fovNode = uitreenode(projectNode,'Text',labels{j}, ...
+                        'NodeData',struct('project',k,'fov',indices(j),'roi',0),'Tag','fov-node');
+                    % Inspect the hierarchy without changing session selection.
+                    rois = session.Project.fov(indices(j)).roi;
+                    for r = 1:numel(rois)
+                        if strlength(string(rois(r).id)) > 0 || ~isempty(rois(r).value) || ~isempty(rois(r).image)
+                            label = sprintf('ROI %d',r);
+                            if strlength(string(rois(r).id)) > 0
+                                label = sprintf('%s · %s',label,string(rois(r).id));
+                            end
+                            uitreenode(fovNode,'Text',label, ...
+                                'NodeData',struct('project',k,'fov',indices(j),'roi',r),'Tag','roi-node');
+                        end
+                    end
+                end
+                expand(projectNode);
+            end
+        end
+        function browseSelection(obj)
+            nodes = obj.Tree.SelectedNodes;
+            if isempty(nodes), return; end
+            target = nodes(1).NodeData;
+            obj.activate(target.project);
+            if target.fov > 0
+                if obj.Session.Position ~= target.fov || target.roi == 0
+                    obj.Session.selectPosition(target.fov);
+                end
+                obj.Session.selectZone(target.roi);
+                if target.roi > 0, obj.SelectedZone = target.roi; end
+            end
+            obj.selectCurrentNode(); obj.refreshView();
+        end
+        function activate(obj,index)
+            if obj.ActiveProject == index, return; end
+            obj.storeView();
+            obj.ActiveProject = index; obj.Session = obj.Sessions{index};
+            state = obj.ViewStates{index};
+            obj.Frame.Value = state.frame; obj.PreferredChannel = state.channel;
+            obj.SelectedZone = state.selectedROI; obj.RenderKey = '';
+        end
+        function storeView(obj)
+            if obj.ActiveProject == 0, return; end
+            name = obj.Channels.Items{obj.Channels.Value};
+            obj.ViewStates{obj.ActiveProject} = struct('frame',obj.Frame.Value, ...
+                'channel',name,'selectedROI',obj.SelectedZone);
+        end
+        function selectCurrentNode(obj)
+            nodes = findall(obj.Tree,'Type','uitreenode');
+            for k = 1:numel(nodes)
+                d = nodes(k).NodeData;
+                if d.project == obj.ActiveProject && d.fov == obj.Session.Position && d.roi == obj.Session.Zone
+                    obj.Tree.SelectedNodes = nodes(k);
+                    if isa(nodes(k).Parent,'matlab.ui.container.TreeNode'), expand(nodes(k).Parent); end
+                    return;
+                end
+            end
         end
         function openZone(obj,index)
             obj.Session.selectZone(index);
             if index > 0, obj.SelectedZone = index; end
-            obj.Zones.Value = index;
-            obj.refreshView();
+            obj.selectCurrentNode(); obj.refreshView();
         end
         function returnToPosition(obj)
             if obj.Session.Position == 0, return; end
@@ -163,38 +279,31 @@ classdef Viewer < handle
         end
         function refreshView(obj)
             obj.Crumb.Text = obj.Session.breadcrumb();
+            obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
             obj.Back.Enable = obj.onOff(obj.Session.Zone > 0);
+            obj.ParentMenu.Enable = obj.Back.Enable;
             obj.Overlays.Enable = obj.onOff(obj.Session.Position > 0 && obj.Session.Zone == 0);
+            obj.OverlayMenu.Enable = obj.Overlays.Enable;
             if obj.Session.Position == 0
                 obj.setControls({},1);
-                cla(obj.Axes); obj.RenderKey = '';
-                title(obj.Axes,'Aucune position à afficher');
-                obj.Status.Text = 'Cette expérience ne contient pas encore de données à explorer.';
-                obj.Guidance.Text = 'Ouvrez une expérience contenant des images ou des zones d’analyse.';
+                cla(obj.Axes); title(obj.Axes,''); obj.RenderKey = '';
+                obj.CopyMenu.Enable = 'off';
+                obj.Status.Text = 'Ready';
+                if obj.ActiveProject > 0, obj.Status.Text = 'No FOVs'; end
                 return;
             end
             try
                 [names, frames] = obj.Session.dimensions();
                 obj.setControls(names,frames);
-                if obj.Session.Zone == 0
-                    [~, zones] = obj.Session.zoneItems();
-                    obj.Guidance.Text = sprintf(['%d zone(s) dans cette position. ' ...
-                        'Cliquez sur un contour ou choisissez une zone dans la liste pour l’examiner.'],numel(zones));
-                else
-                    obj.Guidance.Text = ['Vous examinez les pixels de cette zone. ' ...
-                        'Parcourez le temps ou changez de canal. « Position » vous ramène au champ complet.'];
-                end
                 obj.render();
             catch err
-                obj.setControls({},1);
-                obj.Guidance.Text = 'Les pixels de cette zone sont indisponibles. Revenez à la position ou vérifiez son extraction.';
-                obj.showError(err);
+                obj.setControls({},1); obj.showError(err);
             end
         end
         function setControls(obj,names,frames)
-            oldName = '';
-            if ~isempty(obj.Channels.ItemsData) && obj.Channels.Value <= numel(obj.Channels.Items)
-                oldName = obj.Channels.Items{obj.Channels.Value};
+            oldName = obj.Channels.Items{obj.Channels.Value};
+            if ~isempty(obj.PreferredChannel)
+                oldName = obj.PreferredChannel; obj.PreferredChannel = '';
             end
             available = ~isempty(names);
             if ~available, names = {'—'}; end
@@ -210,15 +319,20 @@ classdef Viewer < handle
             obj.Frame.Value = min(obj.Frame.Value,frames);
             obj.Frame.Enable = obj.onOff(available && frames > 1);
             obj.FrameCount.Text = sprintf('/ %d',frames);
+            obj.TimeSlider.Value = 1;
             obj.TimeSlider.Limits = [1 max(2,frames)];
             obj.TimeSlider.Value = obj.Frame.Value;
             obj.TimeSlider.Enable = obj.onOff(available && frames > 1);
+            obj.updateFrameActions(available);
+        end
+        function updateFrameActions(obj,available)
             obj.Previous.Enable = obj.onOff(available && obj.Frame.Value > 1);
-            obj.Next.Enable = obj.onOff(available && obj.Frame.Value < frames);
+            obj.Next.Enable = obj.onOff(available && obj.Frame.Value < obj.MaxFrame);
+            obj.PreviousMenu.Enable = obj.Previous.Enable;
+            obj.NextMenu.Enable = obj.Next.Enable;
         end
         function setFrame(obj,frame)
-            obj.Frame.Value = min(max(1,frame),obj.MaxFrame);
-            obj.render();
+            obj.Frame.Value = min(max(1,frame),obj.MaxFrame); obj.render();
         end
         function stepFrame(obj,delta)
             obj.setFrame(obj.Frame.Value+delta);
@@ -228,12 +342,11 @@ classdef Viewer < handle
             try
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
                 obj.TimeSlider.Value = obj.Frame.Value;
-                obj.Previous.Enable = obj.onOff(obj.Frame.Value > 1);
-                obj.Next.Enable = obj.onOff(obj.Frame.Value < obj.MaxFrame);
+                obj.updateFrameActions(true);
                 plane = obj.Session.readPlane(obj.Frame.Value,obj.Channels.Value);
                 assert(~isempty(plane),'detecdivui:EmptyImage', ...
-                    'Image indisponible. Vérifiez les sources et le canal sélectionné.');
-                key = sprintf('%d:%d',obj.Session.Position,obj.Session.Zone);
+                    'Image unavailable. Check the source and selected channel.');
+                key = sprintf('%d:%d:%d',obj.ActiveProject,obj.Session.Position,obj.Session.Zone);
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
                 cla(obj.Axes);
@@ -245,8 +358,6 @@ classdef Viewer < handle
                 axis(obj.Axes,'image'); obj.Axes.XTick = []; obj.Axes.YTick = [];
                 title(obj.Axes,'');
                 if obj.Session.Zone == 0 && obj.Overlays.Value, obj.drawRegions(); end
-                % Reestablish limits explicitly: UIAxes can retain [0 1]
-                % after an empty/error view or transitions through patches.
                 obj.Axes.YDir = 'reverse';
                 if keepView
                     obj.Axes.XLim = xl; obj.Axes.YLim = yl;
@@ -255,18 +366,17 @@ classdef Viewer < handle
                     obj.Axes.YLim = [0.5 size(plane,1)+0.5];
                 end
                 if size(plane,3) ~= 3
-                    finitePixels = plane(isfinite(plane));
-                    limits = [0 1];
+                    finitePixels = plane(isfinite(plane)); limits = [0 1];
                     if ~isempty(finitePixels)
                         limits = double([min(finitePixels(:)) max(finitePixels(:))]);
                         if limits(2) <= limits(1), limits(2) = limits(1)+1; end
                     end
                     obj.Axes.CLim = limits;
                 end
-                obj.RenderKey = key;
-                source = 'Champ brut';
-                if obj.Session.Zone > 0, source = 'Zone · pixels chargés'; end
-                obj.Status.Text = sprintf('%s · Image %d / %d · %s',source, ...
+                obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
+                source = 'Raw';
+                if obj.Session.Zone > 0, source = 'ROI'; end
+                obj.Status.Text = sprintf('%s | Frame %d / %d | %s',source, ...
                     obj.Frame.Value,obj.MaxFrame,obj.Channels.Items{obj.Channels.Value});
                 obj.Status.Tooltip = obj.Status.Text;
             catch err
@@ -277,44 +387,52 @@ classdef Viewer < handle
             regions = obj.Session.referenceRegions();
             hold(obj.Axes,'on');
             for k = 1:numel(regions)
-                r = regions(k); p = r.position;
-                color = [0.25 0.9 0.85];
+                r = regions(k); p = r.position; color = [0.25 0.9 0.85];
                 if r.index == obj.SelectedZone, color = [1 0.8 0.25]; end
                 h = patch(obj.Axes,p(1)+[0 p(3) p(3) 0],p(2)+[0 0 p(4) p(4)],color, ...
                     'FaceAlpha',0.025,'EdgeColor',color,'LineWidth',1.5, ...
                     'Tag','zone-overlay','UserData',r.index);
                 h.ButtonDownFcn = @(~,~)obj.openZone(r.index);
-                t = text(obj.Axes,p(1),p(2),sprintf(' %d',r.index),'Color',color, ...
+                t = text(obj.Axes,p(1),p(2),sprintf(' ROI %d',r.index),'Color',color, ...
                     'VerticalAlignment','bottom','FontWeight','bold','Interpreter','none');
                 t.ButtonDownFcn = @(~,~)obj.openZone(r.index);
             end
             hold(obj.Axes,'off');
         end
+        function setOutlines(obj,visible)
+            obj.Overlays.Value = visible; obj.OverlayMenu.Checked = obj.onOff(visible); obj.render();
+        end
         function resetView(obj)
             obj.RenderKey = ''; obj.render();
         end
-        function togglePanel(obj,which,visible)
+        function togglePanel(obj,which)
             if strcmp(which,'browser')
-                obj.Browser.Visible = obj.onOff(visible);
-                obj.Main.ColumnWidth{1} = 224*double(visible);
+                visible = strcmp(obj.BrowserMenu.Checked,'off');
+                obj.BrowserMenu.Checked = obj.onOff(visible); obj.Browser.Visible = obj.onOff(visible);
+                obj.Main.ColumnWidth{1} = 260*double(visible);
             else
-                obj.Tools.Visible = obj.onOff(visible);
-                obj.Main.ColumnWidth{3} = 252*double(visible);
+                visible = strcmp(obj.ToolsMenu.Checked,'off');
+                obj.ToolsMenu.Checked = obj.onOff(visible); obj.Tools.Visible = obj.onOff(visible);
+                obj.Main.ColumnWidth{3} = 220*double(visible);
+            end
+        end
+        function copyImage(obj)
+            try
+                copygraphics(obj.Axes);
+            catch err
+                obj.Status.Text = err.message;
             end
         end
         function showError(obj,err)
-            cla(obj.Axes); obj.RenderKey = '';
+            cla(obj.Axes); obj.RenderKey = ''; obj.CopyMenu.Enable = 'off';
             obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
-            title(obj.Axes,'Image indisponible');
+            title(obj.Axes,'Image unavailable');
         end
     end
     methods (Static, Access = private)
-        function setList(list,labels,indices,selected)
-            list.ItemsData = [];
-            list.Items = labels;
-            list.ItemsData = indices;
-            list.Enable = detecdivui.Viewer.onOff(~isempty(indices));
-            if ~isempty(indices), list.Value = selected; end
+        function name = projectName(project)
+            name = char(string(project.io.file));
+            if isempty(name), name = 'Untitled Project'; end
         end
         function value = onOff(condition)
             if condition, value = 'on'; else, value = 'off'; end
