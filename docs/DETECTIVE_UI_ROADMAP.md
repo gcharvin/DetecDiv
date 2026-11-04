@@ -62,6 +62,8 @@ Les valeurs proposées doivent être explicites et adaptées au contexte. Le pé
 
 Les outils doivent pouvoir être mobilisés dans la fenêtre principale. Commencer par des panneaux repliables et des dispositions mémorisables ; évaluer ensuite le détachement et le déplacement libre selon les capacités de MATLAB.
 
+Précision de Gilles : le docking réel est requis dès la coquille, avant d'ajouter davantage d'outils. Projects, Image et Display doivent pouvoir être détachés et réancrés, avec sauvegarde et restauration du layout. L'hôte de docking est programmé via les API internes R2026a ; App Designer reste une option pour le contenu des widgets, pas pour la disposition globale.
+
 La navigation position → zone → retour à la position utilise le même espace d'affichage. Préserver le temps, les canaux et la sélection lorsque leur correspondance est définie. Distinguer clairement aperçu depuis les données brutes et données extraites ou calculées.
 
 ## 5. Pipelines intégrés aux actions
@@ -183,3 +185,4 @@ Un inventaire des fonctionnalités et une première fenêtre MATLAB démontrant 
 - Premier inventaire de réutilisation et procédure de lancement dans `DETECTIVE_UI_IMPLEMENTATION.md`.
 - Validation automatisée sur données synthétiques TIFF et zones en mémoire ; l'étape 1 reste à valider sur une acquisition réelle. Aucun pipeline guidé, changement de stockage ou migration de données n'est encore réalisé.
 - Révision UX demandée par Gilles : menus conventionnels, interface en anglais, suppression des textes explicatifs permanents et restauration du vocabulaire DetecDiv. Un arbre unique Project → FOV → ROI permet d'ouvrir, parcourir et fermer plusieurs projets, avec conservation du temps et du canal par projet. Les nouvelles guidelines remplacent les choix de vocabulaire du premier prototype.
+- Coquille de docking intégrée et validée : `detecdivui.DockingHost` isole AppContainer, les trois widgets natifs et l'adaptation des menus classiques. Tests de détachement/réancrage et de restauration du layout réussis ; Gilles confirme le bon fonctionnement interactif. Le contrat et les vérifications du layout sont décrits dans `DETECTIVE_UI_DOCKING.md`.

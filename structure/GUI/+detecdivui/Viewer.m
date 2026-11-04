@@ -3,6 +3,7 @@ classdef Viewer < handle
     properties (SetAccess = private)
         Session
         Figure
+        Host
         Sessions = {}
         ActiveProject = 0
     end
@@ -18,9 +19,6 @@ classdef Viewer < handle
         Status
         Back
         Axes
-        Main
-        Browser
-        Tools
         Overlays
         BrowserMenu
         ToolsMenu
@@ -35,16 +33,16 @@ classdef Viewer < handle
         SelectedZone = 0
         RenderKey = ''
         MaxFrame = 1
+        Closing = false
     end
     methods
-        function obj = Viewer(project, visibility)
+        function obj = Viewer(project, visibility, layoutFile, autoSave)
             if nargin < 1, project = []; end
             if nargin < 2, visibility = 'on'; end
             obj.Session = detecdivui.Session();
-            obj.Figure = uifigure('Name','DetecDiv', ...
-                'Position',[80 80 1380 840], 'Visible',visibility, ...
-                'Color',[0.95 0.96 0.97]);
-            obj.Figure.CloseRequestFcn = @(~,~)delete(obj);
+            obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
+            obj.Host.OnClosed = @()delete(obj);
+            obj.Figure = obj.Host.widgetFigure('Image');
             obj.createMenus();
             root = uigridlayout(obj.Figure,[3 1]);
             root.RowHeight = {32,'1x',24};
@@ -57,15 +55,12 @@ classdef Viewer < handle
                 'ButtonPushedFcn',@(~,~)obj.returnToPosition());
             obj.Crumb = uilabel(location,'Text','', ...
                 'Interpreter','none','FontSize',12,'Tag','breadcrumb');
-            obj.Main = uigridlayout(root,[1 3]);
-            obj.Main.ColumnWidth = {260,'1x',220}; obj.Main.Padding = [0 0 0 0];
-            obj.Browser = uipanel(obj.Main,'Title','Projects');
-            nav = uigridlayout(obj.Browser,[1 1]);
+            nav = uigridlayout(obj.Host.widgetFigure('Projects'),[1 1]);
             nav.Padding = [4 4 4 4];
             obj.Tree = uitree(nav,'Tag','projects-tree', ...
                 'SelectionChangedFcn',@(~,~)obj.browseSelection());
             obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
-            canvas = uigridlayout(obj.Main,[2 1]);
+            canvas = uigridlayout(root,[2 1]);
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
             obj.Axes.XTick = []; obj.Axes.YTick = [];
@@ -89,8 +84,7 @@ classdef Viewer < handle
                 'Tooltip','Browse frames', ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
-            obj.Tools = uipanel(obj.Main,'Title','Display');
-            tools = uigridlayout(obj.Tools,[5 1]);
+            tools = uigridlayout(obj.Host.widgetFigure('Display'),[5 1]);
             tools.RowHeight = {22,30,30,32,'1x'};
             uilabel(tools,'Text','Channel','FontWeight','bold');
             obj.Channels = uidropdown(tools,'Items',{'—'},'ItemsData',1, ...
@@ -108,6 +102,15 @@ classdef Viewer < handle
             elseif ~isempty(project)
                 for k = 1:numel(project), obj.addProject(project(k)); end
             end
+            try
+                obj.Host.start(visibility);
+            catch err
+                delete(obj); rethrow(err);
+            end
+            obj.BrowserMenu.Checked = obj.onOff(obj.Host.isWidgetVisible('Projects'));
+            obj.ToolsMenu.Checked = obj.onOff(obj.Host.isWidgetVisible('Display'));
+            if ~isempty(obj.Host.LastLayoutError), obj.Status.Text = obj.Host.LastLayoutError; end
+            obj.Host.syncMenus();
         end
         function addProject(obj,project)
             % Add or focus a project; existing projects stay in the tree.
@@ -142,43 +145,48 @@ classdef Viewer < handle
             end
             obj.refreshView();
         end
+        function figure = widgetFigure(obj,name)
+            figure = obj.Host.widgetFigure(name);
+        end
         function delete(obj)
-            if ~isempty(obj.Figure) && isvalid(obj.Figure), delete(obj.Figure); end
+            if obj.Closing, return; end
+            obj.Closing = true;
+            if ~isempty(obj.Host) && isvalid(obj.Host), delete(obj.Host); end
         end
     end
     methods (Access = private)
         function createMenus(obj)
-            file = uimenu(obj.Figure,'Text','File');
-            uimenu(file,'Text','Open Project...','Accelerator','O', ...
+            file = obj.Host.menu([],'File');
+            obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
-            obj.CloseMenu = uimenu(file,'Text','Close Project','Accelerator','W', ...
+            obj.CloseMenu = obj.Host.menu(file,'Close Project','Accelerator','W', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.closeProject());
-            uimenu(file,'Text','Exit','Separator','on', ...
+            obj.Host.menu(file,'Exit','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)delete(obj));
-            edit = uimenu(obj.Figure,'Text','Edit');
-            obj.CopyMenu = uimenu(edit,'Text','Copy Image','Accelerator','C', ...
+            edit = obj.Host.menu([],'Edit');
+            obj.CopyMenu = obj.Host.menu(edit,'Copy Image','Accelerator','C', ...
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
-            view = uimenu(obj.Figure,'Text','View');
-            obj.BrowserMenu = uimenu(view,'Text','Projects','Checked','on', ...
-                'MenuSelectedFcn',@(~,~)obj.togglePanel('browser'));
-            obj.ToolsMenu = uimenu(view,'Text','Display','Checked','on', ...
-                'MenuSelectedFcn',@(~,~)obj.togglePanel('tools'));
-            obj.OverlayMenu = uimenu(view,'Text','ROI Outlines','Checked','on','Separator','on', ...
+            view = obj.Host.menu([],'View');
+            obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
+            obj.Host.widgetMenu(view,'Image');
+            obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
+            obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
-            uimenu(view,'Text','Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
-            uimenu(view,'Text','Expand Projects','Separator','on', ...
+            obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
+            obj.Host.menu(view,'Expand Projects','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)expand(obj.Tree,'all'));
-            uimenu(view,'Text','Collapse Projects', ...
+            obj.Host.menu(view,'Collapse Projects', ...
                 'MenuSelectedFcn',@(~,~)collapse(obj.Tree,'all'));
-            navigate = uimenu(obj.Figure,'Text','Navigate');
-            obj.ParentMenu = uimenu(navigate,'Text','Parent FOV','Enable','off', ...
+            obj.Host.addDockMenus(view);
+            navigate = obj.Host.menu([],'Navigate');
+            obj.ParentMenu = obj.Host.menu(navigate,'Parent FOV','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.returnToPosition());
-            obj.PreviousMenu = uimenu(navigate,'Text','Previous Frame','Enable','off', ...
+            obj.PreviousMenu = obj.Host.menu(navigate,'Previous Frame','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.stepFrame(-1));
-            obj.NextMenu = uimenu(navigate,'Text','Next Frame','Enable','off', ...
+            obj.NextMenu = obj.Host.menu(navigate,'Next Frame','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.stepFrame(1));
-            helpMenu = uimenu(obj.Figure,'Text','Help');
-            uimenu(helpMenu,'Text','About DetecDiv', ...
+            helpMenu = obj.Host.menu([],'Help');
+            obj.Host.menu(helpMenu,'About DetecDiv', ...
                 'MenuSelectedFcn',@(~,~)uialert(obj.Figure, ...
                     'DetecDiv — microscopy image analysis','About DetecDiv','Icon','info'));
         end
@@ -204,6 +212,10 @@ classdef Viewer < handle
             end
         end
         function rebuildTree(obj)
+            % Flush queued expand/select commands before removing their nodes.
+            % R2026a's native TreeNodeManager can otherwise retain stale indices.
+            obj.Tree.SelectedNodes = [];
+            drawnow;
             delete(obj.Tree.Children);
             for k = 1:numel(obj.Sessions)
                 session = obj.Sessions{k};
@@ -404,17 +416,6 @@ classdef Viewer < handle
         end
         function resetView(obj)
             obj.RenderKey = ''; obj.render();
-        end
-        function togglePanel(obj,which)
-            if strcmp(which,'browser')
-                visible = strcmp(obj.BrowserMenu.Checked,'off');
-                obj.BrowserMenu.Checked = obj.onOff(visible); obj.Browser.Visible = obj.onOff(visible);
-                obj.Main.ColumnWidth{1} = 260*double(visible);
-            else
-                visible = strcmp(obj.ToolsMenu.Checked,'off');
-                obj.ToolsMenu.Checked = obj.onOff(visible); obj.Tools.Visible = obj.onOff(visible);
-                obj.Main.ColumnWidth{3} = 220*double(visible);
-            end
         end
         function copyImage(obj)
             try

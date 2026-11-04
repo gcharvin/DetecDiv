@@ -8,6 +8,9 @@ function viewer = detecdiv_ui(project, varargin)
 if nargin < 1, project = []; end
 p = inputParser;
 p.addParameter('Visible','on',@(x)any(strcmp(x,{'on','off'})));
+p.addParameter('LayoutFile',fullfile(prefdir,'DetecDiv','ui-layout-r2026a.json'), ...
+    @(x)ischar(x)||(isstring(x)&&isscalar(x)));
+p.addParameter('AutoSaveLayout',true,@(x)islogical(x)&&isscalar(x));
 p.parse(varargin{:});
-viewer = detecdivui.Viewer(project,p.Results.Visible);
+viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout);
 end

@@ -15,7 +15,7 @@ viewer.addProject(projectB);
 viewer = detecdiv_ui({projectA, projectB});
 ```
 
-`DetecDivRoot` must explicitly select this worktree: the path helper can otherwise choose the sibling DetecDiv checkout. The regular `detecdiv` entry point and existing MLAPPs are unchanged. The prototype layout is code-owned until interactions are validated, then will follow the App Designer / code-sync workflow.
+`DetecDivRoot` must explicitly select this worktree: the path helper can otherwise choose the sibling DetecDiv checkout. The regular `detecdiv` entry point and existing MLAPPs are unchanged. The main docking shell is code-owned; widget content can later follow the App Designer / code-sync workflow. This docking host currently requires Windows MATLAB R2026a.
 
 ## Current interface
 
@@ -26,7 +26,8 @@ viewer = detecdiv_ui({projectA, projectB});
 - Named logical channels, including non-contiguous RGB subchannels. Missing or incompatible channel metadata falls back to individual image planes.
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
-- Collapsible Projects and Display panels, concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
+- Independent Projects, Image and Display widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches.
+- Concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
 - Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
 
 The session uses existing `fov.readImage` and `roi.load('Data',false)`. ROI loading can load a whole extraction and update in-memory display metadata; the legacy raw reader can repair paths in memory. Browsing does not save, extract or process scientific data. Closing a project only removes its UI reference.
@@ -60,6 +61,7 @@ This inventory identifies reuse candidates, not completed integrations.
 
 ```matlab
 detecdivui.smokeTest();
+detecdivui.dockingTest();
 % Optional visible export for visual inspection:
 detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 ```
@@ -67,6 +69,12 @@ detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 The smoke test creates temporary TIFFs and in-memory ROIs. It exercises pixels, logical/RGB channels, image/contrast limits, outlines, timeline, failed-read recovery, menu callbacks, tree selection, multiple projects, duplicate opening, closing active/inactive/last projects and empty projects. It does not yet validate real acquisitions or extracted H5 data. The optional PNG export briefly shows the window.
 
 Validated on 4 November 2026 with MATLAB R2026a: smoke test passed, Code Analyzer clean for the entry point and package, and the exported desktop window inspected visually with two projects open.
+
+## Docking and layout preferences
+
+See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapter, JSON layout contract and test scope. Preferences default to `fullfile(prefdir, 'DetecDiv', 'ui-layout-r2026a.json')`. Use `'LayoutFile', '', 'AutoSaveLayout', false` to isolate a temporary session.
+
+`viewer.Figure` refers to the Image widget figure. Use `viewer.widgetFigure('Projects')` and `viewer.widgetFigure('Display')` for the other native component trees. `viewer.Host` exposes explicit docking and layout methods.
 
 ## Next implementation tranche
 

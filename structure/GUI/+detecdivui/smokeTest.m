@@ -46,7 +46,7 @@ assert(contains(session.breadcrumb(),'Cells 01'));
 assert(contains(session.breadcrumb(),'FOV 2') && contains(session.breadcrumb(),'ROI 2'));
 session.selectZone(0);
 assert(numel(session.referenceRegions()) == 2);
-viewer = detecdiv_ui(project,'Visible','off');
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeViewer = onCleanup(@()delete(viewer));
 drawnow;
 ax = findall(viewer.Figure,'Tag','image-view');
@@ -57,10 +57,10 @@ assert(numel(regions) == 2);
 region = regions(arrayfun(@(item)item.UserData == 2,regions));
 region.ButtonDownFcn(region,[]);
 assert(viewer.Session.Zone == 2);
-tree = findall(viewer.Figure,'Tag','projects-tree');
+tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 assert(tree.SelectedNodes.NodeData.roi == 2);
 assert(isscalar(tree.Children) && isscalar(tree.Children.Children));
-channels = findall(viewer.Figure,'Tag','channels');
+channels = findall(viewer.widgetFigure('Display'),'Tag','channels');
 assert(strcmp(channels.Items{channels.Value},'Phase'));
 assert(isequal(getPixels(ax),gray));
 channels.Value = find(strcmp(channels.Items,'Fluorescence RGB'));
@@ -86,18 +86,17 @@ slider.Value = 1; slider.ValueChangedFcn(slider,[]);
 assert(isequal(getPixels(ax),pixels));
 assert(isequal(ax.XLim,[0.5 240.5]) && isequal(ax.YLim,[0.5 180.5]));
 assert(isequal(ax.CLim,double([min(pixels(:)) max(pixels(:))])));
-overlay = findall(viewer.Figure,'Tag','reference-zones');
+overlay = findall(viewer.widgetFigure('Display'),'Tag','reference-zones');
 overlay.Value = false; overlay.ValueChangedFcn(overlay,[]);
 assert(isempty(findall(ax,'Tag','zone-overlay')));
 overlay.Value = true; overlay.ValueChangedFcn(overlay,[]);
 % Conventional menus and their live panel actions.
-menus = findall(viewer.Figure,'Type','uimenu');
+menus = [viewer.Host.Commands{:}];
 for text = {'File','Edit','View','Navigate','Help'}
     assert(any(arrayfun(@(item)strcmp(item.Text,text{1}),menus)));
 end
-viewMenu = menus(arrayfun(@(item)strcmp(item.Text,'View'),menus));
 for text = {'Projects','Display'}
-    toggle = viewMenu.Children(arrayfun(@(item)strcmp(item.Text,text{1}),viewMenu.Children));
+    toggle = viewer.Host.findCommand(text{1});
     toggle.MenuSelectedFcn(toggle,[]); assert(strcmp(toggle.Checked,'off'));
     toggle.MenuSelectedFcn(toggle,[]); assert(strcmp(toggle.Checked,'on'));
 end
@@ -135,9 +134,9 @@ viewer.addProject(second); viewer.addProject(project);
 back.ButtonPushedFcn(back,[]);
 slider.Value = 1; slider.ValueChangedFcn(slider,[]);
 if ~isempty(previewPath)
-    viewer.Figure.Visible = 'on';
+    viewer.Host.show();
     drawnow;
-    exportapp(viewer.Figure,previewPath);
+    viewer.Host.capture(previewPath);
 end
 closeMenu = menus(arrayfun(@(item)strcmp(item.Text,'Close Project'),menus));
 closeMenu.MenuSelectedFcn(closeMenu,[]);
@@ -146,7 +145,7 @@ closeMenu.MenuSelectedFcn(closeMenu,[]);
 assert(isempty(viewer.Sessions) && isempty(tree.Children));
 assert(viewer.ActiveProject == 0 && isempty(findall(ax,'Type','image')));
 assert(strcmp(closeMenu.Enable,'off'));
-empty = detecdiv_ui(shallow(),'Visible','off');
+empty = detecdiv_ui(shallow(),'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeEmpty = onCleanup(@()delete(empty));
 assert(empty.Session.Position == 0);
 assert(~isfile(fullfile(folder,'im_zone1.h5')));
