@@ -1,7 +1,7 @@
 # Detective-UI — synthèse et roadmap
 
 Date : 4 novembre 2026. Document de cadrage issu de la discussion avec Gilles.
-Statut : orientations retenues et roadmap proposée ; aucune nouvelle interface n'est encore implémentée.
+Statut : orientations retenues et roadmap proposée ; prototype MATLAB de navigation en cours. Voir l'avancement en section 11.
 
 ## 1. Objectif
 
@@ -172,3 +172,11 @@ Cette étude peut commencer tôt, mais son adoption ne bloque pas la première U
 ## 10. Prochain livrable
 
 Un inventaire des fonctionnalités et une première fenêtre MATLAB démontrant la navigation unifiée sur des données réelles. La première validation doit porter sur le guidage, la continuité de navigation et l'accès progressif aux outils, avant une reprise exhaustive de `score`.
+
+## 11. Avancement au 4 novembre 2026
+
+- Branche publiée sur le remote GitLab existant : `gitlab/codex/detective-ui`.
+- Première fenêtre MATLAB expérimentale disponible via `detecdiv_ui` ; navigation champ/zone, fil d'Ariane, contrôles temporels, canaux logiques et RGB, contours cliquables et panneaux repliables.
+- Priorité visuelle confirmée par Gilles : **image centrale et outils contextuels**. Voir `DETECTIVE_UI_GUIDELINES.md`.
+- Premier inventaire de réutilisation et procédure de lancement dans `DETECTIVE_UI_IMPLEMENTATION.md`.
+- Validation automatisée sur données synthétiques TIFF et zones en mémoire ; l'étape 1 reste à valider sur une acquisition réelle. Aucun pipeline guidé, changement de stockage ou migration de données n'est encore réalisé.

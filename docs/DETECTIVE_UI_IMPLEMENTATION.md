@@ -1,4 +1,4 @@
-# Detective-UI — premier socle MATLAB
+# Detective-UI — prototype MATLAB de navigation
 
 ## Démarrage
 
@@ -16,9 +16,12 @@ Le paramètre `DetecDivRoot` est nécessaire : le helper peut sinon sélectionne
 
 ## Capacités du premier socle
 
-- Ouverture d'un projet par `shallowLoad`, navigation par positions et zones, fil d'Ariane.
+- Ouverture d'un projet par `shallowLoad`, navigation par positions et zones nommées, fil d'Ariane. Les placeholders historiques vides sont masqués sans modifier les indices des objets.
 - Une seule vue pour les images brutes et les zones extraites ; retour à la position et conservation du temps lorsque possible.
-- Choix d'un canal brut ou d'un plan stocké de zone et d'une image temporelle.
+- Choix d'un canal brut ou d'un canal logique nommé de zone, avec regroupement des trois sous-canaux RGB, y compris lorsqu'ils ne sont pas contigus. Les métadonnées absentes ou incompatibles donnent accès aux plans individuels.
+- Contours des zones de référence sur le champ, avec ouverture au clic ; leur visibilité est réglable. Aucun déplacement temporel de ces contours n'est inféré.
+- Navigation temporelle par numéro, curseur et boutons ; conservation du zoom entre images d'une même vue et du canal nommé entre contextes si possible.
+- Panneaux Données et Outils repliables et indications contextuelles pour continuer.
 - Messages d'indisponibilité à la place de l'image précédente, pour éviter toute confusion après un échec de lecture.
 - État de navigation séparé de la fenêtre (`detecdivui.Session`) et lecteur historique derrière une première interface `readPlane`.
 
@@ -26,9 +29,11 @@ Le chargement d'une zone utilise son image en mémoire ou `roi.load('Data',false
 
 ## Limites explicites
 
-Le bandeau de parcours présente la direction UX ; il ne calcule pas encore les états des étapes. Les outils d'analyse, couches composites RGB, overlays de zones sur le champ, contraste mémorisé, annotations, sauvegarde et pipelines guidés ne sont pas encore intégrés. Les zones non extraites ne sont pas reconstruites depuis le brut. Les listes peuvent encore exposer les objets vides de la hiérarchie historique. La lecture reste synchrone, sans cache ni préchargement. Les plans stockés des zones ne représentent pas encore une gestion complète des canaux logiques et sous-canaux.
+L'indication du parcours reste discrète et ne calcule pas encore les états des étapes. Les outils d'analyse, composition de plusieurs canaux, contraste mémorisé, annotations, sauvegarde et pipelines guidés ne sont pas encore intégrés. Un canal logique composé de trois plans est affiché comme une image RGB ; les autres groupes de plusieurs plans sont exposés individuellement. Les zones non extraites ne sont pas reconstruites depuis le brut. Les contours reprennent les rectangles de référence comme dans workflow ; les trajectoires mobiles ne sont pas reconstruites. La lecture reste synchrone, sans cache ni préchargement.
 
 Les données de validation sont synthétiques. La validation sur un projet réel et les mesures de performance restent à effectuer.
+
+Le contraste monochrome est ajusté au minimum et au maximum finis de l'image affichée ; il ne modifie pas les pixels. Les réglages de contraste persistants et les palettes de masques restent à intégrer.
 
 ## Premier inventaire des points de réutilisation
 
@@ -55,13 +60,21 @@ Cette table est un repérage initial du code, pas une certification de couvertur
 detecdivui.smokeTest();
 ```
 
-Le test utilise un TIFF temporaire et une zone en mémoire. Il vérifie les pixels de la lecture brute, la navigation vers la zone par le callback réel de la liste, son affichage dans la fenêtre masquée, puis le retour au champ par le bouton. Il ne valide pas encore les extractions H5 ni les données réelles.
+Le test utilise deux TIFF temporaires et des zones en mémoire. Il vérifie les pixels bruts, le filtrage des placeholders en conservant leurs indices, l'ouverture par un contour, les canaux logiques et RGB non contigus, le maintien du canal et du zoom, la navigation temporelle, le retour au champ, le masquage des contours, le repli des panneaux, l'effacement des pixels après une lecture impossible et la récupération au changement de temps. Il ne valide pas encore les extractions H5 ni les données réelles. Un chemin PNG facultatif permet d'exporter la fenêtre pour vérification visuelle ; dans ce cas seulement, le test rend brièvement la fenêtre visible.
+
+Validation du 4 novembre 2026 sous MATLAB R2026a : test réussi, Code Analyzer sans diagnostic sur les trois fichiers du package, et export de la fenêtre inspecté visuellement. La vérification couvre aussi les limites des axes et du contraste après récupération d'une erreur de lecture.
+
+```matlab
+detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-preview.png'));
+```
 
 ## Prochaine tranche
 
 1. Faire essayer la navigation sur une acquisition représentative et recueillir les observations UX.
-2. Afficher des noms métier et filtrer les placeholders historiques.
-3. Gérer les canaux logiques, les overlays des zones et la sélection directe sur l'image.
-4. Auditer les contrats d'un segmenter existant pour intégrer la première action guidée et son pipeline.
+2. Compléter les couches composites et les réglages de contraste selon les retours.
+3. Auditer les contrats d'un segmenter existant pour intégrer la première action guidée et son pipeline.
+4. Reprendre le layout dans App Designer une fois les interactions essentielles validées.
+
+Les orientations visuelles et les règles d'interaction sont consignées dans `DETECTIVE_UI_GUIDELINES.md`. La priorité confirmée est « Image centrale et outils contextuels ».
 
 Les modifications non commitées du checkout initial ne sont toujours pas intégrées ici ; les comparer avant de reprendre les chemins de chargement ou d'affichage concernés.
