@@ -68,6 +68,7 @@ classdef Viewer < handle
         ImageMenu
         SaveProjectMenu
         DrawingROI = false
+        LoadedObjects = struct('object',{},'variables',{},'kind',{})
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave)
@@ -212,6 +213,7 @@ classdef Viewer < handle
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.Pipeline.OnDefineROIs = @(project,node,callback)obj.openROITool(project,node,callback);
             obj.Pipeline.OnProjectUpdated = @(project)obj.addProject(project);
+            obj.Pipeline.OnTemplateOpened = @(template)obj.registerLoadedObject(template,'pipeline');
             obj.ProjectProgress.Route = @()obj.progressOwner('Projects');
             obj.Pipeline.Progress.Route = @()obj.progressOwner('Pipeline');
             obj.Progress.Route = @()obj.progressOwner('Image');
@@ -308,6 +310,29 @@ classdef Viewer < handle
             catch err
                 obj.showError(err);
             end
+        end
+        function classifier = openClassifier(obj,path)
+            classifier = [];
+            try
+                if nargin < 2
+                    [file,folder] = uigetfile({'*classification*.mat;*.mat','DetecDiv Classifiers (*.mat)'},'Open Classifier');
+                    if isequal(file,0), return; end
+                    path = fullfile(folder,file);
+                end
+                activity = obj.ProjectProgress.begin('Loading classifier...'); %#ok<NASGU>
+                [classifier,message] = classiLoad(path);
+                assert(isa(classifier,'classi') && isscalar(classifier) && isvalid(classifier), ...
+                    'detecdivui:ClassifierLoad','Could not open this classifier. %s',char(string(message)));
+                obj.registerLoadedObject(classifier,'classi');
+                obj.Status.Text = 'Classifier opened';
+            catch err
+                classifier = []; obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
+        end
+        function template = openPipeline(obj,path)
+            if nargin < 2, template = obj.Pipeline.openTemplate();
+            else, template = obj.Pipeline.openTemplate(path); end
+            if ~isempty(template), obj.Host.focusWidget('Pipeline'); end
         end
         function ok = saveProject(obj)
             ok = false; if obj.ActiveProject == 0, return; end
@@ -411,7 +436,7 @@ classdef Viewer < handle
             activity = obj.ProjectProgress.begin('Scanning workspace...'); %#ok<NASGU>
             entries = detecdivui.workspaceObjects();
             active = obj.Session.Project;
-            obj.WorkspaceObjects = entries(~strcmp({entries.kind},'shallow'));
+            obj.WorkspaceObjects = obj.mergeLoadedObjects(entries(~strcmp({entries.kind},'shallow')));
             obj.Pipeline.importWorkspace(entries);
             projects = find(strcmp({entries.kind},'shallow')); count = 0;
             for k = projects
@@ -436,6 +461,40 @@ classdef Viewer < handle
         end
     end
     methods (Access = private)
+        function registerLoadedObject(obj,item,kind)
+            entry = struct('object',item,'variables',{{}},'kind',kind);
+            keep = true(1,numel(obj.LoadedObjects));
+            for k = 1:numel(obj.LoadedObjects)
+                keep(k) = isvalid(obj.LoadedObjects(k).object) && ...
+                    ~obj.sameTool(obj.LoadedObjects(k).object,item);
+            end
+            obj.LoadedObjects = [obj.LoadedObjects(keep) entry];
+            obj.WorkspaceObjects = obj.mergeLoadedObjects(obj.WorkspaceObjects);
+            obj.rebuildTree();
+            index = find(arrayfun(@(e)isequal(e.object,item),obj.WorkspaceObjects),1);
+            nodes = findall(obj.Tree,'Tag','workspace-object');
+            for node = nodes'
+                if node.UserData.object == index
+                    obj.Tree.SelectedNodes = node; obj.showWorkspaceObject(index); break;
+                end
+            end
+        end
+        function entries = mergeLoadedObjects(obj,entries)
+            obj.LoadedObjects = obj.LoadedObjects(arrayfun(@(e)isvalid(e.object),obj.LoadedObjects));
+            entries = entries(arrayfun(@(e)isvalid(e.object),entries));
+            for loaded = obj.LoadedObjects
+                keep = ~arrayfun(@(e)obj.sameTool(e.object,loaded.object),entries);
+                entries = [entries(keep) loaded];
+            end
+        end
+        function same = sameTool(~,a,b)
+            same = isequal(a,b);
+            if same || ~strcmp(class(a),class(b)) || isempty(a.path) || isempty(b.path), return; end
+            pathA = regexprep(strrep(char(a.path),'\','/'),'/+$','');
+            pathB = regexprep(strrep(char(b.path),'\','/'),'/+$','');
+            same = strcmpi(pathA,pathB);
+            if ~isa(a,'pipeline'), same = same && strcmp(a.strid,b.strid); end
+        end
         function yes = hasROIWidget(obj)
             yes = isa(obj.ROIs,'detecdivui.ROIWidget') && isscalar(obj.ROIs) && isvalid(obj.ROIs);
         end
@@ -490,6 +549,7 @@ classdef Viewer < handle
             file = obj.Host.menu([],'File');
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
+            obj.Host.menu(file,'Open Classifier...','MenuSelectedFcn',@(~,~)obj.openClassifier());
             obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.saveProject());
             obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
@@ -533,9 +593,6 @@ classdef Viewer < handle
             obj.Host.menu(helpMenu,'About DetecDiv', ...
                 'MenuSelectedFcn',@(~,~)uialert(obj.Figure, ...
                     'DetecDiv — microscopy image analysis','About DetecDiv','Icon','info'));
-        end
-        function openPipeline(obj)
-            obj.Pipeline.openTemplate(); obj.Host.focusWidget('Pipeline');
         end
         function syncPipelineMenu(obj)
             template = obj.Pipeline.Template;
@@ -596,7 +653,10 @@ classdef Viewer < handle
                 for j = indices
                     entry = obj.WorkspaceObjects(j);
                     name = char(string(entry.object.strid));
-                    if isempty(name), name = entry.variables{1}; end
+                    if isempty(name)
+                        if isempty(entry.variables), name = ['Untitled ' class(entry.object)];
+                        else, name = entry.variables{1}; end
+                    end
                     obj.browserNode(group,name, ...
                         struct('project',0,'fov',0,'roi',0,'object',j),'workspace-object');
                 end
@@ -687,7 +747,10 @@ classdef Viewer < handle
             obj.DetailsPanel.Title = labels.(entry.kind);
             obj.CopyPath.Tooltip = 'Copy the object folder path';
             name = char(string(item.strid));
-            if isempty(name), name = entry.variables{1}; end
+            if isempty(name)
+                if isempty(entry.variables), name = ['Untitled ' labels.(entry.kind)];
+                else, name = entry.variables{1}; end
+            end
             obj.ProjectName.Text = name; obj.ProjectName.Tooltip = name;
             obj.ProjectPath.Value = {'—'}; obj.ProjectPath.Tooltip = 'Object folder';
             obj.CopyPath.UserData = ''; obj.CopyPath.Enable = 'off';
@@ -696,8 +759,10 @@ classdef Viewer < handle
                 obj.ProjectPath.Value = {folder}; obj.ProjectPath.Tooltip = folder;
                 obj.CopyPath.UserData = folder; obj.CopyPath.Enable = 'on';
             end
+            source = 'Workspace'; origin = strjoin(entry.variables,', ');
+            if isempty(entry.variables), source = 'Source'; origin = 'File'; end
             obj.ProjectInfo.Data = {'Type',labels.(entry.kind); ...
-                'Workspace',strjoin(entry.variables,', '); 'Description',char(string(item.description))};
+                source,origin; 'Description',char(string(item.description))};
             obj.Status.Text = sprintf('%s selected',labels.(entry.kind));
             if strcmp(entry.kind,'pipeline')
                 obj.Pipeline.addTemplate(item); obj.Host.focusWidget('Pipeline');

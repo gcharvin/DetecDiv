@@ -21,6 +21,8 @@ viewer = detecdiv_ui({projectA, projectB});
 
 ## Current interface
 
+File > Open Classifier... uses classiLoad; File > Open Pipeline... and Pipeline's Open action use pipelineLoad. File-loaded tools appear in the typed Projects browser collections and remain open across Refresh Workspace. Explicitly reloading the same tool replaces its browser entry with the new snapshot. These actions do not publish variables into the base workspace or create a project. The classifier editor/training workflow remains a separate integration.
+
 - File, Edit, View, Navigate and Help menus, with standard open/close/copy accelerators.
 - One Projects tree containing Project → FOV → ROI nodes. Multiple projects remain open; selecting a node updates the central image. Opening the same handle, stable project ID or project path focuses the existing project.
 - Browser rebuilding briefly detaches the tree from its layout, populates its hierarchy without a live native peer, then reattaches the same control and expands project/collection roots. Incremental construction of large live trees failed inside R2026a's graphics property setter; changing metadata or constructor alone did not reliably fix it. Navigation records stay in MATLAB-side `UserData`. `detecdivui.treeTest()` checks visible workspace import, live rebuilding and selection with 641 ROIs. Failed launch-time discovery closes its partially opened viewer.

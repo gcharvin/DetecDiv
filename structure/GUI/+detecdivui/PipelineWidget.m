@@ -20,6 +20,7 @@ classdef PipelineWidget < handle
         OnChanged = []
         OnDefineROIs = []
         OnProjectUpdated = []
+        OnTemplateOpened = []
     end
     properties (Access = private)
         Session
@@ -292,7 +293,8 @@ classdef PipelineWidget < handle
             end
             if ~isempty(active) && isvalid(active), obj.addTemplate(active); end
         end
-        function openTemplate(obj,path)
+        function template = openTemplate(obj,path)
+            template = [];
             try
                 if nargin < 2
                     [file,folder] = uigetfile('*.json','Open Pipeline');
@@ -302,8 +304,12 @@ classdef PipelineWidget < handle
                 activity = obj.Progress.begin('Loading pipeline...'); %#ok<NASGU>
                 [template,message] = pipelineLoad(path);
                 assert(~isempty(template),'detecdivui:PipelineLoad','%s',message);
-                obj.addTemplate(template); obj.setStatus('Pipeline opened');
+                obj.addTemplate(template);
+                if ~isequal(obj.Template,template), template = []; return; end
+                if ~isempty(obj.OnTemplateOpened), obj.OnTemplateOpened(template); end
+                obj.setStatus('Pipeline opened');
             catch err
+                template = [];
                 obj.setStatus(err.message);
             end
         end
