@@ -115,9 +115,12 @@ New dockable widgets are explicitly part of the migration when a task needs its 
 | Lineage (optional new) | Tree and track navigation when simultaneous image/tree inspection is useful | Bottom or floating; existing tree dialog can serve as the first integration before adding a dedicated document |
 | Measurements assistant | Line/ellipse geometry and profile controls | Contextual tool; plot in Data or an assistant panel. Create a separate document only if simultaneous inspection requires it |
 | Pipeline (existing) | Compact graph, run selection and status | Dockable; common settings dialog and pipeline2 Advanced keep the same configuration |
+| Hub (new) | Shared connection, identity and server status, independent of job submission | Dockable; common session controller reused by Pipeline/Export/project clients. See [DETECTIVE_UI_HUB.md](DETECTIVE_UI_HUB.md) |
 | Export dialog | Movie/sequence scope, output options, preview and launch | Open through File; isolated rendering canvas. Do not permanently occupy workspace space with a full export form |
 
 Objects, Data and Annotation are planned widgets, not implemented controls or empty placeholders. Add each when its first usable backend integration is available. Lineage and Measurements can become independent widgets when the actual interaction benefits from it; an assistant or dialog is sufficient initially.
+
+Hub is another planned independent widget. Authentication/connection belongs to a common process session backed by existing Hub helpers and broker; each execution tool retains its own job settings. Opening Pipeline must not be required to connect to Hub, and future widgets must not recreate separate connection forms.
 
 All widgets share the viewer session's project, ROI, frame, channel/provider/family and selected instance/track. They do not own competing copies of the current scientific selection. Data → Image and Lineage → Image navigation must use explicit shared selection events and avoid feedback loops. Tool-local preferences can persist per context; pending scientific edits remain under the common dirty/save controller. A hidden widget must not continue intercepting image gestures.
 

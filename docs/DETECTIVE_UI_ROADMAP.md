@@ -7,6 +7,8 @@ La revue fonctionnelle de Score et l'ordre de migration détaillé sont dans [DE
 
 Le découpage prévoit de nouveaux widgets dockables selon les besoins : Objects, Data et Annotation, puis éventuellement Lineage et Measurements. Ils partagent la sélection et l'image centrale ; les réglages occasionnels et l'export restent dans des dialogues. Chaque widget est ajouté avec une fonctionnalité utilisable, une ouverture à la demande et une migration compatible des layouts existants.
 
+La connexion Hub devient également un widget indépendant et un contrôleur de session commun, réutilisant les helpers de connexion/préférences/authentification et le broker existants. Pipeline et Export conservent leurs paramètres de job, mais consomment cette même connexion ; aucun lancement de pipeline n'est nécessaire pour se connecter. Voir [DETECTIVE_UI_HUB.md](DETECTIVE_UI_HUB.md) pour les sources existantes, les responsabilités, les contraintes de démarrage et les tests à prévoir.
+
 ## 1. Objectif
 
 Faire de DetecDiv un espace de travail scientifique centré sur les images et les intentions de l'utilisateur. La fenêtre principale s'ouvre au lancement de DetecDiv. La gestion des projets, classifiers, processors et pipelines devient un panneau de cet espace.

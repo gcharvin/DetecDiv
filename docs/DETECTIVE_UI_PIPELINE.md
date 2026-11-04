@@ -21,6 +21,8 @@ Define ROIs on an ROI definition step opens the ROIs assistant on the main image
 
 ## Shared Advanced configuration
 
+Planned connection centralization is specified in [DETECTIVE_UI_HUB.md](DETECTIVE_UI_HUB.md). The current advanced bridge still uses pipeline2's Hub controls. Its future viewer path must consume the independent shared Hub session and keep run-specific execution settings; no separate connection form per execution widget.
+
 Advanced uses pipeline2 with EditExistingRun and a viewer bridge. Opening it preserves the current run ID, progress policy, output policy, selection and overrides. An automatic ID is chosen without creating a run folder. A saved run is passed as its canonical project-linked handle, preserving execution/history identity.
 
 The bridge exports metadata/parameters only, without buildRunContext's image/ROI inventory scans. Closing Advanced through its window close action, or Viewer > Apply Settings and Return, applies its current settings to the viewer. Opening common settings/checking/saving also imports an idle open editor before continuing. Graph/design changes become a working template copy; template JSON is written only by explicit Save. Hub/control/runtime settings not exposed in the common form remain in the draft context.
