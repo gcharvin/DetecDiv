@@ -222,6 +222,7 @@ classdef Viewer < handle
             validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
             active = obj.Session;
             wasActive = index == obj.ActiveProject;
+            obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             obj.DisplayModels(index) = [];

@@ -29,7 +29,7 @@ steps = findall(figure,'Tag','pipeline-steps');
 assert(strcmp(steps.Data{1,1},'Measure cells'));
 steps.CellSelectionCallback(steps,struct('Indices',[1 1]));
 parameters = findall(figure,'Tag','pipeline-parameters');
-assert(any(strcmp(parameters.Data(:,1),'entryPoint')));
+assert(any(strcmp(parameters.UserData,'entryPoint')));
 viewer.Host.focusWidget('Pipeline');
 assert(strcmp(viewer.Host.App.SelectedChild.tag,'pipeline'));
 validate = findall(figure,'Tag','pipeline-validate');
@@ -62,13 +62,16 @@ project.processing.pipelineRun = run; viewer.Pipeline.refresh();
 runs = findall(figure,'Tag','pipeline-runs'); assert(strcmp(runs.Data{1,1},'review_1'));
 project.processing.pipelineRun = [];
 if checkEditor
+    projectName = matlab.lang.makeValidName(char(string(project.io.file)));
+    projectName = matlab.lang.makeUniqueStrings(projectName,evalin('base','who'),namelengthmax);
+    clearPublished = onCleanup(@()evalin('base',['clear ' projectName]));
     editor = viewer.Pipeline.openEditor();
     assert(~isempty(editor),'Advanced pipeline editor did not open.');
     closeEditor = onCleanup(@()delete(editor));
     editor.UIFigure.Visible = 'off';
     assert(any(strcmp(editor.UISelectedModuleTable.Data(:,3),'custom')));
     assert(contains(editor.RuntimeProjectTargetEditField.Value,project.io.file));
-    clear closeEditor;
+    clear closeEditor clearPublished;
 end
 % Float, redock, save and restore the same Pipeline controls.
 viewer.Host.setDocked('Pipeline',false);

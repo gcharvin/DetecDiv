@@ -5,6 +5,8 @@ classdef PipelineWidget < handle
         Template = []
         LastReport = struct()
         LastOK = false
+        Draft
+        LastRunReview = struct()
     end
     properties
         OnStatus = []
@@ -17,10 +19,25 @@ classdef PipelineWidget < handle
         Scope
         Steps
         Params
+        SelectedStep = 0
+        ParamKeys = {}
+        ParamSpecs
+        SelectedParam = 0
+        ValueText
+        ValueNumber
+        ValueLogical
+        ValueChoice
+        ApplyParam
+        ResetParam
         Checks
         Runs
         RunObjects = []
+        RunReviews = {}
         Inspect
+        MoreRun
+        RunSummary
+        RunNodes
+        RunIssues
         Save
         Validate
         DryRun
@@ -32,6 +49,7 @@ classdef PipelineWidget < handle
     end
     methods
         function obj = PipelineWidget(parent)
+            obj.Draft = detecdivui.RunDraft();
             root = uigridlayout(parent,[6 1]);
             root.Padding = [8 6 8 6]; root.RowHeight = {28,62,22,28,'1x',24};
             obj.Selector = uidropdown(root,'Items',{'—'},'ItemsData',0,'Enable','off', ...
@@ -42,7 +60,7 @@ classdef PipelineWidget < handle
             uibutton(actions,'Text','Open...','Tag','pipeline-open','Tooltip','Open pipeline JSON', ...
                 'ButtonPushedFcn',@(~,~)obj.openTemplate());
             obj.Save = uibutton(actions,'Text','Save','Enable','off','Tag','pipeline-save', ...
-                'Tooltip','Save this template with pipelineSave', ...
+                'Tooltip','Save the template; run overrides remain local to this session', ...
                 'ButtonPushedFcn',@(~,~)obj.saveTemplate());
             uibutton(actions,'Text','Editor...','Tag','pipeline-editor', ...
                 'Tooltip','Open the existing advanced pipeline editor and run configuration', ...
@@ -57,15 +75,34 @@ classdef PipelineWidget < handle
             obj.Tabs = uitabgroup(root);
             stepsTab = uitab(obj.Tabs,'Title','Steps');
             obj.StepsTab = stepsTab;
-            stepsGrid = uigridlayout(stepsTab,[3 1]); stepsGrid.Padding = [4 4 4 4];
-            stepsGrid.RowHeight = {'1x','1x',28};
+            stepsGrid = uigridlayout(stepsTab,[4 1]); stepsGrid.Padding = [4 4 4 4];
+            stepsGrid.RowHeight = {'1x','1x',28,28};
             obj.Steps = uitable(stepsGrid,'Data',cell(0,3),'RowName',{}, ...
                 'ColumnName',{'Step','Type','State'},'ColumnWidth',{'auto',70,65}, ...
                 'Tag','pipeline-steps','Tooltip','Select a step to inspect its parameters', ...
                 'CellSelectionCallback',@(~,event)obj.selectStep(event));
             obj.Params = uitable(stepsGrid,'Data',cell(0,3),'RowName',{}, ...
                 'ColumnName',{'Parameter','Value','Scope'},'ColumnWidth',{'auto','auto',65}, ...
-                'Tag','pipeline-parameters','Tooltip','Template values; edit using the advanced editor');
+                'Tag','pipeline-parameters','Tooltip','Select a run parameter to edit; * marks a run override', ...
+                'CellSelectionCallback',@(~,event)obj.selectParam(event));
+            edit = uigridlayout(stepsGrid,[1 3]); edit.Padding = [0 0 0 0];
+            edit.ColumnWidth = {'1x',48,48};
+            input = uigridlayout(edit,[1 1]); input.Padding = [0 0 0 0];
+            obj.ValueText = uieditfield(input,'text','Enable','off','Tag','pipeline-value-text', ...
+                'Placeholder','Select a run parameter');
+            obj.ValueNumber = uieditfield(input,'numeric','Visible','off','Tag','pipeline-value-number');
+            obj.ValueLogical = uicheckbox(input,'Text','','Visible','off','Tag','pipeline-value-logical');
+            obj.ValueChoice = uidropdown(input,'Items',{'—'},'Visible','off','Tag','pipeline-value-choice');
+            for item = {obj.ValueText,obj.ValueNumber,obj.ValueLogical,obj.ValueChoice}
+                control = item{1}; control.Layout.Row = 1; control.Layout.Column = 1;
+            end
+            input.RowHeight = {'1x'}; input.ColumnWidth = {'1x'};
+            obj.ApplyParam = uibutton(edit,'Text','Apply','Enable','off','Tag','pipeline-apply-param', ...
+                'Tooltip','Apply this value to the run draft without changing the template', ...
+                'ButtonPushedFcn',@(~,~)obj.applyParameter());
+            obj.ResetParam = uibutton(edit,'Text','Reset','Enable','off','Tag','pipeline-reset-param', ...
+                'Tooltip','Use the template value for this run parameter', ...
+                'ButtonPushedFcn',@(~,~)obj.resetParameter());
             checks = uigridlayout(stepsGrid,[1 2]); checks.Padding = [0 0 0 0];
             checks.ColumnWidth = {'1x','1x'};
             obj.Validate = uibutton(checks,'Text','Validate','Enable','off','Tag','pipeline-validate', ...
@@ -79,26 +116,48 @@ classdef PipelineWidget < handle
             obj.Checks = uitable(checksGrid,'Data',cell(0,2),'RowName',{}, ...
                 'ColumnName',{'Level','Message'},'ColumnWidth',{65,'auto'},'Tag','pipeline-checks');
             runsTab = uitab(obj.Tabs,'Title','Runs');
-            runsGrid = uigridlayout(runsTab,[2 1]); runsGrid.Padding = [4 4 4 4];
-            runsGrid.RowHeight = {'1x',28};
+            runsGrid = uigridlayout(runsTab,[3 1]); runsGrid.Padding = [4 4 4 4];
+            runsGrid.RowHeight = {'1x','1x',28};
             obj.Runs = uitable(runsGrid,'Data',cell(0,2),'RowName',{}, ...
                 'ColumnName',{'Run','Status'},'ColumnWidth',{'auto',80},'Tag','pipeline-runs', ...
                 'CellSelectionCallback',@(~,event)obj.selectRun(event));
-            obj.Inspect = uibutton(runsGrid,'Text','Inspect...','Enable','off', ...
-                'Tag','pipeline-inspect-run','Tooltip','Inspect the selected pipeline run', ...
+            details = uitabgroup(runsGrid);
+            summary = uitab(details,'Title','Summary');
+            nodes = uitab(details,'Title','Steps'); issues = uitab(details,'Title','Issues');
+            grid = uigridlayout(summary,[1 1]); grid.Padding = [0 0 0 0];
+            obj.RunSummary = uitable(grid,'Data',cell(0,2),'RowName',{}, ...
+                'ColumnName',{'','Value'},'ColumnWidth',{90,'auto'},'Tag','pipeline-run-summary');
+            grid = uigridlayout(nodes,[1 1]); grid.Padding = [0 0 0 0];
+            obj.RunNodes = uitable(grid,'Data',cell(0,3),'RowName',{}, ...
+                'ColumnName',{'Step','Status','Seconds'},'ColumnWidth',{'auto',70,65},'Tag','pipeline-run-nodes');
+            grid = uigridlayout(issues,[1 1]); grid.Padding = [0 0 0 0];
+            obj.RunIssues = uitable(grid,'Data',cell(0,1),'RowName',{}, ...
+                'ColumnName',{'Message'},'ColumnWidth',{'auto'},'Tag','pipeline-run-issues');
+            actions = uigridlayout(runsGrid,[1 2]); actions.Padding = [0 0 0 0];
+            actions.ColumnWidth = {'1x','1x'};
+            obj.Inspect = uibutton(actions,'Text','Review','Enable','off', ...
+                'Tag','pipeline-inspect-run','Tooltip','Read the selected run review and event log', ...
+                'ButtonPushedFcn',@(~,~)obj.reviewRun());
+            obj.MoreRun = uibutton(actions,'Text','More...','Enable','off','Tag','pipeline-more-run', ...
+                'Tooltip','Open the existing detailed run inspector', ...
                 'ButtonPushedFcn',@(~,~)obj.inspectRun());
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','pipeline-status');
         end
         function setContext(obj,session)
             obj.Session = session;
             project = session.Project;
+            obj.Draft.select(project,obj.Template);
             if isempty(project)
                 obj.Target.Text = '—'; obj.Scope.Enable = 'off';
             else
                 obj.Target.Text = char(string(project.io.file));
                 obj.Target.Tooltip = session.breadcrumb(); obj.Scope.Enable = 'on';
             end
+            if obj.SelectedStep > 0 && ~isempty(obj.Template) && obj.SelectedStep <= numel(obj.Template.nodes)
+                obj.showParams(obj.SelectedStep);
+            end
             obj.invalidate(); obj.refreshRuns();
+            obj.draftNotice();
         end
         function addTemplate(obj,template)
             assert(isa(template,'pipeline') && isscalar(template) && isvalid(template), ...
@@ -108,6 +167,7 @@ classdef PipelineWidget < handle
                 other = obj.Templates{k};
                 if isvalid(other) && (isequal(other,template) || ...
                         (~isempty(template.path) && strcmpi(template.path,other.path)))
+                    if other ~= template, obj.Draft.forgetTemplate(other); end
                     index = k; break;
                 end
             end
@@ -150,6 +210,9 @@ classdef PipelineWidget < handle
                 obj.Selector.Value = index; obj.Template = obj.Templates{index};
             end
             obj.Steps.Data = cell(0,3); obj.Params.Data = cell(0,3);
+            obj.SelectedStep = 0; obj.clearParamEditor();
+            project = []; if ~isempty(obj.Session), project = obj.Session.Project; end
+            obj.Draft.select(project,obj.Template);
             available = ~isempty(obj.Template);
             obj.Save.Enable = obj.onOff(available && ~isempty(obj.Template.path));
             obj.Validate.Enable = obj.onOff(available); obj.DryRun.Enable = obj.onOff(available);
@@ -166,6 +229,7 @@ classdef PipelineWidget < handle
                 if ~isempty(nodes), obj.showParams(1); end
             end
             obj.invalidate(); obj.refreshRuns();
+            obj.draftNotice();
             if ~isempty(obj.OnChanged), obj.OnChanged(); end
         end
         function [ok,report] = check(obj,mode)
@@ -204,7 +268,13 @@ classdef PipelineWidget < handle
             obj.Tabs.SelectedTab = obj.ChecksTab;
         end
         function ctx = context(obj)
+            obj.Draft.reconcile();
+            if obj.Draft.takeDiscarded() > 0
+                obj.refresh();
+                error('detecdivui:RunDraftChanged','Run settings reset after template changes. Review the parameters and validate again.');
+            end
             ctx = struct('allowGUI',false,'interactive',false);
+            ctx.run = struct('nodeParams',obj.Draft.Overrides);
             if isempty(obj.Session) || isempty(obj.Session.Project), return; end
             session = obj.Session; project = session.Project;
             [~,indices] = session.positionItems(); roiIndex = [];
@@ -232,7 +302,26 @@ classdef PipelineWidget < handle
             end
             if ~isempty(rois), ctx.roiList = rois; ctx.rois = rois; end
             ctx.sel = struct('fovs',indices,'rois',roiIndex,'frames',[]);
-            ctx.run = struct('fovIndex',indices,'rois',roiIndex,'frames',[]);
+            ctx.run = struct('fovIndex',indices,'rois',roiIndex,'frames',[], ...
+                'nodeParams',obj.Draft.Overrides);
+        end
+        function run = draftRun(obj)
+            assert(~isempty(obj.Template),'detecdivui:Pipeline','Select a pipeline.');
+            run = pipelineRun(); run.runId = [matlab.lang.makeValidName(obj.Template.strid) '_draft'];
+            run.templateId = obj.Template.strid; run.templatePath = obj.Template.path;
+            run.pipelineRef = struct('id',obj.Template.strid,'path',obj.Template.path,'version',obj.Template.version);
+            ctx = obj.context();
+            ctx = rmfield(ctx,intersect(fieldnames(ctx),{'shallow','shallowObj','images','fovList','roiList','rois'}));
+            run.ctx = ctx;
+            if ~isempty(obj.Session) && ~isempty(obj.Session.Project)
+                project = obj.Session.Project; run.projectName = project.io.file;
+                if ~isempty(project.io.path), run.projectPath = fullfile(project.io.path,project.io.file); end
+                run.targetRef.projectPath = run.projectPath; run.targetRef.projectName = run.projectName;
+                run.targetRef.fovIds = ctx.sel.fovs; run.targetRef.roiIds = ctx.sel.rois;
+            end
+        end
+        function forgetProject(obj,project)
+            obj.Draft.forgetProject(project);
         end
         function saveTemplate(obj)
             if isempty(obj.Template), return; end
@@ -248,7 +337,10 @@ classdef PipelineWidget < handle
                 args = {};
                 if ~isempty(obj.Template), args{end+1} = obj.Template; end
                 if ~isempty(obj.Session) && ~isempty(obj.Session.Project)
-                    args = [args {obj.Session.Project,'UnlockRuntime',true}];
+                    projectName = matlab.lang.makeValidName(char(string(obj.Session.Project.io.file)));
+                    if isempty(projectName), projectName = 'project'; end
+                    projectName = matlab.lang.makeUniqueStrings(projectName,evalin('base','who'),namelengthmax);
+                    args = [args {obj.Session.Project,'UnlockRuntime',true,'ProjectVarName',projectName}];
                     if obj.Session.Position > 0 && ~strcmp(obj.Scope.Value,'Whole project')
                         args = [args {'fovs',mat2str(obj.Session.Position)}];
                         if strcmp(obj.Scope.Value,'Current ROI') && obj.Session.Zone > 0
@@ -256,8 +348,37 @@ classdef PipelineWidget < handle
                         end
                     end
                 end
+                if ~isempty(obj.Draft.Overrides)
+                    ids = matlab.lang.makeValidName({obj.Template.nodes.id});
+                    assert(numel(unique(ids)) == numel(ids),'detecdivui:EditorNodeIds', ...
+                        'Step IDs collide in the advanced editor. Reset run overrides and rename the step IDs.');
+                    args{end+1} = obj.draftRun();
+                end
                 editor = pipeline2(args{:});
+                if ~isempty(obj.Draft.Overrides)
+                    % A seed run normally recommends restart/replace. This
+                    % is a new unsaved draft: retain the editor's usual
+                    % resume/skip defaults through its existing callback.
+                    editor.ResumeoptionsDropDown.Value = 'Resume previous progress';
+                    editor.ResumeoptionsDropDown.ValueChangedFcn(editor.ResumeoptionsDropDown,[]);
+                end
             catch err
+                obj.setStatus(err.message);
+            end
+        end
+        function review = reviewRun(obj)
+            review = struct(); index = obj.Inspect.UserData;
+            if isempty(index), return; end
+            obj.LastRunReview = struct(); obj.RunNodes.Data = cell(0,3); obj.RunIssues.Data = cell(0,1);
+            obj.RunReviews{index} = [];
+            try
+                obj.setStatus('Reading run review...'); drawnow limitrate nocallbacks;
+                [review,~] = pipelineRunReview(obj.RunObjects(index));
+                obj.RunReviews{index} = review; obj.showRunReview(review);
+                obj.Runs.Data{index,2} = review.status;
+                obj.setStatus(['Run ' review.status]);
+            catch err
+                obj.RunIssues.Data = {err.message};
                 obj.setStatus(err.message);
             end
         end
@@ -271,30 +392,105 @@ classdef PipelineWidget < handle
             obj.showParams(event.Indices(1,1));
         end
         function showParams(obj,index)
-            node = obj.Template.nodes(index); params = obj.field(node,'params',struct());
+            obj.SelectedStep = index;
+            nodes = obj.Draft.effectiveNodes(); node = nodes(index);
+            params = obj.field(node,'params',struct());
             data = cell(0,3);
+            obj.ParamKeys = {}; obj.ParamSpecs = struct([]); obj.clearParamEditor();
             if isstruct(params) && isscalar(params)
-                keys = fieldnames(params);
+                spec = classifierBinding.parameterSpecFromDefaults(params);
+                keys = {spec.param}; obj.ParamKeys = keys; obj.ParamSpecs = spec;
                 for k = 1:numel(keys)
                     value = params.(keys{k});
-                    if ischar(value) || (isstring(value) && isscalar(value))
+                    if strcmp(detecdivui.RunDraft.valueKind(value),'choice')
+                        text = char(string(value{end}));
+                    elseif ischar(value) || (isstring(value) && isscalar(value))
                         text = char(string(value));
                     elseif (isnumeric(value) || islogical(value)) && numel(value) <= 12
                         text = mat2str(value);
                     else
                         text = sprintf('%s %s',mat2str(size(value)),class(value));
                     end
-                    data(end+1,:) = {keys{k},text,pipelineParamScope(node,keys{k})}; %#ok<AGROW>
+                    scope = pipelineParamScope(node,keys{k});
+                    if obj.Draft.has(node.id,keys{k}), scope = sprintf('%s *',scope); end
+                    data(end+1,:) = {spec(k).label,text,scope}; %#ok<AGROW>
                 end
             end
-            obj.Params.Data = data;
+            obj.Params.Data = data; obj.Params.UserData = obj.ParamKeys;
+        end
+        function selectParam(obj,event)
+            if isempty(event.Indices), return; end
+            row = event.Indices(1,1);
+            if row < 1 || row > numel(obj.ParamKeys), return; end
+            obj.clearParamEditor(); obj.SelectedParam = row;
+            nodes = obj.Draft.effectiveNodes(); node = nodes(obj.SelectedStep);
+            key = obj.ParamKeys{row}; value = node.params.(key);
+            kind = detecdivui.RunDraft.valueKind(value);
+            editable = strcmp(pipelineParamScope(node,key),'run') && ~strcmp(kind,'complex');
+            obj.ValueText.Visible = 'off';
+            switch kind
+                case 'number'
+                    control = obj.ValueNumber; control.Value = double(value);
+                case 'logical'
+                    control = obj.ValueLogical; control.Value = value;
+                case 'choice'
+                    control = obj.ValueChoice;
+                    control.Items = unique(cellstr(string(value(1:end-1))),'stable');
+                    control.Value = char(string(value{end}));
+                otherwise
+                    control = obj.ValueText;
+                    if strcmp(kind,'text'), control.Value = char(value); else, control.Value = ''; end
+            end
+            control.Visible = 'on'; control.Enable = obj.onOff(editable);
+            control.Tooltip = obj.ParamSpecs(row).tip;
+            if isempty(control.Tooltip), control.Tooltip = key; end
+            obj.ApplyParam.Enable = obj.onOff(editable);
+            obj.ResetParam.Enable = obj.onOff(obj.Draft.has(node.id,key));
+            if ~editable, obj.setStatus('Use Editor for this parameter'); end
+        end
+        function applyParameter(obj)
+            if obj.SelectedParam == 0, return; end
+            try
+                row = obj.SelectedParam; nodes = obj.Draft.effectiveNodes(); node = nodes(obj.SelectedStep);
+                key = obj.ParamKeys{row}; kind = detecdivui.RunDraft.valueKind(node.params.(key));
+                switch kind
+                    case 'number', value = obj.ValueNumber.Value;
+                    case 'logical', value = obj.ValueLogical.Value;
+                    case 'choice', value = obj.ValueChoice.Value;
+                    otherwise, value = obj.ValueText.Value;
+                end
+                obj.Draft.set(node.id,key,value); obj.invalidate();
+                obj.showParams(obj.SelectedStep); obj.selectParam(struct('Indices',[row 1]));
+                obj.setStatus('Run parameter updated');
+            catch err
+                obj.setStatus(err.message);
+            end
+        end
+        function resetParameter(obj)
+            if obj.SelectedParam == 0, return; end
+            row = obj.SelectedParam; node = obj.Template.nodes(obj.SelectedStep);
+            obj.Draft.reset(node.id,obj.ParamKeys{row}); obj.invalidate();
+            obj.showParams(obj.SelectedStep); obj.selectParam(struct('Indices',[row 1]));
+            obj.setStatus('Template value restored');
+        end
+        function clearParamEditor(obj)
+            obj.SelectedParam = 0;
+            for item = {obj.ValueText,obj.ValueNumber,obj.ValueLogical,obj.ValueChoice}
+                control = item{1}; control.Visible = 'off'; control.Enable = 'off';
+            end
+            obj.ValueText.Visible = 'on'; obj.ValueText.Value = '';
+            obj.ApplyParam.Enable = 'off'; obj.ResetParam.Enable = 'off';
         end
         function refreshRuns(obj)
             obj.RunObjects = []; obj.Runs.Data = cell(0,2); obj.Inspect.Enable = 'off';
             obj.Inspect.UserData = [];
+            obj.MoreRun.Enable = 'off'; obj.LastRunReview = struct();
+            obj.RunReviews = {};
+            obj.RunSummary.Data = cell(0,2); obj.RunNodes.Data = cell(0,3); obj.RunIssues.Data = cell(0,1);
             if isempty(obj.Template) || isempty(obj.Session) || isempty(obj.Session.Project), return; end
             [runs,~] = obj.Template.findDependentRuns(obj.Session.Project);
             runs = runs(isvalid(runs)); obj.RunObjects = runs;
+            obj.RunReviews = cell(size(runs));
             data = cell(numel(runs),2);
             for k = 1:numel(runs), data(k,:) = {runs(k).runId,runs(k).status}; end
             obj.Runs.Data = data;
@@ -302,6 +498,26 @@ classdef PipelineWidget < handle
         function selectRun(obj,event)
             if isempty(event.Indices), return; end
             obj.Inspect.UserData = event.Indices(1,1); obj.Inspect.Enable = 'on';
+            if ~isempty(obj.RunReviews{obj.Inspect.UserData})
+                obj.MoreRun.Enable = 'on'; obj.showRunReview(obj.RunReviews{obj.Inspect.UserData}); return;
+            end
+            obj.MoreRun.Enable = 'on'; obj.LastRunReview = struct();
+            obj.RunNodes.Data = cell(0,3); obj.RunIssues.Data = cell(0,1);
+            run = obj.RunObjects(obj.Inspect.UserData);
+            obj.RunSummary.Data = {'Run',run.runId;'Status',run.status;'Created',run.createdAt; ...
+                'Updated',run.updatedAt;'Folder',run.path};
+        end
+        function showRunReview(obj,review)
+            obj.LastRunReview = review;
+            obj.RunSummary.Data = {'Run',review.runId;'Status',review.status; ...
+                'Started',review.summary.startedAt;'Updated',review.summary.lastEventAt; ...
+                'Completed steps',review.summary.doneNodes;'Failed steps',review.summary.failedNodes; ...
+                'Folder',review.runPath};
+            data = cell(numel(review.nodes),3);
+            for k = 1:numel(review.nodes)
+                data(k,:) = {review.nodes(k).nodeId,review.nodes(k).status,review.nodes(k).durationSec};
+            end
+            obj.RunNodes.Data = data; obj.RunIssues.Data = reshape(review.issues,[],1);
         end
         function inspectRun(obj)
             index = obj.Inspect.UserData;
@@ -325,6 +541,9 @@ classdef PipelineWidget < handle
         function setStatus(obj,message)
             obj.Status.Text = message; obj.Status.Tooltip = message;
             if ~isempty(obj.OnStatus), obj.OnStatus(message); end
+        end
+        function draftNotice(obj)
+            if obj.Draft.takeDiscarded() > 0, obj.setStatus('Run settings reset after template changes'); end
         end
     end
     methods (Static, Access = private)

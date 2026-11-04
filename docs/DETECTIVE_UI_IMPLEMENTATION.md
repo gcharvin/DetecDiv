@@ -36,6 +36,7 @@ viewer = detecdiv_ui({projectA, projectB});
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
 - Independent Projects, Image, Display and Pipeline widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches. Older three-widget layouts keep their geometry and initially hide Pipeline.
 - Pipeline selects workspace or JSON templates, inspects steps/parameter scope, validates and dry-runs the current FOV/ROI or whole project, lists associated project runs and opens their inspector. Advanced editing/execution reuse `pipeline2`; the main widget does not yet launch/monitor runs inline. See `DETECTIVE_UI_PIPELINE.md`.
+- Run parameters with simple supported types can be edited in Pipeline without changing its template. Drafts are separate per project/template and pass through the existing run context to validation and the advanced editor. Runs also has an embedded review (Summary, Steps, Issues), loaded only on request through `pipelineRunReview`.
 - Concise English labels, native MATLAB tooltips and a bottom status bar. There is no permanent explanatory or onboarding text.
 - Copy Image uses MATLAB `copygraphics` on the displayed axes. The automated smoke test does not overwrite the user's clipboard.
 

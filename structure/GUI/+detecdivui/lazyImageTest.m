@@ -34,6 +34,7 @@ project.fov.roi = zone;
 assignin('base',workspaceName,project);
 output = evalc('viewer = detecdiv_ui([],''DiscoverWorkspace'',true,''Visible'',''on'',''LayoutFile'','''',''AutoSaveLayout'',false);');
 closeViewer = onCleanup(@()delete(viewer));
+viewer.addProject(project); % Focus this fixture even when other workspace projects exist.
 drawnow; pause(.3);
 ax = findall(viewer.Figure,'Tag','image-view');
 assert(isempty(findall(ax,'Type','image')) && isempty(zone.image));
