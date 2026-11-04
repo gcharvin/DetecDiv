@@ -330,12 +330,12 @@ classdef Viewer < handle
             delete(obj.Tree.Children);
             for k = 1:numel(obj.Sessions)
                 session = obj.Sessions{k};
-                projectNode = uitreenode(obj.Tree,'Text',obj.projectName(session.Project), ...
-                    'NodeData',struct('project',k,'fov',0,'roi',0),'Tag','project-node');
+                projectNode = obj.browserNode(obj.Tree,obj.projectName(session.Project), ...
+                    struct('project',k,'fov',0,'roi',0),'project-node');
                 [labels, indices] = session.positionItems();
                 for j = 1:numel(indices)
-                    fovNode = uitreenode(projectNode,'Text',labels{j}, ...
-                        'NodeData',struct('project',k,'fov',indices(j),'roi',0),'Tag','fov-node');
+                    fovNode = obj.browserNode(projectNode,labels{j}, ...
+                        struct('project',k,'fov',indices(j),'roi',0),'fov-node');
                     % Inspect the hierarchy without changing session selection.
                     rois = session.Project.fov(indices(j)).roi;
                     for r = 1:numel(rois)
@@ -344,8 +344,8 @@ classdef Viewer < handle
                             if strlength(string(rois(r).id)) > 0
                                 label = sprintf('%s · %s',label,string(rois(r).id));
                             end
-                            uitreenode(fovNode,'Text',label, ...
-                                'NodeData',struct('project',k,'fov',indices(j),'roi',r),'Tag','roi-node');
+                            obj.browserNode(fovNode,label, ...
+                                struct('project',k,'fov',indices(j),'roi',r),'roi-node');
                         end
                     end
                 end
@@ -356,14 +356,14 @@ classdef Viewer < handle
             for k = 1:numel(kinds)
                 indices = find(strcmp({obj.WorkspaceObjects.kind},kinds{k}));
                 if isempty(indices), continue; end
-                group = uitreenode(obj.Tree,'Text',labels{k},'Tag','workspace-collection', ...
-                    'NodeData',struct('project',0,'fov',0,'roi',0,'object',0));
+                group = obj.browserNode(obj.Tree,labels{k}, ...
+                    struct('project',0,'fov',0,'roi',0,'object',0),'workspace-collection');
                 for j = indices
                     entry = obj.WorkspaceObjects(j);
                     name = char(string(entry.object.strid));
                     if isempty(name), name = entry.variables{1}; end
-                    uitreenode(group,'Text',name,'Tag','workspace-object', ...
-                        'NodeData',struct('project',0,'fov',0,'roi',0,'object',j));
+                    obj.browserNode(group,name, ...
+                        struct('project',0,'fov',0,'roi',0,'object',j),'workspace-object');
                 end
                 expand(group);
             end
@@ -371,7 +371,7 @@ classdef Viewer < handle
         function browseSelection(obj)
             nodes = obj.Tree.SelectedNodes;
             if isempty(nodes), return; end
-            target = nodes(1).NodeData;
+            target = nodes(1).UserData;
             if target.project == 0
                 if target.object > 0
                     obj.showWorkspaceObject(target.object);
@@ -486,7 +486,7 @@ classdef Viewer < handle
         function selectCurrentNode(obj)
             nodes = findall(obj.Tree,'Type','uitreenode');
             for k = 1:numel(nodes)
-                d = nodes(k).NodeData;
+                d = nodes(k).UserData;
                 if d.project == 0, continue; end
                 if d.project == obj.ActiveProject && d.fov == obj.Session.Position && d.roi == obj.Session.Zone
                     obj.Tree.SelectedNodes = nodes(k);
@@ -713,6 +713,12 @@ classdef Viewer < handle
         end
     end
     methods (Static, Access = private)
+        function node = browserNode(parent,text,data,tag)
+            % Keep navigation records on the MATLAB side, away from the
+            % native NodeData conversion path. Assign only after construction.
+            node = uitreenode(parent,'Text',text,'Tag',tag,'NodeData',[]);
+            node.UserData = data;
+        end
         function name = projectName(project)
             name = char(string(project.io.file));
             if isempty(name), name = 'Untitled Project'; end

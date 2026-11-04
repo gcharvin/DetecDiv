@@ -16,5 +16,10 @@ p.addParameter('AutoSaveLayout',true,@(x)islogical(x)&&isscalar(x));
 p.addParameter('DiscoverWorkspace',discover,@(x)islogical(x)&&isscalar(x));
 p.parse(varargin{:});
 viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout);
-if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
+try
+    if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
+catch err
+    delete(viewer); % Do not leave an orphaned window/menu timer after import fails.
+    rethrow(err);
+end
 end
