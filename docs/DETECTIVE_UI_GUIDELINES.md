@@ -23,6 +23,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 6. Contextual tools expose useful defaults first, with detailed parameters and the pipeline available on demand. Guiding an action must not require a permanent tutorial beside the image.
 7. Treatment commands must make selection, output naming and replacement behavior clear. Scientific logic stays in backend modules; pipelines retain provenance.
 8. Native tooltips and enabled/disabled commands communicate availability. The colour of a contour is not the only selection cue; the project tree also identifies the active ROI.
+9. Every integration from Score, DetecDiv, Workflow or Pipeline must review progress UI and caller/destination ownership. Long operations show a scoped widget/footer indicator before blocking; reuse real backend callbacks and preserve cancellation where supported. Use indeterminate progress without a measurable fraction. Hidden-widget work falls back to a visible owner. See `DETECTIVE_UI_PROGRESS.md` and regenerate the audit when adding a handoff.
 
 ## Initial menu structure
 

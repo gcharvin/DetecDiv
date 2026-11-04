@@ -9,6 +9,9 @@ classdef Viewer < handle
         DisplayModel
         WorkspaceObjects = struct('object',{},'variables',{},'kind',{})
         Pipeline
+        Progress
+        ProjectProgress
+        DisplayProgress
     end
     properties (Access = private)
         Tree
@@ -84,9 +87,9 @@ classdef Viewer < handle
             obj.RelinkImage = uibutton(location,'Text','Relink Raw Data...','Visible','off', ...
                 'Tag','relink-raw-data','Tooltip','Locate raw data using the existing project relink helper', ...
                 'ButtonPushedFcn',@(~,~)obj.relinkRawData());
-            nav = uigridlayout(obj.Host.widgetFigure('Projects'),[2 1]);
+            nav = uigridlayout(obj.Host.widgetFigure('Projects'),[3 1]);
             nav.Padding = [4 4 4 4];
-            nav.RowHeight = {'1x',230};
+            nav.RowHeight = {'1x',230,22};
             obj.Tree = uitree(nav,'Tag','projects-tree', ...
                 'SelectionChangedFcn',@(~,~)obj.browseSelection());
             obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
@@ -106,6 +109,8 @@ classdef Viewer < handle
             obj.ProjectInfo = uitable(info,'Data',cell(0,2),'ColumnName',{}, ...
                 'ColumnWidth',{105,'auto'},'RowName',{},'Tag','project-information', ...
                 'ColumnEditable',[false false]);
+            projectStatus = uilabel(nav,'Text','','Tag','projects-status');
+            obj.ProjectProgress = detecdivui.Progress(nav,projectStatus,'projects-progress');
             canvas = uigridlayout(root,[2 1]);
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.Axes = uiaxes(canvas,'Color',[0.07 0.09 0.11],'Tag','image-view');
@@ -130,8 +135,8 @@ classdef Viewer < handle
                 'Tooltip','Browse frames', ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
-            tools = uigridlayout(obj.Host.widgetFigure('Display'),[14 1]);
-            tools.RowHeight = {22,'1x',22,28,28,22,28,28,28,22,38,28,28,32};
+            tools = uigridlayout(obj.Host.widgetFigure('Display'),[15 1]);
+            tools.RowHeight = {22,'1x',22,28,28,22,28,28,28,22,38,28,28,32,22};
             uilabel(tools,'Text','Layers','FontWeight','bold');
             obj.LayerTable = uitable(tools,'Data',cell(0,2),'ColumnName',{'','Layer'}, ...
                 'ColumnEditable',[true false],'ColumnWidth',{28,'auto'},'RowName',{}, ...
@@ -180,17 +185,25 @@ classdef Viewer < handle
                 'ValueChangedFcn',@(src,~)obj.setOutlines(src.Value));
             uibutton(tools,'Text','Fit image','Tooltip','Fit the complete image to the viewport', ...
                 'Tag','fit-image','ButtonPushedFcn',@(~,~)obj.resetView());
+            displayStatus = uilabel(tools,'Text','','Tag','display-status');
+            obj.DisplayProgress = detecdivui.Progress(tools,displayStatus,'display-progress');
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
+            obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
+            obj.ProjectProgress.Route = @()obj.progressOwner('Projects');
+            obj.Pipeline.Progress.Route = @()obj.progressOwner('Pipeline');
+            obj.Progress.Route = @()obj.progressOwner('Image');
+            obj.DisplayProgress.Route = @()obj.progressOwner('Display');
+            obj.Host.OnActivity = @(message)obj.Progress.begin(message);
             obj.Pipeline.OnStatus = @(message)set(obj.Status,'Text',message,'Tooltip',message);
             obj.Pipeline.OnChanged = @()obj.syncPipelineMenu();
-            if iscell(project)
-                for k = 1:numel(project), obj.addProject(project{k}); end
-            elseif ~isempty(project)
-                for k = 1:numel(project), obj.addProject(project(k)); end
-            end
             try
                 obj.Host.start(visibility);
+                if iscell(project)
+                    for k = 1:numel(project), obj.addProject(project{k}); end
+                elseif ~isempty(project)
+                    for k = 1:numel(project), obj.addProject(project(k)); end
+                end
             catch err
                 delete(obj); rethrow(err);
             end
@@ -203,6 +216,7 @@ classdef Viewer < handle
             % Add or focus a project; existing projects stay in the tree.
             assert(isa(project,'shallow') && isscalar(project), ...
                 'detecdivui:Project','A shallow project is required.');
+            activity = obj.ProjectProgress.begin('Opening project...'); %#ok<NASGU>
             index = obj.findProject(project);
             if index == 0
                 obj.Sessions{end+1} = detecdivui.Session(project);
@@ -220,6 +234,7 @@ classdef Viewer < handle
             if nargin < 2, index = obj.ActiveProject; end
             if index == 0, return; end
             validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
+            activity = obj.ProjectProgress.begin('Closing project...'); %#ok<NASGU>
             active = obj.Session;
             wasActive = index == obj.ActiveProject;
             obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
@@ -245,6 +260,21 @@ classdef Viewer < handle
             end
             obj.refreshView(false);
         end
+        function openProject(obj,path)
+            try
+                if nargin < 2
+                    [file,folder] = uigetfile( ...
+                        {'*.json;*.mat','DetecDiv Projects (*.json, *.mat)'},'Open Project');
+                    if isequal(file,0), return; end
+                    path = fullfile(folder,file);
+                end
+                activity = obj.ProjectProgress.begin('Loading project...'); %#ok<NASGU>
+                project = shallowLoad(path,'ProgressCallback',@(payload)obj.ProjectProgress.report(payload));
+                if ~isempty(project), obj.addProject(project); end
+            catch err
+                obj.showError(err);
+            end
+        end
         function loadCurrentImage(obj)
             if obj.Session.Position == 0, return; end
             obj.selectCurrentNode();
@@ -259,7 +289,7 @@ classdef Viewer < handle
                     if ~picked, obj.Status.Text = 'Relink cancelled'; return; end
                 end
                 retry = obj.ImageRequested && obj.MissingRaw;
-                obj.Status.Text = 'Relinking raw data...'; drawnow limitrate nocallbacks;
+                activity = obj.ProjectProgress.begin('Relinking raw data...'); %#ok<NASGU>
                 report = detecdiv_paths_relink_project(obj.Session.Project,root);
                 obj.DisplayModel.invalidate();
                 if isempty(report)
@@ -281,11 +311,15 @@ classdef Viewer < handle
         end
         function refreshWorkspace(obj)
             % Import live handles; never load files or alter workspace variables.
+            activity = obj.ProjectProgress.begin('Scanning workspace...'); %#ok<NASGU>
             entries = detecdivui.workspaceObjects();
             active = obj.Session.Project;
             obj.WorkspaceObjects = entries(~strcmp({entries.kind},'shallow'));
             obj.Pipeline.importWorkspace(entries);
-            for k = find(strcmp({entries.kind},'shallow'))
+            projects = find(strcmp({entries.kind},'shallow')); count = 0;
+            for k = projects
+                count = count+1;
+                obj.ProjectProgress.update(sprintf('Opening project %d / %d',count,numel(projects)),(count-1)/numel(projects));
                 obj.addProject(entries(k).object);
             end
             if ~isempty(active)
@@ -298,10 +332,41 @@ classdef Viewer < handle
         function delete(obj)
             if obj.Closing, return; end
             obj.Closing = true;
+            if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.OnActivity = []; end
             if ~isempty(obj.Host) && isvalid(obj.Host), delete(obj.Host); end
         end
     end
     methods (Access = private)
+        function progress = progressOwner(obj,widget)
+            progress = obj.Progress;
+            if obj.Closing, return; end
+            owners = struct('Image',obj.Progress,'Projects',obj.ProjectProgress, ...
+                'Pipeline',obj.Pipeline.Progress,'Display',obj.DisplayProgress);
+            visible = obj.Host.isWidgetVisible(widget);
+            % A document can be visible but covered by another tab. Use the
+            % main view unless Pipeline/Display actually owns the focus.
+            if ismember(widget,{'Pipeline','Display'})
+                selected = obj.Host.App.SelectedChild;
+                visible = visible && isstruct(selected) && isscalar(selected) && ...
+                    isfield(selected,'tag') && strcmpi(selected.tag,widget);
+            end
+            if visible
+                progress = owners.(widget); return;
+            end
+            if obj.Host.isWidgetVisible('Image'), return; end
+            selected = obj.Host.App.SelectedChild;
+            if isstruct(selected) && isscalar(selected) && isfield(selected,'tag')
+                names = fieldnames(owners); index = find(strcmpi(names,selected.tag),1);
+                if ~isempty(index) && obj.Host.isWidgetVisible(names{index})
+                    progress = owners.(names{index}); return;
+                end
+            end
+            for name = {'Image','Projects','Pipeline','Display'}
+                if obj.Host.isWidgetVisible(name{1})
+                    progress = owners.(name{1}); return;
+                end
+            end
+        end
         function createMenus(obj)
             file = obj.Host.menu([],'File');
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
@@ -346,17 +411,6 @@ classdef Viewer < handle
             obj.Host.menu(helpMenu,'About DetecDiv', ...
                 'MenuSelectedFcn',@(~,~)uialert(obj.Figure, ...
                     'DetecDiv — microscopy image analysis','About DetecDiv','Icon','info'));
-        end
-        function openProject(obj)
-            try
-                [file,folder] = uigetfile( ...
-                    {'*.json;*.mat','DetecDiv Projects (*.json, *.mat)'},'Open Project');
-                if isequal(file,0), return; end
-                project = shallowLoad(fullfile(folder,file));
-                if ~isempty(project), obj.addProject(project); end
-            catch err
-                obj.showError(err);
-            end
         end
         function openPipeline(obj)
             obj.Pipeline.openTemplate(); obj.Host.focusWidget('Pipeline');
@@ -618,7 +672,7 @@ classdef Viewer < handle
                 return;
             end
             obj.ImageRequested = true; obj.LoadImage.Text = 'Reload Image';
-            obj.Status.Text = 'Loading image...'; drawnow limitrate nocallbacks;
+            activity = obj.Progress.begin('Loading image...'); %#ok<NASGU>
             try
                 [names, frames] = obj.Session.dimensions();
                 obj.setControls(names,frames);
@@ -668,6 +722,7 @@ classdef Viewer < handle
         end
         function render(obj)
             if obj.Session.Position == 0 || ~obj.ImageRequested, return; end
+            activity = obj.Progress.begin('Reading image and rendering layers...'); %#ok<NASGU>
             try
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
                 obj.TimeSlider.Value = obj.Frame.Value;
@@ -745,6 +800,7 @@ classdef Viewer < handle
         end
         function editLayer(obj,action)
             if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
+            activity = obj.DisplayProgress.begin('Updating display...'); %#ok<NASGU>
             index = obj.Channels.Value;
             try
                 switch action
@@ -798,6 +854,7 @@ classdef Viewer < handle
             end
         end
         function copyImage(obj)
+            activity = obj.Progress.begin('Copying image...'); %#ok<NASGU>
             try
                 copygraphics(obj.Axes);
             catch err

@@ -1,0 +1,425 @@
+File,Line,Function,API,Owner,CleanupHint,Kind
+structure/GUI/addDataGUI_extracted_tmp.m,147,"function displayresults(app,option)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifyDataGUI_extracted_tmp.m,682,"function ClassifyselecteddataButtonPushed(app, event)",uiprogressdlg,app.ClassifydataUIFigure,review,source
+structure/GUI/detecdiv.m,522,"function contextMenuClassiFcn(src,event,arg,str)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,1108,"function openPipelineModuleByIndex(pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,1164,"function executeProjectPipelineRun(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,1223,"function submitProjectPipelineRunToHub(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,1282,"function refreshProjectPipelineRunHubStatus(projIdx, runIdx, showDialog)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,1880,"function contextMenuPositionFcn(src,event,arg,str)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,2333,"function check = checkImagePath(app,proj)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,2523,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,2544,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv.m,2550,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,4547,"function openRecentPipelineCallback(app, pipelineJsonPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,4682,"function openRecentProjectCallback(app, projectPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,4742,"function openRecentClassifierCallback(app, classiMatPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,5173,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,5724,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv.m,5873,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv.m,6193,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6245,"function TreeSelectionChanged(app, event)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6298,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6356,"function CatalogBrowserMenuSelected(app, event) %#ok<INUSD>",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6474,"function CloseprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv.m,6589,"function SaveselectedprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6634,"function AdddataButtonPushed(app, event)",workflow,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv.m,6691,"function OpenprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6775,"function SaveprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6886,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6917,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,6977,"function ExtractROIhypervolumesButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,7415,"function OpenButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,7434,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv.m,7443,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv_extracted.m,726,"function contextMenuClassiFcn(src,event,arg,str)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,1423,"function openPipelineModuleByIndex(pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,1468,"function openProjectPipelineRunInspector(projIdx, runIdx)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,1526,"function executeProjectPipelineRun(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,1595,"function submitProjectPipelineRunToHub(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,1656,"function refreshProjectPipelineRunHubStatus(projIdx, runIdx, showDialog)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,2277,"function contextMenuPositionFcn(src,event,arg,str)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,2886,"function startRoiTreeBuild(app, parentNode, roiLabels, childTag, userDataPrefix)",uiprogressdlg,app.DetecDivUIFigure,stored dialog; verify callback lifecycle,source
+structure/GUI/detecdiv_extracted.m,3012,"function check = checkImagePath(app,proj)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,3101,"function relinkTreeRawData(app, projectIdx, fovIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,3332,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,3343,"function openPipelineWithContext(app, pipeObj, progressDlg)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,3358,"function openPipelineWithContext(app, pipeObj, progressDlg)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,3360,"function openPipelineWithContext(app, pipeObj, progressDlg)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,3368,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message, varargin)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,3374,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message, varargin)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,5875,"function openRecentPipelineCallback(app, pipelineJsonPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,6013,"function openRecentProjectCallback(app, projectPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,6091,"function openRecentClassifierCallback(app, classiMatPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,6547,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,8028,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8120,"function TreeSelectionChanged(app, event)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv_extracted.m,8173,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8233,"function CatalogBrowserMenuSelected(app, event) %#ok<INUSD>",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8304,"function OpenpipelinetemplateMenuSelected(app, event) %#ok<INUSD>",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8368,"function CloseprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8513,"function saveShallowProjectWithProgress(app, shallowObj, message, option)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8857,"function OpenprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,8943,"function SaveprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,9056,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,9089,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,9151,"function ExtractROIhypervolumesButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,9217,"function RefreshtreewindowMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,stored dialog; verify callback lifecycle,source
+structure/GUI/detecdiv_extracted.m,9595,"function OpenButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detecdiv_extracted.m,9626,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv_extracted.m,9635,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/detecdiv_extracted.m,10103,"function d = createPipelineRunProgressDialog(app, runId)",uiprogressdlg,app.DetecDivUIFigure,review,source
+structure/GUI/detecdiv_extracted.m,10235,"function InspectRunButtonPushed(app, event)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,10358,"function openClassifierPipelineRunInspector(app, classifierIdx, runIdx)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/detecdiv_extracted.m,11747,"function RestoredeletedROIsMenu_2Selected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/detector_extracted.m,223,"function display2(app,datapicker)",uiprogressdlg,app.DataexportingandplottingUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,551,"function LoadButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,679,"function ChoosefolderButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,884,"function InvertframesandpositionsCheckBoxValueChanged(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,922,"function ChoosefilesButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,1217,"function DetectROIsincurrentposButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData_extracted_tmp.m,1281,"function DetectROIsinallpositionsButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,source
+structure/GUI/pipeline2_extracted.m,1516,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,2586,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,3515,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,3548,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,3924,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4196,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4337,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,4495,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,4767,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,4820,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,source
+structure/GUI/pipeline2_extracted.m,5419,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7565,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7612,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,7650,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,8296,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,9129,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/pipeline2_extracted.m,9642,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,9707,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipeline2_extracted.m,9861,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,12288,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,13147,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,14551,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,15599,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,15983,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,16024,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,16836,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,17180,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,18463,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,source
+structure/GUI/pipeline2_extracted.m,19711,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,19833,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/pipeline2_extracted.m,20914,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22089,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22362,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22512,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22867,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,22939,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,23237,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipeline2_extracted.m,23860,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,source
+structure/GUI/pipelineGUI_extracted.m,6222,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipelineGUI_extracted.m,6243,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipelineGUI_extracted.m,6337,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipelineGUI_extracted.m,6871,"function exportPipelineFromGUI(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipelineGUI_extracted.m,7002,"function exportModuleBundle(app, idx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/pipelineRunGUI_extracted.m,1736,"function openSelectedNodeGUI(app)",workflow,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/GUI/pipelineRunGUI_extracted.m,1914,"function openSelectedNodeGUI(app)",classifierGUI,destination frontend; caller covers launch,review,source
+structure/GUI/pipelineRunGUI_extracted.m,2305,"function RunOnHubButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,source
+structure/GUI/processDataGUI_extracted_tmp.m,1636,"function ProcessselecteddataButtonPushed(app, event)",uiprogressdlg,app.ProcessdataUIFigure,review,source
+structure/GUI/roiImporterGUI_extracted.m,801,"function ProceedButtonPushed(app, event)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,source
+structure/GUI/roiImporterGUI_extracted.m,981,"function ImportROIsfromdiskButtonPushed(app, event)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,2610,"function renderCurrentFrame(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,4959,"function saveWorkflowStateWithProgress(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,5912,"function openRoiInScoreByIndex(app, idx)",score,destination frontend; caller covers launch,review,source
+structure/GUI/workflow2_extracted.m,6930,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,7204,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,7224,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,7294,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow2_extracted.m,7666,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,1281,"function renderCurrentFrame(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,3532,"function saveWorkflowStateWithProgress(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,4481,"function openRoiInScoreByIndex(app, idx)",score,destination frontend; caller covers launch,review,source
+structure/GUI/workflow_extracted.m,5389,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,5615,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,5635,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,5705,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/workflow_extracted.m,6041,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,source
+structure/GUI/+detecdivui/PipelineWidget.m,222,"function openTemplate(obj,path)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,231,"function refresh(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,277,"function [ok,report] = check(obj,mode)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,430,"function run = saveRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,464,"function saveTemplate(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,473,"function editor = openEditor(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,496,"function editor = openEditor(obj)",pipeline2,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,526,"function review = reviewRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,771,"function inspectRun(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/PipelineWidget.m,773,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
+structure/GUI/+detecdivui/Viewer.m,197,"function obj = Viewer(project, visibility, layoutFile, autoSave)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
+structure/GUI/+detecdivui/Viewer.m,219,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,237,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,271,"function openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,292,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,314,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,675,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,725,"function render(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,803,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,857,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,3357,"function AnnotateselectedROIButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,3647,"function FormattrainingsetMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4071,"function TrainClassifierMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4105,"function SaveclassifierMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4348,"function BackupcurrentclassifierversionMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4630,"function DisplayaugmentedimagesButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4781,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/classifier/private/classifierGUI_runtime_code.m,4816,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source
+structure/GUI/loadData/loadData_load.m,930,"function shallowObj = loadData_load(parsedData, hprogressbar)",score,destination frontend; caller covers launch,review,source
+structure/GUI/score/score_paintOverlay.m,826,"function progress = beginTrackProgress(app, scope)",uiprogressdlg,app.ScoreAppUIFigure,review,source
+structure/GUI/score/private/score_runtime_code.m,4601,"function quantifyChannelFluo(app)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/score/private/score_runtime_code.m,5163,"function CreateFromPredictionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/score/private/score_runtime_code.m,5388,"function ReviewFindingsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/score/private/score_runtime_code.m,5916,"function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/score/private/score_runtime_code.m,7476,"function SaveselectedroiMenuSelected(app, event)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/GUI/score/private/score_runtime_code.m,7999,"function GrenerateMovieButtonPushed(app, event)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,source
+structure/classes/@classi/stats.m,204,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,205,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,206,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,214,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,215,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,216,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,251,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,261,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,261,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,262,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,318,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,320,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,324,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,359,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,368,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,416,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,441,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,455,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,470,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,472,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,476,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,529,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,548,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,550,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,550,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,550,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,552,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,552,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,552,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,554,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,554,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,554,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,554,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/stats.m,635,"function h = newFig(silent)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+structure/classes/@classi/userTraining.m,185,"function userTraining(classif,varargin)",score,destination frontend; caller covers launch,review,source
+structure/classes/@classi/userTraining.m,187,"function userTraining(classif,varargin)",score,destination frontend; caller covers launch,review,source
+structure/classes/@fov/computeDrift.m,217,"function [list, drift, score] = computeDrift(obj, varargin)",score,destination frontend; caller covers launch,review,source
+structure/classes/@fov/computeDrift.m,686,"function [list, drift, score] = computeDrift(obj, varargin)",score,destination frontend; caller covers launch,review,source
+structure/classes/@fov/computeDrift.m,852,"function [list, drift, score] = computeDrift(obj, varargin)",score,destination frontend; caller covers launch,review,source
+structure/io/classifierOpenValidationPipeline.m,74,"function app = classifierOpenValidationPipeline(classiObj, varargin)",pipeline2,destination frontend; caller covers launch,review,source
+engine/classification/+lstm_timeseries/openInputBindings.m,11,"function app=openInputBindings(classif,afterApply)",pipeline2,destination frontend; caller covers launch,review,source
+engine/dataloading/+roiTracked/ui.m,21,"function ctx = ui(ctx)",workflow,destination frontend; caller covers launch,review,source
+engine/processor/+computeRLS/core.m,886,"function idOut=localViterbiDecode(proba,classes,param)",score,destination frontend; caller covers launch,review,source
+engine/processor/+computeRLS/core.m,890,"function idOut=localViterbiDecode(proba,classes,param)",score,destination frontend; caller covers launch,review,source
+engine/processor/+computeRLS/core.m,892,"function idOut=localViterbiDecode(proba,classes,param)",score,destination frontend; caller covers launch,review,source
+engine/processor/+computeRLS/core.m,897,"function idOut=localViterbiDecode(proba,classes,param)",score,destination frontend; caller covers launch,review,source
+helpers/detecdiv_batch_builder.m,437,"function onConfigurePrototype(~, ~)",pipeline2,destination frontend; caller covers launch,manual close/delete; verify early exits,source
+helpers/detecdiv_batch_builder.m,511,"function onRunBatch(~, ~)",uiprogressdlg,fig,review,source
+structure/GUI/Copy_of_workflow.mlapp,2119,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/Copy_of_workflow.mlapp,2232,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/Copy_of_workflow.mlapp,2256,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/Copy_of_workflow.mlapp,2405,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/ProcessorImporterGUI.mlapp,217,"function ProceedButtonPushed(app, event)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/ROIAdjustGUI.mlapp,835,"function proceed(app)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/ROIclassiMismatchGUI.mlapp,1532,"function ProceedButtonPushed(app, event)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/addDataGUI.mlapp,101,"function displayresults(app,option)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classiRepository.mlapp,341,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/classifierBKGUI.mlapp,427,"function RestoreselectedversioncloseButtonPushed(app, event)",uiprogressdlg,app.TrainingrusselectionUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/classifierGUI.mlapp,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/classifierGUI.mlapp,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,3357,"function AnnotateselectedROIButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/classifierGUI.mlapp,3647,"function FormattrainingsetMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4071,"function TrainClassifierMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4105,"function SaveclassifierMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4348,"function BackupcurrentclassifierversionMenuSelected(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4630,"function DisplayaugmentedimagesButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4781,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierGUI.mlapp,4816,"function GenerateDraftButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierImporterGUI.mlapp,243,"function ProceedButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifierImporterGUI.mlapp,370,"function ProceedButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/classifyDataGUI.mlapp,682,"function ClassifyselecteddataButtonPushed(app, event)",uiprogressdlg,app.ClassifydataUIFigure,review,embedded runtime
+structure/GUI/detecdiv.mlapp,726,"function contextMenuClassiFcn(src,event,arg,str)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,1423,"function openPipelineModuleByIndex(pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,1468,"function openProjectPipelineRunInspector(projIdx, runIdx)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,1526,"function executeProjectPipelineRun(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,1595,"function submitProjectPipelineRunToHub(projIdx, runIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,1656,"function refreshProjectPipelineRunHubStatus(projIdx, runIdx, showDialog)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,2277,"function contextMenuPositionFcn(src,event,arg,str)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,2886,"function startRoiTreeBuild(app, parentNode, roiLabels, childTag, userDataPrefix)",uiprogressdlg,app.DetecDivUIFigure,stored dialog; verify callback lifecycle,embedded runtime
+structure/GUI/detecdiv.mlapp,3012,"function check = checkImagePath(app,proj)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,3101,"function relinkTreeRawData(app, projectIdx, fovIdx)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,3332,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,3343,"function openPipelineWithContext(app, pipeObj, progressDlg)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,3358,"function openPipelineWithContext(app, pipeObj, progressDlg)",pipeline2,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,3360,"function openPipelineWithContext(app, pipeObj, progressDlg)",pipeline2,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,3368,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message, varargin)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,3374,"function openPipelineEditorWithProgress(app, projectObj, targetObj, message, varargin)",pipeline2,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,5875,"function openRecentPipelineCallback(app, pipelineJsonPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,6013,"function openRecentProjectCallback(app, projectPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,6091,"function openRecentClassifierCallback(app, classiMatPath)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,6547,"function openPipelineModuleByIndex(app, pipeIdx, modIdx)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,8028,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8120,"function TreeSelectionChanged(app, event)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv.mlapp,8173,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8233,"function CatalogBrowserMenuSelected(app, event) %#ok<INUSD>",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8304,"function OpenpipelinetemplateMenuSelected(app, event) %#ok<INUSD>",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8368,"function CloseprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8513,"function saveShallowProjectWithProgress(app, shallowObj, message, option)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8857,"function OpenprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,8943,"function SaveprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,9056,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,9089,"function IdentifyROIsinpositionsButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,9151,"function ExtractROIhypervolumesButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,9217,"function RefreshtreewindowMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,stored dialog; verify callback lifecycle,embedded runtime
+structure/GUI/detecdiv.mlapp,9595,"function OpenButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv.mlapp,9626,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv.mlapp,9635,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv.mlapp,10103,"function d = createPipelineRunProgressDialog(app, runId)",uiprogressdlg,app.DetecDivUIFigure,review,embedded runtime
+structure/GUI/detecdiv.mlapp,10235,"function InspectRunButtonPushed(app, event)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,10358,"function openClassifierPipelineRunInspector(app, classifierIdx, runIdx)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv.mlapp,11747,"function RestoredeletedROIsMenu_2Selected(app, event)",uiprogressdlg,app.DetecDivUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,393,"function contextMenuClassiFcn(src,event,arg,str)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,420,"function contextMenuPositionFcn(src,event,arg,str)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,721,"function check = checkImagePath(app,proj)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,966,"function openRecentProjectCallback(app, projectPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1015,"function openRecentClassifierCallback(app, classiMatPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1585,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1615,"function TreeSelectionChanged(app, event)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1668,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1747,"function SaveselectedprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1854,"function OpenprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,1938,"function SaveprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,2533,"function OpenButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,2551,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_before_pipeline_patch.mlapp,2562,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,393,"function contextMenuClassiFcn(src,event,arg,str)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,420,"function contextMenuPositionFcn(src,event,arg,str)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,721,"function check = checkImagePath(app,proj)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,966,"function openRecentProjectCallback(app, projectPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1015,"function openRecentClassifierCallback(app, classiMatPath)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1585,"function TreeSelectionChanged(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1615,"function TreeSelectionChanged(app, event)",score,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1668,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1747,"function SaveselectedprojectMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1854,"function OpenprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,1938,"function SaveprojectindependentclassifierMenuSelected(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,2533,"function OpenButtonPushed(app, event)",uiprogressdlg,app.DetecDivUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,2551,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detecdiv_codex_smoke.mlapp,2562,"function OpenButtonPushed(app, event)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/detector.mlapp,223,"function display2(app,datapicker)",uiprogressdlg,app.DataexportingandplottingUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/export2phylocellGUI.mlapp,170,"function ExportButtonPushed(app, event)",uiprogressdlg,app.PhylocellexporterUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,539,"function RunpreprocessingButtonPushed(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,606,"function ClassifyProcessButtonPushed(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,628,"function ClassifyProcessButtonPushed(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,648,"function ClassifyProcessButtonPushed(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,682,"function ClassifyProcessButtonPushed(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,841,"function OpenprojectMenuSelected(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,935,"function SaveprojectMenuSelected(app, event)",uiprogressdlg,app.LifespanizerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/lifespan.mlapp,987,"function UIPositionTableCellEdit(app, event)",score,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/lifespan.mlapp,1054,"function UIPositionTableSelectionChanged(app, event)",score,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/loadData.mlapp,551,"function LoadButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/loadData.mlapp,679,"function ChoosefolderButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/loadData.mlapp,884,"function InvertframesandpositionsCheckBoxValueChanged(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/loadData.mlapp,922,"function ChoosefilesButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/loadData.mlapp,1217,"function DetectROIsincurrentposButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/loadData.mlapp,1281,"function DetectROIsinallpositionsButtonPushed(app, event)",uiprogressdlg,app.LoadingAppUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/movieGUI.mlapp,98,"function display2(app,datapicker)",uiprogressdlg,app.MoviemakerUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipeline2.mlapp,1516,"function selectedModuleTableEdited(app, table, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,2586,"function redrawGraph(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,3515,"function refreshAfterModelChange(app, markDirty)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,3548,"function refreshModuleTabs(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,3924,"function HubExecutionTargetChanged(app, event)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4196,"function runtimeFieldChanged(app, key, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4337,"function relinkProjectRawDataPaths(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,4495,"function projectDropdownChanged(app, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,4767,"function bindProjectFromPath(app, inputPath, showWarnings)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,4820,"function d = openRuntimeProgress(app, titleText, messageText)",uiprogressdlg,app.UIFigure,review,embedded runtime
+structure/GUI/pipeline2.mlapp,5419,"function parseRuntimeRawDataPath(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7565,"function refreshStaticParametersDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7612,"function refreshModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,7650,"function resetModuleDefaultsAndDialog(app, fig, nodeId)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,8296,"function linkClassifierArtifact(app, node)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,9129,"function openLinkedClassifier(app, node)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/pipeline2.mlapp,9642,"function [result, accepted] = editRoiPatternDraft(app, node, draft)",workflow2,destination frontend; caller covers launch,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,9707,"function openWorkflowRoiEditor(app, nodeId)",workflow2,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipeline2.mlapp,9861,"function editorProject = buildWorkflowProjectFromRawData(app, rawDataPath)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,12288,"function bindingControlChanged(app, node, param, direction, value)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,13147,"function discoverRuntimeRoiInventory(app, force)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,14551,"function paramControlChanged(app, node, key, value, scope)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,15599,"function refreshValidationReport(app, redraw)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,15983,"function [confirmed, ctx] = confirmRunLaunch(app, ctx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,16024,"function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,16836,"function ok = savePipelineInteractive(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,17180,"function loadPipelineFromObject(app, pipeObj, restoreLatestRun)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,18463,"function connectHubButtonPushed(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),review,embedded runtime
+structure/GUI/pipeline2.mlapp,19711,"function ok = saveCurrentRun(app, forceAs)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,19833,"function showCurrentRunReview(app)",pipelineRunInspector,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/pipeline2.mlapp,20914,"function applyHubRunStatus(app, job, jobId)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22089,"function generatePipelineDocumentationPdf(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22362,"function SmokeTestButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22512,"function ok = exportPipelineInteractive(app)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22867,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,22939,"function RunButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,23237,"function NewRunButtonPushed(app, event) %#ok<INUSD>",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipeline2.mlapp,23860,"function app = pipeline2(varargin)",openRuntimeProgress,pipeline2 runtime dialog (shared/nested),onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipelineGUI.mlapp,6222,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipelineGUI.mlapp,6243,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipelineGUI.mlapp,6337,"function openModule(app, idx)",classifierGUI,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipelineGUI.mlapp,6871,"function exportPipelineFromGUI(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipelineGUI.mlapp,7002,"function exportModuleBundle(app, idx)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/pipelineRunGUI.mlapp,1736,"function openSelectedNodeGUI(app)",workflow,destination frontend; caller covers launch,manual close/delete; verify early exits,embedded runtime
+structure/GUI/pipelineRunGUI.mlapp,1914,"function openSelectedNodeGUI(app)",classifierGUI,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/pipelineRunGUI.mlapp,2305,"function RunOnHubButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/processDataGUI.mlapp,1636,"function ProcessselecteddataButtonPushed(app, event)",uiprogressdlg,app.ProcessdataUIFigure,review,embedded runtime
+structure/GUI/processGUI.mlapp,157,"function SaveparametersButtonPushed(app, event)",uiprogressdlg,app.ProcessorUIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/roiImporterGUI.mlapp,801,"function ProceedButtonPushed(app, event)",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/roiImporterGUI.mlapp,981,"function ImportROIsfromdiskButtonPushed(app, event)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,1281,"function renderCurrentFrame(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,3532,"function saveWorkflowStateWithProgress(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,4481,"function openRoiInScoreByIndex(app, idx)",score,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/workflow.mlapp,5389,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,5615,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,5635,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,5705,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow.mlapp,6041,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,2610,"function renderCurrentFrame(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,4959,"function saveWorkflowStateWithProgress(app)",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,5912,"function openRoiInScoreByIndex(app, idx)",score,destination frontend; caller covers launch,review,embedded runtime
+structure/GUI/workflow2.mlapp,6930,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,7204,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,7224,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,7294,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow2.mlapp,7666,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/workflow_test_codeData.mlapp,4575,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_codeData.mlapp,4801,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_codeData.mlapp,4819,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_codeData.mlapp,4887,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_codeData.mlapp,5209,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_pack.mlapp,4575,"function TestROIdetectionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_pack.mlapp,4801,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_pack.mlapp,4819,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_pack.mlapp,4887,"function GenerateROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/workflow_test_pack.mlapp,5209,"function ExtractROIsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.UIFigure,manual close/delete; verify early exits,embedded runtime
+structure/GUI/score/score.mlapp,4601,"function quantifyChannelFluo(app)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/score/score.mlapp,5163,"function CreateFromPredictionButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/score/score.mlapp,5388,"function ReviewFindingsButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/score/score.mlapp,5916,"function ValidateAnnotationButtonPushed(app, event) %#ok<INUSD>",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/score/score.mlapp,7476,"function SaveselectedroiMenuSelected(app, event)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime
+structure/GUI/score/score.mlapp,7999,"function GrenerateMovieButtonPushed(app, event)",uiprogressdlg,app.ScoreAppUIFigure,onCleanup in function; verify ownership,embedded runtime

@@ -4336,6 +4336,8 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Relink raw data', ...
                     'Message', 'Rebasing project FOV source paths...', 'Indeterminate', 'on');
+                ddProgressGuard1 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
             catch
             end
             try
@@ -5416,6 +5418,8 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Raw data parser', ...
                     'Message', 'Loading raw dataset metadata...', 'Indeterminate', 'on');
+                ddProgressGuard2 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
             catch
             end
             try
@@ -8293,6 +8297,8 @@ classdef pipeline2 < matlab.apps.AppBase
                         'Title', 'Link latent-model runtime', ...
                         'Message', 'Reading runtime manifest...', ...
                         'Value', 0, 'Cancelable', 'off');
+                    ddProgressGuard3 = onCleanup(@()detecdiv_close_progress(linkProgress)); %#ok<NASGU>
+                    drawnow nocallbacks;
                     drawnow limitrate nocallbacks;
                     bundleReport = cellLatentModel.validateRuntimeManifest(selectedFolder, ...
                         @(fraction,message)updateClassifierLinkProgress( ...
@@ -9854,6 +9860,8 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 d = uiprogressdlg(app.UIFigure, 'Title', 'ROI workflow', ...
                     'Message', 'Parsing raw data for ROI editor...', 'Indeterminate', 'on', 'Cancelable', 'off');
+                ddProgressGuard4 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
             catch
             end
 
@@ -15975,6 +15983,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Preparing run confirmation', ...
                     'Message', 'Collecting effective run parameters...', ...
                     'Indeterminate', 'on', 'Cancelable', 'off');
+                ddProgressGuard5 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
             catch
             end
             try
@@ -16014,6 +16024,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Preparing smoke test confirmation', ...
                     'Message', 'Collecting effective smoke test parameters...', ...
                     'Indeterminate', 'on', 'Cancelable', 'off');
+                ddProgressGuard6 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
             catch
             end
             try
@@ -16824,6 +16836,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     d = uiprogressdlg(app.UIFigure, 'Title', 'Save pipeline', ...
                         'Message', 'Preparing pipeline template save...', ...
                         'Value', 0.05, 'Cancelable', 'off');
+                    ddProgressGuard7 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                    drawnow nocallbacks;
                     drawnow limitrate nocallbacks;
                 catch
                     d = [];
@@ -19697,6 +19711,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Save run', ...
                     'Message', 'Preparing run save...', ...
                     'Value', 0.05, 'Cancelable', 'off');
+                ddProgressGuard8 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow nocallbacks;
             catch
                 d = [];
@@ -20899,6 +20915,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 'Title', 'Refreshing Hub project', ...
                 'Message', 'Preparing local project refresh...', ...
                 'Value', 0);
+            ddProgressGuard9 = onCleanup(@()detecdiv_close_progress(resumeDialog)); %#ok<NASGU>
+            drawnow nocallbacks;
             drawnow;
             progressCallback = @(progress)updateHubProjectRefreshProgress(app, resumeDialog, progress);
             emitLocalWorkspaceRefreshForHubRun(app, job, progressCallback);
@@ -22071,6 +22089,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 progress = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline documentation', ...
                     'Message', 'Preparing the current pipeline...', 'Indeterminate', 'on', ...
                     'Cancelable', 'off');
+                ddProgressGuard10 = onCleanup(@()detecdiv_close_progress(progress)); %#ok<NASGU>
+                drawnow nocallbacks;
                 pipeObj = buildPipelineObject(app, app.CurrentPipelinePath, currentPipelineName(app));
                 projectInput = documentationProjectInput(app);
                 if ~isempty(progress) && isvalid(progress)
@@ -22342,6 +22362,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     d = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline smoke test', ...
                         'Message', ['Saving smoke test run state: ' smokeInfo.label], ...
                         'Indeterminate', 'on', 'Cancelable', 'on');
+                    ddProgressGuard11 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                    drawnow nocallbacks;
                     try
                         if isprop(d, 'CancelText')
                             d.CancelText = 'Stop smoke test';
@@ -22917,6 +22939,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline run', ...
                     'Message', 'Saving preflight run...', 'Indeterminate', 'on', ...
                     'Cancelable', 'on');
+                ddProgressGuard12 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 try
                     if isprop(d, 'CancelText')
                         d.CancelText = 'Stop run';

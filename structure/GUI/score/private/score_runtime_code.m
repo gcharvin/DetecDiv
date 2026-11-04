@@ -4600,6 +4600,8 @@ end
             %% Création de la progress dialog
             d = uiprogressdlg(app.ScoreAppUIFigure, 'Title', 'Please Wait...', ...
                 'Message', 'Starting compute All metrics...');
+            ddProgressGuard1 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
             d.Value = 0.01;
 
 
@@ -5162,6 +5164,8 @@ end
                     'Title', uiText.progressTitle, ...
                     'Message', uiText.progressMessage, ...
                     'Indeterminate', 'on', 'Cancelable', 'off');
+                ddProgressGuard2 = onCleanup(@()detecdiv_close_progress(progress)); %#ok<NASGU>
+                drawnow nocallbacks;
                 try
                     arguments = {'InitializeGT', true, ...
                         'OverwriteGT', overwrite, 'Save', true, ...
@@ -5385,6 +5389,8 @@ end
                     'Title', 'Annotation review findings', ...
                     'Message', 'Auditing GT and preparing the findings table...', ...
                     'Indeterminate', 'on');
+                ddProgressGuard3 = onCleanup(@()detecdiv_close_progress(progress)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow limitrate;
                 report = app.AnnotationSession.findings();
                 app.openPersistentAnnotationFindings(report);
@@ -5912,6 +5918,8 @@ end
                     'Message', ['Auditing masks, tracks, parentage and ' ...
                         'review coverage...'], ...
                     'Indeterminate', 'on', 'Cancelable', 'off');
+                ddProgressGuard4 = onCleanup(@()detecdiv_close_progress(progress)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow limitrate;
                 report = app.AnnotationSession.validate();
                 app.AnnotationLastValidationValid = logical(report.valid);
@@ -7469,6 +7477,8 @@ end
         'Title', 'Saving ROI', ...
         'Message', 'Please wait while the ROI is being saved...', ...
         'Indeterminate', 'on');
+    ddProgressGuard5 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
 
     try
         % Sauvegarder la ROI via la méthode dédiée

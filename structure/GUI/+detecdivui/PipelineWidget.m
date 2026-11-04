@@ -10,6 +10,7 @@ classdef PipelineWidget < handle
         Graph
         RunGraph
         Setup
+        Progress
     end
     properties
         OnStatus = []
@@ -169,6 +170,7 @@ classdef PipelineWidget < handle
                 'ButtonPushedFcn',@(~,~)obj.refresh());
             obj.Tabs.SelectedTab = obj.StepsTab;
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','pipeline-status');
+            obj.Progress = detecdivui.Progress(root,obj.Status,'pipeline-progress');
         end
         function setContext(obj,session)
             obj.Session = session;
@@ -217,6 +219,7 @@ classdef PipelineWidget < handle
                     if isequal(file,0), return; end
                     path = fullfile(folder,file);
                 end
+                activity = obj.Progress.begin('Loading pipeline...'); %#ok<NASGU>
                 [template,message] = pipelineLoad(path);
                 assert(~isempty(template),'detecdivui:PipelineLoad','%s',message);
                 obj.addTemplate(template); obj.setStatus('Pipeline opened');
@@ -225,6 +228,7 @@ classdef PipelineWidget < handle
             end
         end
         function refresh(obj)
+            activity = obj.Progress.begin('Refreshing pipeline...'); %#ok<NASGU>
             obj.Templates = obj.Templates(cellfun(@(item)isvalid(item),obj.Templates));
             names = cellfun(@(item)char(string(item.strid)),obj.Templates,'UniformOutput',false);
             for k = 1:numel(names), if isempty(names{k}), names{k} = 'Untitled Pipeline'; end, end
@@ -270,8 +274,9 @@ classdef PipelineWidget < handle
             ok = false; report = struct();
             if obj.Busy || isempty(obj.Template), return; end
             obj.Busy = true; finish = onCleanup(@()obj.endCheck());
+            activity = obj.Progress.begin('Checking pipeline...'); %#ok<NASGU>
             obj.Validate.Enable = 'off'; obj.DryRun.Enable = 'off';
-            obj.setStatus('Checking pipeline...'); drawnow;
+            obj.setStatus('Checking pipeline...');
             try
                 ctx = obj.context();
                 % The shared binding resolver can mutate handle templates.
@@ -422,6 +427,7 @@ classdef PipelineWidget < handle
         end
         function run = saveRun(obj)
             run = [];
+            activity = obj.Progress.begin('Saving run...'); %#ok<NASGU>
             try
                 draft = obj.draftRun(); project = obj.Session.Project;
                 assert(~isempty(project.io.path) && isfolder(fullfile(project.io.path,project.io.file)), ...
@@ -455,6 +461,7 @@ classdef PipelineWidget < handle
         end
         function saveTemplate(obj)
             if isempty(obj.Template), return; end
+            activity = obj.Progress.begin('Saving pipeline...'); %#ok<NASGU>
             try
                 pipelineSave(obj.Template); obj.setStatus('Pipeline saved');
             catch err
@@ -463,6 +470,7 @@ classdef PipelineWidget < handle
         end
         function editor = openEditor(obj)
             editor = [];
+            activity = obj.Progress.begin('Opening pipeline editor...'); %#ok<NASGU>
             try
                 args = {};
                 if ~isempty(obj.Template), args{end+1} = obj.Template; end
@@ -515,10 +523,11 @@ classdef PipelineWidget < handle
         function review = reviewRun(obj)
             review = struct(); index = obj.Inspect.UserData;
             if isempty(index), return; end
+            activity = obj.Progress.begin('Reading run review...'); %#ok<NASGU>
             obj.LastRunReview = struct(); obj.RunNodes.Data = cell(0,3); obj.RunIssues.Data = cell(0,1);
             obj.RunReviews{index} = [];
             try
-                obj.setStatus('Reading run review...'); drawnow limitrate nocallbacks;
+                obj.setStatus('Reading run review...');
                 [review,~] = pipelineRunReview(obj.RunObjects(index));
                 obj.RunReviews{index} = review; obj.showRunReview(review);
                 obj.Runs.Data{index,2} = review.status;
@@ -759,6 +768,7 @@ classdef PipelineWidget < handle
         function inspectRun(obj)
             index = obj.Inspect.UserData;
             if isempty(index), return; end
+            activity = obj.Progress.begin('Opening run inspector...'); %#ok<NASGU>
             try
                 pipelineRunInspector(obj.RunObjects(index),obj.Session.Project);
             catch err

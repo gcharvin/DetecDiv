@@ -1265,7 +1265,6 @@ classdef workflow < matlab.apps.AppBase
 
             nActive = numel(activeList);
 
-            tLoad = tic;
 
             dLoad = [];
 
@@ -1277,17 +1276,22 @@ classdef workflow < matlab.apps.AppBase
 
                 wasCached = app.isImageCachedKey(key);
 
-                imgs{i} = app.getImage(i);
-
-                if ~wasCached && isempty(dLoad) && toc(tLoad) > 0.35 && k < nActive
-
-                    dLoad = uiprogressdlg(app.UIFigure, ...
+                if ~wasCached && isempty(dLoad)
+                    try
+                        dLoad = uiprogressdlg(app.UIFigure, ...
                         'Title','Loading raw frame', ...
                         'Message','Reading channels...', ...
                         'Value', max(0, (k-1) / nActive), ...
                         'Cancelable','off');
-
+                        ddProgressGuard1 = onCleanup(@()detecdiv_close_progress(dLoad)); %#ok<NASGU>
+                        drawnow nocallbacks;
+                    catch
+                        dLoad = [];
+                    end
                 end
+
+                % Paint before the first blocking read, including one-channel data.
+                imgs{i} = app.getImage(i);
 
                 if ~isempty(dLoad)
 
@@ -5383,6 +5387,8 @@ classdef workflow < matlab.apps.AppBase
             end
 
             d = uiprogressdlg(app.UIFigure,'Title','ROI pattern','Message',['Testing ROI detection on FOV(s): ' scopeLabel '...']);
+            ddProgressGuard2 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
 
             try, d.Indeterminate = 'on'; catch, end
 
@@ -5607,6 +5613,8 @@ classdef workflow < matlab.apps.AppBase
                     case 'roipattern'
 
                         d = uiprogressdlg(app.UIFigure,'Title','ROI pattern','Message',['Applying ROI pattern to ' scopeLabel '...']);
+                        ddProgressGuard3 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                        drawnow nocallbacks;
 
                         try, d.Indeterminate = 'on'; catch, end
 
@@ -5625,6 +5633,8 @@ classdef workflow < matlab.apps.AppBase
                         idxTracked = app.findNodeIndex('roiTracked');
 
                         d = uiprogressdlg(app.UIFigure,'Title','Tracked ROI','Message',['Generating tracked ROIs on ' scopeLabel '...']);
+                        ddProgressGuard4 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                        drawnow nocallbacks;
 
                         try, d.Indeterminate = 'on'; catch, end
 
@@ -5693,6 +5703,8 @@ classdef workflow < matlab.apps.AppBase
                         end
 
                         d = uiprogressdlg(app.UIFigure,'Title','ROI grid','Message',['Generating ROI grid on ' scopeLabel '...']);
+                        ddProgressGuard5 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                        drawnow nocallbacks;
 
                         try, d.Indeterminate = 'on'; catch, end
 
@@ -6027,6 +6039,8 @@ classdef workflow < matlab.apps.AppBase
             end
 
             d = uiprogressdlg(app.UIFigure,'Title','ROI extraction','Message',['Extracting ROI crops on ' scopeLabel '...'], 'Cancelable', 'on');
+            ddProgressGuard6 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
 
             try, d.Indeterminate = 'on'; catch, end
 

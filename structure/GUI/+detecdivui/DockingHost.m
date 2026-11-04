@@ -10,6 +10,7 @@ classdef DockingHost < handle
     end
     properties
         OnClosed = []
+        OnActivity = []
     end
     properties (Access = private)
         Window
@@ -150,6 +151,7 @@ classdef DockingHost < handle
             obj.settle(); obj.syncMenus();
         end
         function resetLayout(obj)
+            activity = obj.activity('Arranging workspace...'); %#ok<NASGU>
             obj.dockAll();
             names = {'projects','image','display','pipeline'};
             for k = 1:numel(names)
@@ -182,6 +184,7 @@ classdef DockingHost < handle
         function saveLayout(obj,file)
             if nargin < 2, file = obj.LayoutFile; end
             if isempty(file), return; end
+            activity = obj.activity('Saving layout...'); %#ok<NASGU>
             record = obj.snapshot();
             folder = fileparts(char(file));
             if ~isempty(folder) && ~isfolder(folder), mkdir(folder); end
@@ -198,6 +201,7 @@ classdef DockingHost < handle
             obj.InvalidLayout = false;
         end
         function ok = restoreLayout(obj,file)
+            activity = obj.activity('Restoring layout...'); %#ok<NASGU>
             if nargin < 2, file = obj.LayoutFile; end
             ok = false;
             if isempty(file) || ~isfile(file), return; end
@@ -283,6 +287,10 @@ classdef DockingHost < handle
         end
     end
     methods (Access = private)
+        function scope = activity(obj,message)
+            scope = [];
+            if ~isempty(obj.OnActivity), scope = obj.OnActivity(message); end
+        end
         function result = executeJS(obj,script)
             obj.WebBusy = true;
             release = onCleanup(@()obj.releaseWeb());

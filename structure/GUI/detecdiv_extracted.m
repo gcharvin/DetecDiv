@@ -1525,6 +1525,8 @@ end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...', ...
                     'Message',['Running pipeline run ' runObj.runId '...']);
+                ddProgressGuard1 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 d.Value = 0.2;
 
                 try
@@ -1592,6 +1594,8 @@ end
                 end
                 d = uiprogressdlg(app.DetecDivUIFigure, 'Title', 'Please Wait...', ...
                     'Message', ['Submitting hub job for ' runObj.runId '...'], 'Indeterminate', 'on');
+                ddProgressGuard2 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 try
                     try
                         detecdiv_hub_release_project_open(shallowObj);
@@ -1653,6 +1657,8 @@ end
                             'Title', 'Refreshing Hub project', ...
                             'Message', 'Reloading project results and acquiring a local edit lease...', ...
                             'Indeterminate', 'on');
+                        ddProgressGuard3 = onCleanup(@()detecdiv_close_progress(reloadDialog)); %#ok<NASGU>
+                        drawnow nocallbacks;
                         drawnow;
                         [~, reloadMsg] = localReloadProjectFromDiskAfterHubTerminalStatus(projVar, shallowObj, runObj, runIdx);
                         try
@@ -2270,6 +2276,8 @@ end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
                     'Message','Loading raw data from source files; Please wait...');
+                ddProgressGuard4 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 d.Value=0.33;
 
                 if numel(shallowObj.fov(pos).srcpath{1})>0
@@ -3003,6 +3011,8 @@ end
 
             d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
                 'Message','Checking raw data path in the project...');
+            ddProgressGuard5 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
             d.Value=0.0;
             for i=1:numel(proj.fov)
                 d.Value=i./numel(proj.fov);
@@ -3092,6 +3102,8 @@ end
                     'Title', 'Relink raw data', ...
                     'Message', 'Rebasing FOV source paths...', ...
                     'Indeterminate', 'on');
+                ddProgressGuard6 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow;
             catch
             end
@@ -3332,6 +3344,8 @@ end
                     'Title', 'Please wait', ...
                     'Message', 'Opening pipeline editor...', ...
                     'Indeterminate', 'on');
+                ddProgressGuard7 = onCleanup(@()detecdiv_close_progress(progressDlg)); %#ok<NASGU>
+                drawnow nocallbacks;
             end
             cleanupObj = onCleanup(@() app.safeCloseProgressDialog(progressDlg)); %#ok<NASGU>
             app.updatePipelineOpenProgress(progressDlg, 'Reloading pipeline template...');
@@ -5861,6 +5875,8 @@ function openRecentPipelineCallback(app, pipelineJsonPath)
     d = uiprogressdlg(app.DetecDivUIFigure, ...
         'Title','Please Wait...', ...
         'Message','Loading selected pipeline...');
+    ddProgressGuard8 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
     d.Value = 0.33;
 
     [pipeObj, msg] = pipelineLoad(pipelineJsonPath);
@@ -5997,6 +6013,8 @@ function openRecentProjectCallback(app, projectPath)
     d = uiprogressdlg(app.DetecDivUIFigure, ...
         'Title','Please Wait...', ...
         'Message','Preparing project load...');
+    ddProgressGuard9 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
     d.Value = 0.01;
     progressCallback = @(payload)app.updateProjectLoadProgress(d, payload);
 
@@ -6072,6 +6090,8 @@ function openRecentClassifierCallback(app, classiMatPath)
 
     d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
         'Message','Loading selected classifier...');
+    ddProgressGuard10 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
     d.Value = 0.33;
 
     % recharge via classiLoad(fullpath)
@@ -8007,6 +8027,8 @@ end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
                     'Message','Loading selected ROI...');
+                ddProgressGuard11 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 d.Value=0.33;
 
                 %roiObj.view;
@@ -8151,6 +8173,8 @@ end
             d = uiprogressdlg(app.DetecDivUIFigure, ...
                 'Title','Please Wait...', ...
                 'Message','Preparing project load...');
+            ddProgressGuard12 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
 
             d.Value = 0.01;
             progressCallback = @(payload)app.updateProjectLoadProgress(d, payload);
@@ -8211,6 +8235,8 @@ end
                     'Message', 'Preparing catalog browser...', ...
                     'Indeterminate', 'on', ...
                     'Cancelable', 'off');
+                ddProgressGuard13 = onCleanup(@()detecdiv_close_progress(progressDlg)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow;
                 if exist('launch_catalog_browser', 'file') == 2
                     launch_catalog_browser;
@@ -8488,6 +8514,8 @@ end
                     'Title', 'Save project', ...
                     'Message', message, ...
                     'Value', 0.05);
+                ddProgressGuard14 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 drawnow;
             catch
                 d = [];
@@ -8828,6 +8856,8 @@ end
 % Menu selected function: OpenprojectindependentclassifierMenu
     d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
         'Message','Loading selected classifier...');
+    ddProgressGuard15 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
     d.Value = 0.33;
 
     [classiObj, msg] = classiLoad;
@@ -8912,6 +8942,8 @@ end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
                     'Message','Saving selected project...');
+                ddProgressGuard16 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                drawnow nocallbacks;
                 d.Value=0.1;
                 pause(0.5)
                 classiSave(classiObj);
@@ -9024,6 +9056,8 @@ end
                     d = uiprogressdlg(app.DetecDivUIFigure, ...
                         'Title', 'Please Wait...', ...
                         'Message', 'Generating grid ROIs...');
+                    ddProgressGuard17 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                    drawnow nocallbacks;
                     try
                         runCtx = struct('shallow', shallowObj, 'roiGrid', ctx.roiGrid, 'params', ctx.roiGrid);
                         roiGrid.process(runCtx);
@@ -9055,6 +9089,8 @@ end
                     d = uiprogressdlg(app.DetecDivUIFigure, ...
                         'Title', 'Please Wait...', ...
                         'Message', 'Creating tracked ROIs from masks...');
+                    ddProgressGuard18 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+                    drawnow nocallbacks;
                     try
                         createTrackedCellROIs(shallowObj);
                         app.applyProjectRoiProducerChoice(shallowObj, 'roiTracked', trackedParams);
@@ -9115,6 +9151,8 @@ end
             d = uiprogressdlg(app.DetecDivUIFigure, ...
                 'Title', 'Please Wait...', ...
                 'Message', 'Extracting ROI hypervolumes...');
+            ddProgressGuard19 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+            drawnow nocallbacks;
             try
                 runCtx = struct('shallow', shallowObj, 'roiExtract', ctx.roiExtract, 'params', ctx.roiExtract);
                 roiExtract.process(runCtx);
@@ -9558,6 +9596,8 @@ end
         'Title', 'Please wait', ...
         'Message', 'Opening selection...', ...
         'Indeterminate', 'on');
+    ddProgressGuard20 = onCleanup(@()detecdiv_close_progress(d)); %#ok<NASGU>
+    drawnow nocallbacks;
 
     try
         selectedNodes = app.Tree.SelectedNodes;
