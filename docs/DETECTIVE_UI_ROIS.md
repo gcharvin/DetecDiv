@@ -11,7 +11,7 @@ Open View > ROIs, or right-click the image and choose ROI Tools.... The assistan
 
 Manual/Grid previews use scratch FOV objects and the existing package processors; no project ROIs are created by preview. Create ROIs appends through the existing package backend on the selected project FOV. Existing ROI images, IDs and results are preserved; standalone creation does not extract pixels into H5. Save Project (Ctrl+S) explicitly persists lightweight JSON inventory/ROI geometry through shallowSave(...,'shallowObj'), without saving/clearing ROI image caches. Extraction remains a separate pipeline operation.
 
-Opening the assistant is metadata-only. Drawing/preview requests the raw image on demand; absent sources use the existing Relink Raw Data... action. ROI geometry is drawn in raw FOV coordinates, even when the user entered the assistant from a cropped ROI view. The FOV target is shown at the top. Pending shapes/settings are remembered per project/FOV during the session and released when the project closes.
+The assistant is created lazily when opening ROI Tools or selecting its tab. Navigation/rendering and project closure do not require it to exist; deleted tool instances are rebuilt on their next explicit opening. Opening the assistant is metadata-only. Drawing/preview requests the raw image on demand; absent sources use the existing Relink Raw Data... action. ROI geometry is drawn in raw FOV coordinates, even when the user entered the assistant from a cropped ROI view. The FOV target is shown at the top. Pending shapes/settings are remembered per project/FOV during the session and released when the project closes.
 
 ## Pipeline reuse
 

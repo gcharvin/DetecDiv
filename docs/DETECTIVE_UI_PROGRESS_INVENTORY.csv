@@ -158,18 +158,18 @@ structure/GUI/+detecdivui/PipelineWidget.m,1068,"function inspectRun(obj)",.Prog
 structure/GUI/+detecdivui/PipelineWidget.m,1070,"function inspectRun(obj)",pipelineRunInspector,destination frontend; caller covers launch,review,source
 structure/GUI/+detecdivui/ROIWidget.m,141,"function ctx = apply(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/ROIWidget.m,166,"function preview(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,220,"function obj = Viewer(project, visibility, layoutFile, autoSave)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
-structure/GUI/+detecdivui/Viewer.m,242,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,219,"function obj = Viewer(project, visibility, layoutFile, autoSave)",.Progress.begin,initiating widget,manual close/delete; verify early exits,source
+structure/GUI/+detecdivui/Viewer.m,241,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/Viewer.m,270,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/Viewer.m,305,"function openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/Viewer.m,314,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/Viewer.m,340,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,410,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,783,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,833,"function render(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,905,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,966,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,988,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,411,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,801,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,851,"function render(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,923,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,984,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1006,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source

@@ -148,9 +148,9 @@ classdef Viewer < handle
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
             displayRoot = uigridlayout(obj.Host.widgetFigure('Display'),[1 1]);
             displayRoot.Padding = [0 0 0 0];
-            obj.DisplayTabs = uitabgroup(displayRoot);
+            obj.DisplayTabs = uitabgroup(displayRoot,'Tag','display-tabs');
             displayTab = uitab(obj.DisplayTabs,'Title','Display');
-            obj.ROIsTab = uitab(obj.DisplayTabs,'Title','ROIs');
+            obj.ROIsTab = uitab(obj.DisplayTabs,'Title','ROIs','Tag','roi-tab');
             tools = uigridlayout(displayTab,[12 1]);
             tools.RowSpacing = 6; tools.Scrollable = 'on';
             tools.RowHeight = {22,'1x',28,28,150,28,28,28,32,28,22,22};
@@ -209,8 +209,7 @@ classdef Viewer < handle
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
             obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
-            obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
-            obj.ROIs.Progress.Route = @()obj.progressOwner('Display');
+            obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.Pipeline.OnDefineROIs = @(project,node,callback)obj.openROITool(project,node,callback);
             obj.Pipeline.OnProjectUpdated = @(project)obj.addProject(project);
             obj.ProjectProgress.Route = @()obj.progressOwner('Projects');
@@ -250,7 +249,8 @@ classdef Viewer < handle
             elseif ~isequal(obj.Sessions{index}.Project,project)
                 session = obj.Sessions{index}; old = session.Project;
                 position = session.Position; zone = session.Zone;
-                obj.Pipeline.Draft.rebindProject(old,project); obj.ROIs.forgetProject(old);
+                obj.Pipeline.Draft.rebindProject(old,project);
+                if obj.hasROIWidget(), obj.ROIs.forgetProject(old); end
                 session.setProject(project);
                 if position > 0 && position <= numel(project.fov)
                     session.selectPosition(position);
@@ -271,7 +271,7 @@ classdef Viewer < handle
             active = obj.Session;
             wasActive = index == obj.ActiveProject;
             obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
-            obj.ROIs.forgetProject(obj.Sessions{index}.Project);
+            if obj.hasROIWidget(), obj.ROIs.forgetProject(obj.Sessions{index}.Project); end
             obj.storeView();
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             obj.DisplayModels(index) = [];
@@ -359,6 +359,7 @@ classdef Viewer < handle
         end
         function openROITool(obj,project,node,callback)
             if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
+            obj.ensureROIWidget();
             if nargin >= 3 && ~isempty(node)
                 if obj.Session.Position == 0 && isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
                     if obj.Session.Position ~= node.params.fovIndex(1) || obj.Session.Zone > 0
@@ -428,13 +429,30 @@ classdef Viewer < handle
         function delete(obj)
             if obj.Closing, return; end
             obj.Closing = true;
-            if ~isempty(obj.ROIs) && isvalid(obj.ROIs), delete(obj.ROIs); end
+            if obj.hasROIWidget(), delete(obj.ROIs); end
             if ~isempty(obj.Pipeline) && isvalid(obj.Pipeline), delete(obj.Pipeline); end
             if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.OnActivity = []; end
             if ~isempty(obj.Host) && isvalid(obj.Host), delete(obj.Host); end
         end
     end
     methods (Access = private)
+        function yes = hasROIWidget(obj)
+            yes = isa(obj.ROIs,'detecdivui.ROIWidget') && isscalar(obj.ROIs) && isvalid(obj.ROIs);
+        end
+        function ensureROIWidget(obj)
+            if obj.hasROIWidget(), return; end
+            assert(isa(obj.ROIsTab,'matlab.ui.container.Tab') && isvalid(obj.ROIsTab), ...
+                'detecdivui:ViewerVersion','Close this viewer and launch detecdiv_ui again to load ROI Tools.');
+            % A deleted assistant may have left its controls in the tab.
+            delete(obj.ROIsTab.Children);
+            obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
+            obj.ROIs.Progress.Route = @()obj.progressOwner('Display');
+            obj.ROIs.setContext(obj.Session); obj.ROIs.onRender();
+        end
+        function displayTabSelected(obj)
+            if obj.Closing, return; end
+            if isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab), obj.ensureROIWidget(); end
+        end
         function finishROIGesture(obj)
             if isvalid(obj), obj.DrawingROI = false; end
         end
@@ -743,7 +761,7 @@ classdef Viewer < handle
         function refreshView(obj,loadImage)
             if nargin < 2, loadImage = true; end
             obj.refreshProjectInfo();
-            obj.ROIs.setContext(obj.Session);
+            if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
             obj.Pipeline.setContext(obj.Session);
             obj.Crumb.Text = obj.Session.breadcrumb();
             obj.Crumb.Tooltip = obj.Crumb.Text;
@@ -860,7 +878,7 @@ classdef Viewer < handle
                     obj.Axes.YLim = [0.5 size(plane,1)+0.5];
                 end
                 if view.native, obj.Axes.CLim = view.limits; end
-                obj.ROIs.onRender();
+                if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end

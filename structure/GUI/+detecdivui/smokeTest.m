@@ -49,6 +49,7 @@ session.selectZone(0);
 assert(numel(session.referenceRegions()) == 2);
 viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
 closeViewer = onCleanup(@()delete(viewer));
+assert(isempty(viewer.ROIs)); % Navigation must work before this optional tool exists.
 drawnow;
 ax = findall(viewer.Figure,'Tag','image-view');
 assert(isempty(findall(ax,'Type','image')));
@@ -86,9 +87,26 @@ slider.Value = 2; slider.ValueChangedFcn(slider,[]);
 assert(isequal(getPixels(ax),rgb+100));
 assert(isequal(ax.XLim,[10 35]) && isequal(ax.YLim,[10 40]));
 back = findall(viewer.Figure,'Tag','parent-fov');
+viewer.Host.setWidgetVisible('Display',false);
 back.ButtonPushedFcn(back,[]);
 assert(viewer.Session.Zone == 0);
 assert(isequal(getPixels(ax),pixels+100));
+assert(isempty(viewer.ROIs));
+viewer.Host.setWidgetVisible('Display',true);
+viewer.openROITool(); assert(isa(viewer.ROIs,'detecdivui.ROIWidget') && isvalid(viewer.ROIs));
+delete(viewer.ROIs); % Deleted optional tools must also leave navigation usable.
+node = findall(tree,'Tag','roi-node','Text','ROI 2 · Cells 01'); assert(isscalar(node));
+tree.SelectedNodes = node;
+tree.SelectionChangedFcn(tree,[]); back.ButtonPushedFcn(back,[]);
+assert(viewer.Session.Zone == 0 && isequal(getPixels(ax),pixels+100));
+viewer.openROITool();
+assert(isvalid(viewer.ROIs) && isscalar(findall(viewer.widgetFigure('Display'),'Tag','roi-mode')));
+% Selecting the ROIs tab directly must lazily recreate the same tool too.
+tabs = findall(viewer.widgetFigure('Display'),'Tag','display-tabs');
+roiTab = findall(tabs,'Tag','roi-tab'); other = tabs.Children(tabs.Children ~= roiTab);
+tabs.SelectedTab = other(1); delete(viewer.ROIs);
+tabs.SelectedTab = roiTab; tabs.SelectionChangedFcn(tabs,[]);
+assert(isvalid(viewer.ROIs) && isscalar(findall(roiTab,'Tag','roi-mode')));
 % An unreadable frame must clear old pixels, then recover on navigation.
 position.srclist{1}(2).name = 'missing-frame.tif';
 viewer.Host.findCommand('Reload Image').invoke();
