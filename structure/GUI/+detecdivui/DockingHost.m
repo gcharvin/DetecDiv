@@ -41,11 +41,12 @@ classdef DockingHost < handle
             group = matlab.ui.internal.FigureDocumentGroup( ...
                 'Tag','workspace','Title','Workspace','EnableDockControls',true);
             obj.App.add(group);
-            for name = {'Projects','Image','Display','Pipeline'}
+            for name = {'Projects','Image','Display','Pipeline','Data'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',false);
                 obj.App.add(doc); obj.Widgets.(id) = doc;
+                if strcmp(id,'data'), doc.Visible = false; end
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
             obj.StateListener = addlistener(obj.App,'StateChanged',@(~,~)obj.appStateChanged());
@@ -61,7 +62,7 @@ classdef DockingHost < handle
         end
         function addDockMenus(obj,parent)
             docking = obj.menu(parent,'Docking','Separator','on');
-            names = {'Projects','Image','Display','Pipeline'};
+            names = {'Projects','Image','Display','Pipeline','Data'};
             for k = 1:numel(names)
                 name = names{k};
                 obj.DockCommands{k} = obj.menu(docking,['Undock ' name], ...
@@ -115,6 +116,26 @@ classdef DockingHost < handle
             obj.App.SelectedChild = struct('tag',lower(char(name)),'documentGroupTag','workspace');
             obj.settle();
         end
+        function openData(obj)
+            current = obj.App.DocumentLayout;
+            initial = ~obj.Widgets.data.Visible && isequal(current.tileCoverage,[1 2 3]) && ...
+                numel(current.columnWeights) == 3 && ...
+                max(abs(reshape(current.columnWeights,1,[])-[.20 .64 .16])) < .001 && ...
+                all(cellfun(@(name)obj.widget(name).Docked && obj.widget(name).Visible, ...
+                {'Projects','Image','Display','Pipeline'}));
+            obj.setWidgetVisible('Data',true);
+            if initial
+                layout = struct('gridDimensions',struct('w',3,'h',2),'tileCount',4, ...
+                    'columnWeights',[.20 .64 .16],'rowWeights',[.65 .35], ...
+                    'tileCoverage',[1 2 3;1 4 3]);
+                occupancy = repmat(struct('children',struct('id','')),1,4);
+                names = {'projects','image','display','data'};
+                for k = 1:4, occupancy(k).children.id = ['workspace_' names{k}]; end
+                occupancy(3).children(2).id = 'workspace_pipeline'; layout.tileOccupancy = occupancy;
+                obj.App.DocumentLayout = layout; obj.waitForLayout();
+            end
+            obj.focusWidget('Data');
+        end
         function setWidgetVisible(obj,name,visible)
             id = lower(char(name)); doc = obj.widget(id);
             if doc.Visible == logical(visible), obj.syncMenus(); return; end
@@ -154,6 +175,7 @@ classdef DockingHost < handle
         function resetLayout(obj)
             activity = obj.activity('Arranging workspace...'); %#ok<NASGU>
             obj.dockAll();
+            obj.Widgets.data.Visible = false;
             names = {'projects','image','display','pipeline'};
             for k = 1:numel(names)
                 doc = obj.widget(names{k}); doc.Visible = true;
@@ -214,6 +236,10 @@ classdef DockingHost < handle
                     record.widgets.pipeline = struct('docked',true,'visible',false, ...
                         'windowBounds',obj.Widgets.pipeline.WindowBounds);
                 end
+                if isfield(record,'widgets') && ~isfield(record.widgets,'data')
+                    record.widgets.data = struct('docked',true,'visible',false, ...
+                        'windowBounds',obj.Widgets.data.WindowBounds);
+                end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
                 names = fieldnames(obj.Widgets);
@@ -252,7 +278,7 @@ classdef DockingHost < handle
         function syncMenus(obj)
             if ~obj.MenusInstalled || obj.WebBusy || isempty(obj.Window) || ~isvalid(obj.Window) || obj.Closing, return; end
             for k = 1:numel(obj.DockCommands)
-                names = {'Projects','Image','Display','Pipeline'}; name = names{k};
+                names = {'Projects','Image','Display','Pipeline','Data'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
                 obj.DockCommands{k}.Text = [verb ' ' name];

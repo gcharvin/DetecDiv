@@ -15,6 +15,7 @@ classdef Viewer < handle
         ROIs
         Masks
         Tracks
+        Data
         RecentProjects
     end
     properties (Access = private)
@@ -275,10 +276,12 @@ classdef Viewer < handle
             obj.KeyboardView.Layout.Row = 4;
             root.RowHeight = {32,'1x',24,0};
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
+            obj.ensureDataWidget();
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.rebindCallbacks();
             try
                 obj.Host.start(visibility);
+                if obj.Host.isWidgetVisible('Data'), obj.ensureDataWidget(); end
                 if iscell(project)
                     for k = 1:numel(project), obj.addProject(project{k}); end
                 elseif ~isempty(project)
@@ -599,6 +602,28 @@ classdef Viewer < handle
             context.masks = {layers(strcmp({layers.kind},'Labels')).name};
             context.masks = context.masks(cellfun(@(name)detecdivui.MaskDraft.isLabel(context.roi,name),context.masks));
         end
+        function openData(obj)
+            obj.ensureDataWidget(); obj.Data.setContext(); obj.Host.openData();
+        end
+        function toggleData(obj)
+            if obj.Host.isWidgetVisible('Data'), obj.Host.setWidgetVisible('Data',false);
+            else, obj.openData(); end
+        end
+        function frame = annotationFrame(obj)
+            frame = obj.Frame.Value;
+        end
+        function count = annotationFrameCount(obj)
+            count = 0;
+            if obj.Session.Zone > 0 && obj.ImageRequested
+                source = obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone);
+                if ~isempty(source.image), count = size(source.image,4); end
+            end
+        end
+        function navigateDataFrame(obj,source,frame)
+            if obj.DrawingROI || obj.annotationFrameCount() == 0, return; end
+            current = obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone);
+            if isequal(source,current) && isscalar(frame) && isfinite(frame), obj.setFrame(frame); end
+        end
         function yes = contourGestureActive(obj)
             yes = obj.DrawingROI;
         end
@@ -689,6 +714,7 @@ classdef Viewer < handle
             if obj.Closing, return; end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
             if obj.hasTracksWidget(), delete(obj.Tracks); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), delete(obj.TracksTab); end
             if obj.hasMaskWidget(), delete(obj.Masks); end
@@ -702,6 +728,11 @@ classdef Viewer < handle
         end
     end
     methods (Access = private)
+        function ensureDataWidget(obj)
+            if ~isempty(obj.Data) && isvalid(obj.Data), return; end
+            obj.Data = detecdivui.DataWidget(obj.Host.widgetFigure('Data'),obj);
+            obj.Data.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Data');
+        end
         function ensureAnnotationDrafts(obj)
             if obj.hasMaskWidget(), return; end
             obj.MasksTab = uitab(obj.DisplayTabs,'Title','Contours','Tag','mask-tab');
@@ -834,6 +865,8 @@ classdef Viewer < handle
             if obj.Closing, return; end
             owners = struct('Image',obj.Progress,'Projects',obj.ProjectProgress, ...
                 'Pipeline',obj.Pipeline.Progress,'Display',obj.DisplayProgress);
+            owners.Data = obj.Progress;
+            if ~isempty(obj.Data) && isvalid(obj.Data), owners.Data = obj.Data.Progress; end
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
                 owners.Display = obj.ROIs.Progress;
             end
@@ -842,7 +875,7 @@ classdef Viewer < handle
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
-            if ismember(widget,{'Pipeline','Display'})
+            if ismember(widget,{'Pipeline','Display','Data'})
                 selected = obj.Host.App.SelectedChild;
                 visible = visible && isstruct(selected) && isscalar(selected) && ...
                     isfield(selected,'tag') && strcmpi(selected.tag,widget);
@@ -858,7 +891,7 @@ classdef Viewer < handle
                     progress = owners.(names{index}); return;
                 end
             end
-            for name = {'Image','Projects','Pipeline','Display'}
+            for name = {'Image','Projects','Pipeline','Display','Data'}
                 if obj.Host.isWidgetVisible(name{1})
                     progress = owners.(name{1}); return;
                 end
@@ -903,6 +936,8 @@ classdef Viewer < handle
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
             obj.Host.widgetMenu(view,'Pipeline');
+            dataMenu = obj.Host.widgetMenu(view,'Data');
+            dataMenu.MenuSelectedFcn = @(~,~)obj.toggleData();
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
             obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
@@ -1168,6 +1203,7 @@ classdef Viewer < handle
             if nargin < 2, loadImage = true; end
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
+            if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.setContext(); end
             if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
             if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
             if obj.Session.Zone == 0, obj.closeContourTool(); obj.closeTracksTool(); end
@@ -1194,6 +1230,7 @@ classdef Viewer < handle
                 obj.clearImagePanels(); obj.RenderKey = '';
                 obj.CopyMenu.Enable = 'off';
                 obj.ImageRequested = false;
+                if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 obj.LoadImage.Text = 'Load Image';
                 obj.Status.Text = 'Ready';
                 if obj.ActiveProject > 0, obj.Status.Text = 'No FOVs'; end
@@ -1201,6 +1238,7 @@ classdef Viewer < handle
             end
             if ~loadImage
                 obj.storeView(); obj.ImageRequested = false;
+                if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 preferred = obj.ViewStates{obj.ActiveProject}.channel;
                 obj.setControls({},max(1,obj.Frame.Value));
                 obj.PreferredChannel = preferred;
@@ -1357,6 +1395,7 @@ classdef Viewer < handle
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasMaskWidget(), obj.Masks.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
+                if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end

@@ -203,7 +203,7 @@ if plottype=="Plot"
             if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
             amax = max(xdata);
-            if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
+            if amax>0, amax = 1.05*amax+0.01; else, amax = 0.95*amax+0.01; end
 
             ax.UserData.xlim = 'auto';
         else
@@ -211,6 +211,7 @@ if plottype=="Plot"
             ax.UserData.xlim = [amin amax];
         end
     end
+    if amax <= amin, amin = xdata(1)-0.5*framerate; amax = xdata(1)+0.5*framerate; end
     xlim(ax, [amin amax]);
 
     % --- Y: si on a une référence categorical => ticks/labels stables ---
@@ -237,7 +238,7 @@ if plottype=="Plot"
     if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
     amax = max(xdata);
-    if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
+    if amax>0, amax = 1.05*amax+0.01; else, amax = 0.95*amax+0.01; end
 
     xlims = [amin amax];
     ticks = niceTicks(xlims(1), xlims(2), 10);
@@ -298,7 +299,7 @@ else
         if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
         amax = max(xdata);
-        if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
+        if amax>0, amax = 1.05*amax+0.01; else, amax = 0.95*amax+0.01; end
 
         ax.UserData.xlim = 'auto';
     else
@@ -306,6 +307,7 @@ else
         ax.UserData.xlim = [amin amax];
     end
 
+    if amax <= amin, amin = xdata(1)-0.5*framerate; amax = xdata(1)+0.5*framerate; end
     xlim(ax, [amin amax]);
 
     xlims = get(ax, 'XLim');
@@ -661,6 +663,7 @@ end
 
 
 function ticks = niceTicks(xmin, xmax, nticks)
+if xmax <= xmin, ticks = xmin; return; end
 range = xmax - xmin;
 rawStep = range / (nticks - 1);
 
