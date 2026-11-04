@@ -7,6 +7,7 @@
 - Intensity and RGB layers have source-unit minimum/maximum fields, a contrast range slider and an Auto button. Auto uses finite min/max from the current frame and keeps those limits while browsing time.
 - Color can be chosen from the row's picker or the native MATLAB uicolorpicker below the histogram. The editable dropdown offers common RGB/Score colormap choices and accepts the full Score color specification. RGB layers retain their three subchannels and disable tinting. Label layers accept `Labels` for score's ID palette or an RGB triplet for a single overlay color. A multicolor swatch denotes an ID palette or named colormap, not a fixed RGB color.
 - Opacity controls intensity weight or mask alpha. Label zero is transparent and label one remains a valid object.
+- Label layers expose Fill, Contours and Fill + Contours plus a positive contour width in points. Existing ROI contour/width metadata initializes the session setting. Fill alpha keeps the current layer opacity; contour edges follow Score's opaque vector-edge convention. The setting stays local to the current project/FOV/ROI/layer and does not write metadata or change mask IDs. Hidden layers have no contours, and contours do not capture mouse gestures.
 - Label layers are recognized from ROI display metadata; a scalar layer's type can also be selected explicitly. Integer-valued intensity channels are not guessed to be segmentation masks.
 - View > Reload Image invalidates the current-frame display cache. It does not overwrite unsaved in-memory ROI edits by forcing a disk reload.
 - Histogram shows the active intensity layer, its median and finite pixel count. Visible overlays other visible intensity/RGB histograms. Label IDs are excluded from intensity statistics. Auto X follows Score (log for strictly positive ranges, linear otherwise); explicit Linear X/Log X and Log Y are available. Nonpositive ranges fall back to linear X. Drag the two level markers, or use their arrow keys, to adjust the same source-unit contrast as the numeric editors/slider. Histogram axis scaling does not change pixel mapping.
@@ -21,7 +22,7 @@ Only the current view/frame's requested image planes and histogram statistics ar
 
 ## Reused rendering
 
-The adapter uses `score_makeComposite`, `score_collectDisplayOptions`, `score_channelColorSpec`, `score_applyChannelColorSpec`, `score_colormapFromName` and `score_trackColor` without changing their implementation. Source-unit contrast normalization reuses `workflowui.stretchToUnit` before providing a temporary 16-bit display plane to score. Label IDs bypass intensity normalization and retain their full source precision.
+The adapter uses `score_makeComposite`, `score_collectDisplayOptions`, `score_channelColorSpec`, `score_applyChannelColorSpec`, `score_colormapFromName` and `score_trackColor` without changing their implementation. Source-unit contrast normalization reuses `workflowui.stretchToUnit` before providing a temporary 16-bit display plane to score. Label IDs bypass intensity normalization and retain their full source precision. Optional contours use score_makeComposite's vector output and score_displayVectorGraphics; vector fill is zero because fill is already raster-composited once. No separate mask-boundary algorithm is introduced.
 
 A temporary ROI is used only as a renderer input. It is never saved and does not modify the source ROI. Intensity layers combine additively using score's `imlincomb` convention; label overlays are alpha-composited above them. A single untinted scalar layer uses native axes with the original pixels and selected contrast limits; a single unadjusted RGB layer preserves its original pixels. Mixed/colorized views produce an 8-bit RGB display image, while quantitative source values remain unchanged.
 
@@ -34,6 +35,7 @@ Semantic coloring by lineage, censoring, cell state and tracking provider, mask 
 ```matlab
 detecdivui.layerTest();
 detecdivui.displayTest();
+detecdivui.contoursTest();
 detecdivui.displayWebTest();
 detecdivui.scoreHistogramTest();
 detecdivui.smokeTest();

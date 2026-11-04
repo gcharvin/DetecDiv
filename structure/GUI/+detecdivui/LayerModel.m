@@ -10,6 +10,7 @@ classdef LayerModel < handle
         Frame = 0
         Planes = {}
         Histograms = {}
+        Styles = []
         Scratch
     end
     methods
@@ -139,11 +140,41 @@ classdef LayerModel < handle
             elseif strcmp(obj.Layers(index).color,'Labels'), obj.Layers(index).color = '1 1 1'; end
             obj.store();
         end
+        function style = labelStyle(obj,index)
+            if ~isa(obj.Styles,'containers.Map'), obj.Styles = containers.Map('KeyType','char','ValueType','any'); end
+            key = sprintf('%s:%d:%s',obj.Key,index,obj.Layers(index).name);
+            if isKey(obj.Styles,key), style = obj.Styles(key); return; end
+            style = struct('mode','Fill','width',1);
+            if obj.Session.Zone > 0
+                metadata = obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone).display;
+                [~,~,descriptors] = obj.Session.dimensions(); id = descriptors(index).logicalId;
+                if id > 0
+                    if isfield(metadata,'contour') && (isnumeric(metadata.contour) || islogical(metadata.contour)) && ...
+                            numel(metadata.contour) >= id && isfinite(metadata.contour(id)) && metadata.contour(id)
+                        style.mode = 'Fill + Contours';
+                    end
+                    if isfield(metadata,'width') && isnumeric(metadata.width) && numel(metadata.width) >= id && ...
+                            isfinite(metadata.width(id)) && metadata.width(id) > 0
+                        style.width = double(metadata.width(id));
+                    end
+                end
+            end
+            obj.Styles(key) = style;
+        end
+        function setLabelStyle(obj,index,mode,width)
+            assert(strcmp(obj.Layers(index).kind,'Labels'),'detecdivui:MaskStyle','Select a label layer.');
+            assert(any(strcmp(mode,{'Fill','Contours','Fill + Contours'})), ...
+                'detecdivui:MaskStyle','Invalid mask display style.');
+            validateattributes(width,{'numeric'},{'real','scalar','finite','positive'});
+            obj.labelStyle(index);
+            key = sprintf('%s:%d:%s',obj.Key,index,obj.Layers(index).name);
+            obj.Styles(key) = struct('mode',char(mode),'width',double(width));
+        end
         function view = compose(obj,frame,selected)
             assert(~isempty(obj.Layers),'detecdivui:NoChannels','No image channels available for this FOV.');
             base = obj.read(selected,frame);
             visible = find([obj.Layers.visible]);
-            view = struct('pixels',[],'limits',[0 1],'native',false,'names',{{obj.Layers(visible).name}});
+            view = struct('pixels',[],'limits',[0 1],'native',false,'names',{{obj.Layers(visible).name}},'vectors',struct([]));
             if isscalar(visible)
                 k = visible(1); plane = obj.read(k,frame); layer = obj.Layers(k);
                 rgbColor = sscanf(strrep(layer.color,',',' '),'%f');
@@ -163,7 +194,8 @@ classdef LayerModel < handle
                 plane = obj.read(k,frame); layer = obj.Layers(k);
                 assert(size(plane,1) == size(base,1) && size(plane,2) == size(base,2), ...
                     'detecdivui:LayerSize','Visible layers have different image sizes.');
-                [rgb,overlay,alpha] = obj.renderWithScore(plane,layer);
+                [rgb,overlay,alpha,vectors] = obj.renderWithScore(plane,layer,k);
+                view.vectors = [view.vectors vectors];
                 if strcmp(layer.kind,'Labels')
                     composite = uint8(double(composite).*(1-alpha) + 255*overlay.*alpha);
                 else
@@ -177,7 +209,8 @@ classdef LayerModel < handle
         function store(obj)
             if ~isempty(obj.Key), obj.Views(obj.Key) = obj.Layers; end
         end
-        function [rgb,overlay,alpha] = renderWithScore(obj,plane,layer)
+        function [rgb,overlay,alpha,vectors] = renderWithScore(obj,plane,layer,index)
+            vectors = struct([]);
             proxy = obj.Scratch;
             proxy.display = struct('channel',{{'Layer'}},'rgb',[1 1 1],'indexed',false);
             proxy.channelid = ones(1,size(plane,3));
@@ -203,6 +236,18 @@ classdef LayerModel < handle
             if isfield(proxy.display,'colorMode'), param.colorMode = proxy.display.colorMode; end
             if isfield(proxy.display,'colormapName'), param.colormapName = proxy.display.colormapName; end
             [rgb,~,overlay,alpha] = score_makeComposite(proxy,1,param);
+            if strcmp(layer.kind,'Labels')
+                style = obj.labelStyle(index);
+                if strcmp(style.mode,'Contours'), alpha(:) = 0; end
+                if ~strcmp(style.mode,'Fill')
+                    proxy.display.contour = true; proxy.display.width = style.width;
+                    param.mode = 'sequence'; param.hideStamp = true;
+                    param.levels{1}{5} = style.width;
+                    [~,vectors] = score_makeComposite(proxy,1,param);
+                    % Fill is already composited once in the raster image.
+                    for k = 1:numel(vectors), vectors(k).FaceAlpha = 0; end
+                end
+            end
         end
     end
     methods (Static, Access = private)

@@ -27,6 +27,9 @@ classdef Viewer < handle
         LayerKind
         ColorField
         ColorPicker
+        MaskOptions
+        MaskStyle
+        MaskWidth
         Histogram
         MinField
         MaxField
@@ -159,9 +162,9 @@ classdef Viewer < handle
             obj.DisplayTabs = uitabgroup(displayRoot,'Tag','display-tabs');
             displayTab = uitab(obj.DisplayTabs,'Title','Display');
             obj.ROIsTab = uitab(obj.DisplayTabs,'Title','ROIs','Tag','roi-tab');
-            tools = uigridlayout(displayTab,[12 1]);
+            tools = uigridlayout(displayTab,[13 1]);
             tools.RowSpacing = 6; tools.Scrollable = 'on';
-            tools.RowHeight = {22,'1x',28,28,150,28,28,28,32,28,22,22};
+            tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
             uilabel(tools,'Text','Layers','FontWeight','bold');
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = @(action,index,value)obj.editLayerRow(action,index,value);
@@ -177,6 +180,14 @@ classdef Viewer < handle
             obj.LayerKind = uidropdown(tools,'Items',{'Intensity','Labels'},'Enable','off', ...
                 'Tag','layer-kind','Tooltip','Labels requires an integer label map', ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('kind'));
+            obj.MaskOptions = uigridlayout(tools,[1 2]); obj.MaskOptions.Padding = [0 0 0 0];
+            obj.MaskOptions.ColumnWidth = {'1x',54}; obj.MaskOptions.Visible = 'off';
+            obj.MaskStyle = uidropdown(obj.MaskOptions,'Items',{'Fill','Contours','Fill + Contours'}, ...
+                'Tag','mask-style','Tooltip','Label layer appearance', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('mask-style'));
+            obj.MaskWidth = uieditfield(obj.MaskOptions,'numeric','Value',1,'Limits',[0 Inf], ...
+                'Tag','mask-width','Tooltip','Contour line width in points', ...
+                'ValueChangedFcn',@(~,~)obj.editLayer('mask-style'));
             obj.Histogram = detecdivui.HistogramView(tools);
             obj.Histogram.OnEdit = @(action,index,value)obj.editLayerRow(action,index,value);
             limits = uigridlayout(tools,[1 2]); limits.Padding = [0 0 0 0];
@@ -1010,6 +1021,11 @@ classdef Viewer < handle
                     obj.Axes.YLim = [0.5 size(plane,1)+0.5];
                 end
                 if view.native, obj.Axes.CLim = view.limits; end
+                if isfield(view,'vectors') && ~isempty(view.vectors)
+                    options = score_collectDisplayOptions('mode','display','frames',1,'hideStamp',true);
+                    [~,contours] = score_displayVectorGraphics(obj.Axes,1,1,view.vectors,options);
+                    set(contours,'Tag','mask-contour','HitTest','off','PickableParts','none');
+                end
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
@@ -1063,6 +1079,7 @@ classdef Viewer < handle
                     case 'color', obj.DisplayModel.setColor(index,obj.ColorField.Value);
                     case 'picker', obj.DisplayModel.setColor(index,sprintf('%.8g %.8g %.8g',obj.ColorPicker.Value));
                     case 'kind', obj.DisplayModel.setKind(index,obj.LayerKind.Value);
+                    case 'mask-style', obj.DisplayModel.setLabelStyle(index,obj.MaskStyle.Value,obj.MaskWidth.Value);
                 end
                 obj.render();
             catch err
@@ -1076,6 +1093,22 @@ classdef Viewer < handle
             obj.LayerTable.update(layers,index);
             layer = obj.DisplayModel.Layers(index);
             isLabel = strcmp(layer.kind,'Labels'); isRGB = strcmp(layer.kind,'RGB');
+            if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
+                rows = obj.MaskOptions.Parent.RowHeight; rows{5} = 0; rows{6} = 150;
+                rows(7:9) = {28,28,28};
+                obj.MaskOptions.Visible = obj.onOff(isLabel);
+                obj.Histogram.View.Visible = obj.onOff(~isLabel);
+                obj.MinField.Parent.Visible = obj.onOff(~isLabel);
+                obj.ContrastSlider.Visible = obj.onOff(~isLabel); obj.AutoButton.Visible = obj.onOff(~isLabel);
+                if isLabel
+                    rows{5} = 28; rows{6} = 0;
+                    rows(7:9) = {0,0,0};
+                    style = obj.DisplayModel.labelStyle(index);
+                    obj.MaskStyle.Value = style.mode; obj.MaskWidth.Value = style.width;
+                    obj.MaskWidth.Enable = obj.onOff(~strcmp(style.mode,'Fill'));
+                end
+                obj.MaskOptions.Parent.RowHeight = rows;
+            end
             if ~isLabel
                 plane = obj.DisplayModel.read(index,obj.Frame.Value);
                 layer = obj.DisplayModel.Layers(index);
@@ -1106,6 +1139,13 @@ classdef Viewer < handle
         end
         function clearLayerControls(obj)
             obj.LayerTable.update(struct([]),0); obj.Histogram.clear();
+            if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
+                obj.MaskOptions.Visible = 'off'; obj.Histogram.View.Visible = 'on';
+                obj.MinField.Parent.Visible = 'on'; obj.ContrastSlider.Visible = 'on'; obj.AutoButton.Visible = 'on';
+                rows = obj.MaskOptions.Parent.RowHeight; rows{5} = 0; rows{6} = 150;
+                rows(7:9) = {28,28,28};
+                obj.MaskOptions.Parent.RowHeight = rows;
+            end
             for control = {obj.LayerKind,obj.ColorField,obj.ColorPicker,obj.MinField,obj.MaxField, ...
                     obj.ContrastSlider,obj.AutoButton,obj.OpacitySlider}
                 item = control{1}; item.Enable = 'off';

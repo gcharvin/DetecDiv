@@ -31,7 +31,7 @@ function setup(component){
  head.append(visible,name,color);row.append(head);
  const info=element('div','info'),limits=Array.isArray(layer.limits)?layer.limits:[];
  info.append(element('span','',layer.kind+(limits.length===2?' · '+limits.map(format).join(' – '):'')),element('span','',Math.round(100*layer.opacity)+'%'));row.append(info);
- if(selected){const edit=element('div','edit');['Low','High','Weight'].forEach((label,k)=>{const wrap=element('label','',label),input=element('input');input.type='number';input.step='any';input.setAttribute('aria-label',label+' for '+layer.name);
+ if(selected){const edit=element('div','edit'),fields=layer.kind==='Labels'?['Weight']:['Low','High','Weight'];if(layer.kind==='Labels')edit.style.gridTemplateColumns='60px';fields.forEach((label,n)=>{const k=label==='Weight'?2:n,wrap=element('label','',label),input=element('input');input.type='number';input.step='any';input.setAttribute('aria-label',label+' for '+layer.name);
  if(k<2){input.disabled=layer.kind==='Labels'||limits.length!==2;input.value=limits.length===2?limits[k]:'';input.title=label+' display level in source pixel units';input.onchange=()=>{const v=limits.slice();v[k]=Number(input.value);send('limits',i,v);};}
  else{input.min=0;input.max=1;input.step=.05;input.value=layer.opacity;input.title='Opacity / intensity weight (0–1)';input.onchange=()=>send('opacity',i,Number(input.value));}
  wrap.append(input);edit.append(wrap);});row.append(edit);}
