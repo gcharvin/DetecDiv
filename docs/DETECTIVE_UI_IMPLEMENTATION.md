@@ -101,7 +101,7 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
-The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Prioritize read-only contour/object display and Data plots, then export; establish scientific dirty/save/undo handling before mask, tracking/linking and managed annotation editors.
+The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Contours and Tracks now share scientific drafts/save/undo. The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md). Next, add an isolated current-ROI movie/sequence export dialog, then managed Annotation/Review and Data editing. Export must freeze the visible layer and draft settings and report progress without changing the interactive canvas.
 
 Validate the layered display and main-image ROI assistant on real data, then connect classifier management and selection before guided segmentation. The browser contains typed Classifiers/Processors/Pipelines collections alongside Projects. Pipeline uses its compact graph, shared settings dialog and bridged `pipeline2` editor. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 

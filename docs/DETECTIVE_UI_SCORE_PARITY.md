@@ -61,7 +61,7 @@ Status below describes the new viewer: **Partial** means only the stated subset 
 | S28 | Set/remove parent, guided binary fission, undo last fission correction | `score_setSelectedParentTrack`, `score_fissionCorrection`, `cellModel.setParentTrack` | Partial: set/remove/pick parent across frames, canonical birth/fission timing and shared undo; guided two-child fission correction pending | Family/provider-specific links and Score lineage segment renderer |
 | S29 | Repair ID continuity via IoU; propagate a track with SAM31 and edit propagation settings | Context actions in `score_paintOverlay`, existing `cellModel`/`sam31` modules | Pending | Objects → Advanced actions; backend dependencies, model/environment and progress remain explicit |
 | S30 | Track censoring, censor suggestions and repairs | `score_editSelectedTrackCensoring`, `CensorSelectedTrackButtonPushed`, `acceptAnnotationCensorSuggestion`, `repairAnnotationFindings` | Pending | Objects + Review; distinguish data repair from visual hiding |
-| S31 | Lineage tree, navigation to track start and focus on a tree object | `score_lineageTreeDialog`, `score_lineageTreeLayout`, `showLineageTree`, `focusLineageTreeTrack` | Pending | Dockable Lineage view or existing dialog initially; synchronize Image selection |
+| S31 | Lineage tree, navigation to track start and focus on a tree object | `score_lineageTreeDialog`, `score_lineageTreeLayout`, `showLineageTree`, `focusLineageTreeTrack` | Available through Tracks > Lineage: current draft, explicit refresh, scoped tree, exact uint64 track selection and first-frame navigation | Existing tree dialog; shared Image/Tracks selection, contextual cleanup and stale callback guards |
 
 ### Managed annotation and training data
 

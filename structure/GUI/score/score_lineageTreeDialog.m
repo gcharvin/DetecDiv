@@ -11,6 +11,11 @@ addParameter(p, 'SelectedTrackId', NaN, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, 'Title', 'Lineage tree', @(x) ischar(x) || isstring(x));
 addParameter(p, 'ViewKey', '', @(x) ischar(x) || isstring(x));
 addParameter(p, 'Owner', [], @(x) true);
+addParameter(p, 'FigureTag', 'ScoreAsymmetricLineageTree', @(x) ischar(x) || isstring(x));
+addParameter(p, 'TrackIdType', 'double', @(x) any(strcmp(x,{'double','uint64'})));
+addParameter(p, 'RefreshText', 'Refresh from GT', @(x) ischar(x) || isstring(x));
+addParameter(p, 'Instruction', 'Click a TrackID or a vertical line to show its birth in Score', ...
+    @(x) ischar(x) || isstring(x));
 addParameter(p, 'ReviewBounds', [], @(x) isempty(x) || ...
     (isnumeric(x) && numel(x) == 2 && all(isfinite(x))));
 parse(p, varargin{:});
@@ -36,7 +41,7 @@ child = model.relations.child_track_id(relationRows);
 [nodes, edges, diagnostics] = score_lineageTreeLayout( ...
     ids, first, last, parent, child);
 
-tag = 'ScoreAsymmetricLineageTree';
+tag = char(string(p.Results.FigureTag));
 existing = findall(groot, 'Type', 'figure', 'Tag', tag);
 previousView = struct('laneStart', [], 'yLim', []);
 if isempty(existing) || ~isvalid(existing(1))
@@ -64,7 +69,7 @@ summary = uilabel(toolbar, 'Text', localSummary(diagnostics), ...
 summary.Tooltip = localDiagnosticTooltip(diagnostics);
 uibutton(toolbar, 'Text', 'Fit view', ...
     'ButtonPushedFcn', @(~,~) fitView());
-refresh = uibutton(toolbar, 'Text', 'Refresh from GT', ...
+refresh = uibutton(toolbar, 'Text', char(string(p.Results.RefreshText)), ...
     'Enable', localOnOff(~isempty(p.Results.OnRefresh)), ...
     'ButtonPushedFcn', @(~,~) runRefresh());
 refresh.Tooltip = 'Reload the current cell model and rebuild this tree.';
@@ -96,7 +101,7 @@ ax.XTick = [];
 ax.Box = 'on';
 ax.Toolbar.Visible = 'on';
 ylabel(ax, 'Frame');
-title(ax, 'Click a TrackID or a vertical line to show its birth in Score', ...
+title(ax, char(string(p.Results.Instruction)), ...
     'Color', [0.85 0.85 0.85]);
 
 for i = 1:numel(edges)
@@ -204,7 +209,9 @@ end
 
     function selectTrack(id)
         if isempty(p.Results.OnTrackSelected), return; end
-        p.Results.OnTrackSelected(double(id));
+        if strcmp(p.Results.TrackIdType,'uint64'), value = uint64(id);
+        else, value = double(id); end
+        p.Results.OnTrackSelected(value);
     end
 
     function runRefresh()

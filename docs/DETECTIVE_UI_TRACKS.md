@@ -53,4 +53,12 @@ An ROI has one shared model file even when it has several mask providers. The UI
 - `detecdivui.tracksTest()` exercises the actual assistant, parent/continuity picks across frames, native genealogy/selection overlays, CEF undo keys, identity scope, ROI isolation, Contours handoff/shared history, cross-provider edit guards, exact-ID inspector fields, Done, native float/redock, explicit model persistence and asynchronous close cancellation/discard. Pass a PNG path to capture the workspace.
 - `detecdivui.editorCloseTest()` verifies a clean native X-close with Tracks or Contours active, without destructor warnings or leaked menu timers. Cleanup restores callbacks/interactions only while the image figure still exists; native application shutdown can destroy figures first.
 
-Interactive picking still needs validation on representative real acquisitions. Guided two-child fission correction, track propagation with SAM/IoU, censoring controls, cell-state editing, mask-ID relabeling and a dedicated lineage tree remain separate Score integrations.
+Interactive picking still needs validation on representative real acquisitions. Guided two-child fission correction, track propagation with SAM/IoU, censoring controls, cell-state editing and mask-ID relabeling remain separate Score integrations.
+
+## Lineage tree
+
+**Lineage...** opens the existing `score_lineageTreeDialog` renderer on the current provider/family's draft model. Its Refresh command rebuilds from that same draft, preserving the tree's lane and vertical view. It does not save or reload over edits. Clicking a track selects its exact uint64 identity in Tracks and navigates Image to its first frame through the shared viewer selection.
+
+Each viewer owns its own tree figure, independently of legacy Score. Leaving Tracks, changing ROI/provider/family, or closing the viewer closes its associated tree. Callback tokens reject queued clicks from previous trees; drawing gestures block timeline changes. The tree helper's default singleton tag, labels and double-valued callback remain compatible with Score. The new viewer explicitly requests a scoped figure tag and uint64 callbacks.
+
+The native Tracks test also checks tree/image navigation, draft/source isolation, coexistence with the legacy Score tree, explicit refresh, exact IDs above 2^53, stale callbacks and contextual cleanup. The existing five Score lineage-tree unit tests remain part of validation.

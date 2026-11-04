@@ -3,6 +3,7 @@ classdef TracksWidget < handle
     properties (SetAccess = private)
         Active = false
         Progress
+        LineageFigure = []
     end
     properties (Access = private)
         Viewer
@@ -24,13 +25,14 @@ classdef TracksWidget < handle
         DownCallback = []
         AxesState = {}
         Overlays = gobjects(0)
+        LineageToken = 0
     end
     methods
         function obj = TracksWidget(parent,viewer)
             obj.Viewer = viewer;
-            grid = uigridlayout(parent,[12 1]); grid.Padding = [6 6 6 6];
+            grid = uigridlayout(parent,[13 1]); grid.Padding = [6 6 6 6];
             grid.RowSpacing = 6; grid.Scrollable = 'on';
-            grid.RowHeight = {24,28,28,130,28,28,28,28,28,94,28,24};
+            grid.RowHeight = {24,28,28,130,28,28,28,28,28,94,28,28,24};
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',60};
             obj.Target = uilabel(row,'Text','','Interpreter','none','Tag','tracks-target');
             uibutton(row,'Text','Done','Tag','tracks-done','Tooltip','Close Tracks and retain the annotation draft', ...
@@ -88,6 +90,9 @@ classdef TracksWidget < handle
             uibutton(grid,'Text','Save Edits','Tag','tracks-save', ...
                 'Tooltip','Save the shared pending mask, track and annotation lifecycle edits for this provider', ...
                 'ButtonPushedFcn',@(~,~)obj.action('save'));
+            uibutton(grid,'Text','Lineage...','Tag','tracks-lineage', ...
+                'Tooltip','View the current draft genealogy; click a track to navigate to its first frame', ...
+                'ButtonPushedFcn',@(~,~)obj.showLineage());
             obj.Status = uilabel(grid,'Text','Ready','Interpreter','none','Tag','tracks-status');
             obj.Progress = detecdivui.Progress(grid,obj.Status,'tracks-progress');
         end
@@ -98,6 +103,7 @@ classdef TracksWidget < handle
                 obj.DownCallback = obj.Viewer.Figure.WindowButtonDownFcn;
                 obj.Viewer.Figure.WindowButtonDownFcn = @(~,~)obj.mouseDown();
             elseif ~active && obj.Active
+                obj.closeLineage();
                 liveFigure = isvalid(obj.Viewer.Figure);
                 if liveFigure, obj.Viewer.Figure.WindowButtonDownFcn = obj.DownCallback; end
                 obj.cancelPick(); obj.clearOverlays();
@@ -232,7 +238,43 @@ classdef TracksWidget < handle
             end
         end
         function delete(obj)
-            obj.setActive(false); obj.clearOverlays();
+            obj.closeLineage(); obj.setActive(false); obj.clearOverlays();
+        end
+        function showLineage(obj)
+            if ~obj.Active, return; end
+            scope = obj.Progress.begin('Building lineage tree...'); %#ok<NASGU>
+            try
+                d = obj.current(); model = d.previewModel(); family = obj.Family.Value;
+                assert(isfield(model,'schema_version') && family > 0, ...
+                    'detecdivui:LineageFamily','Select a registered object family first.');
+                obj.LineageToken = obj.LineageToken+1; token = obj.LineageToken;
+                source = obj.ROI; channel = d.Channel;
+                key = sprintf('%s|%s|%d',source.id,channel,family);
+                obj.LineageFigure = score_lineageTreeDialog(model,family, ...
+                    'FigureTag',[char(obj.Viewer.Host.App.Tag) '_Lineage'], ...
+                    'ViewKey',key,'Owner',obj,'Title',[source.id ' — Lineage'], ...
+                    'SelectedTrackId',obj.SelectedTrack,'TrackIdType','uint64', ...
+                    'RefreshText','Refresh','Instruction','', ...
+                    'OnTrackSelected',@(id)obj.lineageSelected(token,source,channel,family,id), ...
+                    'OnRefresh',@()obj.refreshLineage(token,source,channel,family));
+            catch err
+                obj.closeLineage();
+                obj.status(err.message);
+            end
+        end
+        function lineageSelected(obj,token,source,channel,family,id)
+            if ~isvalid(obj), return; end
+            if ~obj.lineageContext(token,source,channel,family) || obj.Viewer.contourGestureActive(), return; end
+            d = obj.current(); model = d.previewModel();
+            rows = model.instances.family_id == family & model.instances.track_id == id;
+            if ~any(rows), obj.status('Track no longer exists; refresh the lineage tree'); return; end
+            frame = double(min(model.instances.frame(rows)));
+            obj.SelectedTrack = uint64(id); obj.SelectedLabel = 0; obj.SelectedFrame = frame; obj.cancelPick();
+            obj.Viewer.navigateDataFrame(source,frame); obj.refresh(); obj.Viewer.Host.focusWidget('Image');
+        end
+        function refreshLineage(obj,token,source,channel,family)
+            if ~isvalid(obj), return; end
+            if obj.lineageContext(token,source,channel,family), obj.showLineage(); end
         end
         function forgetProject(obj,project)
             if isequal(obj.Project,project), obj.ROI = []; obj.Project = []; obj.clearSelection(); end
@@ -243,6 +285,7 @@ classdef TracksWidget < handle
             c = obj.Viewer.contourContext();
             if isempty(c.roi) || isempty(c.masks), obj.Viewer.closeTracksTool(); return; end
             if ~isequal(obj.ROI,c.roi) || ~any(strcmp(obj.Provider.Value,c.masks))
+                obj.closeLineage();
                 obj.ROI = c.roi; obj.Project = c.project; obj.Provider.Items = c.masks; obj.Provider.Value = c.masks{1};
                 obj.clearSelection();
             end
@@ -256,7 +299,8 @@ classdef TracksWidget < handle
             end
             previous = obj.Family.Value;
             obj.Family.Items = items; obj.Family.ItemsData = ids;
-            if any(ids == previous), obj.Family.Value = previous; else, obj.Family.Value = ids(1); obj.clearSelection(); end
+            if any(ids == previous), obj.Family.Value = previous;
+            else, obj.Family.Value = ids(1); obj.closeLineage(); obj.clearSelection(); end
             obj.Family.Enable = obj.onOff(any(ids > 0));
             obj.ImportButton.Enable = obj.onOff(~isfield(model,'schema_version'));
             marker = ''; if d.Dirty, marker = ' *'; end
@@ -352,10 +396,20 @@ classdef TracksWidget < handle
             point = ax.CurrentPoint(1,1:2); obj.pick(point(1),point(2));
         end
         function resetContext(obj)
-            obj.clearSelection(); obj.refresh();
+            obj.closeLineage(); obj.clearSelection(); obj.refresh();
         end
         function resetSelection(obj)
-            obj.clearSelection(); obj.refresh();
+            obj.closeLineage(); obj.clearSelection(); obj.refresh();
+        end
+        function yes = lineageContext(obj,token,source,channel,family)
+            c = obj.Viewer.contourContext();
+            yes = obj.Active && token == obj.LineageToken && isequal(c.roi,source) && ...
+                strcmp(obj.Provider.Value,channel) && obj.Family.Value == family;
+        end
+        function closeLineage(obj)
+            obj.LineageToken = obj.LineageToken+1;
+            if isgraphics(obj.LineageFigure), delete(obj.LineageFigure); end
+            obj.LineageFigure = [];
         end
         function clearSelection(obj)
             obj.SelectedTrack = uint64(0); obj.SelectedLabel = 0; obj.SelectedFrame = 0; obj.cancelPick();
