@@ -5,6 +5,8 @@ Statut : orientations retenues et roadmap proposée ; prototype MATLAB de naviga
 
 La revue fonctionnelle de Score et l'ordre de migration détaillé sont dans [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md) : 44 capacités, points d'entrée existants, statut du viewer, destinations UI, dépendances de sauvegarde/édition et critères de validation. L'inventaire source associé distingue les callbacks opérationnels des déclarations et variantes historiques vides.
 
+Le découpage prévoit de nouveaux widgets dockables selon les besoins : Objects, Data et Annotation, puis éventuellement Lineage et Measurements. Ils partagent la sélection et l'image centrale ; les réglages occasionnels et l'export restent dans des dialogues. Chaque widget est ajouté avec une fonctionnalité utilisable, une ouverture à la demande et une migration compatible des layouts existants.
+
 ## 1. Objectif
 
 Faire de DetecDiv un espace de travail scientifique centré sur les images et les intentions de l'utilisateur. La fenêtre principale s'ouvre au lancement de DetecDiv. La gestion des projets, classifiers, processors et pipelines devient un panneau de cet espace.

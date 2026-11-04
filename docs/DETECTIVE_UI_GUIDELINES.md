@@ -28,6 +28,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 11. Define ROIs on the main Image viewport, through the independent ROIs assistant. Reuse it from pipeline steps; no Workflow image window in the new viewer path. Distinguish preview, project ROI creation and definition transfer to a run. Reuse engine packages, and keep pixel extraction explicit.
 12. Use Score as the reference for Display functionality: rich channel rows, direct color selection, levels/weights and histograms. Keep scientific pixels unchanged and share rendering/statistics helpers. Rich web controls must stay inside the existing dockable document, work offline and reject stale context events.
 13. Preserve Score functionality against the capability IDs in `DETECTIVE_UI_SCORE_PARITY.md`. Keep raw-FOV ROI geometry, ROI mask editing, quantitative dataseries variables and classifier training datasets distinct. Scientific editors require explicit dirty/save and reversible-action handling; metadata-only Save Project must never be presented as saving mask/data/model edits.
+14. Introduce task-specific dockable widgets when needed: Objects, Data and Annotation, with Lineage/Measurements separable when useful. Keep them on a shared session/selection and one image viewport. Instantiate usable widgets on demand through View, preserve older layouts when adding documents, and use dialogues for occasional detailed configuration/export. Do not add empty widgets in anticipation of unimplemented functions.
 
 ## Initial menu structure
 

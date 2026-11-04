@@ -99,6 +99,30 @@ Status below describes the new viewer: **Partial** means only the stated subset 
 9. **Exports need an isolated render canvas:** Score already separates its export figure from interactive refresh. Preserve this so queued image updates cannot clear a running export. Existing bulk renderers consume ROI image stacks; on-demand raw access and large exports need a bounded frame-loading adapter, not an unverified promise of fully lazy export.
 10. **Data plotting needs a small safe adapter:** `score_displayDataPanel` still resolves `dataColormap` through an `eval` expression. Restrict the migrated setting to validated supported maps. Preserve categorical labels, vector expansion, group bounds and time alignment; do not reduce every dataseries to one numeric vector.
 
+## Widget responsibilities
+
+New dockable widgets are explicitly part of the migration when a task needs its own workspace area. Their boundaries follow user tasks and simultaneous viewing needs, not the old Score tabs or the internal class hierarchy.
+
+| Surface | Responsibility | Placement and lifetime |
+| --- | --- | --- |
+| Projects (existing) | Project/FOV/ROI browsing and links to classifiers/processors/pipelines | Left; remains the shared navigation source |
+| Image (existing) | Single image viewport, temporal navigation, selection and all drawing gestures | Central; no separate image window for each tool |
+| Display (existing) | Layers, color/contrast/histograms, fill/contour appearance, scale bars | Right; changing appearance does not enable scientific editing |
+| ROIs assistant (existing tab) | Define extraction geometry on raw FOVs | Right contextual assistant; reused by Pipeline; independent of mask editing |
+| Objects (new) | Selected object/track, family/provider, read-only lineage context; later track/link/split/delete actions | Right; may stay open alongside Display or Data; explicit edit scope for scientific actions |
+| Data (new) | Dataseries/variable browser, plot groups and plots synchronized to Image | Normally below Image; compact selector with detailed settings on demand; one initial dockable document with an internal split rather than mandatory separate browser/plot windows |
+| Annotation (new) | Brush/mask settings, classifier-bound session, GT/prediction source, review/validation actions | Right; drawing uses Image; advanced initialization/validation findings open dialogues |
+| Lineage (optional new) | Tree and track navigation when simultaneous image/tree inspection is useful | Bottom or floating; existing tree dialog can serve as the first integration before adding a dedicated document |
+| Measurements assistant | Line/ellipse geometry and profile controls | Contextual tool; plot in Data or an assistant panel. Create a separate document only if simultaneous inspection requires it |
+| Pipeline (existing) | Compact graph, run selection and status | Dockable; common settings dialog and pipeline2 Advanced keep the same configuration |
+| Export dialog | Movie/sequence scope, output options, preview and launch | Open through File; isolated rendering canvas. Do not permanently occupy workspace space with a full export form |
+
+Objects, Data and Annotation are planned widgets, not implemented controls or empty placeholders. Add each when its first usable backend integration is available. Lineage and Measurements can become independent widgets when the actual interaction benefits from it; an assistant or dialog is sufficient initially.
+
+All widgets share the viewer session's project, ROI, frame, channel/provider/family and selected instance/track. They do not own competing copies of the current scientific selection. Data → Image and Lineage → Image navigation must use explicit shared selection events and avoid feedback loops. Tool-local preferences can persist per context; pending scientific edits remain under the common dirty/save controller. A hidden widget must not continue intercepting image gestures.
+
+Expose available widgets through View; create them on demand, allow native docking/floating, and remember their layout. Default layouts keep Image dominant and avoid opening every widget at startup. Adding document IDs requires a backward-compatible layout migration: preserve the geometry/visibility of existing documents and initialize new ones hidden or on explicit opening. No empty sidebar sections, automatic pixel loads or duplicate scientific containers are needed just to advertise future widgets.
+
 ## Proposed implementation sequence
 
 | Stage | Deliverable | Acceptance condition |
