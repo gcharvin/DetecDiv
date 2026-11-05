@@ -177,25 +177,62 @@ classdef pipeline2 < matlab.apps.AppBase
         ViewerRoiCallback = []
         ViewerBridgeMenu = []
         ViewerOriginalClose = []
+        ViewerDefinitionOnly = false
     end
     methods (Access = public)
         function busy = viewerHasActiveRun(app)
             busy = ~isempty(app.ActiveRunMode) || app.RunLaunchInProgress;
         end
-        function configureViewerBridge(app,onApply,onRoi)
+        function configureViewerBridge(app,onApply,onRoi,definitionOnly)
+            if nargin < 4, definitionOnly = false; end
+            app.ViewerDefinitionOnly = logical(definitionOnly);
             app.ViewerOriginalClose = app.UIFigure.CloseRequestFcn;
             app.ViewerApplyCallback = onApply; app.ViewerRoiCallback = onRoi;
             if ~isempty(app.CurrentRun), app.CurrentRunIsSeed = isempty(app.CurrentRun.path); end
             app.UIFigure.WindowStyle = 'normal';
             app.RuntimeProjectSelectDropDown.Enable = 'off';
             app.RuntimeProjectTargetEditField.Enable = 'off';
+            if app.ViewerDefinitionOnly
+                setRuntimeModeUnlocked(app,false);
+                for name = {'NewRunButton','RunButton','SmokeTestButton','LoadrunMenu','SaverunMenu','SaverunasMenu'}
+                    app.(name{1}).Enable = 'off';
+                end
+                app.UIFigure.Name = 'Pipeline Designer';
+            end
             app.ViewerBridgeMenu = uimenu(app.UIFigure,'Text','Viewer');
             uimenu(app.ViewerBridgeMenu,'Text','Apply Settings and Return', ...
                 'MenuSelectedFcn',@(~,~)app.returnToViewer());
+            if app.ViewerDefinitionOnly
+                uimenu(app.ViewerBridgeMenu,'Text','Discard Changes and Return', ...
+                    'MenuSelectedFcn',@(~,~)app.discardViewerDraft());
+            end
             app.UIFigure.CloseRequestFcn = @(~,~)app.returnToViewer();
+            % ROI controls are built before the viewer callback is attached.
+            % Rebuild them against the shared-image capability, without
+            % unlocking run creation or execution in definition mode.
+            refreshModuleTabs(app);
+        end
+        function selectViewerModule(app,nodeId)
+            assert(~app.viewerHasActiveRun(),'pipeline2:ViewerBusy','The run is active.');
+            index = find(strcmp({app.Data.nodes.id},char(string(nodeId))));
+            assert(isscalar(index),'pipeline2:ViewerModule','Select a uniquely identified module.');
+            app.MainTabGroup.SelectedTab = app.BuildTab;
+            selectNode(app,index);
+        end
+        function changeViewerModuleType(app,nodeId,choice)
+            app.selectViewerModule(nodeId);
+            if nargin < 3, choice = chooseModuleFromLibrary(app,'Change module type'); end
+            if isempty(choice), return; end
+            changeSelectedModuleType(app,choice.type,choice.pkg,getField(app,choice,'paramsPatch',struct()));
+            app.selectViewerModule(nodeId);
+        end
+        function discardViewerDraft(app)
+            assert(~app.viewerHasActiveRun(),'pipeline2:ViewerBusy','The run is active.');
+            app.clearViewerBridge(); delete(app);
         end
         function clearViewerBridge(app)
             app.ViewerApplyCallback = []; app.ViewerRoiCallback = [];
+            app.ViewerDefinitionOnly = false;
             if ~isempty(app.ViewerBridgeMenu) && isvalid(app.ViewerBridgeMenu), delete(app.ViewerBridgeMenu); end
             if isvalid(app.UIFigure), app.UIFigure.CloseRequestFcn = app.ViewerOriginalClose; end
         end
@@ -253,14 +290,44 @@ classdef pipeline2 < matlab.apps.AppBase
             applyRoiDefinitionEditorResult(app,nodeId,lower(app.Data.nodes(index).type),ctx);
             refreshAfterModelChange(app); app.UIFigure.Visible = 'on';
         end
+        function acceptViewerRoiDraft(app,nodeId,identity,ctx)
+            index = find(strcmp({app.Data.nodes.id},nodeId),1);
+            assert(~isempty(index) && strcmp(jsonencode(app.Data.nodes(index)),identity.node) && ...
+                isequal(app.CurrentPipeline,identity.pipeline) && isequal(app.CurrentRun,identity.run) && ...
+                strcmp(app.CurrentPipelinePath,identity.path) && strcmp(currentPipelineName(app),identity.name) && ...
+                strcmp(app.viewerRoiSignature(nodeId),identity.effective), ...
+                'pipeline2:ROIContext','The module changed. Reopen its ROI editor before applying this draft.');
+            assert(~app.viewerHasActiveRun(),'pipeline2:ViewerBusy','The run is active.');
+            app.acceptViewerRois(nodeId,ctx);
+        end
         function requestViewerRois(app,nodeId,params)
             index = find(strcmp({app.Data.nodes.id},nodeId),1);
             if isempty(index) || isempty(app.ViewerRoiCallback), return; end
             nodes = pipelineApplyRunNodeParams(app.Data.nodes,buildRunNodeParams(app)); node = nodes(index);
             if nargin >= 3, node.params = params; end
-            callback = detecdivui.Callback(app,'acceptViewerRois',nodeId);
-            detecdivui.Callback.call(app.ViewerRoiCallback,app.CurrentProject,node,callback);
-            app.UIFigure.Visible = 'off';
+            if app.RuntimeModeUnlocked && isempty(getField(app,node.params,'fovIndex',[]))
+                selection = parseRuntimeFovSelection(app,getRuntimeValue(app,'fovs'));
+                if ~isempty(selection), node.params.fovIndex = selection; end
+            end
+            identity = struct('node',jsonencode(app.Data.nodes(index)),'pipeline',app.CurrentPipeline, ...
+                'run',app.CurrentRun,'path',app.CurrentPipelinePath,'name',currentPipelineName(app), ...
+                'effective',app.viewerRoiSignature(nodeId));
+            callback = detecdivui.Callback(app,'acceptViewerRoiDraft',nodeId,identity);
+            source = struct('inputSourceMode',getRuntimeValue(app,'inputSourceMode'), ...
+                'rawDataPath',getRuntimeValue(app,'rawDataPath'));
+            detecdivui.Callback.call(app.ViewerRoiCallback,app.CurrentProject,node,callback,source);
+            % Keep the editor available while the main Image owns the tool.
+            % Failure to resolve an image context must never hide the editor.
+        end
+        function signature = viewerRoiSignature(app,nodeId)
+            nodes = pipelineApplyRunNodeParams(app.Data.nodes,buildRunNodeParams(app));
+            index = find(strcmp({nodes.id},nodeId),1);
+            assert(~isempty(index),'pipeline2:ROIContext','The ROI module is no longer available.');
+            state = struct('node',nodes(index));
+            for key = {'inputSourceMode','rawDataPath','fovs','rois','frames'}
+                state.(key{1}) = getRuntimeValue(app,key{1});
+            end
+            signature = jsonencode(state);
         end
     end
     methods (Access = private)
@@ -289,6 +356,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             [opts, positionalArgs] = parseStartupRuntimeOptions(app, varargin{:});
+            app.ViewerDefinitionOnly = opts.viewerDefinitionOnly;
             projectObj = [];
             pipeObj = [];
             runObj = [];
@@ -391,7 +459,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 'outputPolicy', '', 'executionTarget', '', 'gpuPolicy', '', 'runId', '', ...
                 'intent', '', ...
                 'batchPrototype', false, 'modal', false, 'editExistingRun', false, ...
-                'projectVarName', '');
+                'projectVarName', '', 'viewerDefinitionOnly', false);
             positionalArgs = {};
             i = 1;
             while i <= numel(varargin)
@@ -401,6 +469,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     value = varargin{i + 1};
                     consumed = true;
                     switch key
+                        case 'viewerdefinitiononly'
+                            opts.viewerDefinitionOnly = logicalStartupOption(app,value);
                         case {'inputmode','runtimemode','mode','usemode'}
                             opts.inputMode = normalizeStartupInputMode(app, value);
                             opts.unlockRuntime = true;
@@ -1738,18 +1808,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 selectTypeControlsForNode(app, node);
                 return;
             end
-            node = clearModuleDerivedFields(app, node);
-            node.type = nodeType;
-            node.pkg = pkg;
-            node.func = defaultNodeFunction(app, nodeType, pkg);
-            node.gui = defaultNodeGui(app, nodeType, pkg);
-            node.params = applyRuntimeDefaultsToParams(app, nodeType, defaultNodeParams(app, nodeType, pkg));
-            node = pipelineNormalizeNodes(node, 'persist');
-            [nodesAligned, node] = alignStructFieldsForAppend(app, app.Data.nodes, node);
-            nodesAligned(app.SelectedNodeIndex) = node;
-            app.Data.nodes = pipelineNormalizeNodes(nodesAligned, 'persist');
-            rebuildEdgesFromLayout(app);
-            refreshAfterModelChange(app);
+            changeSelectedModuleType(app,nodeType,pkg);
         end
 
         function updateSubtypeChoices(app)
@@ -1878,7 +1937,8 @@ classdef pipeline2 < matlab.apps.AppBase
             [nodesAligned, node] = alignStructFieldsForAppend(app, app.Data.nodes, node);
             nodesAligned(app.SelectedNodeIndex) = node;
             app.Data.nodes = pipelineNormalizeNodes(nodesAligned, 'persist');
-            rebuildEdgesFromLayout(app);
+            % A type replacement keeps explicit topology, ports and bindings.
+            % Contract validation reports links that require reconnection.
             refreshAfterModelChange(app);
         end
 
@@ -9386,8 +9446,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 'ButtonPushedFcn', @(~,~)openRoiPatternLibrary(app, nodeId, true));
             editBtn.Layout.Row = 1;
             editBtn.Layout.Column = 2;
-            editBtn.Enable = ternary(app, hasRoiWorkflowImageContext(app) && app.RuntimeModeUnlocked, 'on', 'off');
-            editBtn.Tooltip = 'Draw or test a draft in workflow2, then choose whether to use it for this run or save it to the library.';
+            editBtn.Enable = ternary(app, hasRoiWorkflowImageContext(app) && ...
+                (app.RuntimeModeUnlocked || app.ViewerDefinitionOnly), 'on', 'off');
+            if ~isempty(app.ViewerRoiCallback)
+                editBtn.Tooltip = 'Draw or test the pattern on the viewer Image without creating project ROIs.';
+            else
+                editBtn.Tooltip = 'Draw or test a draft in workflow2, then choose whether to use it for this run or save it to the library.';
+            end
 
             hint = uilabel(actions, 'Text', hintText, ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
@@ -9683,7 +9748,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(idx), return; end
             draft = getRoiPatternParamsForDisplay(app, app.Data.nodes(idx));
             try
-                if ~app.RuntimeModeUnlocked
+                if ~app.RuntimeModeUnlocked && ~app.ViewerDefinitionOnly
                     dlg = roiPatternLibraryDialog(roiPatternLibraryFolder(app),draft,nodeId,false,true);
                     dialogCleanup = onCleanup(@()delete(dlg)); %#ok<NASGU>
                     uiwait(dlg.UIFigure);
@@ -9702,7 +9767,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     switch action
                         case 'use'
                             result = pipelineInvalidateRoiPatternPreview(result);
-                            setRuntimeNodeParams(app, nodeId, result);
+                            if app.ViewerDefinitionOnly
+                                applyRoiDefinitionEditorResult(app,nodeId,'roipattern',struct('params',result));
+                                markPipelineDirty(app,true);
+                            else
+                                setRuntimeNodeParams(app, nodeId, result);
+                            end
                             rebuildModuleTabForNode(app, idx);
                             accepted = true;
                             return;
@@ -9732,6 +9802,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function [result, accepted] = editRoiPatternDraft(app, node, draft)
             result = draft; accepted = false;
+            if ~isempty(app.ViewerRoiCallback), app.requestViewerRois(node.id,draft); return; end
             [editorProject, ok, msg] = resolveRoiEditorProject(app, node);
             if ~ok
                 uialert(app.UIFigure,msg,'Create / test pattern','Icon','warning');
@@ -10057,8 +10128,17 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if ~isempty(fieldnames(result))
                 app.Data.nodes(idx).params = mergeStructOverride(app, params, result);
+                if ~app.ViewerDefinitionOnly && app.RuntimeModeUnlocked
+                    runtime = getRuntimeNodeParams(app,nodeId);
+                    for key = fieldnames(result)'
+                        if strcmp(pipelineParamScope(app.Data.nodes(idx),key{1}),'run')
+                            runtime.(key{1}) = result.(key{1});
+                        end
+                    end
+                    setRuntimeNodeParams(app,nodeId,runtime);
+                end
             end
-            if isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
+            if ~app.ViewerDefinitionOnly && isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
                 app.CurrentProject = ctx.shallow;
             end
         end
@@ -10084,6 +10164,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function tf = hasRoiWorkflowImageContext(app)
             tf = false;
+            if ~isempty(app.ViewerRoiCallback), tf = true; return; end
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
             if ~isempty(rawDataPath) && (exist(rawDataPath, 'dir') == 7 || exist(rawDataPath, 'file') == 2)
                 tf = true;
@@ -10630,6 +10711,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             editBtn = uibutton(actions, 'push', 'Text', 'Open ROI workflow...', ...
                 'ButtonPushedFcn', @(~,~)openWorkflowRoiEditor(app, nodeId));
+            if ~isempty(app.ViewerRoiCallback), editBtn.Text = 'Define ROIs...'; end
             editBtn.Layout.Row = 1;
             editBtn.Layout.Column = 1;
 
@@ -10816,6 +10898,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             editBtn = uibutton(actions, 'push', 'Text', 'Open drawing workflow...', ...
                 'ButtonPushedFcn', @(~,~)openWorkflowRoiEditor(app, nodeId));
+            if ~isempty(app.ViewerRoiCallback), editBtn.Text = 'Define ROIs...'; end
             editBtn.Layout.Row = 1;
             editBtn.Layout.Column = 1;
 
@@ -16494,9 +16577,12 @@ classdef pipeline2 < matlab.apps.AppBase
             pipe.name = currentPipelineName(app);
             pipe.path = app.CurrentPipelinePath;
             pipe.nodes = sanitizeNodeParamsForPipeline(app, app.Data.nodes);
-            pipe.nodes = applyRuntimeDerivedNodePolicies(app, pipe.nodes);
+            if ~app.ViewerDefinitionOnly, pipe.nodes = applyRuntimeDerivedNodePolicies(app, pipe.nodes); end
             pipe.edges = app.Data.edges;
             pipe.branches = struct([]);
+            if app.ViewerDefinitionOnly && isa(app.CurrentPipeline,'pipeline') && isvalid(app.CurrentPipeline)
+                pipe.branches = app.CurrentPipeline.branches;
+            end
         end
 
         function pipe = selectedPipelineStructForRun(app, pipe)
@@ -16825,6 +16911,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if app.IsPipelineDirty
                 pipeSuffix = '*';
             end
+            if app.ViewerDefinitionOnly
+                app.UIFigure.Name = sprintf('Pipeline Designer - %s%s',pipeName,pipeSuffix); return;
+            end
             runName = currentRunDisplayName(app);
             runSuffix = '';
             if app.IsRunDirty || app.CurrentRunIsSeed
@@ -17037,6 +17126,7 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function assignCurrentPipelineToWorkspace(app, pipeObj, oldWorkspaceVar)
+            if app.ViewerDefinitionOnly, return; end
             if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
                 return;
             end

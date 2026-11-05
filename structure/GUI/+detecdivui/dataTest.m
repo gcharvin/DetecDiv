@@ -14,7 +14,7 @@ other.image = r.image; other.channelid = 1; other.display.channel = {'BF'};
 p = shallow(); p.io.file = 'Data test'; p.fov.id = 'Position'; p.fov.roi = [r other];
 file = fullfile(folder,'layout.json');
 v = detecdiv_ui(p,'Visible','off','DiscoverWorkspace',false, ...
-    'LayoutFile',file,'AutoSaveLayout',false,'RecentProjectsFile','');
+    'LayoutFile',file,'AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()safeDelete(v));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 assert(~v.Host.isWidgetVisible('Data') && isempty(v.Data.Series));

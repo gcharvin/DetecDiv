@@ -105,7 +105,7 @@ New dockable widgets are explicitly part of the migration when a task needs its 
 
 | Surface | Responsibility | Placement and lifetime |
 | --- | --- | --- |
-| Projects (existing) | Project/FOV/ROI browsing and links to classifiers/processors/pipelines | Left; remains the shared navigation source |
+| Projects (existing) | Project/FOV/ROI browsing and Classifiers/Processors collections | Left; remains the shared dataset navigation source; pipeline definitions are owned by Pipeline |
 | Image (existing) | Single image viewport, temporal navigation, selection and all drawing gestures | Central; no separate image window for each tool |
 | Display (existing) | Layers, color/contrast/histograms, fill/contour appearance, scale bars | Right; changing appearance does not enable scientific editing |
 | Define ROIs assistant (on-demand tab) | Define extraction geometry on raw FOVs | Opened explicitly from Edit, image/Projects context menus or Pipeline; Done dismisses it and retains the draft; independent of mask editing |
@@ -114,7 +114,7 @@ New dockable widgets are explicitly part of the migration when a task needs its 
 | Annotation (new) | Brush/mask settings, classifier-bound session, GT/prediction source, review/validation actions | Right; drawing uses Image; advanced initialization/validation findings open dialogues |
 | Lineage (optional new) | Tree and track navigation when simultaneous image/tree inspection is useful | Bottom or floating; existing tree dialog can serve as the first integration before adding a dedicated document |
 | Measurements assistant | Line/ellipse geometry and profile controls | Contextual tool; plot in Data or an assistant panel. Create a separate document only if simultaneous inspection requires it |
-| Pipeline (existing) | Compact graph, run selection and status | Dockable; common settings dialog and pipeline2 Advanced keep the same configuration |
+| Pipeline (existing) | Compact top Open/Recent tree with path inspection/Copy, single-click template activation, graph and run status below | Dockable; no duplicate main dropdown or nested navigation tabs; project-owned run list in Projects recalls frozen graphs; common settings dialog and transitional pipeline2 Advanced keep the same configuration |
 | Hub (new) | Shared connection, identity and server status, independent of job submission | Dockable; common session controller reused by Pipeline/Export/project clients. See [DETECTIVE_UI_HUB.md](DETECTIVE_UI_HUB.md) |
 | Export dialog | Movie/sequence scope, output options, preview and launch | Open through File; isolated rendering canvas. Do not permanently occupy workspace space with a full export form |
 

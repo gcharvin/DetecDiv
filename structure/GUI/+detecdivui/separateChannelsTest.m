@@ -22,7 +22,7 @@ source.display.rgb = [1 1 1;0 1 0;1 1 1;1 0 0]; source.display.indexed = [false 
 source.display.selectedchannel = [true true false true]; source.display.alpha = [1 1 1 .5];
 source.display.contour = [false false false true]; source.display.width = [1 1 1 1.5];
 original = source.image; metadata = source.display;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()delete(viewer));
 figure = viewer.widgetFigure('Display'); layout = findall(figure,'Tag','display-overlay');
 assert(layout.Value && strcmp(layout.Enable,'off'));

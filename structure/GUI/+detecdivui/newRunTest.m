@@ -17,7 +17,7 @@ node = struct('id','grid_1','name','Find traps','type','roiGrid','pkg','roiGrid'
     'func','roiGrid.process','params',p,'enabled',true);
 template.nodes = [node node]; template.nodes(2).id = 'grid_2'; template.nodes(2).name = 'Refine traps';
 template.edges = struct('from','grid_1','to','grid_2'); original = template.nodes;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer)); viewer.Pipeline.addTemplate(template);
 widget = viewer.Pipeline; figure = widget.SettingsFigure;
 new = findall(viewer.widgetFigure('Pipeline'),'Tag','pipeline-new-run'); new.ButtonPushedFcn(new,[]);

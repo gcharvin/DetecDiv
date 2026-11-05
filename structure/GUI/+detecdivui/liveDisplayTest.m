@@ -14,7 +14,7 @@ for index = 1:2
 end
 source = project.fov.roi(1); pixels = source.image; metadata = source.display;
 viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false, ...
-    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()delete(viewer));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');

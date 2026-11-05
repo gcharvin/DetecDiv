@@ -9,7 +9,7 @@ r.display.intensity = [1 1 1;0 0 0];
 project.fov.roi = r;
 for mode = 1:2
     viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false, ...
-        'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+        'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
     cleanup = onCleanup(@()delete(viewer));
     tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
     tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tree,[]);

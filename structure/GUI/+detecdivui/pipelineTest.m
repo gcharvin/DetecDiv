@@ -19,7 +19,7 @@ project = shallow(); project.io.file = 'Pipeline experiment';
 project.fov.id = 'FOV A'; project.fov.roi = roi('Cells',[1 1 16 16]);
 pixels = uint16(magic(16)); project.fov.roi.image = pixels;
 project.fov.roi.channelid = 1; project.fov.roi.display.channel = {'Phase'};
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer));
 assert(strcmp(viewer.Host.findCommand('Save Pipeline').Enable,'off'));
 viewer.Pipeline.addTemplate(template);

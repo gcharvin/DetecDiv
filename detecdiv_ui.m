@@ -15,9 +15,11 @@ p.addParameter('LayoutFile',fullfile(prefdir,'DetecDiv','ui-layout-r2026a.json')
 p.addParameter('AutoSaveLayout',true,@(x)islogical(x)&&isscalar(x));
 p.addParameter('DiscoverWorkspace',discover,@(x)islogical(x)&&isscalar(x));
 p.addParameter('RecentProjectsFile',fullfile(prefdir,'recentProjects.mat'),@(x)ischar(x)||(isstring(x)&&isscalar(x)));
+p.addParameter('RecentPipelinesFile',fullfile(prefdir,'recentPipelines.mat'),@(x)ischar(x)||(isstring(x)&&isscalar(x)));
 p.parse(varargin{:});
 startup = detecdivui.startupGuard('begin'); %#ok<NASGU>
-viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout,p.Results.RecentProjectsFile);
+viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout, ...
+    p.Results.RecentProjectsFile,p.Results.RecentPipelinesFile);
 try
     if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
 catch err

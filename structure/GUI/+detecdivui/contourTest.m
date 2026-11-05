@@ -13,7 +13,7 @@ r.display.alpha = [1 .4]; r.display.contour = [false false]; r.display.width = [
 r.display.displaylim = repmat([0;1],1,2); source = r.image;
 project.fov.roi = r;
 viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false, ...
-    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()delete(viewer));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 assert(isempty(viewer.Masks));

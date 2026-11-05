@@ -16,7 +16,7 @@ source.display.rgb = [1 1 1;0 1 0;1 1 1];
 source.display.indexed = [false false true];
 source.display.selectedchannel = [true true true]; source.display.alpha = [1 1 0.4];
 originalPixels = source.image; originalDisplay = source.display;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentPipelinesFile','');
 if ~keepOpen, cleanup = onCleanup(@()delete(viewer)); end
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tree,[]);

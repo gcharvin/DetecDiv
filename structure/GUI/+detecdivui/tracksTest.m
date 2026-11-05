@@ -7,7 +7,7 @@ source = r.image; baseline = r.cellModel; otherBaseline = other.cellModel;
 project = shallow(); project.io.file = 'Track editing'; project.fov.id = 'Position';
 project.fov.roi = [r other];
 viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false, ...
-    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()closeTestViewer(viewer));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 assert(isempty(viewer.Tracks) && isempty(viewer.Masks));

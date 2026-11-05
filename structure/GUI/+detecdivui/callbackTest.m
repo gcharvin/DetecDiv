@@ -4,7 +4,7 @@ project = shallow(); project.io.file = 'Callback test'; project.fov.id = 'Positi
 project.fov.roi = roi('Cells',[1 1 8 8]); pixels = uint16(magic(8));
 project.fov.roi.image = pixels; project.fov.roi.display.channel = {'Phase'};
 project.fov.roi.channelid = 1;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()safeDelete(viewer));
 assert(isa(viewer.Pipeline.OnStatus,'detecdivui.Callback'));
 viewer.Pipeline.OnStatus = @(message)error('test:StaleStatus','A legacy callback must be rebound.');

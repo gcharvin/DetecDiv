@@ -25,7 +25,9 @@ classdef ROIWidget < handle
         Crop = []
         Handles = {}
         Binding = []
+        BindingContext = struct()
         Records = struct('project',{},'position',{},'rects',{},'params',{},'mode',{},'crop',{})
+        BoundRecords = struct('project',{},'position',{},'binding',{},'rects',{},'params',{},'mode',{},'crop',{})
         Refreshing = false
     end
     methods
@@ -65,9 +67,12 @@ classdef ROIWidget < handle
             obj.Progress = detecdivui.Progress(grid,obj.Status,'roi-progress');
             obj.changeMode();
         end
-        function setContext(obj,session)
+        function dismiss = setContext(obj,session)
+            dismiss = false;
             if isequal(obj.Project,session.Project) && obj.Position == session.Position, return; end
+            dismiss = ~isempty(obj.Binding);
             obj.stash(); obj.clearHandles(); obj.Binding = [];
+            obj.BindingContext = struct();
             obj.ApplyButton.Text = 'Create ROIs'; obj.Mode.Enable = 'on';
             obj.Project = session.Project; obj.Position = session.Position;
             obj.Rects = zeros(0,4); obj.Crop = []; obj.Params = feval([obj.Mode.Value '.setparam']);
@@ -84,14 +89,18 @@ classdef ROIWidget < handle
             end
             obj.refresh();
         end
-        function bind(obj,node,callback)
+        function bind(obj,node,callback,context)
+            if nargin < 4, context = struct(); end
             % Reopening the same run/step resumes its unsubmitted draft.
             if ~isempty(obj.Binding) && isequal(obj.Binding,callback)
-                obj.refresh(); obj.onRender(); return;
+                obj.BindingContext = context; obj.updateTarget(); obj.refresh(); obj.onRender(); return;
             end
+            obj.stash(); obj.BindingContext = context;
             mode = node.type; if strcmpi(mode,'roiIdentify'), mode = 'roiPattern'; end
             obj.Mode.Value = mode; obj.Params = feval([mode '.setparam'],node.params);
-            obj.Binding = callback; obj.ApplyButton.Text = 'Use in Run'; obj.Rects = zeros(0,4);
+            obj.Binding = callback; obj.ApplyButton.Text = 'Use in Run'; obj.Rects = zeros(0,4); obj.Crop = [];
+            if isfield(context,'definitionOnly') && context.definitionOnly, obj.ApplyButton.Text = 'Use in Pipeline'; end
+            obj.updateTarget();
             obj.Mode.Enable = 'off';
             if strcmp(mode,'roiManual') && isfield(obj.Params,'manualRois') && ~isempty(obj.Params.manualRois)
                 records = obj.Params.manualRois;
@@ -106,10 +115,27 @@ classdef ROIWidget < handle
             elseif isfield(obj.Params,'gridRects') && ~isempty(obj.Params.gridRects)
                 obj.Rects = obj.Params.gridRects;
             end
+            for k = 1:numel(obj.BoundRecords)
+                record = obj.BoundRecords(k);
+                if isequal(record.project,obj.Project) && record.position == obj.Position && isequal(record.binding,callback)
+                    obj.Rects = record.rects; obj.Params = record.params; obj.Mode.Value = record.mode; obj.Crop = record.crop; break;
+                end
+            end
             obj.refresh(); obj.onRender();
         end
         function standalone(obj)
+            wasBound = ~isempty(obj.Binding); obj.stash();
             obj.Binding = []; obj.ApplyButton.Text = 'Create ROIs'; obj.Mode.Enable = 'on';
+            obj.BindingContext = struct(); obj.updateTarget();
+            if wasBound
+                obj.Rects = zeros(0,4); obj.Crop = []; obj.Params = feval([obj.Mode.Value '.setparam']);
+                for k = 1:numel(obj.Records)
+                    record = obj.Records(k);
+                    if isequal(record.project,obj.Project) && record.position == obj.Position
+                        obj.Rects = record.rects; obj.Params = record.params; obj.Mode.Value = record.mode; obj.Crop = record.crop; break;
+                    end
+                end
+            end
             if isfield(obj.Params,'extract'), obj.Params.extract = false; end
             obj.refresh();
         end
@@ -151,6 +177,7 @@ classdef ROIWidget < handle
         end
         function ctx = apply(obj)
             ctx = []; if isempty(obj.Project) || obj.Position == 0, return; end
+            bound = ~isempty(obj.Binding);
             activity = obj.Progress.begin('Applying ROI definition...'); %#ok<NASGU>
             try
                 p = obj.definition(); package = obj.Mode.Value;
@@ -162,7 +189,9 @@ classdef ROIWidget < handle
                 if ~isempty(obj.Binding)
                     detecdivui.Callback.call(obj.Binding,ctx);
                     if ~isempty(obj.Crop), obj.Project.fov(obj.Position).crop = obj.Crop; end
-                    obj.status('ROI definition applied to run');
+                    text = 'ROI definition applied to run';
+                    if isfield(obj.BindingContext,'definitionOnly') && obj.BindingContext.definitionOnly, text = 'ROI definition applied to pipeline'; end
+                    obj.status(text);
                 else
                     if ~isempty(obj.Crop), obj.Project.fov(obj.Position).crop = obj.Crop; end
                     ctx = feval([package '.process'],ctx);
@@ -170,6 +199,7 @@ classdef ROIWidget < handle
                     obj.status('ROIs created');
                 end
                 obj.stash(); obj.refresh();
+                if bound, detecdivui.Callback.call(obj.OnDismiss); end
             catch err
                 obj.status(err.message); ctx = [];
             end
@@ -230,6 +260,15 @@ classdef ROIWidget < handle
                 delete(findall(obj.Viewer.Figure,'Tag','roi-preview'));
             end
             obj.onRender();
+            obj.Viewer.updateImageContext();
+        end
+        function label = imageContext(obj)
+            label = '';
+            if ~obj.Active || obj.Position == 0, return; end
+            label = 'Define ROIs';
+            if ~isempty(obj.Binding) && isfield(obj.BindingContext,'pipeline')
+                label = sprintf('Define ROIs: %s / %s',obj.BindingContext.pipeline,obj.BindingContext.node);
+            end
         end
         function clearDraft(obj)
             obj.Rects = zeros(0,4); obj.Crop = [];
@@ -241,12 +280,21 @@ classdef ROIWidget < handle
         end
         function forgetProject(obj,project)
             obj.Records = obj.Records(~arrayfun(@(r)isequal(r.project,project),obj.Records));
+            obj.BoundRecords = obj.BoundRecords(~arrayfun(@(r)isequal(r.project,project),obj.BoundRecords));
             if isequal(obj.Project,project)
                 obj.Project = []; obj.Position = 0; obj.Binding = []; obj.Rects = zeros(0,4); obj.clearHandles();
             end
         end
     end
     methods (Access = private)
+        function updateTarget(obj)
+            if obj.Position == 0, obj.Target.Text = 'Select a FOV'; return; end
+            obj.Target.Text = sprintf('FOV %d · %s',obj.Position,obj.Project.fov(obj.Position).id);
+            if ~isempty(obj.Binding) && isfield(obj.BindingContext,'pipeline')
+                obj.Target.Text = sprintf('%s / %s · FOV %d',obj.BindingContext.pipeline,obj.BindingContext.node,obj.Position);
+            end
+            obj.Target.Tooltip = sprintf('%s / FOV %d · %s',obj.Project.io.file,obj.Position,obj.Project.fov(obj.Position).id);
+        end
         function p = definition(obj)
             p = obj.Params; p.fovIndex = obj.Position;
             switch obj.Mode.Value
@@ -365,6 +413,13 @@ classdef ROIWidget < handle
         end
         function stash(obj)
             if isempty(obj.Project) || obj.Position == 0, return; end
+            if ~isempty(obj.Binding)
+                index = find(arrayfun(@(r)isequal(r.project,obj.Project) && r.position == obj.Position && ...
+                    isequal(r.binding,obj.Binding),obj.BoundRecords),1);
+                if isempty(index), index = numel(obj.BoundRecords)+1; end
+                obj.BoundRecords(index) = struct('project',obj.Project,'position',obj.Position,'binding',obj.Binding, ...
+                    'rects',obj.Rects,'params',obj.Params,'mode',obj.Mode.Value,'crop',obj.Crop); return;
+            end
             index = find(arrayfun(@(r)isequal(r.project,obj.Project) && r.position == obj.Position,obj.Records),1);
             if isempty(index), index = numel(obj.Records)+1; end
             obj.Records(index) = struct('project',obj.Project,'position',obj.Position,'rects',obj.Rects, ...

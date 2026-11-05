@@ -20,7 +20,7 @@ json = shallowProjectExportLight(project);
 legacy = fullfile(folder,'Recent project.mat'); shallowObj = project; save(legacy,'shallowObj');
 assert(strcmp(detecdivui.RecentProjects.resolve(legacy),json));
 history.remember(fullfile(folder,'missing.json')); history.remember(legacy);
-viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile',file);
+viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile',file,'RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer));
 assert(isempty(viewer.Sessions)); % Recent references never auto-open projects/raw data.
 menu = viewer.Host.findCommand('Recent Projects'); assert(strcmp(menu.Enable,'on'));
@@ -40,7 +40,7 @@ before = viewer.RecentProjects.Paths; menu.Children{2}.invoke();
 assert(isequal(viewer.Session.Project,active) && isequal(viewer.RecentProjects.Paths,before));
 assert(~viewer.ProjectProgress.Active);
 delete(viewer); clear closeViewer;
-viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile',file);
+viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile',file,'RecentPipelinesFile','');
 closeAgain = onCleanup(@()delete(viewer));
 assert(isempty(viewer.Sessions) && isequal(viewer.RecentProjects.Paths,before));
 viewer.Host.findCommand('Clear Recent Projects').invoke();

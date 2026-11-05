@@ -69,10 +69,15 @@ classdef RunSetup < handle
             settings = detecdivui.RunSetup.defaults(); settings.description = run.description;
             context = run.ctx;
             if isfield(context,'run')
-                fields = {'inputSourceMode','rawDataPath','runPolicy','gpuPolicy','executionTarget'};
+                fields = {'inputSourceMode','rawDataPath','runPolicy','gpuPolicy','executionTarget','selectedNodes'};
                 for k = 1:numel(fields)
-                    key = fields{k}; if isfield(context.run,key), settings.(key) = context.run.(key); end
+                    key = fields{k}; if isfield(context.run,key) && ~isempty(context.run.(key)), settings.(key) = context.run.(key); end
                 end
+            end
+            switch lower(char(string(settings.gpuPolicy)))
+                case {'force_cpu','cpu'}, settings.gpuPolicy = 'cpu';
+                case {'force_gpu','gpu'}, settings.gpuPolicy = 'gpu';
+                case {'auto','module_default'}, settings.gpuPolicy = 'module_default';
             end
             if isfield(context,'sel')
                 for key = {'fovs','rois','frames'}
@@ -86,6 +91,8 @@ classdef RunSetup < handle
             end
             if isfield(context,'io') && isfield(context.io,'globalExistingPolicy')
                 settings.outputPolicy = context.io.globalExistingPolicy;
+            elseif isfield(context,'io') && isfield(context.io,'existingPolicy')
+                settings.outputPolicy = context.io.existingPolicy;
             end
             fields = intersect(fieldnames(context),{'run','io','hub','exec','names','executionPolicy','workflowIntent'});
             settings.extraContext = struct();

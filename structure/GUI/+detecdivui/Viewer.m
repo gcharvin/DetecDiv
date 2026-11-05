@@ -24,6 +24,11 @@ classdef Viewer < handle
         DetailsPanel
         ProjectPath
         ProjectInfo
+        ProjectRunsPanel
+        ProjectRunsLabel
+        ProjectRunsTable
+        ProjectRunObjects = []
+        ProjectDetailsIsProject = true
         CopyPath
         Channels
         LayerTable
@@ -61,6 +66,11 @@ classdef Viewer < handle
         CloseMenu
         CopyMenu
         SavePipelineMenu
+        OpenPipelineMenu
+        NewPipelineMenu
+        PlanWorkflowMenu
+        ProcessCommands = {}
+        ProjectRunsMenu
         RelinkMenu
         LoadImage
         RelinkImage
@@ -108,13 +118,14 @@ classdef Viewer < handle
         ConstructionComplete = true % Existing live viewers predate this startup flag.
     end
     methods
-        function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)
+        function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile,recentPipelineFile)
             obj.ConstructionComplete = false;
             startup = detecdivui.startupGuard('begin');
             construction = onCleanup(@()obj.finishConstruction(startup));
             if nargin < 1, project = []; end
             if nargin < 2, visibility = 'on'; end
             if nargin < 5, recentFile = fullfile(prefdir,'recentProjects.mat'); end
+            if nargin < 6, recentPipelineFile = fullfile(prefdir,'recentPipelines.mat'); end
             obj.RecentProjects = detecdivui.RecentProjects(recentFile);
             obj.Session = detecdivui.Session();
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
@@ -145,7 +156,7 @@ classdef Viewer < handle
                 'ButtonPushedFcn',@(~,~)obj.relinkRawData());
             nav = uigridlayout(obj.Host.widgetFigure('Projects'),[3 1]);
             nav.Padding = [4 4 4 4];
-            nav.RowHeight = {'1x',230,22};
+            nav.RowHeight = {'1x',260,22};
             obj.Tree = uitree(nav,'Tag','projects-tree', ...
                 'SelectionChangedFcn',@(~,~)obj.browseSelection());
             obj.Tree.Tooltip = 'Browse open projects, FOVs and ROIs';
@@ -168,7 +179,24 @@ classdef Viewer < handle
                 'ButtonPushedFcn',@(~,~)obj.copyProjectPath());
             obj.ProjectInfo = uitable(info,'Data',cell(0,2),'ColumnName',{}, ...
                 'ColumnWidth',{105,'auto'},'RowName',{},'Tag','project-information', ...
-                'ColumnEditable',[false false]);
+                'ColumnEditable',[false false],'Visible','off');
+            obj.ProjectInfo.Layout.Row = 3;
+            obj.ProjectRunsPanel = uigridlayout(info,[2 1]);
+            obj.ProjectRunsPanel.Layout.Row = 3;
+            obj.ProjectRunsPanel.Padding = [0 0 0 0];
+            obj.ProjectRunsPanel.RowHeight = {22,'1x'};
+            runHeader = uigridlayout(obj.ProjectRunsPanel,[1 2]);
+            runHeader.Padding = [0 0 0 0]; runHeader.ColumnWidth = {'1x',62};
+            obj.ProjectRunsLabel = uilabel(runHeader,'Text','Runs (0)','Tag','project-runs-label');
+            uibutton(runHeader,'Text','Refresh','Tag','refresh-project-runs', ...
+                'Tooltip','Find saved runs in the project folder', ...
+                'ButtonPushedFcn',{@detecdivui.Callback.event, ...
+                detecdivui.Callback(obj,'widgetEvent','refreshProjectRuns')});
+            obj.ProjectRunsTable = uitable(obj.ProjectRunsPanel,'Data',cell(0,2), ...
+                'ColumnName',{'Run','Status'},'ColumnWidth',{'auto',72},'RowName',{}, ...
+                'ColumnEditable',[false false],'Tag','project-runs', ...
+                'Tooltip','Select a run to view its saved pipeline', ...
+                'CellSelectionCallback',@(~,event)obj.widgetEvent('projectRunSelected',event));
             projectStatus = uilabel(nav,'Text','','Tag','projects-status');
             obj.ProjectProgress = detecdivui.Progress(nav,projectStatus,'projects-progress');
             canvas = uigridlayout(root,[2 1]);
@@ -283,7 +311,7 @@ classdef Viewer < handle
                 'DataChangedFcn',@(~,event)obj.imageKey(event.Data));
             obj.KeyboardView.Layout.Row = 4;
             root.RowHeight = {32,'1x',24,0};
-            obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'));
+            obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'),recentPipelineFile);
             obj.ensureDataWidget();
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.rebindCallbacks();
@@ -417,6 +445,15 @@ classdef Viewer < handle
             else, template = obj.Pipeline.openTemplate(path); end
             if ~isempty(template), obj.Host.focusWidget('Pipeline'); end
         end
+        function newPipeline(obj)
+            obj.Host.focusWidget('Pipeline'); obj.Pipeline.newTemplate(); obj.Pipeline.openDefinitionEditor();
+        end
+        function editPipeline(obj)
+            obj.Host.focusWidget('Pipeline'); obj.Pipeline.openDefinitionEditor();
+        end
+        function showProjectRuns(obj)
+            obj.Host.focusWidget('Projects'); obj.selectProjectNode(); obj.refreshProjectInfo();
+        end
         function ok = saveProject(obj)
             ok = false; if obj.ActiveProject == 0, return; end
             activity = obj.ProjectProgress.begin('Saving project metadata...'); %#ok<NASGU>
@@ -474,6 +511,7 @@ classdef Viewer < handle
             obj.Pipeline.OnDefineROIs = detecdivui.Callback(obj,'widgetEvent','defineROIs');
             obj.Pipeline.OnProjectUpdated = detecdivui.Callback(obj,'addProject');
             obj.Pipeline.OnTemplateOpened = detecdivui.Callback(obj,'widgetEvent','templateOpened');
+            obj.Pipeline.OnRunsChanged = detecdivui.Callback(obj,'widgetEvent','runsChanged');
             obj.Pipeline.rebindCallbacks();
             obj.ProjectProgress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Projects');
             obj.Pipeline.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Pipeline');
@@ -498,8 +536,11 @@ classdef Viewer < handle
                 case 'status'
                     message = varargin{1}; obj.Status.Text = message; obj.Status.Tooltip = message;
                 case 'pipelineChanged', obj.syncPipelineMenu();
-                case 'defineROIs', obj.openROITool(varargin{:});
-                case 'templateOpened', obj.registerLoadedObject(varargin{1},'pipeline');
+                case 'defineROIs', result = obj.openROITool(varargin{:});
+                case 'templateOpened', obj.syncPipelineMenu(); obj.Host.focusWidget('Pipeline');
+                case 'runsChanged', obj.refreshProjectRunsContext();
+                case 'refreshProjectRuns', obj.Pipeline.refreshProjectRuns();
+                case 'projectRunSelected', obj.selectProjectRun(varargin{1});
                 case 'progressOwner', result = obj.progressOwner(varargin{1});
                 case 'layerEdit', obj.editLayerRow(varargin{:});
                 case 'preview', obj.flushPreview();
@@ -512,28 +553,45 @@ classdef Viewer < handle
                 otherwise, error('detecdivui:WidgetEvent','Unknown viewer widget event.');
             end
         end
-        function openROITool(obj,project,node,callback)
+        function opened = openROITool(obj,project,node,callback,scope)
+            opened = false;
+            if nargin < 5, scope = struct(); end
             obj.closeTracksTool();
             obj.closeContourTool();
             if nargin >= 2 && ~isempty(project) && ~isequal(project,obj.Session.Project), obj.addProject(project); end
-            if obj.Session.Position == 0 && nargin >= 3 && ~isempty(node) && ...
-                    isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
-                obj.Session.selectPosition(node.params.fovIndex(1)); obj.refreshView(false);
+            position = obj.Session.Position;
+            if isfield(scope,'position')
+                position = scope.position;
+            elseif nargin >= 3 && ~isempty(node) && isfield(node.params,'fovIndex') && ~isempty(node.params.fovIndex)
+                if ~ismember(position,node.params.fovIndex), position = node.params.fovIndex(1); end
+            end
+            if position > 0 && (position ~= obj.Session.Position || obj.Session.Zone > 0)
+                obj.Session.selectPosition(position); obj.selectCurrentNode(); obj.refreshView(false);
             end
             if obj.Session.Position == 0
                 obj.widgetEvent('status','Select a FOV to define ROIs'); return;
             end
             obj.ensureROIWidget();
             if nargin >= 3 && ~isempty(node)
-                obj.ROIs.bind(node,callback);
+                obj.ROIs.bind(node,callback,scope);
             else
                 obj.ROIs.standalone();
             end
             obj.ROIsTab.Parent = obj.DisplayTabs;
             obj.DisplayTabs.SelectedTab = obj.ROIsTab;
             obj.ROIs.setActive(true);
+            obj.updateImageContext();
             obj.refreshKeyboard();
             obj.Host.focusWidget('Display'); obj.Host.show();
+            opened = true;
+        end
+        function updateImageContext(obj)
+            obj.Crumb.Text = obj.Session.breadcrumb();
+            if obj.hasROIWidget()
+                label = obj.ROIs.imageContext();
+                if ~isempty(label), obj.Crumb.Text = [obj.Crumb.Text ' | ' label]; end
+            end
+            obj.Crumb.Tooltip = obj.Crumb.Text;
         end
         function closeROITool(obj)
             if obj.hasROIWidget(), obj.ROIs.setActive(false); end
@@ -771,6 +829,9 @@ classdef Viewer < handle
             yes = isa(obj.Masks,'detecdivui.MaskWidget') && isscalar(obj.Masks) && isvalid(obj.Masks);
         end
         function registerLoadedObject(obj,item,kind)
+            if strcmp(kind,'pipeline')
+                obj.Pipeline.addTemplate(item); obj.Pipeline.selectDraft(); obj.Host.focusWidget('Pipeline'); return;
+            end
             entry = struct('object',item,'variables',{{}},'kind',kind);
             keep = true(1,numel(obj.LoadedObjects));
             for k = 1:numel(obj.LoadedObjects)
@@ -789,8 +850,8 @@ classdef Viewer < handle
             end
         end
         function entries = mergeLoadedObjects(obj,entries)
-            obj.LoadedObjects = obj.LoadedObjects(arrayfun(@(e)isvalid(e.object),obj.LoadedObjects));
-            entries = entries(arrayfun(@(e)isvalid(e.object),entries));
+            obj.LoadedObjects = obj.LoadedObjects(arrayfun(@(e)isvalid(e.object) && ~strcmp(e.kind,'pipeline'),obj.LoadedObjects));
+            entries = entries(arrayfun(@(e)isvalid(e.object) && ~strcmp(e.kind,'pipeline'),entries));
             for loaded = obj.LoadedObjects
                 keep = ~arrayfun(@(e)obj.sameTool(e.object,loaded.object),entries);
                 entries = [entries(keep) loaded];
@@ -937,7 +998,8 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.saveProject());
             obj.SaveMasksMenu = obj.Host.menu(file,'Save Masks','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.Masks.saveAll());
-            obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
+            obj.OpenPipelineMenu = obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
+            obj.NewPipelineMenu = obj.Host.menu(file,'New Pipeline...','MenuSelectedFcn',@(~,~)obj.newPipeline());
             obj.SavePipelineMenu = obj.Host.menu(file,'Save Pipeline','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.Pipeline.saveTemplate());
             obj.CloseMenu = obj.Host.menu(file,'Close Project','Accelerator','W', ...
@@ -955,8 +1017,25 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.EditTracksMenu = obj.Host.menu(edit,'Edit Tracks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openTracksTool());
-            obj.Host.menu(edit,'Plan Workflow...','Separator','on', ...
+            obj.PlanWorkflowMenu = obj.Host.menu(edit,'Plan Workflow...','Enable','off','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.planWorkflow());
+            process = obj.Host.menu([],'Process');
+            process.Children{end+1} = obj.DefineROIMenu; obj.ProcessCommands{end+1} = obj.DefineROIMenu;
+            profiles = detecdivui.IntentProfile.all();
+            for k = 1:numel(profiles)
+                if strcmp(profiles(k).id,'define_rois'), continue; end
+                intent = profiles(k).id;
+                obj.ProcessCommands{end+1} = obj.Host.menu(process,[profiles(k).label '...'],'Enable','off', ...
+                    'MenuSelectedFcn',@(~,~)obj.planWorkflow(intent));
+            end
+            process.Children{end+1} = obj.PlanWorkflowMenu; obj.ProcessCommands{end+1} = obj.PlanWorkflowMenu;
+            pipelines = obj.Host.menu([],'Pipeline');
+            pipelines.Children{end+1} = obj.NewPipelineMenu;
+            pipelines.Children{end+1} = obj.OpenPipelineMenu;
+            obj.Host.menu(pipelines,'Edit Pipeline...','MenuSelectedFcn',@(~,~)obj.editPipeline());
+            obj.ProjectRunsMenu = obj.Host.menu(pipelines,'Project Runs','Separator','on','Enable','off', ...
+                'MenuSelectedFcn',@(~,~)obj.showProjectRuns());
+            obj.Host.menu(pipelines,'Refresh Project Runs','MenuSelectedFcn',@(~,~)obj.Pipeline.refreshProjectRuns());
             view = obj.Host.menu([],'View');
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');
@@ -998,7 +1077,8 @@ classdef Viewer < handle
         end
         function syncPipelineMenu(obj)
             template = obj.Pipeline.Template;
-            obj.SavePipelineMenu.Enable = obj.onOff(~isempty(template) && isvalid(template) && ~isempty(template.path));
+            obj.SavePipelineMenu.Enable = obj.onOff(~isempty(template) && isvalid(template));
+            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project));
             obj.Host.syncMenus();
         end
         function index = findProject(obj,project)
@@ -1045,8 +1125,8 @@ classdef Viewer < handle
                     end
                 end
             end
-            kinds = {'classi','process','pipeline'};
-            labels = {'Classifiers','Processors','Pipelines'};
+            kinds = {'classi','process'};
+            labels = {'Classifiers','Processors'};
             for k = 1:numel(kinds)
                 indices = find(strcmp({obj.WorkspaceObjects.kind},kinds{k}));
                 if isempty(indices), continue; end
@@ -1087,6 +1167,7 @@ classdef Viewer < handle
                     obj.ProjectName.Tooltip = nodes(1).Text;
                     obj.ProjectPath.Value = {'—'}; obj.ProjectPath.Tooltip = '';
                     obj.CopyPath.UserData = ''; obj.CopyPath.Enable = 'off';
+                    obj.setProjectDetailsMode(false);
                     obj.ProjectInfo.Data = {'Objects',numel(nodes(1).Children)};
                 end
                 return;
@@ -1103,11 +1184,13 @@ classdef Viewer < handle
             obj.refreshView(target.fov > 0);
         end
         function refreshProjectInfo(obj)
+            obj.setProjectDetailsMode(true);
             obj.DetailsPanel.Title = 'Project';
             obj.CopyPath.Tooltip = 'Copy the project folder path';
             obj.ProjectName.Text = '—'; obj.ProjectPath.Value = {'—'};
             obj.ProjectPath.Tooltip = 'Project folder'; obj.CopyPath.UserData = '';
             obj.CopyPath.Enable = 'off'; obj.ProjectInfo.Data = cell(0,2);
+            obj.refreshProjectRunsContext();
             if obj.ActiveProject == 0, return; end
             project = obj.Session.Project;
             obj.ProjectName.Text = obj.projectName(project);
@@ -1118,34 +1201,43 @@ classdef Viewer < handle
                 obj.ProjectPath.Value = {file}; obj.ProjectPath.Tooltip = file;
                 obj.CopyPath.UserData = file; obj.CopyPath.Enable = 'on';
             end
-            [~,indices] = obj.Session.positionItems();
-            roiCount = 0;
-            for k = indices
-                rois = project.fov(k).roi;
-                for r = 1:numel(rois)
-                    roiCount = roiCount + (strlength(string(rois(r).id)) > 0 || ...
-                        ~isempty(rois(r).value) || ~isempty(rois(r).image));
-                end
+        end
+        function setProjectDetailsMode(obj,isProject)
+            obj.ProjectDetailsIsProject = isProject;
+            obj.ProjectInfo.Visible = obj.onOff(~isProject);
+            obj.ProjectRunsPanel.Visible = obj.onOff(isProject);
+        end
+        function refreshProjectRunsContext(obj)
+            if isempty(obj.ProjectRunsTable) || ~isgraphics(obj.ProjectRunsTable), return; end
+            runs = detecdivui.ProjectRuns.cached(obj.Session.Project);
+            obj.ProjectRunObjects = runs;
+            rows = cell(numel(runs),2);
+            for k = 1:numel(runs)
+                rows(k,:) = {char(string(runs(k).runId)),char(string(runs(k).status))};
             end
-            data = {'FOVs',numel(indices); 'ROIs',roiCount};
-            fields = {'classification','processor','pipelineRun'};
-            labels = {'Classifiers','Processors','Pipeline runs'};
-            for k = 1:numel(fields)
-                count = 0;
-                if isfield(project.processing,fields{k}), count = numel(project.processing.(fields{k})); end
-                data(end+1,:) = {labels{k},count}; %#ok<AGROW>
-            end
-            [pipelinePath,pipelineId] = detecdiv_project_cached_pipeline_ref(project);
-            if ~isempty(pipelineId) || ~isempty(pipelinePath)
-                if isempty(pipelineId), pipelineId = pipelinePath; end
-                data(end+1,:) = {'Default pipeline',pipelineId};
-            end
-            obj.ProjectInfo.Data = data;
+            if ~isequal(obj.ProjectRunsTable.Data,rows), obj.ProjectRunsTable.Data = rows; end
+            obj.ProjectRunsTable.UserData = {runs.runId};
+            obj.ProjectRunsLabel.Text = sprintf('Runs (%d)',numel(runs));
+            obj.ProjectRunsTable.Enable = obj.onOff(~isempty(runs));
+            refresh = findall(obj.ProjectRunsPanel,'Tag','refresh-project-runs');
+            refresh.Enable = obj.onOff(obj.ActiveProject > 0);
+        end
+        function selectProjectRun(obj,event)
+            if ~obj.ProjectDetailsIsProject || isempty(event.Indices), return; end
+            row = event.Indices(1,1);
+            if row < 1 || row > numel(obj.ProjectRunObjects), return; end
+            run = obj.ProjectRunObjects(row);
+            if ~isvalid(run), obj.refreshProjectRunsContext(); return; end
+            obj.ProjectRunsTable.Tooltip = sprintf('%s\nPipeline: %s\n%s', ...
+                run.runId,detecdivui.ProjectRuns.pipelineName(run),run.updatedAt);
+            if ~obj.Pipeline.selectProjectRun(run.runId,obj.Session.Project), return; end
+            obj.Host.focusWidget('Pipeline');
         end
         function showWorkspaceObject(obj,index)
             entry = obj.WorkspaceObjects(index); item = entry.object;
             if ~isvalid(item), obj.refreshWorkspace(); return; end
             labels = struct('classi','Classifier','process','Processor','pipeline','Pipeline');
+            obj.setProjectDetailsMode(false);
             obj.DetailsPanel.Title = labels.(entry.kind);
             obj.CopyPath.Tooltip = 'Copy the object folder path';
             name = char(string(item.strid));
@@ -1167,7 +1259,7 @@ classdef Viewer < handle
                 source,origin; 'Description',char(string(item.description))};
             obj.Status.Text = sprintf('%s selected',labels.(entry.kind));
             if strcmp(entry.kind,'pipeline')
-                obj.Pipeline.addTemplate(item); obj.Host.focusWidget('Pipeline');
+                obj.Pipeline.addTemplate(item); obj.Pipeline.selectDraft(); obj.Host.focusWidget('Pipeline');
             end
         end
         function copyProjectPath(obj)
@@ -1231,17 +1323,18 @@ classdef Viewer < handle
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
             if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.setContext(); end
-            if obj.hasROIWidget(), obj.ROIs.setContext(obj.Session); end
+            if obj.hasROIWidget() && obj.ROIs.setContext(obj.Session), obj.closeROITool(); end
             if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
             if obj.Session.Zone == 0, obj.closeContourTool(); obj.closeTracksTool(); end
             obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0);
             obj.EditTracksMenu.Enable = obj.EditContoursMenu.Enable;
             roiEnabled = obj.onOff(obj.Session.Position > 0);
+            for k = 1:numel(obj.ProcessCommands), obj.ProcessCommands{k}.Enable = roiEnabled; end
+            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project));
             obj.DefineROIMenu.Enable = roiEnabled;
             obj.ImageROIMenu.Enable = roiEnabled; obj.TreeROIMenu.Enable = roiEnabled;
             obj.Pipeline.setContext(obj.Session);
-            obj.Crumb.Text = obj.Session.breadcrumb();
-            obj.Crumb.Tooltip = obj.Crumb.Text;
+            obj.updateImageContext();
             obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
             obj.SaveProjectMenu.Enable = obj.onOff(obj.ActiveProject > 0 && ...
                 strlength(string(obj.Session.Project.io.path)) > 0 && strlength(string(obj.Session.Project.io.file)) > 0);

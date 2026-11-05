@@ -11,7 +11,7 @@ r.display.selectedchannel = [true false false]; r.display.alpha = [1 1 .5];
 r.display.contour = [false false true]; project.fov.roi = r;
 source = r.image;
 viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false, ...
-    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+    'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()delete(viewer));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
@@ -46,7 +46,11 @@ viewer.Host.findCommand('Back 10 Frames').invoke(); assert(frame.Value == 7);
 viewer.Host.findCommand('Forward 10 Frames').invoke(); assert(frame.Value == 17);
 viewer.openROITool(); viewer.Host.focusWidget('Image'); settle();
 assert(~key(window,'ArrowLeft','canvas div',false)); settle(); assert(frame.Value == 17);
-viewer.closeROITool(); settle();
+viewer.closeROITool();
+% ROI definition switches the central image to raw FOV coordinates. Return
+% explicitly to the cached ROI sequence before testing frame navigation.
+tree.SelectedNodes = node; tree.SelectionChangedFcn(tree,[]);
+viewer.Host.focusWidget('Image'); settle(); assert(frame.Value == 17);
 gesture = viewer.beginROIGesture(); %#ok<NASGU>
 settle();
 assert(~key(window,'ArrowLeft','canvas div',false)); settle(); assert(frame.Value == 17);

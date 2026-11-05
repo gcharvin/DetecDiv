@@ -36,7 +36,7 @@ zone.image = pixels+10; zone.channelid = 1; zone.display.channel = {'Phase'};
 assert(zone.save([],false)); zone.image = [];
 project.fov.roi = zone;
 assignin('base',workspaceName,project);
-output = evalc('viewer = detecdiv_ui([],''DiscoverWorkspace'',true,''Visible'',''on'',''LayoutFile'','''',''AutoSaveLayout'',false);');
+output = evalc('viewer = detecdiv_ui([],''DiscoverWorkspace'',true,''Visible'',''on'',''LayoutFile'','''',''AutoSaveLayout'',false,''RecentPipelinesFile'','''');');
 closeViewer = onCleanup(@()delete(viewer));
 viewer.addProject(project); % Focus this fixture even when other workspace projects exist.
 drawnow; pause(.3);

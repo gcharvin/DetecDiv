@@ -3,7 +3,7 @@ function progressTest(previewPath)
 %PROGRESSTEST Ownership, nested scopes, backend callback, failures and closure.
 if nargin < 1, previewPath = ''; end
 folder = tempname; mkdir(folder); cleanup = onCleanup(@()rmdir(folder,'s'));
-viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer));
 progress = viewer.Progress; pipelineProgress = viewer.Pipeline.Progress;
 assert(~progress.Active && strcmp(progress.View.Visible,'off'));

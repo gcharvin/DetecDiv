@@ -19,7 +19,7 @@ template = pipelineConstruct(); template.strid = 'Tree template';
 assignin('base',names{1},project); assignin('base',names{2},second);
 assignin('base',names{3},template);
 viewer = detecdiv_ui([],'DiscoverWorkspace',true,'Visible','on', ...
-    'LayoutFile','','AutoSaveLayout',false);
+    'LayoutFile','','AutoSaveLayout',false,'RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer));
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 assert(numel(findall(tree,'Tag','roi-node')) == 641);

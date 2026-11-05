@@ -15,7 +15,7 @@ p = roiGrid.setparam(); p.mode = 'grid'; p.gridCount = 2; p.referenceFrame = 1; 
 template.nodes = struct('id','grid_1','name','Identify ROIs','type','roiGrid', ...
     'pkg','roiGrid','func','roiGrid.process','params',p,'enabled',true);
 original = template.nodes;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false);
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentPipelinesFile','');
 closeViewer = onCleanup(@()delete(viewer));
 viewer.Pipeline.addTemplate(template); figure = viewer.Pipeline.SettingsFigure;
 table = findall(figure,'Tag','pipeline-parameters');
@@ -69,7 +69,7 @@ assert(strcmp(runs.Data{1,2},'done'));
 runs.CellSelectionCallback(runs,struct('Indices',[1 1]));
 assert(strcmp(viewer.Pipeline.LastRunReview.status,'done'));
 if checkEditor
-    picker = findall(viewer.widgetFigure('Pipeline'),'Tag','pipeline-run-picker');
+    picker = findall(figure,'Tag','pipeline-run-picker');
     picker.Value = 'draft'; picker.ValueChangedFcn(picker,[]);
     projectName = matlab.lang.makeValidName(char(string(project.io.file)));
     projectName = matlab.lang.makeUniqueStrings(projectName,evalin('base','who'),namelengthmax);

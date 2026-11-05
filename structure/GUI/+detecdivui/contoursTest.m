@@ -10,7 +10,7 @@ source.display.channel = {'Phase','Cells'}; source.display.rgb = [1 1 1;0 1 0];
 source.display.indexed = [false true]; source.display.selectedchannel = [true true];
 source.display.alpha = [1 .35]; source.display.contour = [false true]; source.display.width = [1 2.5];
 original = source.image; metadata = source.display;
-viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()delete(viewer));
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tree,[]);

@@ -10,7 +10,7 @@ t = pipeline(); t.strid = 'Original pipeline';
 t.nodes = struct('id','segment','name','Existing segmentation','type','classifier','pkg','cellposesam', ...
     'func','cellposesam.classify','enabled',true,'params',struct('pkg','cellposesam','outputType','segmentation','diameter',17,'frames',1:4));
 original = t.nodes;
-v = detecdiv_ui(p,'Visible','off','DiscoverWorkspace',false,'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
+v = detecdiv_ui(p,'Visible','off','DiscoverWorkspace',false,'LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
 cleanup = onCleanup(@()safeDelete(v));
 stop(timerfindall('Tag','DetecDivDockMenu'));
 w = v.Pipeline; w.addTemplate(t);

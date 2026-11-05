@@ -17,12 +17,21 @@ The assistant is created lazily on explicit opening; its detached tab and draft 
 
 Run Settings > Steps > Define ROIs and viewer-launched pipeline2 ROI-edit commands open this same assistant. Its action becomes Use in Run and its mode is fixed by the selected step. Closing and reopening the same step resumes its unsubmitted draft. Accepting updates the working definition, without creating project ROIs or extracting data. Changing project/pipeline invalidates an old definition callback instead of applying it to another target. FOV-specific manual records and pattern patch provenance are retained.
 
-The new viewer path no longer calls Workflow/Workflow2 to define ROIs. Those applications remain in the repository for legacy callers. Raw-data parsing, extraction, segmentation and tracking algorithms are not rewritten in the assistant; canonical shallow/fov/roi objects and engine packages remain authoritative. Full first-time project/raw-import UI and richer tracked/mask editing remain separate integration work.
+The definition-only Pipeline Designer uses the same route, with Use in Pipeline. The independent definition remains unbound to a project: the viewer project/FOV supplies image context for this edit only. Pipeline/module identity appears in the image breadcrumb and the assistant target. Explicit module FOVs and effective run selections take precedence over an unrelated visible FOV; opening the tool does not search raw paths or load pixels. Drawing/preview still loads the requested raw FOV on demand. Missing context leaves the editor available and reports the selection required in the viewer status.
+
+Replies are checked against the live owner, pipeline/run/module/effective parameter signature and target project/FOV. Switching FOV dismisses a bound assistant rather than silently converting it into standalone creation. Closing its editor or changing the module/run selections rejects a stale reply. Pending module drafts are stored by owner/request identity and FOV, separately from the standalone draft; switching between two ROI steps on the same image preserves each pending geometry.
+
+Successful Use in Run/Pipeline dismisses the image assistant and leaves the editor available. Reopening the module creates a request from the accepted definition; the old request cannot overwrite it. Done suspends an unsubmitted draft without applying it.
+
+Inclusion-crop persistence is not yet fully isolated: bound Use in Run currently applies a changed crop to the project FOV, as required by the existing pattern backend. A separate explicit project-edit or supported run-local crop contract is required before claiming complete draft isolation. See [the pipeline parity matrix](DETECTIVE_UI_PIPELINE_PARITY.md), P23. Preview itself still uses a scratch FOV.
+
+Viewer-owned ROI requests are intercepted before Workflow/Workflow2, in both definition and runtime editing. Those applications remain in the repository for legacy callers. Raw-data parsing, extraction, segmentation and tracking algorithms are not rewritten in the assistant; canonical shallow/fov/roi objects and engine packages remain authoritative. Full first-time project/raw-import UI and richer tracked/mask editing remain separate integration work. A raw-input run cannot borrow an unrelated open project's images; its acquisition must first be available in Projects until the legacy parser has been integrated into a temporary main-image context.
 
 ## Verification
 
 ```matlab
 detecdivui.separationTest();
+detecdivui.pipelineImageContextTest();
 ```
 
 The native test draws actual MATLAB rectangle objects, appends through roiManual, verifies old pixels/geometry and absence of H5 extraction, saves/reloads the project inventory, transfers definitions via pipeline2, checks the same run ID/configuration, and previews a captured pattern/crop without changing project ROIs. Source TIFF pixels are checked directly. Preview overlays are not persisted as scientific results.
