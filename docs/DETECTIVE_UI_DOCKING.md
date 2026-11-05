@@ -48,6 +48,14 @@ AppContainer does not expose the same top-level `uimenu` interface as a standalo
 
 The shell itself is code-owned. App Designer can still be used for widget contents once their layout is stable; it does not own the native docking layout.
 
+## Startup and axes lifecycle
+
+Startup axes are created with `Toolbar=[]`; reading the lazy toolbar getter before the native host is ready is avoided. Once AppContainer is running and pending graphics updates have settled, image and Data axes receive an explicit default toolbar. Additional side-by-side image panels use the same initialization helper. Pipeline graphs stay toolbar-free and noninteractive except for their own callbacks.
+
+R2026a's native axes toolbar listener can receive a deleted interaction container. `ImageAxes.initialize` detects invalid native interaction state and permits one reconstruction of the still-empty axes, retaining its parent, metadata and grid placement. Unexpected errors are reported; repeated native failure is bounded and cleaned up. Plotted axes are never replaced by this helper, so existing image/data contents cannot be discarded as a repair action. Zoom, pan and restore-view remain native controls. No MATLAB installation files are patched.
+
+A reference-counted startup guard defers menu polling in existing DetecDiv hosts while another viewer is being constructed/discovered. It releases on success or failure. Constructor cleanup covers failures before Host.start as well as toolbar initialization: only the partial new viewer is disposed, its menu/preview/follow timers are released, and its layout is not auto-saved over existing preferences. Existing viewers and project data remain owned by their original instances. An open viewer is a supported relaunch scenario, not proof of the cause of every axes error.
+
 ## Persistence contract
 
 The JSON envelope is `detecdiv.ui.layout.v1`, with the MATLAB release, native layout snapshot, main window bounds and each widget's docked/visible state and floating-window bounds. Stable widget tags are `projects`, `image`, `display` and `pipeline` in the `workspace` figure document group. Fresh layouts place Pipeline beside Display as tabs in the right column. A v1 record without Pipeline is migrated by giving the new widget a hidden/docked state; its existing native layout is retained. View can then show the new widget without resetting the workspace.
@@ -59,9 +67,13 @@ Saving waits for asynchronous layout changes to settle and writes to a temporary
 ```matlab
 detecdivui.dockingTest();
 detecdivui.smokeTest();
+detecdivui.imageAxesTest();
+detecdivui.startupTest();
 ```
 
 The docking integration test checks actual visible native floating windows, menu-to-MATLAB dispatch, detachment and redocking of all four widgets, retained tree/control/image handles, non-default column widths, floating bounds, hidden widgets, normal-close auto-save, fresh-instance restoration, corrupt preference recovery and timer cleanup. The navigation test separately checks multi-project browsing, TIFF pixels, RGB grouping, time navigation and read-error recovery. `pipelineTest` additionally verifies migration from three-widget layouts.
+
+The startup regressions added on 5 November 2026 reproduce the native listener's deleted-handle failure with an isolated race fixture, verify recovery of actual empty UIAxes and exercise their real zoom/pan callbacks. A temporary Viewer copy injects faults without adding production hooks: recovery, bounded repeated failure, pre-host construction failure, unchanged old-viewer pixels/zoom, released timers/windows/guard and unchanged saved-layout bytes are checked. Deliberately deleting a native container during creation can emit MATLAB Reparent-listener warnings in these negative tests; no MATLAB installation files or global graphics defaults are changed.
 
 An optional PNG path to either test captures the main workspace for visual inspection. Real acquisition testing, multi-monitor layout migration and other MATLAB releases remain outside this validation scope.
 

@@ -105,9 +105,13 @@ classdef Viewer < handle
         ProjectSources = {}
         PreviewTimer = []
         PendingPreview = []
+        ConstructionComplete = true % Existing live viewers predate this startup flag.
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)
+            obj.ConstructionComplete = false;
+            startup = detecdivui.startupGuard('begin');
+            construction = onCleanup(@()obj.finishConstruction(startup));
             if nargin < 1, project = []; end
             if nargin < 2, visibility = 'on'; end
             if nargin < 5, recentFile = fullfile(prefdir,'recentProjects.mat'); end
@@ -171,7 +175,7 @@ classdef Viewer < handle
             canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
             obj.ImageGrid = uigridlayout(canvas,[1 1]); obj.ImageGrid.Padding = [0 0 0 0];
             obj.ImageGrid.ColumnSpacing = 8;
-            obj.Axes = uiaxes(obj.ImageGrid,'Color',[0.07 0.09 0.11],'Tag','image-view');
+            obj.Axes = uiaxes(obj.ImageGrid,'Color',[0.07 0.09 0.11],'Tag','image-view','Toolbar',[]);
             obj.ImageAxes = obj.Axes;
             obj.ImageMenu = uicontextmenu(obj.Figure);
             obj.ImageROIMenu = uimenu(obj.ImageMenu,'Text','Define ROIs...','Enable','off', ...
@@ -180,7 +184,6 @@ classdef Viewer < handle
             uimenu(obj.ImageMenu,'Text','Edit Tracks...','MenuSelectedFcn',@(~,~)obj.openTracksTool());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
-            obj.Axes.Toolbar.Visible = 'on';
             timeline = uigridlayout(canvas,[2 5]);
             timeline.RowHeight = {26,20};
             timeline.ColumnWidth = {32,32,80,'1x',90}; timeline.Padding = [0 0 0 0];
@@ -284,21 +287,21 @@ classdef Viewer < handle
             obj.ensureDataWidget();
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.rebindCallbacks();
-            try
-                obj.Host.start(visibility);
-                if obj.Host.isWidgetVisible('Data'), obj.ensureDataWidget(); end
-                if iscell(project)
-                    for k = 1:numel(project), obj.addProject(project{k}); end
-                elseif ~isempty(project)
-                    for k = 1:numel(project), obj.addProject(project(k)); end
-                end
-            catch err
-                delete(obj); rethrow(err);
+            obj.Host.start(visibility);
+            drawnow nocallbacks;
+            obj.Axes = detecdivui.ImageAxes.initialize(obj.Axes); obj.ImageAxes = obj.Axes;
+            obj.Data.initializeAxes();
+            if obj.Host.isWidgetVisible('Data'), obj.ensureDataWidget(); end
+            if iscell(project)
+                for k = 1:numel(project), obj.addProject(project{k}); end
+            elseif ~isempty(project)
+                for k = 1:numel(project), obj.addProject(project(k)); end
             end
             obj.BrowserMenu.Checked = obj.onOff(obj.Host.isWidgetVisible('Projects'));
             obj.ToolsMenu.Checked = obj.onOff(obj.Host.isWidgetVisible('Display'));
             if ~isempty(obj.Host.LastLayoutError), obj.Status.Text = obj.Host.LastLayoutError; end
             obj.Host.syncMenus();
+            obj.ConstructionComplete = true;
         end
         function addProject(obj,project)
             % Add or focus a project; existing projects stay in the tree.
@@ -722,6 +725,7 @@ classdef Viewer < handle
         end
         function delete(obj)
             if obj.Closing, return; end
+            if ~obj.ConstructionComplete && ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.abortStartup(); end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
             obj.cancelPreview();
@@ -740,10 +744,18 @@ classdef Viewer < handle
         end
     end
     methods (Access = private)
+        function finishConstruction(obj,~)
+            % The retained startup scope also covers disposal of a failed
+            % constructor, including errors before Host.start was reached.
+            if ~isvalid(obj) || obj.ConstructionComplete, return; end
+            if ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.abortStartup(); end
+            delete(obj);
+        end
         function ensureDataWidget(obj)
             if ~isempty(obj.Data) && isvalid(obj.Data), return; end
             obj.Data = detecdivui.DataWidget(obj.Host.widgetFigure('Data'),obj);
             obj.Data.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Data');
+            if obj.ConstructionComplete, obj.Data.initializeAxes(); end
         end
         function ensureAnnotationDrafts(obj)
             if obj.hasMaskWidget(), return; end
@@ -1487,8 +1499,8 @@ classdef Viewer < handle
                 delete(obj.ImageAxes(count+1:end)); obj.ImageAxes = obj.ImageAxes(1:count);
             end
             for k = numel(obj.ImageAxes)+1:count
-                obj.ImageAxes(k) = uiaxes(obj.ImageGrid,'Color',[.07 .09 .11]);
-                obj.ImageAxes(k).Toolbar.Visible = 'on';
+                ax = uiaxes(obj.ImageGrid,'Color',[.07 .09 .11],'Tag','channel-view','Toolbar',[]);
+                obj.ImageAxes(k) = detecdivui.ImageAxes.initialize(ax);
             end
             if ~isempty(obj.ImageGrid)
                 obj.ImageGrid.ColumnWidth = repmat({'1x'},1,count);

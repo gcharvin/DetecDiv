@@ -16,10 +16,12 @@ p.addParameter('AutoSaveLayout',true,@(x)islogical(x)&&isscalar(x));
 p.addParameter('DiscoverWorkspace',discover,@(x)islogical(x)&&isscalar(x));
 p.addParameter('RecentProjectsFile',fullfile(prefdir,'recentProjects.mat'),@(x)ischar(x)||(isstring(x)&&isscalar(x)));
 p.parse(varargin{:});
+startup = detecdivui.startupGuard('begin'); %#ok<NASGU>
 viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout,p.Results.RecentProjectsFile);
 try
     if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
 catch err
+    viewer.Host.abortStartup();
     delete(viewer); % Do not leave an orphaned window/menu timer after import fails.
     rethrow(err);
 end

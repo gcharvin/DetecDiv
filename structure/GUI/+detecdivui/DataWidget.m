@@ -24,6 +24,7 @@ classdef DataWidget < handle
         Sync = false
         Step = 1
         Token = 0
+        AxesReady = false
     end
     methods
         function obj = DataWidget(parent,viewer)
@@ -48,10 +49,14 @@ classdef DataWidget < handle
             obj.Interval = uieditfield(controls,'numeric','Value',1,'Limits',[eps Inf], ...
                 'Tag','data-interval','Tooltip','Acquisition interval in minutes per frame; display only', ...
                 'ValueChangedFcn',@(~,~)obj.plot());
-            obj.Axes = uiaxes(grid,'Tag','data-axes');
+            obj.Axes = uiaxes(grid,'Tag','data-axes','Toolbar',[]);
             obj.Status = uilabel(grid,'Text','Ready','Interpreter','none','Tag','data-status');
             obj.Progress = detecdivui.Progress(grid,obj.Status,'data-progress');
             obj.setContext();
+        end
+        function initializeAxes(obj)
+            if obj.AxesReady, return; end
+            obj.Axes = detecdivui.ImageAxes.initialize(obj.Axes); obj.AxesReady = true;
         end
         function setContext(obj)
             % Metadata selection can precede image loading; obtain the ROI

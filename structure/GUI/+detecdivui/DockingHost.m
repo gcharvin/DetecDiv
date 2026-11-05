@@ -305,6 +305,11 @@ classdef DockingHost < handle
         function show(obj)
             obj.Window.show();
         end
+        function abortStartup(obj)
+            % A partial/new failed host must not overwrite a saved layout.
+            obj.AutoSave = false;
+            obj.stopPump();
+        end
         function delete(obj)
             if obj.Closing, return; end
             obj.stopPump();
@@ -376,7 +381,7 @@ classdef DockingHost < handle
             end
         end
         function pumpMenu(obj)
-            if obj.Closing || obj.WebBusy, return; end
+            if obj.Closing || obj.WebBusy || detecdivui.startupGuard('active'), return; end
             try
                 events = jsondecode(obj.executeJS('JSON.stringify(window.detecdivMenu.drain())'));
                 if ischar(events) || isstring(events), events = jsondecode(events); end
