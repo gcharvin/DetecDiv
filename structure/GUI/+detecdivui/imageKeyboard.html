@@ -3,13 +3,23 @@
 // R2026a FigureDocument boundary. Listen only to this figure's image canvas;
 // native editors, sliders, trees, menus and custom widgets retain their keys.
 function setup(component) {
-    let state = {}, owner = null, sequence = 0;
+    let state = {}, owner = null, sequence = 0, focusedRequest = 0;
     function keydown(event) {
         const frame = window.frameElement;
-        const scope = frame && frame.closest('.figureContainerNode');
+        const scope = frame && frame.closest('.gbtFigureLayoutContainer');
         const target = event.target;
-        if (!state.enabled || !scope || !scope.contains(target) ||
-            !target.closest('.GraphicsView') || event.defaultPrevented || event.isComposing ||
+        // MATLAB focuses the figure container after an image click/redraw.
+        // The canvas's fallback div cannot itself receive browser focus.
+        // A newly floated Image document initially focuses its window body.
+        const floatingBackground = scope && target === owner.body &&
+            owner.querySelectorAll('.gbtFigureLayoutContainer').length === 1 &&
+            scope.getBoundingClientRect().width > 0;
+        const imageButton = target && target.closest('[role="button"],button') &&
+            !target.closest('[role="toolbar"],.gbtFigureToolsContainer');
+        const imageTarget = floatingBackground || target && (target.closest('.GraphicsView') ||
+            target.matches('.gbtFigureLayoutContainer,.gbtFigureFrame') || imageButton);
+        if (!state.enabled || !scope || !(scope.contains(target) || floatingBackground) ||
+            !imageTarget || event.defaultPrevented || event.isComposing ||
             event.altKey || event.shiftKey) return;
         const raw = event.key.toLowerCase();
         const key = ({arrowleft:'leftarrow',arrowright:'rightarrow',arrowup:'uparrow',
@@ -32,6 +42,11 @@ function setup(component) {
         if (current !== owner) {
             unbind(); owner = current;
             if (owner) owner.addEventListener('keydown',keydown,true);
+        }
+        const requested = Number(state.focusRequest) || 0;
+        const scope = window.frameElement && window.frameElement.closest('.gbtFigureLayoutContainer');
+        if (state.enabled && requested > focusedRequest && scope && scope.getBoundingClientRect().width > 0) {
+            scope.focus({preventScroll:true}); focusedRequest = requested;
         }
     }
     component.addEventListener('DataChanged',update);

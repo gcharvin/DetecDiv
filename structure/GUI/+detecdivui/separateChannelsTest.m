@@ -24,14 +24,16 @@ source.display.contour = [false false false true]; source.display.width = [1 1 1
 original = source.image; metadata = source.display;
 viewer = detecdiv_ui(project,'Visible','off','LayoutFile','','AutoSaveLayout',false,'RecentProjectsFile','');
 cleanup = onCleanup(@()delete(viewer));
-figure = viewer.widgetFigure('Display'); overlay = findall(figure,'Tag','display-overlay');
-overlay.Value = false; overlay.ValueChangedFcn(overlay,[]);
+figure = viewer.widgetFigure('Display'); layout = findall(figure,'Tag','display-overlay');
+assert(layout.Value && strcmp(layout.Enable,'off'));
+layout.Value = false; layout.ValueChangedFcn(layout,[]);
 assert(isempty(findall(viewer.Figure,'Type','image')));
 tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 roiNode = findall(tree,'Tag','roi-node'); tree.SelectedNodes = roiNode; tree.SelectionChangedFcn(tree,[]);
 viewer.DisplayModel.setLimits(1,[0 1000]); viewer.DisplayModel.setLimits(2,[0 2000]);
 viewer.DisplayModel.setColor(4,'1 0 0');
-overlay.ValueChangedFcn(overlay,[]);
+assert(strcmp(layout.Enable,'on') && ~layout.Value);
+layout.ValueChangedFcn(layout,[]);
 axes = panels(viewer); assert(numel(axes) == 2);
 assert(strcmp(axes(1).Title.String,'Phase') && strcmp(axes(2).Title.String,'GFP'));
 assert(isscalar(findall(axes(1),'Tag','mask-contour')) && isscalar(findall(axes(2),'Tag','mask-contour')));
@@ -50,9 +52,9 @@ axes = panels(viewer); assert(isequal(axes(1).XLim,[2 8]));
 first = pixels(axes(1)); assert(first(1,1,1) == 51);
 % Overlay round-trip preserves visibility, channel levels and the current zoom.
 visibility = [viewer.DisplayModel.Layers.visible];
-overlay.Value = true; overlay.ValueChangedFcn(overlay,[]); assert(isscalar(panels(viewer)));
+layout.Value = true; layout.ValueChangedFcn(layout,[]); assert(isscalar(panels(viewer)));
 assert(isequal(viewer.roiAxes().XLim,[2 8]));
-overlay.Value = false; overlay.ValueChangedFcn(overlay,[]);
+layout.Value = false; layout.ValueChangedFcn(layout,[]);
 assert(numel(panels(viewer)) == 2 && isequal([viewer.DisplayModel.Layers.visible],visibility));
 assert(isequal(viewer.DisplayModel.Layers(2).limits,[0 2000]));
 if ~isempty(previewPath)

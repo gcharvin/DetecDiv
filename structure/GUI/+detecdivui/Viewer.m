@@ -93,6 +93,7 @@ classdef Viewer < handle
         KeyboardState = struct()
         KeyboardSelection = {}
         KeyboardGeneration = 0
+        KeyboardFocusRequest = 0
         JumpKeys = {'l','m'}
         JumpBackMenu
         JumpForwardMenu
@@ -207,7 +208,7 @@ classdef Viewer < handle
             heading = uigridlayout(tools,[1 2]); heading.Padding = [0 0 0 0]; heading.ColumnWidth = {45,'1x'};
             uilabel(heading,'Text','Layers','FontWeight','bold');
             obj.OverlayChannels = uicheckbox(heading,'Text','Overlay channels','Value',true, ...
-                'Enable','off','Tag','display-overlay','Tooltip','Combine intensity channels; masks stay on every separate panel', ...
+                'Enable','off','Tag','display-overlay','Tooltip','Combine channels when checked; show them side by side when unchecked. Masks appear on every panel.', ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('presentation'));
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
@@ -1313,7 +1314,8 @@ classdef Viewer < handle
                 obj.KeyboardSelection = selection; obj.KeyboardGeneration = obj.KeyboardGeneration+1;
             end
             state = struct('context',sprintf('%d',obj.KeyboardGeneration),'enabled',enabled, ...
-                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}},'ctrlKeys',{{}});
+                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}},'ctrlKeys',{{}}, ...
+                'focusRequest',obj.KeyboardFocusRequest);
             if editing, state.keys = [state.keys obj.Masks.shortcuts()]; state.ctrlKeys = {'z','y'}; end
             if tracking, state.keys = [state.keys {'escape','delete'}]; state.ctrlKeys = {'z','y'}; end
             if isequal(state,obj.KeyboardState), return; end
@@ -1378,6 +1380,13 @@ classdef Viewer < handle
         end
         function stepFrame(obj,delta)
             obj.setFrame(obj.Frame.Value+delta);
+            obj.focusImage();
+        end
+        function focusImage(obj)
+            % Selecting a document does not move focus off its native buttons.
+            obj.Host.focusWidget('Image');
+            obj.KeyboardFocusRequest = obj.KeyboardFocusRequest+1;
+            obj.refreshKeyboard();
         end
         function render(obj)
             if obj.Session.Position == 0 || ~obj.ImageRequested, return; end
@@ -1539,6 +1548,7 @@ classdef Viewer < handle
                     case 'presentation'
                 end
                 obj.render();
+                if strcmp(action,'presentation'), obj.focusImage(); end
             catch err
                 obj.refreshLayerControls(); obj.Status.Text = err.message;
             end
