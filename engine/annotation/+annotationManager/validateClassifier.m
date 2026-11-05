@@ -5,6 +5,7 @@ function report = validateClassifier(classif, roiIndices, varargin)
 if nargin < 2 || isempty(roiIndices), roiIndices = 1:numel(classif.roi); end
 p = inputParser;
 p.addParameter('ConfirmReviewed',false,@(x)islogical(x)&&isscalar(x));
+p.addParameter('RecoverBounds',false,@(x)islogical(x)&&isscalar(x));
 p.addParameter('ProgressFcn',[],@(x)isempty(x)||isa(x,'function_handle'));
 p.addParameter('CancelFcn',[],@(x)isempty(x)||isa(x,'function_handle'));
 p.parse(varargin{:});
@@ -20,14 +21,21 @@ for k = 1:numel(indices)
     items(k).roiId = char(string(classif.roi(indices(k)).id));
 end
 cancelled = false;
+recovery = struct([]);
+if p.Results.RecoverBounds && (isempty(p.Results.CancelFcn)||~p.Results.CancelFcn())
+    recovery = trainingBounds.recoverAnnotated(classif,indices);
+end
 for k = 1:numel(indices)
     if ~isempty(p.Results.CancelFcn) && p.Results.CancelFcn()
         cancelled = true; break;
     end
     try
+        if ~isempty(recovery) && strcmp(recovery(k).source,'unavailable')
+            error('annotationManager:BoundsUnavailable','%s',recovery(k).message);
+        end
         session = annotationManager.createSession(classif,indices(k));
         summary = session.summary('VerifyHash',true);
-        if strcmp(summary.status,'approved')
+        if strcmp(summary.status,'approved') && ~p.Results.RecoverBounds
             items(k).status = 'ready';
             items(k).message = 'Already Ready; content hash verified.';
         elseif any([summary.components.required] & ...
@@ -37,7 +45,7 @@ for k = 1:numel(indices)
                 ~[summary.components.groundTruthExists]);
             items(k).message = ['Missing GT: ' strjoin({missing.id},', ')];
         else
-            if p.Results.ConfirmReviewed
+            if p.Results.ConfirmReviewed || p.Results.RecoverBounds
                 session.markReviewed('Save',false);
             end
             validation = session.validate();
@@ -49,14 +57,22 @@ for k = 1:numel(indices)
             end
         end
     catch ME
-        items(k).status = 'failed';
+        if strcmp(ME.identifier,'annotationManager:BoundsUnavailable')
+            items(k).status = 'invalid';
+        else
+            items(k).status = 'failed';
+        end
         items(k).message = ME.message;
+    end
+    if ~isempty(recovery) && ~strcmp(recovery(k).source,'unavailable')
+        items(k).message = strtrim(sprintf('%s bounds %s. %s', ...
+            recovery(k).source,trainingBounds.text(recovery(k).bounds),items(k).message));
     end
     if ~isempty(p.Results.ProgressFcn)
         p.Results.ProgressFcn(k,numel(indices),items(k));
     end
 end
-report = struct('items',items,'cancelled',cancelled, ...
+report = struct('items',items,'cancelled',cancelled,'boundsRecovery',recovery, ...
     'ready',nnz(strcmp({items.status},'ready')), ...
     'invalid',nnz(strcmp({items.status},'invalid')), ...
     'failed',nnz(strcmp({items.status},'failed')), ...

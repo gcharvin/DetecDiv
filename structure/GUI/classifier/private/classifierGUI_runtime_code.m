@@ -941,9 +941,19 @@ function ensureGroundTruthValidationMenu(app)
         'MenuSelectedFcn',@(~,~)validateGroundTruthBatch(app,false));
     uimenu(menu,'Text','All ROIs...', ...
         'MenuSelectedFcn',@(~,~)validateGroundTruthBatch(app,true));
+    recovery=uimenu(menu,'Text','Recover annotation bounds + validate');
+    uimenu(recovery,'Text','Selected ROIs...', ...
+        'MenuSelectedFcn',@(~,~)validateGroundTruthBatch(app,false,true));
+    uimenu(recovery,'Text','All ROIs...', ...
+        'MenuSelectedFcn',@(~,~)validateGroundTruthBatch(app,true,true));
 end
 
-function validateGroundTruthBatch(app, allRois)
+function validateGroundTruthBatch(app, allRois, recoverBounds)
+    if nargin<3,recoverBounds=false;end
+    if isfield(app.Data,'groundTruthValidationRunning') && ...
+            app.Data.groundTruthValidationRunning
+        return;
+    end
     if allRois
         indices = 1:numel(app.Data.classiObj.roi);
     else
@@ -954,6 +964,16 @@ function validateGroundTruthBatch(app, allRois)
             'Validate ground truth','Icon','info');
         return;
     end
+    if recoverBounds
+        choice=uiconfirm(app.ClassifierUIFigure,sprintf([ ...
+            'Recover training bounds for %d ROI(s), confirm their review and validate.\n\n' ...
+            'Current explicit bounds are preserved. Otherwise use historical bounds ' ...
+            '(a zero start becomes frame 1), or the first through last defined label.\n' ...
+            'Interior undefined labels remain invalid; empty annotations cannot become Ready.\n' ...
+            'Save the classifier afterwards to retain its recovered frame bounds.'],numel(indices)), ...
+            'Recover annotation bounds','Options',{'Recover and validate','Cancel'}, ...
+            'DefaultOption',2,'CancelOption',2);
+    else
     choice = uiconfirm(app.ClassifierUIFigure,sprintf([ ...
         'Validate ground truth for %d ROI(s), within their training frame bounds.\n\n' ...
         'For historical annotations you have already reviewed, choose ' ...
@@ -962,14 +982,19 @@ function validateGroundTruthBatch(app, allRois)
         numel(indices)),'Validate ground truth', ...
         'Options',{'Validate only','Confirm reviewed + validate','Cancel'}, ...
         'DefaultOption',1,'CancelOption',3);
+    end
     if strcmp(choice,'Cancel'), return; end
     menu = findall(app.ClassifierMenu,'Tag','GroundTruthValidationMenu');
-    menu.Enable = 'off';
+    % The progress dialog blocks the parent UI. Keep the menu enabled;
+    % a running flag prevents reentry without leaving a disabled action.
+    menu.Enable = 'on';
     progress = uiprogressdlg(app.ClassifierUIFigure,'Title','Validate ground truth', ...
         'Message','Checking existing ground truth...','Cancelable','on','Value',0);
     cleanup = onCleanup(@()finishGroundTruthValidation(app,progress,menu)); %#ok<NASGU>
+    app.Data.groundTruthValidationRunning = true;
     try
         report = annotationManager.validateClassifier(app.Data.classiObj,indices, ...
+            'RecoverBounds',recoverBounds, ...
             'ConfirmReviewed',strcmp(choice,'Confirm reviewed + validate'), ...
             'CancelFcn',@()~isvalid(progress)||progress.CancelRequested, ...
             'ProgressFcn',@(done,total,item)updateGroundTruthProgress(app,progress,done,total,item));
@@ -978,9 +1003,13 @@ function validateGroundTruthBatch(app, allRois)
                 isvalid(app.Data.annotationSession)
             app.Data.annotationSession.refresh();
         end
-        clear cleanup
+        finishGroundTruthValidation(app,progress,menu);
         processed = [report.items(~strcmp({report.items.status},'pending')).roiIndex];
-        if app.roiTableInitialized && ~isempty(processed)
+        % Parameter refreshes can reset the initialization flag while a
+        % populated ROI table is still visible. Refresh that table as well.
+        app.annotationInitialRows = struct([]);
+        if ~isempty(processed) && ...
+                (app.roiTableInitialized || ~isempty(app.UITableData.Data))
             displayData(app,processed);
         end
         checkStatus(app,false);
@@ -993,6 +1022,7 @@ function validateGroundTruthBatch(app, allRois)
             'ColumnName',{'ROI index','ROI ID','Result','Details'}, ...
             'ColumnWidth',{80,230,90,'auto'});
     catch ME
+        finishGroundTruthValidation(app,progress,menu);
         uialert(app.ClassifierUIFigure,ME.message,'GT validation failed');
     end
 end
@@ -1005,9 +1035,16 @@ function updateGroundTruthProgress(app,progress,done,total,item) %#ok<INUSD>
     drawnow;
 end
 
-function finishGroundTruthValidation(app,progress,menu) %#ok<INUSD>
-    if isvalid(progress), close(progress); end
-    if isvalid(menu), menu.Enable = 'on'; end
+function finishGroundTruthValidation(app,progress,menu)
+    % Restore action state even if closing an interrupted dialog fails.
+    if ~isempty(app) && isvalid(app)
+        app.Data.groundTruthValidationRunning = false;
+    end
+    if ~isempty(menu) && all(isvalid(menu)), set(menu,'Enable','on'); end
+    try
+        if isvalid(progress), close(progress); end
+    catch
+    end
 end
 
 function classlist = loadClasslist(app)

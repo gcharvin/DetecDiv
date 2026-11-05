@@ -35,6 +35,51 @@ verifyEqual(testCase,report.invalid,1);
 verifyTrue(testCase,contains(report.items.message,'only 3 labels'));
 end
 
+function testRecoveryHonorsHistoryAndKeepsInternalHoles(testCase)
+[c,cleanup] = fixture(); %#ok<ASGLU>
+c.roi(1).data.userData=struct('bounds',[0 3]);
+report=annotationManager.validateClassifier(c,1:2,'RecoverBounds',true);
+verifyEqual(testCase,report.ready,1);
+verifyEqual(testCase,report.invalid,1);
+verifyEqual(testCase,trainingBounds.resolve(c,1),[1 3]);
+verifyEqual(testCase,trainingBounds.resolve(c,2),[1 4]);
+verifyTrue(testCase,contains(report.items(2).message,'frames: 2'));
+verifyEqual(testCase,report.boundsRecovery(1).source,'historical');
+end
+
+function testRecoveryTrimsOnlyEndsAndPreservesUnselectedScopes(testCase)
+[c,cleanup] = fixture(); %#ok<ASGLU>
+c.roi(1).data.data.labels_training(1)=categorical({''},c.classes);
+c.roi(1).data.data.labels_training(4)=categorical({''},c.classes);
+c.roi(2).data.userData=struct('bounds',[2 3]);
+report=annotationManager.validateClassifier(c,1,'RecoverBounds',true);
+verifyEqual(testCase,report.ready,1);
+verifyEqual(testCase,trainingBounds.resolve(c,1),[2 3]);
+verifyEqual(testCase,trainingBounds.resolve(c,2),[1 4]);
+verifyEqual(testCase,report.boundsRecovery.source,'annotated');
+end
+
+function testRecoveryRejectsEmptyLabelsAndCancelledRunIsUnchanged(testCase)
+[c,cleanup] = fixture(); %#ok<ASGLU>
+before=c.bounds;
+annotationManager.validateClassifier(c,1,'RecoverBounds',true,'CancelFcn',@()true);
+verifyEqual(testCase,c.bounds,before);
+c.roi(1).data.data.labels_training(:)=categorical({''},c.classes);
+report=annotationManager.validateClassifier(c,1,'RecoverBounds',true);
+verifyEqual(testCase,report.invalid,1);
+verifyTrue(testCase,contains(report.items.message,'No defined label'));
+verifyEqual(testCase,c.bounds,before);
+end
+
+function testRecoveryTreatsNumericZeroAsUnlabelled(testCase)
+[c,cleanup] = fixture(); %#ok<ASGLU>
+c.roi(1).data.data.labels_training=[0;1;2;0];
+c.roi(1).data.data.id_training=[0;1;2;0];
+report=annotationManager.validateClassifier(c,1,'RecoverBounds',true);
+verifyEqual(testCase,report.ready,1);
+verifyEqual(testCase,trainingBounds.resolve(c,1),[2 3]);
+end
+
 function testCancellationAndPerRoiFailureIsolation(testCase)
 [c,cleanup] = fixture(); %#ok<ASGLU>
 report = annotationManager.validateClassifier(c,1:3, ...
