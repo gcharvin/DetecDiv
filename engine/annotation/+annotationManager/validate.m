@@ -133,6 +133,11 @@ switch char(string(component.storage))
         if ~isempty(reviewIdx) && strcmp(entry.review(reviewIdx).unit, 'frame')
             reviewed = find(entry.review(reviewIdx).frames);
             reviewed = intersect(reviewed,reviewFrames,'stable');
+            if strcmp(component.kind,'frame_labels') && any(reviewed > numel(values))
+                error('annotationManager:MissingFrameLabels', ...
+                    'GT labels do not cover reviewed frame %d (only %d labels).', ...
+                    max(reviewed),numel(values));
+            end
             reviewed = reviewed(reviewed <= numel(values));
             undefinedFrames = reviewed(undefinedValues(values(reviewed)));
             if ~isempty(undefinedFrames)
