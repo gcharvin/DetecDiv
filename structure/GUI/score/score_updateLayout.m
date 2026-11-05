@@ -472,7 +472,16 @@ try
         if ~isfield(records, 'maskProvider')
             continue;
         end
-        provider = char(string(records(i).maskProvider));
+        % Only selected destination channels can contribute providers. Old
+        % records for removed channels must not trigger HDF5 loads.
+        channel = char(string(records(i).channelName));
+        index = find(strcmp(cellstr(string(roiobj.display.channel)),channel),1);
+        if isempty(index) || index > numel(roiobj.display.selectedchannel) || ...
+                ~roiobj.display.selectedchannel(index)
+            continue;
+        end
+        cfg = score_getObjectDisplayConfig(roiobj,channel);
+        provider = cfg.maskProvider;
         if ~any(strcmp(provider, {'','<family default>'}))
             providers{end+1} = provider; %#ok<AGROW>
         end

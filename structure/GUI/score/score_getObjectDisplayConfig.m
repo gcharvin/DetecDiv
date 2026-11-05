@@ -88,6 +88,16 @@ end
 cfg.objectFamily = char(string(cfg.objectFamily));
 cfg.maskProvider = char(string(cfg.maskProvider));
 cfg.lineageSource = char(string(cfg.lineageSource));
+% A preset can outlive its source ROI (for example HOCT -> Cellpose GT).
+% Never request a foreign provider when the destination has no such channel.
+knownChannels = cellstr(string(roiobj.display.channel));
+if ~any(strcmp(cfg.maskProvider, {'','<family default>'})) && ...
+        ~any(strcmp(knownChannels, cfg.maskProvider))
+    cfg.maskProvider = channelName;
+    cfg.objectFamily = '<auto>';
+    cfg.lineageSource = '<family default>';
+    cfg.lineageMode = 'none';
+end
 cfg.semanticValue = char(string(cfg.semanticValue));
 cfg.familyColor = normalizeColor(cfg.familyColor, defaults.familyColor);
 cfg.semanticColor = normalizeColor(cfg.semanticColor, defaults.semanticColor);
