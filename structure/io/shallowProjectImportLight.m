@@ -502,6 +502,12 @@ for i = 1:numel(names)
         continue;
     end
     value = raw.(name);
+    % jsondecode collapses a single-channel cell of numeric page indices.
+    % The FOV reader requires pageMap{channel}, including for one channel.
+    if strcmp(name, 'pageMap') && ...
+            isnumeric(value) && ~isempty(value) && numel(f.channel) == 1
+        value = {reshape(value, 1, [])};
+    end
     if any(strcmp(name, {'tiffSource','ndtiffPath','omeZarrPath'}))
         value = localResolvePathValue(value, projectDir, hubPathSettings);
     end
