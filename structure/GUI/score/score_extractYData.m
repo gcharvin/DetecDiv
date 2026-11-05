@@ -1,7 +1,8 @@
 function [ydata, varNames, yTickInfo, sourceIndex] = score_extractYData(T, dataIndices)
 % Extract ydata from table T(:,dataIndices) into a numeric matrix.
 % - numeric/logical: cast to double
-% - categorical: use double(v) (0 for <undefined>) and keep categories(v) (GLOBAL)
+% - categorical: display <undefined> on a labelled level, keeping source data
+%   and the original category codes unchanged
 % - string/cellstr/char: try numeric parsing; else categorical(string(v)) (LOCAL)
 % - cell arrays containing numeric scalars/vectors: expand to one curve per
 %   vector element, preserving scalar columns as one curve.
@@ -110,10 +111,9 @@ for k = 1:nCol
         end
 
         c = categorical(v);
-        cats = categories(c);
-        [ticks, labels] = categoricalTicks(double(c), cats);
+        [values, ticks, labels] = categoricalPlotData(c);
         [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-            ydata, varNames, sourceIndex, yTickInfo, double(c), baseName, dataIndices(k), true, ticks, labels);
+            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
         continue
     end
 
@@ -121,10 +121,9 @@ for k = 1:nCol
     % Categorical (IMPORTANT: keep ORIGINAL categories!)
     % -------------------------
     if iscategorical(v)
-        cats = categories(v);     % GLOBAL categories carried by the variable
-        [ticks, labels] = categoricalTicks(double(v), cats);
+        [values, ticks, labels] = categoricalPlotData(v);
         [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-            ydata, varNames, sourceIndex, yTickInfo, double(v), baseName, dataIndices(k), true, ticks, labels);
+            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
         continue
     end
 
@@ -147,10 +146,9 @@ for k = 1:nCol
 
     % Fallback: LOCAL categories (only those present in this series)
     c = categorical(s);
-    cats = categories(c);
-    [ticks, labels] = categoricalTicks(double(c), cats);
+    [values, ticks, labels] = categoricalPlotData(c);
     [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-        ydata, varNames, sourceIndex, yTickInfo, double(c), baseName, dataIndices(k), true, ticks, labels);
+        ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
 end
 end
 
@@ -228,7 +226,15 @@ while iscell(item) && isscalar(item)
 end
 end
 
-function [ticks, labels] = categoricalTicks(y, cats)
+function [y, ticks, labels] = categoricalPlotData(values)
+cats = categories(values);
+y = double(values);
+% MATLAB represents categorical <undefined> as NaN. Drawing it directly
+% leaves an invisible gap even though the frame still needs annotation.
+missing = isundefined(values);
+undefinedIndex = find(strcmpi(cats, 'undefined'), 1);
+if isempty(undefinedIndex), undefinedIndex = 0; end
+y(missing) = undefinedIndex;
 K = numel(cats);
 if any(y(:) == 0)
     ticks = [0, 1:K];

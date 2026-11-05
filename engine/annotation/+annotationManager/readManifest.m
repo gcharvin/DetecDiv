@@ -55,18 +55,38 @@ end
 end
 
 function [manifest, series, found] = manifestFromDisk(roiObj)
+persistent absentManifests
+if isempty(absentManifests)
+    absentManifests = containers.Map('KeyType','char','ValueType','any');
+end
 manifest = emptyManifest();
 series = dataseries.empty;
 found = false;
 try
     dataFile = fullfile(char(string(roiObj.path)), ...
         ['data_' char(string(roiObj.id)) '.mat']);
-    if ~isfile(dataFile), return; end
+    stamp = dir(dataFile);
+    if isempty(stamp) || stamp(1).isdir, return; end
+    signature = [stamp(1).bytes stamp(1).datenum];
+    % Most historical ROIs have labels but no lifecycle manifest. Remember
+    % that absence without inserting a synthetic manifest in project data.
+    % Check the file stamp on each call so a later Score save is discovered.
+    if isKey(absentManifests, dataFile) && ...
+            isequal(absentManifests(dataFile), signature)
+        return;
+    end
     stored = load(dataFile, 'data');
-    if ~isfield(stored, 'data') || isempty(stored.data), return; end
-    [manifest, index, found] = manifestFromData(stored.data);
+    if isfield(stored, 'data') && ~isempty(stored.data)
+        [manifest, index, found] = manifestFromData(stored.data);
+    end
     if found
         series = stored.data(index);
+        if isKey(absentManifests, dataFile), remove(absentManifests, dataFile); end
+    else
+        if absentManifests.Count >= 4096
+            remove(absentManifests, keys(absentManifests));
+        end
+        absentManifests(dataFile) = signature;
     end
 catch
     manifest = emptyManifest();
