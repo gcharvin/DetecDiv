@@ -103,6 +103,8 @@ classdef Viewer < handle
         RecentCommands = {}
         ClearRecentCommand
         ProjectSources = {}
+        PreviewTimer = []
+        PendingPreview = []
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile)
@@ -196,6 +198,7 @@ classdef Viewer < handle
             obj.TimeSlider = uislider(timeline,'Limits',[1 2],'Value',1, ...
                 'MajorTicks',[],'MinorTicks',[],'Enable','off','Tag','time-slider', ...
                 'Tooltip','Browse frames', ...
+                'ValueChangingFcn',@(~,event)obj.queuePreview('frame',event.Value), ...
                 'ValueChangedFcn',@(src,~)obj.setFrame(round(src.Value)));
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
             displayRoot = uigridlayout(obj.Host.widgetFigure('Display'),[1 1]);
@@ -245,6 +248,7 @@ classdef Viewer < handle
             obj.ContrastSlider = uislider(tools,'range','Limits',[0 1],'Value',[0 1], ...
                 'Enable','off','MajorTicks',[],'MinorTicks',[],'Tag','contrast-range', ...
                 'Tooltip','Adjust contrast for the active layer', ...
+                'ValueChangingFcn',@(~,event)obj.queuePreview('contrast',event.Value), ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('range'));
             obj.AutoButton = uibutton(tools,'Text','Auto','Enable','off','Tag','auto-contrast', ...
                 'Tooltip','Set contrast from this frame and keep it while browsing', ...
@@ -495,6 +499,7 @@ classdef Viewer < handle
                 case 'templateOpened', obj.registerLoadedObject(varargin{1},'pipeline');
                 case 'progressOwner', result = obj.progressOwner(varargin{1});
                 case 'layerEdit', obj.editLayerRow(varargin{:});
+                case 'preview', obj.flushPreview();
                 case 'imageLayer', obj.selectImageLayer(varargin{:});
                 case 'zone'
                     if varargin{3} == obj.ImageRevision && ~obj.DrawingROI
@@ -719,6 +724,8 @@ classdef Viewer < handle
             if obj.Closing, return; end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            obj.cancelPreview();
+            if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
             if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
             if obj.hasTracksWidget(), delete(obj.Tracks); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), delete(obj.TracksTab); end
@@ -1207,6 +1214,7 @@ classdef Viewer < handle
             obj.openZone(0);
         end
         function refreshView(obj,loadImage)
+            obj.cancelPreview();
             if nargin < 2, loadImage = true; end
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
@@ -1376,7 +1384,48 @@ classdef Viewer < handle
             uibutton(grid,'Text','Close','ButtonPushedFcn',@(~,~)delete(obj.ShortcutFigure));
         end
         function setFrame(obj,frame)
+            obj.cancelPreview();
             obj.Frame.Value = min(max(1,frame),obj.MaxFrame); obj.render();
+        end
+        function queuePreview(obj,kind,value,index)
+            if obj.Closing || ~obj.ImageRequested || obj.DrawingROI || isempty(obj.DisplayModel), return; end
+            if nargin < 4, index = obj.Channels.Value; end
+            obj.PendingPreview = struct('kind',kind,'value',value,'index',index, ...
+                'context',{{obj.Session.Project,obj.Session.Position,obj.Session.Zone,obj.DisplayModel}}, ...
+                'frame',obj.Frame.Value,'selected',obj.Channels.Value);
+            if isempty(obj.PreviewTimer) || ~isvalid(obj.PreviewTimer)
+                obj.PreviewTimer = timer('ExecutionMode','singleShot','StartDelay',.06, ...
+                    'Tag','DetecDivLiveDisplay','TimerFcn', ...
+                    {@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','preview')});
+            end
+            if strcmp(obj.PreviewTimer.Running,'off'), start(obj.PreviewTimer); end
+        end
+        function cancelPreview(obj)
+            obj.PendingPreview = [];
+            if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer) && strcmp(obj.PreviewTimer.Running,'on')
+                stop(obj.PreviewTimer);
+            end
+        end
+        function flushPreview(obj)
+            pending = obj.PendingPreview; obj.PendingPreview = [];
+            if isempty(pending) || obj.Closing || ~obj.ImageRequested || obj.DrawingROI || ...
+                    ~isequal(pending.context,{obj.Session.Project,obj.Session.Position,obj.Session.Zone,obj.DisplayModel})
+                return;
+            end
+            try
+                if strcmp(pending.kind,'frame')
+                    value = min(obj.MaxFrame,max(1,round(pending.value)));
+                    if value == obj.Frame.Value, return; end
+                    obj.Frame.Value = value;
+                else
+                    if pending.frame ~= obj.Frame.Value || pending.selected ~= obj.Channels.Value, return; end
+                    obj.DisplayModel.setLimits(pending.index,pending.value);
+                end
+                obj.render(pending.kind);
+                drawnow limitrate nocallbacks;
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
         end
         function stepFrame(obj,delta)
             obj.setFrame(obj.Frame.Value+delta);
@@ -1388,12 +1437,13 @@ classdef Viewer < handle
             obj.KeyboardFocusRequest = obj.KeyboardFocusRequest+1;
             obj.refreshKeyboard();
         end
-        function render(obj)
+        function render(obj,preview)
+            if nargin < 2, preview = ''; end
             if obj.Session.Position == 0 || ~obj.ImageRequested, return; end
             activity = obj.Progress.begin('Reading image and rendering layers...'); %#ok<NASGU>
             try
                 obj.Frame.Value = min(obj.Frame.Value,obj.MaxFrame);
-                obj.TimeSlider.Value = obj.Frame.Value;
+                if ~strcmp(preview,'frame'), obj.TimeSlider.Value = obj.Frame.Value; end
                 obj.updateFrameActions(true);
                 separated = obj.isSeparated();
                 if separated
@@ -1402,7 +1452,7 @@ classdef Viewer < handle
                     view = obj.DisplayModel.compose(obj.Frame.Value,obj.Channels.Value);
                     view.layer = obj.Channels.Value; view.title = ''; views = {view};
                 end
-                obj.refreshLayerControls();
+                obj.refreshLayerControls(strcmp(preview,'contrast'));
                 key = sprintf('%d:%d:%d',obj.ActiveProject,obj.Session.Position,obj.Session.Zone);
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
@@ -1533,6 +1583,7 @@ classdef Viewer < handle
         end
         function editLayer(obj,action)
             if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
+            obj.cancelPreview();
             activity = obj.DisplayProgress.begin('Updating display...'); %#ok<NASGU>
             index = obj.Channels.Value;
             try
@@ -1553,7 +1604,8 @@ classdef Viewer < handle
                 obj.refreshLayerControls(); obj.Status.Text = err.message;
             end
         end
-        function refreshLayerControls(obj)
+        function refreshLayerControls(obj,previewContrast)
+            if nargin < 2, previewContrast = false; end
             layers = obj.DisplayModel.Layers;
             if isempty(layers), obj.clearLayerControls(); return; end
             index = obj.Channels.Value;
@@ -1598,12 +1650,15 @@ classdef Viewer < handle
                 values = double(plane(isfinite(plane)));
                 bounds = layer.limits;
                 if ~isempty(values), bounds = [min(min(values(:)),bounds(1)),max(max(values(:)),bounds(2))]; end
-                obj.ContrastSlider.Limits = [min(bounds(1),obj.ContrastSlider.Limits(1)), ...
-                    max(bounds(2),obj.ContrastSlider.Limits(2))];
-                obj.ContrastSlider.Value = layer.limits;
-                obj.ContrastSlider.Limits = bounds;
+                if ~previewContrast
+                    obj.ContrastSlider.Limits = [min(bounds(1),obj.ContrastSlider.Limits(1)), ...
+                        max(bounds(2),obj.ContrastSlider.Limits(2))];
+                    obj.ContrastSlider.Value = layer.limits;
+                    obj.ContrastSlider.Limits = bounds;
+                end
             end
-            obj.Histogram.update(obj.DisplayModel,obj.Frame.Value,index);
+            obj.Histogram.update(obj.DisplayModel,obj.Frame.Value,index, ...
+                {obj.Session.Project,obj.Session.Position,obj.Session.Zone});
         end
         function clearLayerControls(obj)
             if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'off'; end
@@ -1622,6 +1677,10 @@ classdef Viewer < handle
         end
         function editLayerRow(obj,action,index,value)
             if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
+            if strcmp(action,'limits-preview')
+                obj.queuePreview('contrast',value,index); return;
+            end
+            obj.cancelPreview();
             activity = obj.DisplayProgress.begin('Updating display...'); %#ok<NASGU>
             try
                 validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.DisplayModel.Layers)});

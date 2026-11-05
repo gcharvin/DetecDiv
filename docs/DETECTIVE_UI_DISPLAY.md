@@ -7,12 +7,14 @@
 - Overlay channels follows Score's display convention: checked combines visible intensity/RGB layers; unchecked displays one horizontal panel per visible intensity/RGB channel, with the same visible masks/contours on every panel. Masks do not get extra panels. Mask-only selection uses one black base tile; no visible layers produces a black tile. A logical RGB channel remains one tile even when its stored planes are non-contiguous.
 - Separate panels share time, pan and zoom. Clicking an image selects its channel and active drawing/copy target without changing visibility or rebuilding the images during a pan gesture. Per-channel contrast/color stays unchanged when switching modes. As in Score's non-overlay renderer, intensity weights apply only to the combined view; their controls are disabled in separate mode, while mask fill opacity still applies. Copy Image copies the active panel.
 - Intensity and RGB layers have source-unit minimum/maximum fields, a contrast range slider and an Auto button. Auto uses finite min/max from the current frame and keeps those limits while browsing time.
+- The frame slider and contrast range slider update the image during dragging through ValueChangingFcn, using event.Value rather than the previous committed slider value. A viewer-local single-shot timer coalesces intermediate positions (60 ms delay); release cancels any pending preview and applies the exact final value. Pending previews are scoped to their project/FOV/ROI/model, and contrast previews additionally require the same frame/selected layer. They are discarded on navigation or close. The image, current-frame histogram, data marker and annotation overlays follow the preview frame. Native slider values are not reassigned while their thumb is being dragged.
 - Color can be chosen from the row's picker or the native MATLAB uicolorpicker below the histogram. The editable dropdown offers common RGB/Score colormap choices and accepts the full Score color specification. RGB layers retain their three subchannels and disable tinting. Label layers accept `Labels` for score's ID palette or an RGB triplet for a single overlay color. A multicolor swatch denotes an ID palette or named colormap, not a fixed RGB color.
 - Opacity controls intensity weight or mask alpha. Label zero is transparent and label one remains a valid object.
 - Label layers expose Fill, Contours and Fill + Contours plus a positive contour width in points. Existing ROI contour/width metadata initializes the session setting. Fill alpha keeps the current layer opacity; contour edges follow Score's opaque vector-edge convention. The setting stays local to the current project/FOV/ROI/layer and does not write metadata or change mask IDs. Hidden layers have no contours, and contours do not capture mouse gestures.
 - Label layers are recognized from ROI display metadata; a scalar layer's type can also be selected explicitly. Integer-valued intensity channels are not guessed to be segmentation masks.
 - View > Reload Image invalidates the current-frame display cache. It does not overwrite unsaved in-memory ROI edits by forcing a disk reload.
 - Histogram shows the active intensity layer, its median and finite pixel count. Visible overlays other visible intensity/RGB histograms. Label IDs are excluded from intensity statistics. Auto X follows Score (log for strictly positive ranges, linear otherwise); explicit Linear X/Log X and Log Y are available. Nonpositive ranges fall back to linear X. Drag the two level markers, or use their arrow keys, to adjust the same source-unit contrast as the numeric editors/slider. Histogram axis scaling does not change pixel mapping.
+- Histogram marker drags preview contrast before release, retaining the captured SVG marker across display refreshes. Updates are throttled and acknowledged so only the latest unsent position is kept. Release commits the exact limits; pointer cancellation restores the limits from the start of the gesture. Project/FOV/ROI/frame/layer context changes invalidate that gesture and reject its delayed updates, even when ordinary histogram revisions changed during its own preview.
 
 All controls remain inside the dockable Display widget. Help is in native tooltips; no explanatory paragraphs are added to the interface.
 
@@ -42,12 +44,15 @@ detecdivui.displayTest();
 detecdivui.contoursTest();
 detecdivui.separateChannelsTest();
 detecdivui.displayWebTest();
+detecdivui.liveDisplayTest();
 detecdivui.scoreHistogramTest();
 detecdivui.smokeTest();
 detecdivui.dockingTest();
 ```
 
 Tests cover known rendered pixels, additive weights, mask alpha/background, label IDs beyond uint16, fractional/negative physical intensities, per-view contrast, current-frame cache invalidation, source immutability, native picker callbacks, signed/constant/RGB/nonfinite histograms and stale events. displayWebTest drives actual embedded DOM click/change/keyboard events through uihtml to MATLAB and checks redocking; it pauses the test session's menu polling timer while issuing direct CEF commands. scoreHistogramTest checks legacy Score curves/counts/level markers against the shared helper. Display tests accept an optional PNG path for visual inspection. The OS color chooser still needs hands-on verification in an unlocked desktop session; the native MATLAB picker remains available alongside the row picker.
+
+liveDisplayTest checks frame/contrast changes before release, latest-value coalescing, exact release values, retained histogram pointer gestures, pointer cancellation, stale-context rejection, unchanged source pixels/metadata and preview-timer cleanup. Its synthetic pointer test stubs native pointer capture only; desktop drag verification checks the native capture path separately.
 
 ## Next widgets: classifiers and pipelines
 

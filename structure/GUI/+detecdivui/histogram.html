@@ -9,12 +9,24 @@ label{white-space:nowrap}input{vertical-align:middle;margin:0 3px 0 0;accent-col
 function setup(component){
  const chart=document.getElementById('chart'),scale=document.getElementById('scale'),log=document.getElementById('log'),visible=document.getElementById('visible'),stats=document.getElementById('stats');
  const ns='http://www.w3.org/2000/svg';let state={},revision=0,drag=null,geometry=null;
+ let sequence=0,pending=null,flight=0,sendTimer=null,lastSent=0;
  function send(action,value){component.Data={revision,action,value};}
+ function pump(){if(!pending||flight||sendTimer)return;const delay=Math.max(0,60-(performance.now()-lastSent));
+ if(delay>0){sendTimer=setTimeout(()=>{sendTimer=null;pump();},delay);return;}
+ const message=pending;pending=null;flight=++sequence;lastSent=performance.now();
+ if(drag&&message.phase!=='preview')drag.finalSequence=flight;
+ component.Data={revision,action:'limits',value:message.value,context:message.context,sequence:flight,phase:message.phase};}
+ function queueLimits(phase,value){pending={phase,value:value.slice(),context:drag.context};pump();}
+ function release(pointer){try{if(chart.hasPointerCapture(pointer))chart.releasePointerCapture(pointer);}catch{}}
+ function abandon(){const previous=drag;drag=null;pending=null;flight=0;clearTimeout(sendTimer);sendTimer=null;if(previous)release(previous.pointer);}
  scale.onchange=()=>send('xscale',scale.value);log.onchange=()=>send('logcounts',log.checked);visible.onchange=()=>send('visible',visible.checked);
  function svg(tag,attrs,text){const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text!==undefined)e.textContent=text;return e;}
  function fmt(x){return Number(x).toLocaleString('en-US',{maximumSignificantDigits:4,useGrouping:false});}
  function color(spec){const a=String(spec).replace(/,/g,' ').trim().split(/\s+/).map(Number);return a.length===3&&a.every(Number.isFinite)?(a.every(x=>x>.95)?'#35444e':`rgb(${a.map(x=>Math.round(255*x)).join(',')})`):'#6c65a5';}
- function draw(){if(drag)return;const d=component.Data;if(d&&Object.hasOwn(d,'series')){state=d;revision=d.revision;}chart.replaceChildren();geometry=null;
+ function draw(){const d=component.Data;if(d&&Object.hasOwn(d,'series')){
+ if(drag&&d.context!==drag.context)abandon();state=d;revision=d.revision;sequence=Math.max(sequence,Number(d.ack)||0);
+ if(flight&&(Number(d.ack)||0)>=flight){flight=0;if(drag&&drag.released&&drag.finalSequence&&(Number(d.ack)||0)>=drag.finalSequence)drag=null;}}
+ if(drag){pump();return;}chart.replaceChildren();geometry=null;
  scale.value=state.xScale||'auto';log.checked=state.logCounts;visible.checked=state.showVisible;
  let series=Array.isArray(state.series)?state.series:(state.series&&state.series.name?[state.series]:[]);series=series.filter(s=>s.edges&&s.edges.length>1);
  const w=Math.max(170,chart.clientWidth),h=Math.max(65,chart.clientHeight);chart.setAttribute('viewBox',`0 0 ${w} ${h}`);
@@ -34,14 +46,16 @@ function setup(component){
  series.forEach(s=>{let path='';s.counts.forEach((n,i)=>{path+=(i?'L':'M')+x(s.edges[i])+','+y(n);});chart.append(svg('path',{d:path,fill:'none',stroke:color(s.color),'stroke-width':s.active?1.7:1,'opacity':s.active?1:.45}));});
  if(limits.length===2&&state.kind!=='Labels')limits.forEach((v,i)=>{const g=svg('g',{'class':'level','data-limit':i,tabindex:0,role:'slider','aria-label':i?'High display level':'Low display level','aria-valuenow':v,'aria-valuemin':lo,'aria-valuemax':hi});
  g.append(svg('rect',{x:x(v)-7,y:0,width:14,height:bottom}),svg('line',{x1:x(v),x2:x(v),y1:top,y2:bottom}),svg('polygon',{points:`${x(v)-5},0 ${x(v)+5},0 ${x(v)},8`}));
- g.onpointerdown=e=>{e.preventDefault();drag={index:i,pointer:e.pointerId,limits:limits.slice(),group:g};chart.setPointerCapture(e.pointerId);};
+ g.onpointerdown=e=>{if(drag)return;e.preventDefault();drag={index:i,pointer:e.pointerId,limits:limits.slice(),original:limits.slice(),group:g,context:state.context,released:false,finalSequence:0};chart.setPointerCapture(e.pointerId);};
  g.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const a=limits.slice(),step=(hi-lo)/200;a[i]+=e.key==='ArrowLeft'?-step:step;if(a[0]<a[1])send('limits',a);};chart.append(g);});
  }
- chart.onpointermove=e=>{if(!drag||!geometry)return;const rect=chart.getBoundingClientRect(),p=(e.clientX-rect.left)/rect.width*geometry.w;
+ chart.onpointermove=e=>{if(!drag||drag.released||!geometry||e.pointerId!==drag.pointer)return;const rect=chart.getBoundingClientRect(),p=(e.clientX-rect.left)/rect.width*geometry.w;
  const i=drag.index,v=geometry.unx(Math.max(geometry.left,Math.min(geometry.right,p)));if(i===0&&v>=drag.limits[1]||i===1&&v<=drag.limits[0])return;
- drag.limits[i]=v;drag.group.setAttribute('transform',`translate(${geometry.x(v)-geometry.x(geometry.limits[i])} 0)`);};
- chart.onpointerup=e=>{if(!drag)return;const a=drag.limits;drag=null;chart.releasePointerCapture(e.pointerId);send('limits',a);};
- chart.onpointercancel=()=>{drag=null;draw();};
+ drag.limits[i]=v;drag.group.setAttribute('aria-valuenow',v);drag.group.setAttribute('transform',`translate(${geometry.x(v)-geometry.x(geometry.limits[i])} 0)`);queueLimits('preview',drag.limits);};
+ chart.onpointerup=e=>{if(!drag||drag.released||e.pointerId!==drag.pointer)return;drag.released=true;release(e.pointerId);queueLimits('commit',drag.limits);};
+ function cancel(){if(!drag||drag.released)return;drag.released=true;release(drag.pointer);queueLimits('cancel',drag.original);}
+ chart.onpointercancel=cancel;chart.onlostpointercapture=cancel;
+ window.addEventListener('beforeunload',abandon);
  component.addEventListener('DataChanged',draw);new ResizeObserver(draw).observe(chart);draw();
 }
 </script></body></html>
