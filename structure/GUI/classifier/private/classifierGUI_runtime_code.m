@@ -1819,7 +1819,18 @@ function displayData(app, annotationScanMode) % displays rois in the table
     end
     Data = {};
     annotationRows = struct([]);
-    if ~app.roiTableInitialized && ~isempty(app.annotationInitialRows) && ...
+    % Opening one editor must not rescan every ROI on network storage.
+    % Reuse the last table snapshot and refresh only the affected indices.
+    partialScan = isnumeric(annotationScanMode);
+    if partialScan && isfield(app.Data, 'annotationTableRows') && ...
+            numel(app.Data.annotationTableRows) == numel(rois)
+        annotationRows = app.Data.annotationTableRows;
+        changedRows = annotationSummaryRows(app, classiObj, annotationScanMode, ...
+            'Fast', true);
+        for rowIndex = 1:numel(changedRows)
+            annotationRows(changedRows(rowIndex).roiIndex) = changedRows(rowIndex);
+        end
+    elseif ~app.roiTableInitialized && ~isempty(app.annotationInitialRows) && ...
             ~strcmpi(char(string(annotationScanMode)), 'full')
         annotationRows = app.annotationInitialRows;
     else
@@ -1834,7 +1845,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
         progressCleanup = onCleanup(@()closeRoiScanProgress(app, progressDialog)); %#ok<NASGU>
         try
             annotationRows = annotationSummaryRows(app, classiObj, [], ...
-                'Fast', ~strcmpi(char(string(annotationScanMode)), 'full'), ...
+                'Fast', partialScan || ~strcmpi(char(string(annotationScanMode)), 'full'), ...
                 'ProgressFcn', @(done, total)updateRoiScanProgress( ...
                 app, progressDialog, done, total, 'Checking annotations and frame counts'));
         catch ME
@@ -1843,6 +1854,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
         end
     end
     if numel(annotationRows) == numel(rois)
+        app.Data.annotationTableRows = annotationRows;
         updateAnnotationStatistics(app, annotationRows);
     end
     app.annotationInitialRows = struct([]);
@@ -2130,7 +2142,7 @@ function refreshAnnotationTableRow(app, session)
         filterValue = 'All';
         try, filterValue = char(string(app.AnnotationFilterDropDown.Value)); catch, end
         if ~strcmpi(filterValue, 'All')
-            displayData(app);
+            displayData(app, session.RoiIndex);
             return;
         end
 
@@ -2140,6 +2152,10 @@ function refreshAnnotationTableRow(app, session)
         if isempty(tableRow), return; end
         rows = annotationSummaryRows(app, app.Data.classiObj, ...
             session.RoiIndex, 'Fast', true);
+        if isfield(app.Data, 'annotationTableRows') && ...
+                numel(app.Data.annotationTableRows) == numel(app.Data.classiObj.roi)
+            app.Data.annotationTableRows(session.RoiIndex) = rows;
+        end
         [statusText, coverageText, validationText] = ...
             annotationTableValues(app, rows, session.RoiIndex);
         names = string(app.UITableData.ColumnName);
@@ -3383,7 +3399,7 @@ end
 
             clear progressCleanup
             checkStatus(app,false)
-            displayData(app);
+            displayData(app, sel);
         end
 
         % Cell selection callback: UITableData

@@ -362,6 +362,18 @@ verifyError(testCase, @() session.bootstrap('Save', false), ...
     'annotationManager:GroundTruthExists');
 session.markReviewed('Frames', 1:4, 'Save', false);
 verifyTrue(testCase, session.validate().valid);
+
+% Fully reviewed is distinct from fully labelled: report the precise hole
+% even when every frame has already been marked reviewed (ROI 636 case).
+r.load('Data', 'Silent'); % successful session validation persists and purges
+annotationManager.assignFrameLabel(r, c.strid, c.classes, 'undefined', 3);
+report = annotationManager.validate(r, session.Spec);
+verifyFalse(testCase, report.valid);
+verifyTrue(testCase, any(contains(report.errors, 'frames: 3')));
+bounded = annotationManager.validate(r, session.Spec, 'ReviewFrames', 1:2);
+verifyTrue(testCase, bounded.valid);
+annotationManager.assignFrameLabel(r, c.strid, c.classes, 'alpha', 3);
+verifyTrue(testCase, annotationManager.validate(r, session.Spec).valid);
 end
 
 function testLatentBundleClonesFamilyAndRebindsMask(testCase)

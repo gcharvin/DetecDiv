@@ -134,8 +134,17 @@ switch char(string(component.storage))
             reviewed = find(entry.review(reviewIdx).frames);
             reviewed = intersect(reviewed,reviewFrames,'stable');
             reviewed = reviewed(reviewed <= numel(values));
-            if any(undefinedValues(values(reviewed)))
-                error('Reviewed frames still contain undefined labels.');
+            undefinedFrames = reviewed(undefinedValues(values(reviewed)));
+            if ~isempty(undefinedFrames)
+                shown = undefinedFrames(1:min(20,numel(undefinedFrames)));
+                frameText = strjoin(string(shown), ', ');
+                if numel(undefinedFrames) > numel(shown)
+                    frameText = frameText + ", ...";
+                end
+                error('annotationManager:UndefinedFrameLabels', ...
+                    ['Reviewed frames still contain undefined labels ' ...
+                    '(%d frame(s); frames: %s).'], ...
+                    numel(undefinedFrames), char(frameText));
             end
         elseif ~isempty(reviewIdx) && entry.review(reviewIdx).complete && ...
                 all(undefinedValues(values))
