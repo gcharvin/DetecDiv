@@ -83,13 +83,7 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
 end
 
 function localPrepareMonitorFiles(runObj)
-    try
-        consolePath = fullfile(char(string(runObj.path)), 'worker_console.log');
-        if exist(consolePath, 'file') == 2
-            delete(consolePath);
-        end
-    catch
-    end
+    detecdiv_prepare_hub_monitor_files(char(string(runObj.path)));
 end
 
 function tf = localIsClass(value, className)

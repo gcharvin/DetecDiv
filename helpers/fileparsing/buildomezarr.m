@@ -385,21 +385,48 @@ end
 end
 
 function names = localGetV3ChannelNames(seriesJson, nCh)
-names = {};
-try
-    if isfield(seriesJson.attributes, 'omero')
-        ch = seriesJson.attributes.omero.channels;
-    else
-        ch = seriesJson.attributes.ome.omero.channels;
+% Labels describe the C axis, before expansion into observed C/Z pairs.
+% pymmcore-plus writers can omit OMERO labels while retaining the exact
+% acquisition names in summary_metadata.mda_sequence.channels[].config.
+% Keep whitespace: it is part of existing pipeline channel bindings.
+names = repmat({''}, 1, nCh);
+attrs = localGetJsonField(seriesJson, 'attributes', struct());
+ome = localGetJsonField(attrs, 'ome', struct());
+omero = localGetJsonField(attrs, 'omero', struct());
+nestedOmero = localGetJsonField(ome, 'omero', struct());
+mm = localGetJsonField(attrs, 'pymmcore_plus', struct());
+summary = localGetJsonField(mm, 'summary_metadata', struct());
+sequence = localGetJsonField(summary, 'mda_sequence', struct());
+sources = {localGetJsonField(omero, 'channels', []), ...
+    localGetJsonField(nestedOmero, 'channels', []), ...
+    localGetJsonField(sequence, 'channels', [])};
+fields = {'label', 'label', 'config'};
+for s = 1:numel(sources)
+    channels = sources{s};
+    % A mismatched list cannot safely identify the stored C axis.
+    if ~isstruct(channels) || numel(channels) ~= nCh
+        continue;
     end
-    for i = 1:min(numel(ch), nCh)
-        names{i} = char(string(ch(i).label)); %#ok<AGROW>
+    for i = 1:nCh
+        value = localGetJsonField(channels(i), fields{s}, '');
+        if isempty(names{i}) && (ischar(value) || (isstring(value) && isscalar(value)))
+            value = char(value);
+            if isrow(value) && ~isempty(strtrim(value))
+                names{i} = value;
+            end
+        end
     end
-catch
-    names = {};
 end
-if numel(names) ~= nCh
-    names = arrayfun(@(i)sprintf('ch%d', i), 1:nCh, 'UniformOutput', false);
+for i = 1:nCh
+    if isempty(names{i})
+        names{i} = sprintf('ch%d', i);
+    end
+end
+if numel(unique(names)) ~= nCh
+    error('buildomezarr:DuplicateChannelNames', ...
+        ['OME-Zarr metadata contains duplicate channel names (%s). ' ...
+         'Provide unique labels for each stored C index before binding pipeline inputs.'], ...
+        strjoin(names, ', '));
 end
 end
 
