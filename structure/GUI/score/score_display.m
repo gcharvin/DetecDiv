@@ -166,6 +166,7 @@ restoreScoreFigureState(app, figureState);
 
 score_syncOverlayAxes(app.graphicsHandles);
 score_refreshScaleBars(app.graphicsHandles, opts);
+score_updateEmptyImageNotice(app.ImageFigure, selectedROI, opts, currentFrame);
 try
     app.ImageFigure.SizeChangedFcn = @(~, ~) syncScoreOverlayAndScaleBars(app);
 catch

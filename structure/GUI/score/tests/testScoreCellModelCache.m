@@ -115,6 +115,17 @@ verifyTrue(testCase,score_refreshCellModelCache(r,[],true));
 verifyNumElements(testCase,r.cellModel.families.family_id,2);
 end
 
+function testOlderOpenEditorWithoutDirtyTrackerPreservesMemory(testCase)
+[r,cleanup] = fixture(); %#ok<ASGLU>
+r.cellModel.provenance.source = 'edits in older open Score';
+before = r.cellModel;
+writeExternal(r,modelFixture(r.id,true));
+[changed,checked] = score_refreshCellModelCache(r,struct('OlderEditor',true),true);
+verifyFalse(testCase,changed);
+verifyFalse(testCase,checked);
+verifyEqual(testCase,r.cellModel,before);
+end
+
 function testAnnotationPanelRefreshDiscoversNewFamily(testCase)
 [r,cleanup] = fixture(); %#ok<ASGLU>
 r.save([],false);

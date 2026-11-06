@@ -9,8 +9,14 @@ if nargin < 3, forceCheck = false; end
 changed = false;
 checked = false;
 if isempty(roiobj), return; end
-if ~isempty(app) && any(string(app.ModifiedRoiIds) == string(roiobj.id))
-    return;
+if ~isempty(app)
+    hasDirtyTracker = (isstruct(app) && isfield(app,'ModifiedRoiIds')) || ...
+        (isobject(app) && isprop(app,'ModifiedRoiIds'));
+    % An already-open older Score app cannot report unsaved edits. Preserve
+    % its cache rather than replacing it from disk or crashing on a new field.
+    if ~hasDirtyTracker || any(string(app.ModifiedRoiIds) == string(roiobj.id))
+        return;
+    end
 end
 filename = cellModel.pathForROI(roiobj);
 if isempty(filename), return; end

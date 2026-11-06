@@ -62,6 +62,20 @@ if ~isa(classiObj,'classi')
 
 end
 
+% Independent classifiers can reference registered external packages. Resolve
+% their adapter before category/annotation metadata is queried; otherwise a
+% fresh MATLAB session silently falls back to generic mask annotation.
+if isprop(classiObj,'classifierPkg') && ~isempty(classiObj.classifierPkg)
+    packageEntry = [char(string(classiObj.classifierPkg)) '.classify'];
+    if isempty(which(packageEntry))
+        prefs = detecdiv_prefs_load();
+        if isfield(prefs,'plugins') && isstruct(prefs.plugins) && ...
+                isfield(prefs.plugins,'autoAddPath') && prefs.plugins.autoAddPath
+            detecdiv_plugins_addpath();
+        end
+    end
+end
+
 % Normalize legacy category storage (char/string -> 1x1 cellstr)
 try
     classiObj.category = classiNormalizeCategory(classiObj.category);

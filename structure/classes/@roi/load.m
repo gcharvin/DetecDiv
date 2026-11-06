@@ -512,7 +512,7 @@ for i = 1:N
     idxRaw{i} = ci;
 
     % Lire le bloc brut + normaliser en [H W k T]
-    blkRaw = h5read(h5File, p);
+    blkRaw = detecdiv_h5read_dataset(h5File, p);
 
     rawSz  = size(blkRaw);
     expK   = numel(ci);
@@ -765,7 +765,7 @@ expT = numel(frameAttr);
 if isempty(expT) || expT < 1
     expT = 1;
 end
-blkRaw = h5read(h5File, pTarget);
+blkRaw = detecdiv_h5read_dataset(h5File, pTarget);
 szR = size(blkRaw);
 % on suppose déjà rangé [H W k T] (comme ton full loader). Sinon, adapter ici.
 switch numel(szR)
