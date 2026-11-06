@@ -121,7 +121,15 @@ classdef TracksWidget < handle
                 if any(strcmp(obj.Provider.Items,selected.channel)), obj.Provider.Value = selected.channel; obj.refresh(); end
                 d = obj.current(); c = obj.Viewer.contourContext();
                 if strcmp(d.Channel,selected.channel)
-                    instance = cellModel.findInstance(d.previewModel(),obj.Family.Value,c.frame,selected.label);
+                    model = d.previewModel();
+                    if isfield(selected,'family') && selected.family > 0
+                        [index,id] = cellModel.familyIndex(model,selected.family);
+                        if isempty(index) || ~strcmp(model.families.mask_provider{index},d.Channel)
+                            obj.clearSelection(); obj.refresh(); obj.status('The selected family is unavailable for this mask provider'); return;
+                        end
+                        obj.Family.Value = double(id);
+                    end
+                    instance = cellModel.findInstance(model,obj.Family.Value,c.frame,selected.label);
                     if ~isempty(instance)
                         obj.SelectedTrack = instance.track_id; obj.SelectedLabel = selected.label; obj.SelectedFrame = c.frame;
                     elseif strcmp(selected.tool,'Contours')
@@ -142,6 +150,33 @@ classdef TracksWidget < handle
             c = obj.Viewer.contourContext();
             assert(~isempty(c.roi),'detecdivui:TrackROI','Select an extracted ROI first.');
             draft = obj.Viewer.annotationDraft(obj.Provider.Value);
+        end
+        function selectProvider(obj,channel,family,label)
+            if nargin < 4, label = 0; end
+            assert(obj.Active,'detecdivui:TrackInactive','Open the track editor first.');
+            validateattributes(label,{'numeric'},{'real','scalar','integer','nonnegative','<=',65535});
+            c = obj.Viewer.contourContext();
+            assert(~isempty(c.roi) && any(strcmp(c.masks,channel)), ...
+                'detecdivui:TrackProvider','Load the selected mask layer first.');
+            obj.cancelPick(); obj.closeLineage(); obj.refresh();
+            obj.Provider.Value = char(string(channel)); obj.clearSelection(); obj.refresh();
+            d = obj.current(); model = d.previewModel();
+            if family > 0
+                [index,id] = cellModel.familyIndex(model,family);
+                assert(~isempty(index) && strcmp(model.families.mask_provider{index},d.Channel), ...
+                    'detecdivui:TrackFamily','The selected family belongs to another mask provider.');
+                obj.Family.Value = double(id);
+            end
+            if label > 0
+                instance = cellModel.findInstance(model,obj.Family.Value,c.frame,label);
+                assert(~isempty(instance),'detecdivui:TrackSelection','The object is absent from this frame.');
+                obj.SelectedTrack = instance.track_id; obj.SelectedLabel = double(label); obj.SelectedFrame = c.frame;
+            end
+            obj.refresh();
+        end
+        function selectObject(obj,label,family)
+            if nargin < 3, family = obj.Family.Value; end
+            obj.selectProvider(obj.Provider.Value,family,label);
         end
         function pick(obj,x,y)
             try
@@ -307,7 +342,7 @@ classdef TracksWidget < handle
             obj.Target.Text = sprintf('%s · Frame %d%s',c.roi.id,c.frame,marker);
             rows = obj.infoRows(model,c.frame); obj.Info.UserData = rows;
             for k = 1:size(rows,1), obj.InfoValues(k).Value = rows{k,2}; obj.InfoValues(k).Tooltip = rows{k,2}; end
-            obj.Viewer.rememberAnnotation(c.roi,d.Channel,c.frame,obj.currentLabel(model,c.frame),'Tracks');
+            obj.Viewer.rememberAnnotation(c.roi,d.Channel,c.frame,obj.currentLabel(model,c.frame),'Tracks',obj.Family.Value);
             obj.drawOverlays(d,model,c.frame);
             for ax = reshape(findall(obj.Viewer.Figure,'Type','axes'),1,[])
                 if ~any(cellfun(@(state)isequal(state.axes,ax),obj.AxesState))

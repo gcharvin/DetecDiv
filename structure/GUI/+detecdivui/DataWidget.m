@@ -25,6 +25,7 @@ classdef DataWidget < handle
         Step = 1
         Token = 0
         AxesReady = false
+        Preferred = struct('series','','variable','','group','Variable')
     end
     methods
         function obj = DataWidget(parent,viewer)
@@ -58,6 +59,10 @@ classdef DataWidget < handle
             if obj.AxesReady, return; end
             obj.Axes = detecdivui.ImageAxes.initialize(obj.Axes); obj.AxesReady = true;
         end
+        function open(obj)
+            obj.setContext();
+            if ~isempty(obj.Source) && isempty(obj.Series), obj.loadData(); end
+        end
         function setContext(obj)
             % Metadata selection can precede image loading; obtain the ROI
             % handle without asking for image dimensions or raw sources.
@@ -74,6 +79,9 @@ classdef DataWidget < handle
             interval = session.Project.fov(session.Position).interval;
             if isnumeric(interval) && isscalar(interval) && isfinite(interval) && interval > 0, obj.Interval.Value = interval; end
             obj.status('Ready');
+            if obj.Viewer.Host.isWidgetVisible('Data') && ~detecdivui.startupGuard('active')
+                obj.loadData();
+            end
         end
         function loadData(obj)
             if isempty(obj.Source), return; end
@@ -97,7 +105,10 @@ classdef DataWidget < handle
                 obj.Series = series; obj.Token = obj.Token+1;
                 if isempty(series), obj.resetSeries(); obj.status('No dataseries'); return; end
                 obj.Dataset.ItemsData = []; obj.Dataset.Items = matlab.lang.makeUniqueStrings(names);
-                obj.Dataset.ItemsData = 1:numel(series); obj.Dataset.Value = 1; obj.Dataset.Enable = 'on';
+                obj.Dataset.ItemsData = 1:numel(series);
+                selected = find(strcmp(obj.Dataset.Items,obj.Preferred.series),1);
+                if isempty(selected), selected = 1; end
+                obj.Dataset.Value = selected; obj.Dataset.Enable = 'on';
                 obj.selectSeries();
             catch err, obj.resetSeries(); obj.status(err.message);
             end
@@ -135,6 +146,7 @@ classdef DataWidget < handle
         function selectSeries(obj)
             ds = obj.Series{obj.Dataset.Value}; variables = ds.data.Properties.VariableNames;
             obj.SelectedData = ds; obj.Variable.Items = variables; obj.Variable.Value = variables{1}; obj.Variable.Enable = 'on';
+            if ismember(obj.Preferred.variable,variables), obj.Variable.Value = obj.Preferred.variable; end
             groups = {};
             if iscell(ds.plotProperties) && size(ds.plotProperties,1) >= width(ds.data) && size(ds.plotProperties,2) >= 6
                 groups = cellstr(unique(string(ds.plotProperties(:,6)),'stable'));
@@ -142,6 +154,7 @@ classdef DataWidget < handle
             end
             groups = groups(~strcmp(groups,'Variable'));
             obj.Group.Items = [{'Variable'} reshape(groups,1,[])]; obj.Group.Value = 'Variable'; obj.Group.Enable = 'on';
+            if ismember(obj.Preferred.group,obj.Group.Items), obj.Group.Value = obj.Preferred.group; end
             obj.plot();
         end
         function selectVariable(obj)
@@ -153,6 +166,8 @@ classdef DataWidget < handle
             try
                 obj.Token = obj.Token+1;
                 ds = obj.SelectedData; names = ds.data.Properties.VariableNames;
+                obj.Preferred = struct('series',obj.Dataset.Items{obj.Dataset.Value}, ...
+                    'variable',obj.Variable.Value,'group',obj.Group.Value);
                 index = find(strcmp(names,obj.Variable.Value)); groupName = obj.Variable.Value;
                 if ~strcmp(obj.Group.Value,'Variable')
                     index = find(strcmp(string(ds.plotProperties(:,6)),obj.Group.Value)); groupName = obj.Group.Value;
@@ -170,6 +185,12 @@ classdef DataWidget < handle
                 set(legends,'AutoUpdate','off');
                 label = 'Row'; if obj.Temporal, label = obj.Units.Value; end
                 xlabel(obj.Axes,label,'Interpreter','none');
+                if obj.Temporal
+                    obj.Axes.XTickMode = 'auto'; obj.Axes.XTickLabelMode = 'auto';
+                    if strcmp(obj.Units.Value,'Frames') && height(ds.data)<10
+                        obj.Axes.XTick = 1:height(ds.data);
+                    end
+                end
                 obj.Sync = obj.Temporal && height(ds.data) == obj.Viewer.annotationFrameCount();
                 token = obj.Token; callback = @(~,~)obj.click(token);
                 obj.Axes.ButtonDownFcn = callback;

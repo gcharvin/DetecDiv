@@ -12,6 +12,7 @@ classdef DockingHost < handle
         OnClosed = []
         OnActivity = []
         OnCanClose = []
+        OnWidgetVisibility = []
     end
     properties (Access = private)
         Window
@@ -27,6 +28,7 @@ classdef DockingHost < handle
         VisibilityCommands = {}
         InvalidLayout = false
         HiddenLayouts
+        ArrangedWidgets = struct('data',false,'objects',false)
     end
     methods
         function obj = DockingHost(layoutFile,autoSave)
@@ -41,12 +43,12 @@ classdef DockingHost < handle
             group = matlab.ui.internal.FigureDocumentGroup( ...
                 'Tag','workspace','Title','Workspace','EnableDockControls',true);
             obj.App.add(group);
-            for name = {'Projects','Image','Display','Pipeline','Data'}
+            for name = {'Projects','Image','Display','Pipeline','Objects','Data'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',false);
                 obj.App.add(doc); obj.Widgets.(id) = doc;
-                if strcmp(id,'data'), doc.Visible = false; end
+                if ismember(id,{'data','objects'}), doc.Visible = false; end
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
             obj.StateListener = addlistener(obj.App,'StateChanged',@(~,~)obj.appStateChanged());
@@ -62,7 +64,7 @@ classdef DockingHost < handle
         end
         function addDockMenus(obj,parent)
             docking = obj.menu(parent,'Docking','Separator','on');
-            names = {'Projects','Image','Display','Pipeline','Data'};
+            names = {'Projects','Image','Display','Pipeline','Objects','Data'};
             for k = 1:numel(names)
                 name = names{k};
                 obj.DockCommands{k} = obj.menu(docking,['Undock ' name], ...
@@ -107,6 +109,7 @@ classdef DockingHost < handle
             doc = obj.widget(name);
             doc.Visible = true; doc.Docked = logical(docked);
             obj.settle(); obj.syncMenus();
+            obj.notifyVisibility(name,true);
         end
         function value = isDocked(obj,name)
             value = obj.widget(name).Docked;
@@ -117,24 +120,20 @@ classdef DockingHost < handle
             obj.settle();
         end
         function openData(obj)
-            current = obj.App.DocumentLayout;
-            initial = ~obj.Widgets.data.Visible && isequal(current.tileCoverage,[1 2 3]) && ...
-                numel(current.columnWeights) == 3 && ...
-                max(abs(reshape(current.columnWeights,1,[])-[.20 .64 .16])) < .001 && ...
-                all(cellfun(@(name)obj.widget(name).Docked && obj.widget(name).Visible, ...
-                {'Projects','Image','Display','Pipeline'}));
-            obj.setWidgetVisible('Data',true);
-            if initial
-                layout = struct('gridDimensions',struct('w',3,'h',2),'tileCount',4, ...
-                    'columnWeights',[.20 .64 .16],'rowWeights',[.65 .35], ...
-                    'tileCoverage',[1 2 3;1 4 3]);
-                occupancy = repmat(struct('children',struct('id','')),1,4);
-                names = {'projects','image','display','data'};
-                for k = 1:4, occupancy(k).children.id = ['workspace_' names{k}]; end
-                occupancy(3).children(2).id = 'workspace_pipeline'; layout.tileOccupancy = occupancy;
-                obj.App.DocumentLayout = layout; obj.waitForLayout();
+            obj.openInspector('Data','Image',.70);
+        end
+        function openObjects(obj)
+            obj.openInspector('Objects','Display',.55);
+        end
+        function arrangeAnalysis(obj)
+            activity = obj.activity('Arranging analysis workspace...'); %#ok<NASGU>
+            for name = {'Objects','Data'}
+                obj.setWidgetVisible(name{1},false);
+                obj.Widgets.(lower(name{1})).Docked = true;
+                obj.ArrangedWidgets.(lower(name{1})) = false;
+                if isKey(obj.HiddenLayouts,lower(name{1})), remove(obj.HiddenLayouts,lower(name{1})); end
             end
-            obj.focusWidget('Data');
+            obj.openObjects(); obj.openData();
         end
         function setWidgetVisible(obj,name,visible)
             id = lower(char(name)); doc = obj.widget(id);
@@ -147,20 +146,23 @@ classdef DockingHost < handle
                 obj.waitForLayout();
                 saved = obj.HiddenLayouts(id);
                 current = obj.stableLayoutFields(obj.App.DocumentLayout);
-                if isequaln(current,saved.hidden), remembered = saved.visible; end
+                if strcmp(jsonencode(current),jsonencode(obj.stableLayoutFields(saved.hidden)))
+                    remembered = saved.visible;
+                end
                 remove(obj.HiddenLayouts,id);
             end
             doc.Visible = logical(visible);
             obj.waitForLayout();
             if ~isempty(remembered)
                 if visible
-                    obj.App.DocumentLayout = remembered; obj.waitForLayout();
+                    obj.App.DocumentLayout = detecdivui.WorkspaceLayout.geometry(remembered); obj.waitForLayout();
                 else
                     obj.HiddenLayouts(id) = struct('visible',remembered, ...
                         'hidden',obj.stableLayoutFields(obj.App.DocumentLayout));
                 end
             end
             obj.settle(); obj.syncMenus();
+            obj.notifyVisibility(id,logical(visible));
         end
         function value = isWidgetVisible(obj,name)
             value = obj.widget(name).Visible;
@@ -175,7 +177,9 @@ classdef DockingHost < handle
         function resetLayout(obj)
             activity = obj.activity('Arranging workspace...'); %#ok<NASGU>
             obj.dockAll();
-            obj.Widgets.data.Visible = false;
+            obj.Widgets.data.Visible = false; obj.Widgets.objects.Visible = false;
+            obj.ArrangedWidgets = struct('data',false,'objects',false);
+            obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
             names = {'projects','image','display','pipeline'};
             for k = 1:numel(names)
                 doc = obj.widget(names{k}); doc.Visible = true;
@@ -192,6 +196,8 @@ classdef DockingHost < handle
                 obj.App.DocumentLayout = layout;
             end
             obj.settle(); obj.syncMenus();
+            names = fieldnames(obj.Widgets);
+            for k = 1:numel(names), obj.notifyVisibility(names{k},obj.widget(names{k}).Visible); end
         end
         function record = snapshot(obj)
             obj.waitForLayout();
@@ -202,6 +208,9 @@ classdef DockingHost < handle
                 doc = obj.widget(names{k});
                 record.widgets.(names{k}) = struct('docked',doc.Docked, ...
                     'visible',doc.Visible,'windowBounds',doc.WindowBounds);
+                if isfield(obj.ArrangedWidgets,names{k})
+                    record.widgets.(names{k}).placed = obj.ArrangedWidgets.(names{k}) || doc.Visible || ~doc.Docked;
+                end
             end
         end
         function saveLayout(obj,file)
@@ -240,6 +249,10 @@ classdef DockingHost < handle
                     record.widgets.data = struct('docked',true,'visible',false, ...
                         'windowBounds',obj.Widgets.data.WindowBounds);
                 end
+                if isfield(record,'widgets') && ~isfield(record.widgets,'objects')
+                    record.widgets.objects = struct('docked',true,'visible',false, ...
+                        'windowBounds',obj.Widgets.objects.WindowBounds);
+                end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
                 names = fieldnames(obj.Widgets);
@@ -247,6 +260,11 @@ classdef DockingHost < handle
                     state = record.widgets.(names{k}); doc = obj.widget(names{k});
                     doc.WindowBounds = reshape(state.windowBounds,1,4);
                     doc.Docked = state.docked; doc.Visible = state.visible;
+                    if isfield(obj.ArrangedWidgets,names{k})
+                        placed = state.visible || ~state.docked;
+                        if isfield(state,'placed'), placed = state.placed; end
+                        obj.ArrangedWidgets.(names{k}) = placed;
+                    end
                 end
                 obj.waitForLayout();
                 obj.App.Layout = record.layout;
@@ -261,6 +279,7 @@ classdef DockingHost < handle
                     end
                 end
                 obj.waitForLayout(); obj.syncMenus();
+                for k = 1:numel(names), obj.notifyVisibility(names{k},obj.widget(names{k}).Visible); end
                 obj.LastLayoutError = ''; ok = true;
                 obj.InvalidLayout = false;
             catch err
@@ -278,7 +297,7 @@ classdef DockingHost < handle
         function syncMenus(obj)
             if ~obj.MenusInstalled || obj.WebBusy || isempty(obj.Window) || ~isvalid(obj.Window) || obj.Closing, return; end
             for k = 1:numel(obj.DockCommands)
-                names = {'Projects','Image','Display','Pipeline','Data'}; name = names{k};
+                names = {'Projects','Image','Display','Pipeline','Objects','Data'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
                 obj.DockCommands{k}.Text = [verb ' ' name];
@@ -319,6 +338,27 @@ classdef DockingHost < handle
         end
     end
     methods (Access = private)
+        function openInspector(obj,name,anchor,fraction)
+            id = lower(name); doc = obj.widget(id);
+            obj.show();
+            obj.waitForLayout(); current = obj.App.DocumentLayout;
+            arrange = ~doc.Visible && doc.Docked && ~obj.ArrangedWidgets.(id) && ...
+                obj.widget(anchor).Docked && obj.widget(anchor).Visible;
+            obj.setWidgetVisible(name,true);
+            if arrange
+                [layout,changed] = detecdivui.WorkspaceLayout.below(current, ...
+                    ['workspace_' lower(anchor)],['workspace_' id],fraction);
+                if changed
+                    obj.App.DocumentLayout = layout; obj.waitForLayout();
+                    obj.App.SelectedChild = struct('tag',lower(anchor),'documentGroupTag','workspace');
+                end
+            end
+            obj.ArrangedWidgets.(id) = true;
+            obj.focusWidget(name);
+        end
+        function notifyVisibility(obj,name,visible)
+            detecdivui.Callback.call(obj.OnWidgetVisibility,char(name),logical(visible));
+        end
         function scope = activity(obj,message)
             scope = [];
             if ~isempty(obj.OnActivity), scope = detecdivui.Callback.call(obj.OnActivity,message); end

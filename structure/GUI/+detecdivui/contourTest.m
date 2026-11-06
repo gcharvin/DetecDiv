@@ -23,7 +23,7 @@ oldDown = viewer.Figure.WindowButtonDownFcn;
 viewer.Host.findCommand('Edit Contours...').invoke();
 assert(isa(viewer.Masks,'detecdivui.MaskWidget') && viewer.Masks.Active);
 widget = viewer.Masks; widget.select(7,7);
-label = findall(viewer.widgetFigure('Display'),'Tag','mask-label'); assert(label.Value==1);
+label = findall(viewer.widgetFigure('Objects'),'Tag','mask-label'); assert(label.Value==1);
 assert(~isempty(findall(viewer.roiAxes(),'Tag','mask-selection')));
 widget.action('fill'); draft = widget.current();
 assert(draft.Dirty && draft.Masks(11,11,1,1)==1 && isequal(r.image,source));
@@ -46,7 +46,7 @@ coverage = createMask(shape); delete(shape);
 draft.edit(2,'draw',coverage,2,3,false); viewer.contourChanged();
 assert(draft.Masks(25,25,1,2)==2 && isequal(r.image,source));
 viewer.closeContourTool(); assert(~widget.Active && isequal(viewer.Figure.WindowButtonDownFcn,oldDown));
-tabs = findall(viewer.widgetFigure('Display'),'Tag','display-tabs');
+tabs = findall(viewer.widgetFigure('Objects'),'Tag','objects-tools');
 assert(isempty(findall(tabs,'Tag','mask-tab')) && draft.Dirty);
 viewer.openContourTool(); assert(widget.current()==draft);
 % The actual native X-close is vetoed until the asynchronous choice resolves.
@@ -55,8 +55,8 @@ button = findall(groot,'Tag','mask-close-cancel'); assert(isscalar(button));
 button.ButtonPushedFcn(button,[]);
 assert(isvalid(viewer) && draft.Dirty && viewer.Masks.Active);
 if ~isempty(previewPath), viewer.Host.capture(previewPath); end
-% Widget follows the native Display document through float/redock.
-viewer.Host.setDocked('Display',false); viewer.Host.setDocked('Display',true);
+% Widget follows the native Objects document through float/redock.
+viewer.Host.setDocked('Objects',false); viewer.Host.setDocked('Objects',true);
 assert(widget.current()==draft && widget.Active);
 widget.action('save'); assert(~draft.Dirty);
 assert(r.image(11,11,2,1)==1 && r.image(25,25,2,2)==2);

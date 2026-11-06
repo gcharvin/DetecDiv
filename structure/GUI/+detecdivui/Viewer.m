@@ -16,6 +16,7 @@ classdef Viewer < handle
         Masks
         Tracks
         Data
+        Objects
         RecentProjects
     end
     properties (Access = private)
@@ -116,6 +117,12 @@ classdef Viewer < handle
         PreviewTimer = []
         PendingPreview = []
         ConstructionComplete = true % Existing live viewers predate this startup flag.
+        ObjectsTabs
+        ObjectsBrowserTab
+        ObjectsSync = false
+        DisplayTools
+        HistogramButton
+        HistogramRequested = []
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile,recentPipelineFile)
@@ -236,14 +243,19 @@ classdef Viewer < handle
             displayRoot.Padding = [0 0 0 0];
             obj.DisplayTabs = uitabgroup(displayRoot,'Tag','display-tabs');
             displayTab = uitab(obj.DisplayTabs,'Title','Display');
-            tools = uigridlayout(displayTab,[13 1]);
+            displayGrid = uigridlayout(displayTab,[1 1]); displayGrid.Padding = [0 0 0 0];
+            displayPanel = uipanel(displayGrid,'BorderType','none');
+            tools = uigridlayout(displayPanel,[13 1]); obj.DisplayTools = tools;
             tools.RowSpacing = 6; tools.Scrollable = 'on';
             tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
-            heading = uigridlayout(tools,[1 2]); heading.Padding = [0 0 0 0]; heading.ColumnWidth = {45,'1x'};
+            heading = uigridlayout(tools,[1 3]); heading.Padding = [0 0 0 0]; heading.ColumnWidth = {42,'1x',45};
             uilabel(heading,'Text','Layers','FontWeight','bold');
             obj.OverlayChannels = uicheckbox(heading,'Text','Overlay channels','Value',true, ...
                 'Enable','off','Tag','display-overlay','Tooltip','Combine channels when checked; show them side by side when unchecked. Masks appear on every panel.', ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('presentation'));
+            obj.HistogramButton = uibutton(heading,'state','Text','Hist.','Value',true,'Enable','off', ...
+                'Tag','display-histogram-toggle','Tooltip','Show or hide the detailed histogram', ...
+                'ValueChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','histogramVisibility')});
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
             active = uigridlayout(tools,[1 3]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
@@ -304,6 +316,7 @@ classdef Viewer < handle
                 'ValueChangedFcn',@(src,~)obj.setOutlines(src.Value));
             displayStatus = uilabel(tools,'Text','','Tag','display-status');
             obj.DisplayProgress = detecdivui.Progress(tools,displayStatus,'display-progress');
+            displayPanel.SizeChangedFcn = {@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','displayResize')};
             obj.Status = uilabel(root,'Text','Ready','Interpreter','none','Tag','status');
             obj.Progress = detecdivui.Progress(root,obj.Status,'image-progress');
             obj.KeyboardView = uihtml(root,'Tag','image-keyboard', ...
@@ -320,6 +333,7 @@ classdef Viewer < handle
             obj.Axes = detecdivui.ImageAxes.initialize(obj.Axes); obj.ImageAxes = obj.Axes;
             obj.Data.initializeAxes();
             if obj.Host.isWidgetVisible('Data'), obj.ensureDataWidget(); end
+            if obj.Host.isWidgetVisible('Objects'), obj.ensureObjectsWidget(); end
             if iscell(project)
                 for k = 1:numel(project), obj.addProject(project{k}); end
             elseif ~isempty(project)
@@ -520,6 +534,7 @@ classdef Viewer < handle
             obj.Host.OnActivity = detecdivui.Callback(obj.Progress,'begin');
             obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
             obj.Host.OnCanClose = detecdivui.Callback(obj,'canClose');
+            obj.Host.OnWidgetVisibility = detecdivui.Callback(obj,'widgetEvent','widgetVisibility');
             if isa(obj.LayerTable,'detecdivui.LayerTable')
                 obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
                 obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
@@ -541,6 +556,17 @@ classdef Viewer < handle
                 case 'runsChanged', obj.refreshProjectRunsContext();
                 case 'refreshProjectRuns', obj.Pipeline.refreshProjectRuns();
                 case 'projectRunSelected', obj.selectProjectRun(varargin{1});
+                case 'objectsTab', obj.objectsTabSelected();
+                case 'widgetVisibility', obj.widgetVisibility(varargin{:});
+                case 'histogramVisibility'
+                    obj.HistogramRequested = obj.HistogramButton.Value;
+                    if obj.ImageRequested, obj.refreshLayerControls(); else, obj.layoutDisplayTools(); end
+                case 'displayResize'
+                    obj.layoutDisplayTools();
+                    if obj.ImageRequested && ~isempty(obj.DisplayModel) && strcmp(obj.Histogram.View.Visible,'on')
+                        obj.Histogram.update(obj.DisplayModel,obj.Frame.Value,obj.Channels.Value, ...
+                            {obj.Session.Project,obj.Session.Position,obj.Session.Zone});
+                    end
                 case 'progressOwner', result = obj.progressOwner(varargin{1});
                 case 'layerEdit', obj.editLayerRow(varargin{:});
                 case 'preview', obj.flushPreview();
@@ -606,45 +632,59 @@ classdef Viewer < handle
         end
         function openContourTool(obj)
             try
+                obj.ensureObjectsWidget();
+                previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
+                sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
                 obj.closeTracksTool();
-                scope = obj.DisplayProgress.begin('Opening contour editor...'); %#ok<NASGU>
+                scope = obj.Objects.Progress.begin('Opening contour editor...'); %#ok<NASGU>
                 c = obj.contourContext();
                 assert(~isempty(c.roi) && ~isempty(c.masks),'detecdivui:ContourContext', ...
                     'Select an extracted ROI and a label mask layer first.');
                 obj.closeROITool();
                 obj.ensureAnnotationDrafts();
-                obj.MasksTab.Parent = obj.DisplayTabs; obj.DisplayTabs.SelectedTab = obj.MasksTab;
+                obj.ObjectsSync = true;
+                obj.MasksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.MasksTab;
                 obj.Masks.setActive(true); obj.refreshKeyboard();
-                obj.Host.focusWidget('Display'); obj.Host.show();
+                obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeContourTool(); obj.widgetEvent('status',err.message);
             end
         end
         function closeContourTool(obj)
+            previousSync = obj.ObjectsSync;
+            obj.ObjectsSync = true;
             if obj.hasMaskWidget(), obj.Masks.setActive(false); end
             if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), obj.MasksTab.Parent = []; end
+            obj.ObjectsSync = previousSync;
             obj.refreshKeyboard();
         end
         function openTracksTool(obj)
             try
-                scope = obj.DisplayProgress.begin('Opening track editor...'); %#ok<NASGU>
+                obj.ensureObjectsWidget();
+                previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
+                sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
+                scope = obj.Objects.Progress.begin('Opening track editor...'); %#ok<NASGU>
                 c = obj.contourContext();
                 assert(~isempty(c.roi) && ~isempty(c.masks),'detecdivui:TrackContext', ...
                     'Select an extracted ROI with a loaded annotation mask.');
                 obj.closeROITool(); obj.closeContourTool(); obj.ensureAnnotationDrafts();
                 if ~obj.hasTracksWidget()
-                    obj.TracksTab = uitab(obj.DisplayTabs,'Title','Tracks','Tag','tracks-tab');
+                    obj.TracksTab = uitab(obj.ObjectsTabs,'Title','Tracks','Tag','tracks-tab');
                     obj.Tracks = detecdivui.TracksWidget(obj.TracksTab,obj);
-                    obj.Tracks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+                    obj.Tracks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
                 end
-                obj.TracksTab.Parent = obj.DisplayTabs; obj.DisplayTabs.SelectedTab = obj.TracksTab;
+                obj.ObjectsSync = true;
+                obj.TracksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.TracksTab;
                 obj.Tracks.setActive(true); obj.refreshKeyboard();
-                obj.Host.focusWidget('Display'); obj.Host.show();
+                obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeTracksTool(); obj.widgetEvent('status',err.message);
             end
         end
         function closeTracksTool(obj)
+            previousSync = obj.ObjectsSync;
+            obj.ObjectsSync = true;
             if obj.hasTracksWidget(), obj.Tracks.setActive(false); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), obj.TracksTab.Parent = []; end
+            obj.ObjectsSync = previousSync;
             obj.refreshKeyboard();
         end
         function draft = annotationDraft(obj,channel)
@@ -652,9 +692,16 @@ classdef Viewer < handle
             assert(~isempty(c.roi),'detecdivui:AnnotationROI','Select an extracted ROI.');
             draft = obj.Masks.draftFor(c.roi,channel,c.project);
         end
-        function rememberAnnotation(obj,source,channel,frame,label,tool)
+        function rememberAnnotation(obj,source,channel,frame,label,tool,family)
+            previous = obj.AnnotationSelection;
             obj.AnnotationSelection = struct('roi',source,'project',obj.Session.Project, ...
                 'channel',channel,'frame',frame,'label',label,'tool',tool);
+            if nargin >= 7, obj.AnnotationSelection.family = family; end
+            if nargin < 7 && isstruct(previous) && isfield(previous,'family') && ...
+                    isequal(previous.roi,source) && strcmp(previous.channel,channel)
+                obj.AnnotationSelection.family = previous.family;
+            end
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
         end
         function selection = selectedAnnotation(obj)
             selection = obj.AnnotationSelection; c = obj.contourContext();
@@ -670,7 +717,33 @@ classdef Viewer < handle
             context.masks = context.masks(cellfun(@(name)detecdivui.MaskDraft.isLabel(context.roi,name),context.masks));
         end
         function openData(obj)
-            obj.ensureDataWidget(); obj.Data.setContext(); obj.Host.openData();
+            obj.ensureDataWidget(); obj.Host.openData(); obj.Data.open();
+        end
+        function openObjects(obj)
+            obj.ensureObjectsWidget(); obj.Host.openObjects(); obj.Objects.setContext();
+            obj.ObjectsTabs.SelectedTab = obj.ObjectsBrowserTab;
+            obj.Objects.loadObjects();
+        end
+        function arrangeAnalysisWorkspace(obj)
+            obj.ensureObjectsWidget(); obj.ensureDataWidget(); obj.Host.arrangeAnalysis();
+            obj.Objects.setContext(); obj.Data.open();
+        end
+        function toggleObjects(obj)
+            if obj.Host.isWidgetVisible('Objects'), obj.Host.setWidgetVisible('Objects',false);
+            else, obj.openObjects(); end
+        end
+        function selectObjectFamily(obj,provider,family,label)
+            if nargin < 4, label = 0; end
+            c = obj.contourContext();
+            assert(~isempty(c.roi),'detecdivui:ObjectsROI','Select and load a ROI first.');
+            obj.closeROITool(); obj.closeTracksTool(); obj.ensureAnnotationDrafts();
+            index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
+            assert(~isempty(index),'detecdivui:ObjectsProvider','The object mask provider is unavailable.');
+            if ~strcmp(obj.DisplayModel.Layers(index).kind,'Labels'), obj.DisplayModel.setKind(index,'Labels'); end
+            obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
+            obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
+            obj.rememberAnnotation(c.roi,provider,c.frame,label,'objects',family);
+            obj.render(); obj.refreshKeyboard();
         end
         function planWorkflow(obj,intent)
             if nargin<2, intent = ''; end
@@ -789,6 +862,7 @@ classdef Viewer < handle
             obj.cancelPreview();
             if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
             if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), delete(obj.Objects); end
             if obj.hasTracksWidget(), delete(obj.Tracks); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), delete(obj.TracksTab); end
             if obj.hasMaskWidget(), delete(obj.Masks); end
@@ -817,10 +891,47 @@ classdef Viewer < handle
         end
         function ensureAnnotationDrafts(obj)
             if obj.hasMaskWidget(), return; end
-            obj.MasksTab = uitab(obj.DisplayTabs,'Title','Contours','Tag','mask-tab');
+            obj.ensureObjectsWidget();
+            obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Contours','Tag','mask-tab');
             obj.Masks = detecdivui.MaskWidget(obj.MasksTab,obj);
-            obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+            obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
             obj.MasksTab.Parent = [];
+        end
+        function ensureObjectsWidget(obj)
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), return; end
+            grid = uigridlayout(obj.Host.widgetFigure('Objects'),[1 1],'Padding',[0 0 0 0]);
+            obj.ObjectsTabs = uitabgroup(grid,'Tag','objects-tools', ...
+                'SelectionChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','objectsTab')});
+            obj.ObjectsBrowserTab = uitab(obj.ObjectsTabs,'Title','Objects','Tag','objects-browser-tab');
+            obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsBrowserTab,obj);
+            obj.Objects.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
+        end
+        function objectsTabSelected(obj)
+            if obj.ObjectsSync || isempty(obj.Objects) || ~isvalid(obj.Objects), return; end
+            obj.ObjectsSync = true;
+            sync = onCleanup(@()obj.restoreObjectsSync(false));
+            tab = obj.ObjectsTabs.SelectedTab;
+            if isequal(tab,obj.MasksTab)
+                obj.closeTracksTool(); obj.Masks.setActive(true);
+            elseif isequal(tab,obj.TracksTab)
+                obj.closeContourTool(); obj.Tracks.setActive(true);
+            else
+                obj.closeTracksTool(); obj.Objects.setContext(); obj.Objects.resumeSelection();
+            end
+            obj.refreshKeyboard();
+        end
+        function restoreObjectsSync(obj,value)
+            if isvalid(obj), obj.ObjectsSync = value; end
+        end
+        function widgetVisibility(obj,name,visible)
+            if ~strcmpi(name,'Objects'), return; end
+            if ~visible
+                obj.closeTracksTool(); obj.closeContourTool();
+            elseif ~isempty(obj.Objects) && isvalid(obj.Objects)
+                obj.Objects.setContext();
+            elseif obj.ConstructionComplete
+                obj.ensureObjectsWidget(); obj.Objects.setContext();
+            end
         end
         function yes = hasTracksWidget(obj)
             yes = isa(obj.Tracks,'detecdivui.TracksWidget') && isscalar(obj.Tracks) && isvalid(obj.Tracks);
@@ -934,12 +1045,6 @@ classdef Viewer < handle
             if obj.hasROIWidget()
                 obj.ROIs.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab));
             end
-            maskActive = obj.hasMaskWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.MasksTab);
-            tracksActive = obj.hasTracksWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.TracksTab);
-            if obj.hasMaskWidget() && ~maskActive, obj.Masks.setActive(false); end
-            if obj.hasTracksWidget() && ~tracksActive, obj.Tracks.setActive(false); end
-            if maskActive, obj.Masks.setActive(true); end
-            if tracksActive, obj.Tracks.setActive(true); end
             obj.refreshKeyboard();
         end
         function finishROIGesture(obj)
@@ -952,15 +1057,17 @@ classdef Viewer < handle
                 'Pipeline',obj.Pipeline.Progress,'Display',obj.DisplayProgress);
             owners.Data = obj.Progress;
             if ~isempty(obj.Data) && isvalid(obj.Data), owners.Data = obj.Data.Progress; end
+            owners.Objects = obj.Progress;
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), owners.Objects = obj.Objects.Progress; end
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
                 owners.Display = obj.ROIs.Progress;
             end
-            if obj.hasMaskWidget() && obj.Masks.Active, owners.Display = obj.Masks.Progress; end
-            if obj.hasTracksWidget() && obj.Tracks.Active, owners.Display = obj.Tracks.Progress; end
+            if obj.hasMaskWidget() && obj.Masks.Active, owners.Objects = obj.Masks.Progress; end
+            if obj.hasTracksWidget() && obj.Tracks.Active, owners.Objects = obj.Tracks.Progress; end
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
-            if ismember(widget,{'Pipeline','Display','Data'})
+            if ismember(widget,{'Pipeline','Display','Data','Objects'})
                 selected = obj.Host.App.SelectedChild;
                 visible = visible && isstruct(selected) && isscalar(selected) && ...
                     isfield(selected,'tag') && strcmpi(selected.tag,widget);
@@ -976,7 +1083,7 @@ classdef Viewer < handle
                     progress = owners.(names{index}); return;
                 end
             end
-            for name = {'Image','Projects','Pipeline','Display','Data'}
+            for name = {'Image','Projects','Pipeline','Display','Objects','Data'}
                 if obj.Host.isWidgetVisible(name{1})
                     progress = owners.(name{1}); return;
                 end
@@ -1041,8 +1148,12 @@ classdef Viewer < handle
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
             obj.Host.widgetMenu(view,'Pipeline');
+            objectsMenu = obj.Host.widgetMenu(view,'Objects');
+            objectsMenu.MenuSelectedFcn = @(~,~)obj.toggleObjects();
             dataMenu = obj.Host.widgetMenu(view,'Data');
             dataMenu.MenuSelectedFcn = @(~,~)obj.toggleData();
+            obj.Host.menu(view,'Arrange Analysis Workspace', ...
+                'MenuSelectedFcn',@(~,~)obj.arrangeAnalysisWorkspace());
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
             obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
@@ -1323,6 +1434,7 @@ classdef Viewer < handle
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
             if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.setContext(); end
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.setContext(); end
             if obj.hasROIWidget() && obj.ROIs.setContext(obj.Session), obj.closeROITool(); end
             if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
             if obj.Session.Zone == 0, obj.closeContourTool(); obj.closeTracksTool(); end
@@ -1565,6 +1677,7 @@ classdef Viewer < handle
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasMaskWidget(), obj.Masks.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
+                if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
@@ -1762,8 +1875,25 @@ classdef Viewer < handle
                     obj.ContrastSlider.Limits = bounds;
                 end
             end
+            obj.layoutDisplayTools();
             obj.Histogram.update(obj.DisplayModel,obj.Frame.Value,index, ...
                 {obj.Session.Project,obj.Session.Position,obj.Session.Zone});
+        end
+        function layoutDisplayTools(obj)
+            if ~isgraphics(obj.DisplayTools) || isempty(obj.Histogram) || ~isgraphics(obj.HistogramButton), return; end
+            compact = obj.DisplayTools.Parent.InnerPosition(4) < 650;
+            rows = obj.DisplayTools.RowHeight;
+            spacing = 6;
+            if compact, rows{2} = 100; spacing = 4; else, rows{2} = '1x'; end
+            show = ~compact;
+            if ~isempty(obj.HistogramRequested), show = obj.HistogramRequested; end
+            isLabel = strcmp(obj.MaskOptions.Visible,'on');
+            obj.HistogramButton.Value = show; obj.HistogramButton.Enable = obj.onOff(~isLabel && obj.ImageRequested);
+            show = show && ~isLabel;
+            rows{6} = 0; if show, rows{6} = 150; end
+            obj.Histogram.View.Visible = obj.onOff(show);
+            if obj.DisplayTools.RowSpacing ~= spacing, obj.DisplayTools.RowSpacing = spacing; end
+            if ~isequal(obj.DisplayTools.RowHeight,rows), obj.DisplayTools.RowHeight = rows; end
         end
         function clearLayerControls(obj)
             if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'off'; end
@@ -1779,6 +1909,7 @@ classdef Viewer < handle
                     obj.ContrastSlider,obj.AutoButton,obj.OpacitySlider}
                 item = control{1}; item.Enable = 'off';
             end
+            obj.layoutDisplayTools();
         end
         function editLayerRow(obj,action,index,value)
             if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end

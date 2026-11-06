@@ -11,7 +11,10 @@ ds = dataseries(values,{},'groupid','Measurements'); r.data = ds;
 ds.plotProperties{1,6} = 'Intensity'; ds.groupProperties = {'Intensity','Image','auto','auto'};
 other = roi('Empty',[1 1 12 12]); other.path = folder;
 other.image = r.image; other.channelid = 1; other.display.channel = {'BF'};
-p = shallow(); p.io.file = 'Data test'; p.fov.id = 'Position'; p.fov.roi = [r other];
+compatible = roi('Compatible',[1 1 12 12]); compatible.path = folder;
+compatible.image = r.image; compatible.channelid = 1; compatible.display.channel = {'BF'};
+compatible.data = ds;
+p = shallow(); p.io.file = 'Data test'; p.fov.id = 'Position'; p.fov.roi = [r other compatible];
 file = fullfile(folder,'layout.json');
 v = detecdiv_ui(p,'Visible','off','DiscoverWorkspace',false, ...
     'LayoutFile',file,'AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
@@ -23,12 +26,15 @@ fid = fopen(fullfile(folder,'legacy.json'),'w'); fprintf(fid,'%s',jsonencode(leg
 assert(v.Host.restoreLayout(fullfile(folder,'legacy.json')) && ~v.Host.isWidgetVisible('Data'));
 tree = findall(v.widgetFigure('Projects'),'Tag','projects-tree'); choose(tree,1);
 v.Host.findCommand('Data').invoke();
-assert(v.Host.isWidgetVisible('Data') && isempty(v.Data.Series));
+assert(v.Host.isWidgetVisible('Data') && isscalar(v.Data.Series));
 assert(v.Host.App.DocumentLayout.gridDimensions.h==2);
 v.Data.loadData(); assert(isscalar(v.Data.Series) && v.Data.Series{1}~=ds);
 status = findall(v.widgetFigure('Data'),'Tag','data-status');
 assert(contains(status.Text,'4 rows'),status.Text);
 marker = findall(v.Data.Axes,'Tag','data-frame-marker'); assert(isscalar(marker) && marker.Value==1);
+assert(isequal(v.Data.Axes.XTick,1:4));
+assert(isequal(string(v.Data.Axes.XTickLabel(:)),string((1:4)')), ...
+    'Short frame plots must not repeat rounded fractional tick labels.');
 v.Data.navigate(3); assert(v.annotationFrame()==3 && marker.Value==3);
 slider = findall(v.Figure,'Tag','time-slider'); slider.Value = 2; slider.ValueChangedFcn(slider,[]);
 assert(marker.Value==2);
@@ -41,6 +47,8 @@ group = findall(v.widgetFigure('Data'),'Tag','data-group');
 group.Value = 'Intensity'; group.ValueChangedFcn(group,[]);
 assert(isscalar(findall(v.Data.Axes,'Type','image')),status.Text);
 v.Data.navigate(3); assert(v.annotationFrame()==3);
+choose(tree,3); assert(strcmp(group.Value,'Intensity') && isscalar(v.Data.Series));
+choose(tree,1); assert(strcmp(group.Value,'Intensity') && isscalar(v.Data.Series));
 variable.Value = 'Vector'; variable.ValueChangedFcn(variable,[]);
 curves = findall(v.Data.Axes,'Type','line'); assert(numel(curves)==4,status.Text);
 drawnow;
@@ -51,6 +59,9 @@ units = findall(v.widgetFigure('Data'),'Tag','data-time-units'); units.Value = '
 interval = findall(v.widgetFigure('Data'),'Tag','data-interval'); interval.Value = 2.5;
 units.ValueChangedFcn(units,[]); v.Data.navigate(10); assert(v.annotationFrame()==4);
 assert(isequal(ds.data,values) && isequal(r.data,ds) && all(r.image(:)==1));
+choose(tree,3);
+assert(strcmp(variable.Value,'Vector') && strcmp(group.Value,'Variable') && strcmp(units.Value,'Minutes'));
+choose(tree,1); assert(strcmp(variable.Value,'Vector')); v.Data.navigate(10);
 if ~isempty(previewPath), v.Host.capture(previewPath); end
 % Non-temporal data must never navigate the image or show a frame marker.
 ds.type = 'generation'; v.Data.loadData(); v.Data.navigate(1);
@@ -63,6 +74,13 @@ v.Data.loadData(); assert(strcmp(status.Text,'No dataseries'),status.Text);
 % Disk-backed series load into a scratch ROI, without populating live caches.
 r.data = ds; r.save('data'); r.data = dataseries(); choose(tree,1); v.Data.loadData();
 assert(isscalar(v.Data.Series) && isempty(r.data.data));
+dataFigure = v.widgetFigure('Data'); dataAxes = v.Data.Axes;
+close(dataFigure); started = tic;
+while v.Host.isWidgetVisible('Data')
+    assert(toc(started)<12,'Data Close did not finish.'); pause(.05); drawnow;
+end
+assert(isvalid(dataAxes));
+v.openData(); assert(v.Data.Axes == dataAxes && isscalar(v.Data.Series));
 v.Host.setDocked('Data',false); v.Host.saveLayout();
 assert(~v.Host.isDocked('Data')); v.Host.setDocked('Data',true);
 assert(v.Host.restoreLayout(file) && ~v.Host.isDocked('Data') && v.Host.isWidgetVisible('Data'));

@@ -159,6 +159,20 @@ classdef MaskWidget < handle
             if isempty(c.roi), return; end
             draft = obj.draftFor(c.roi,obj.Provider.Value,c.project);
         end
+        function selectProvider(obj,channel,label)
+            if nargin < 3, label = 0; end
+            assert(obj.Active,'detecdivui:MaskInactive','Open the object editor first.');
+            validateattributes(label,{'numeric'},{'real','scalar','integer','nonnegative','<=',65535});
+            c = obj.Viewer.contourContext();
+            assert(~isempty(c.roi) && any(strcmp(c.masks,channel)), ...
+                'detecdivui:MaskProvider','Load the selected mask layer first.');
+            obj.cancelStroke(); obj.refresh();
+            obj.Provider.Value = char(string(channel)); obj.Label.Value = double(label);
+            obj.Tool.Value = 'Select'; obj.refresh();
+        end
+        function selectObject(obj,label)
+            obj.selectProvider(obj.Provider.Value,label);
+        end
         function draft = draftFor(obj,source,channel,project)
             [provider,~,~] = score_resolveMaskProvider(source,channel);
             for k = 1:numel(obj.Drafts)
