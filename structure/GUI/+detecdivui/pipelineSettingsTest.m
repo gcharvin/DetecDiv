@@ -31,10 +31,11 @@ ctx = viewer.Pipeline.context(); assert(ctx.run.nodeParams(1).params.referenceFr
 assert(report.nodes(1).params.referenceFrame == 2);
 reset.ButtonPushedFcn(reset,[]); assert(~viewer.Pipeline.LastOK);
 assert(isempty(viewer.Pipeline.Draft.Overrides) && ~contains(table.Data{row,3},'*'));
-% Fixed design parameters have no active Apply button.
-fixed = find(strcmp(table.UserData,'gridCount'));
-table.CellSelectionCallback(table,struct('Indices',[fixed 1]));
-assert(strcmp(apply.Enable,'off'));
+% Static design values have their own typed, staged dialog.
+assert(~any(strcmp(table.UserData,'gridCount')));
+static = viewer.Pipeline.openStaticParameters('grid_1');
+assert(static.Controls.gridCount.Value == 2 && isequal(template.nodes,original));
+delete(static);
 table.CellSelectionCallback(table,struct('Indices',[row 1]));
 number.Value = 2; apply.ButtonPushedFcn(apply,[]);
 % Template Save must not persist a run-specific value.

@@ -98,6 +98,18 @@ classdef PipelineWidget < handle
         GraphPanel
         ViewName
         MainActions
+        BindingTable
+        BindingRows = struct([])
+        BindingChoice
+        BindingScope
+        BindingApply
+        BindingReset
+        SelectedBinding = 0
+        ParameterViews
+        BindingsTab
+        RunParametersTab
+        StaticButton
+        StaticDialog = []
     end
     methods
         function obj = PipelineWidget(parent,recentFile)
@@ -156,20 +168,40 @@ classdef PipelineWidget < handle
                 'ColumnName',{'Step','Type','State'},'ColumnWidth',{'auto',70,65}, ...
                 'Tag','pipeline-steps','Tooltip','Select a step to inspect its parameters', ...
                 'CellSelectionCallback',@(~,event)obj.selectStep(event));
-            moduleActions = uigridlayout(stepsGrid,[1 3]); moduleActions.Padding = [0 0 0 0];
-            moduleActions.ColumnWidth = {'1x',112,112};
+            moduleActions = uigridlayout(stepsGrid,[1 4]); moduleActions.Padding = [0 0 0 0];
+            moduleActions.ColumnWidth = {'1x',126,100,100};
             obj.ModuleLabel = uilabel(moduleActions,'Text','—','Interpreter','none','Tag','pipeline-selected-module');
+            obj.StaticButton = uibutton(moduleActions,'Text','Static Parameters...','Enable','off', ...
+                'Tag','pipeline-static-parameters','ButtonPushedFcn',@(~,~)obj.openStaticParameters());
             obj.EditModuleButton = uibutton(moduleActions,'Text','Edit Module...','Enable','off', ...
                 'Tag','pipeline-edit-module','Tooltip','Edit the selected module in Pipeline Designer', ...
                 'ButtonPushedFcn',@(~,~)obj.editModule());
             obj.ChangeTypeButton = uibutton(moduleActions,'Text','Change Type...','Enable','off', ...
                 'Tag','pipeline-change-type','Tooltip','Replace the selected module using the existing module catalogue', ...
                 'ButtonPushedFcn',@(~,~)obj.editModule('',true));
-            obj.Params = uitable(stepsGrid,'Data',cell(0,3),'RowName',{}, ...
+            obj.ParameterViews = uitabgroup(stepsGrid,'Tag','pipeline-parameter-views');
+            obj.BindingsTab = uitab(obj.ParameterViews,'Title','Parameter Bindings','Tag','pipeline-bindings-tab');
+            obj.RunParametersTab = uitab(obj.ParameterViews,'Title','Run Parameters','Tag','pipeline-run-parameters-tab');
+            bindings = uigridlayout(obj.BindingsTab,[2 1]); bindings.Padding = [4 4 4 4];
+            bindings.RowHeight = {'1x',28};
+            obj.BindingTable = uitable(bindings,'Data',cell(0,4),'RowName',{}, ...
+                'ColumnName',{'Direction','Resource','Binding','Value Scope'},'ColumnWidth',{62,100,'auto',85}, ...
+                'Tag','pipeline-bindings','CellSelectionCallback',@(~,event)obj.selectBinding(event));
+            bindingEdit = uigridlayout(bindings,[1 4]); bindingEdit.Padding = [0 0 0 0];
+            bindingEdit.ColumnWidth = {'1x',100,48,48};
+            obj.BindingChoice = uidropdown(bindingEdit,'Items',{'—'},'Editable','on','Enable','off','Tag','pipeline-binding-value');
+            obj.BindingScope = uidropdown(bindingEdit,'Items',{'Pipeline','This Run'},'Enable','off','Tag','pipeline-binding-scope');
+            obj.BindingApply = uibutton(bindingEdit,'Text','Apply','Enable','off','Tag','pipeline-binding-apply', ...
+                'ButtonPushedFcn',@(~,~)obj.applyBinding());
+            obj.BindingReset = uibutton(bindingEdit,'Text','Reset','Enable','off','Tag','pipeline-binding-reset', ...
+                'ButtonPushedFcn',@(~,~)obj.resetBinding());
+            runParams = uigridlayout(obj.RunParametersTab,[2 1]); runParams.Padding = [4 4 4 4];
+            runParams.RowHeight = {'1x',28};
+            obj.Params = uitable(runParams,'Data',cell(0,3),'RowName',{}, ...
                 'ColumnName',{'Parameter','Value','Scope'},'ColumnWidth',{'auto','auto',65}, ...
                 'Tag','pipeline-parameters','Tooltip','Select a run parameter to edit; * marks a run override', ...
                 'CellSelectionCallback',@(~,event)obj.selectParam(event));
-            edit = uigridlayout(stepsGrid,[1 3]); edit.Padding = [0 0 0 0];
+            edit = uigridlayout(runParams,[1 3]); edit.Padding = [0 0 0 0];
             edit.ColumnWidth = {'1x',48,48};
             input = uigridlayout(edit,[1 1]); input.Padding = [0 0 0 0];
             obj.ValueText = uieditfield(input,'text','Enable','off','Tag','pipeline-value-text', ...
@@ -188,6 +220,7 @@ classdef PipelineWidget < handle
                 'Tooltip','Use the template value for this run parameter', ...
                 'ButtonPushedFcn',@(~,~)obj.resetParameter());
             checks = uigridlayout(stepsGrid,[1 2]); checks.Padding = [0 0 0 0];
+            checks.Layout.Row = 5; stepsGrid.RowHeight = {'1x',28,'1x',0,28};
             checks.ColumnWidth = {'1x','1x'};
             obj.Validate = uibutton(checks,'Text','Validate','Enable','off','Tag','pipeline-validate', ...
                 'Tooltip','Validate template contracts against the selected target', ...
@@ -409,6 +442,7 @@ classdef PipelineWidget < handle
             list.Layout.Row = 1;
         end
         function delete(obj)
+            if ~isempty(obj.StaticDialog) && isvalid(obj.StaticDialog), delete(obj.StaticDialog); end
             if ~isempty(obj.Planner) && isvalid(obj.Planner), delete(obj.Planner); end
             if isgraphics(obj.PlanHistoryFigure), delete(obj.PlanHistoryFigure); end
             if ~isempty(obj.FollowTimer) && isvalid(obj.FollowTimer), stop(obj.FollowTimer); delete(obj.FollowTimer); end
@@ -456,6 +490,7 @@ classdef PipelineWidget < handle
                 case 'libraryClear', obj.clearRecentPipelines();
                 case 'editModule', obj.editGraphModule(varargin{:},false);
                 case 'changeType', obj.editGraphModule(varargin{:},true);
+                case 'static', obj.openStaticParameters(varargin{:});
                 otherwise, error('detecdivui:WidgetEvent','Unknown pipeline widget event.');
             end
         end
@@ -603,6 +638,41 @@ classdef PipelineWidget < handle
             catch err, obj.setStatus(err.message);
             end
         end
+        function dialog = openStaticParameters(obj,nodeId)
+            dialog = [];
+            if nargin < 2, nodeId = ''; end
+            if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
+                obj.setStatus('Close the Pipeline Designer before editing static parameters'); return;
+            end
+            if ~obj.syncAdvanced(), return; end
+            if ~isempty(obj.selectedRun()) && isempty(obj.useRunPipeline()), return; end
+            if isempty(obj.Template), return; end
+            index = obj.SelectedStep;
+            if ~isempty(nodeId), index = find(strcmp({obj.Template.nodes.id},nodeId),1); end
+            if isempty(index) || index < 1, return; end
+            node = obj.Template.nodes(index);
+            [~,keys] = detecdivui.PipelineBindings.describe(node,obj.Template.nodes);
+            token = obj.parameterToken(node.id);
+            if ~isempty(obj.StaticDialog) && isvalid(obj.StaticDialog), delete(obj.StaticDialog); end
+            dialog = detecdivui.StaticParameterDialog(node,keys, ...
+                detecdivui.Callback(obj,'applyStaticParameters',token),detecdivui.Callback(obj,'editStaticAdvanced',token));
+            obj.StaticDialog = dialog;
+        end
+        function applyStaticParameters(obj,token,nodeId,params)
+            obj.assertParameterToken(token,nodeId);
+            index = find(strcmp({obj.Template.nodes.id},nodeId),1);
+            [~,keys] = detecdivui.PipelineBindings.describe(obj.Template.nodes(index),obj.Template.nodes);
+            changed = struct();
+            for k = 1:numel(keys)
+                key = keys{k};
+                if ~isequaln(params.(key),obj.Template.nodes(index).params.(key)), changed.(key) = params.(key); end
+            end
+            if ~isempty(fieldnames(changed)), obj.modifyDefinition(nodeId,changed); end
+        end
+        function editStaticAdvanced(obj,token,nodeId)
+            obj.assertParameterToken(token,nodeId);
+            obj.editModule(nodeId);
+        end
         function template = useRunPipeline(obj)
             template = [];
             if ~obj.syncAdvanced(), return; end
@@ -707,6 +777,9 @@ classdef PipelineWidget < handle
                 obj.Selector.Value = index; obj.Template = obj.Templates{index};
             end
             obj.Steps.Data = cell(0,3); obj.Params.Data = cell(0,3);
+            obj.BindingTable.Data = cell(0,4); obj.BindingRows = struct([]); obj.SelectedBinding = 0;
+            obj.StaticButton.Enable = 'off'; obj.BindingChoice.Enable = 'off'; obj.BindingScope.Enable = 'off';
+            obj.BindingApply.Enable = 'off'; obj.BindingReset.Enable = 'off';
             obj.SelectedStep = 0; obj.clearParamEditor();
             obj.ModuleLabel.Text = '—'; obj.ModuleLabel.Tooltip = '';
             obj.EditModuleButton.Enable = 'off'; obj.ChangeTypeButton.Enable = 'off';
@@ -1483,7 +1556,7 @@ classdef PipelineWidget < handle
         end
         function ok = loadSelectedRun(obj)
             ok = true;
-            if strcmp(obj.RunPicker.Value,'draft') || strcmp(obj.RunPicker.Value,obj.Setup.Controls.runId.Value), return; end
+            if strcmp(obj.RunPicker.Value,'draft'), return; end
             index = find(strcmp({obj.RunObjects.runId},obj.RunPicker.Value),1);
             if isempty(index), return; end
             run = obj.RunObjects(index);
@@ -1543,10 +1616,26 @@ classdef PipelineWidget < handle
             obj.ModuleLabel.Tooltip = obj.ModuleLabel.Text;
             obj.EditModuleButton.Enable = 'on'; obj.ChangeTypeButton.Enable = 'on';
             params = obj.field(node,'params',struct());
+            [obj.BindingRows,staticKeys] = detecdivui.PipelineBindings.describe(node,nodes);
+            bindings = cell(numel(obj.BindingRows),4);
+            for k = 1:numel(obj.BindingRows)
+                row = obj.BindingRows(k); scope = 'Pipeline';
+                if obj.Draft.has(node.id,row.param), scope = 'This Run *'; end
+                bindings(k,:) = {row.direction,row.resource,row.text,scope};
+            end
+            obj.BindingTable.Data = bindings; obj.BindingTable.UserData = obj.BindingRows;
+            obj.SelectedBinding = 0; obj.BindingChoice.Enable = 'off'; obj.BindingScope.Enable = 'off';
+            obj.BindingApply.Enable = 'off'; obj.BindingReset.Enable = 'off';
+            obj.StaticButton.Enable = obj.onOff(~isempty(staticKeys));
+            bindingKeys = {}; if ~isempty(obj.BindingRows), bindingKeys = {obj.BindingRows.param}; end
             data = cell(0,3);
             obj.ParamKeys = {}; obj.ParamSpecs = struct([]); obj.clearParamEditor();
             if isstruct(params) && isscalar(params)
                 spec = classifierBinding.parameterSpecFromDefaults(params);
+                keep = arrayfun(@(s)~ismember(s.param,bindingKeys) && ...
+                    (~ismember(s.param,staticKeys) || obj.Draft.has(node.id,s.param)) && ...
+                    strcmp(pipelineParamScope(node,s.param),'run'),spec);
+                spec = spec(keep);
                 keys = {spec.param}; obj.ParamKeys = keys; obj.ParamSpecs = spec;
                 for k = 1:numel(keys)
                     value = params.(keys{k});
@@ -1644,6 +1733,7 @@ classdef PipelineWidget < handle
         end
         function selectParam(obj,event)
             if isempty(event.Indices), return; end
+            obj.ParameterViews.SelectedTab = obj.RunParametersTab;
             row = event.Indices(1,1);
             if row < 1 || row > numel(obj.ParamKeys), return; end
             obj.clearParamEditor(); obj.SelectedParam = row;
@@ -1672,9 +1762,118 @@ classdef PipelineWidget < handle
             obj.ResetParam.Enable = obj.onOff(obj.Draft.has(node.id,key));
             if ~editable, obj.setStatus('Use Edit Module for this parameter'); end
         end
+        function selectBinding(obj,event)
+            if isempty(event.Indices), return; end
+            index = event.Indices(1,1);
+            if index < 1 || index > numel(obj.BindingRows), return; end
+            obj.SelectedBinding = index; row = obj.BindingRows(index);
+            choices = [{row.text},row.choices];
+            isChoice = strcmp(detecdivui.RunDraft.valueKind(row.value),'choice');
+            if isChoice, choices = [choices reshape(cellstr(string(row.value(1:end-1))),1,[])]; end
+            choices = unique(choices,'stable');
+            obj.BindingChoice.Items = choices; obj.BindingChoice.Value = row.text;
+            editable = isChoice || (ischar(row.value) && (isempty(row.value) || isrow(row.value))) || ...
+                (isstring(row.value) && isscalar(row.value)) || ...
+                ((isnumeric(row.value) || islogical(row.value)) && isscalar(row.value) && ...
+                (~isinteger(row.value) || abs(double(row.value)) <= flintmax));
+            obj.BindingChoice.Enable = obj.onOff(editable); obj.BindingChoice.Tooltip = sprintf('%s · %s · %s',row.param,row.type,row.scope);
+            obj.BindingScope.Items = {'Pipeline'};
+            if strcmp(row.scope,'run'), obj.BindingScope.Items = {'Pipeline','This Run'}; end
+            obj.BindingScope.Value = 'Pipeline'; obj.BindingScope.Enable = 'on';
+            node = obj.Template.nodes(obj.SelectedStep);
+            if obj.Draft.has(node.id,row.param), obj.BindingScope.Value = 'This Run'; end
+            obj.BindingApply.Enable = obj.onOff(editable); obj.BindingReset.Enable = obj.onOff(obj.Draft.has(node.id,row.param));
+            obj.ParameterViews.SelectedTab = obj.BindingsTab;
+            if ~editable, obj.setStatus('Use Edit Module for this structured binding'); end
+        end
+        function applyBinding(obj)
+            if obj.SelectedBinding < 1 || obj.SelectedBinding > numel(obj.BindingRows), return; end
+            try
+                row = obj.BindingRows(obj.SelectedBinding); node = obj.Template.nodes(obj.SelectedStep);
+                assert(isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor), ...
+                    'detecdivui:AdvancedParameters','Close the Pipeline Designer before editing bindings');
+                assert(strcmp(obj.RunPicker.Value,'draft'),'detecdivui:BindingRun','Open Settings for the selected run before editing bindings');
+                assert(strcmp(obj.BindingApply.Enable,'on'),'detecdivui:BindingType','Use Edit Module for this structured binding');
+                unchanged = strcmp(obj.BindingChoice.Value,row.text);
+                hasOverride = obj.Draft.has(node.id,row.param);
+                if unchanged && hasOverride == strcmp(obj.BindingScope.Value,'This Run')
+                    obj.setStatus('Binding unchanged'); return;
+                end
+                value = row.value;
+                if ~unchanged, value = detecdivui.PipelineBindings.storeValue(obj.BindingChoice.Value); end
+                if ~unchanged && strcmp(detecdivui.RunDraft.valueKind(row.value),'choice')
+                    selected = value; options = row.value(1:end-1);
+                    if isstring(row.value{end}), selected = string(selected); end
+                    if ~any(strcmp(string(options),string(selected))), options{end+1} = selected; end
+                    value = [reshape(options,1,[]) {selected}];
+                end
+                if ~unchanged && (isnumeric(row.value) || islogical(row.value))
+                    value = jsondecode(char(value));
+                    validateattributes(value,{'numeric','logical'},{'scalar','real','finite'});
+                    if islogical(row.value), assert(islogical(value),'detecdivui:BindingLogical','Enter true or false.');
+                    elseif isinteger(row.value)
+                        validateattributes(value,{'numeric'},{'integer','>=',double(intmin(class(row.value))),'<=' ,double(intmax(class(row.value)))});
+                    end
+                    value = cast(value,class(row.value));
+                end
+                if strcmp(obj.BindingScope.Value,'This Run')
+                    overrides = obj.Draft.Overrides; at = find(strcmp({overrides.id},node.id),1);
+                    if isempty(at), overrides(end+1) = struct('id',node.id,'params',struct()); at = numel(overrides); end
+                    overrides(at).params.(row.param) = value;
+                    obj.Draft.import(obj.Draft.Settings,overrides); obj.invalidate(); obj.showParams(obj.SelectedStep);
+                else
+                    params = struct(); params.(row.param) = value; obj.modifyDefinition(node.id,params);
+                end
+                obj.setStatus('Binding updated');
+            catch err, obj.setStatus(err.message);
+            end
+        end
+        function resetBinding(obj)
+            if obj.SelectedBinding < 1 || obj.SelectedBinding > numel(obj.BindingRows), return; end
+            if ~strcmp(obj.RunPicker.Value,'draft'), obj.setStatus('Open Settings for this run before editing bindings'); return; end
+            if ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
+                obj.setStatus('Close the Pipeline Designer before editing bindings'); return;
+            end
+            node = obj.Template.nodes(obj.SelectedStep); row = obj.BindingRows(obj.SelectedBinding);
+            obj.Draft.reset(node.id,row.param); obj.invalidate(); obj.showParams(obj.SelectedStep);
+        end
+        function token = parameterToken(obj,nodeId)
+            project = []; if ~isempty(obj.Session), project = obj.Session.Project; end
+            index = find(strcmp({obj.Template.nodes.id},nodeId),1);
+            token = struct('template',obj.Template,'project',project,'revision',obj.DefinitionContext,'view',obj.RunPicker.Value, ...
+                'node',jsonencode(obj.Template.nodes(index)));
+        end
+        function assertParameterToken(obj,token,nodeId)
+            assert(isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor),'detecdivui:AdvancedParameters', ...
+                'Close the Pipeline Designer before applying these parameters.');
+            project = []; if ~isempty(obj.Session), project = obj.Session.Project; end
+            index = []; if ~isempty(obj.Template), index = find(strcmp({obj.Template.nodes.id},nodeId),1); end
+            assert(isequal(obj.Template,token.template) && isequal(project,token.project) && ...
+                strcmp(obj.RunPicker.Value,token.view) && obj.DefinitionContext == token.revision && isscalar(index) && ...
+                strcmp(jsonencode(obj.Template.nodes(index)),token.node),'detecdivui:StaticContext', ...
+                'The pipeline or project changed. Open Static Parameters again.');
+        end
+        function modifyDefinition(obj,nodeId,params)
+            settings = obj.Draft.Settings; overrides = obj.Draft.Overrides;
+            copy = pipeline(); for key = properties(obj.Template)', copy.(key{1}) = obj.Template.(key{1}); end
+            index = find(strcmp({copy.nodes.id},nodeId),1);
+            for key = fieldnames(params)'
+                name = key{1}; copy.nodes(index).params.(name) = params.(name);
+                at = find(strcmp({overrides.id},nodeId),1);
+                if ~isempty(at) && isfield(overrides(at).params,name), overrides(at).params = rmfield(overrides(at).params,name); end
+            end
+            at = find(cellfun(@(p)isequal(p,obj.Template),obj.Templates),1);
+            obj.Templates{at} = copy; obj.Template = copy; obj.DefinitionContext = obj.DefinitionContext+1;
+            project = []; if ~isempty(obj.Session), project = obj.Session.Project; end
+            obj.Draft.select(project,copy); obj.Draft.import(settings,overrides);
+            obj.refresh(); obj.selectDraft(); obj.showParams(index);
+            obj.setStatus('Pipeline draft updated');
+        end
         function applyParameter(obj)
             if obj.SelectedParam == 0, return; end
             try
+                assert(strcmp(obj.RunPicker.Value,'draft') && (isempty(obj.AdvancedEditor) || ~isvalid(obj.AdvancedEditor)), ...
+                    'detecdivui:RunParameterOwner','Close the Pipeline Designer and select a draft before editing run parameters.');
                 row = obj.SelectedParam; nodes = obj.Draft.effectiveNodes(); node = nodes(obj.SelectedStep);
                 key = obj.ParamKeys{row}; kind = detecdivui.RunDraft.valueKind(node.params.(key));
                 switch kind
@@ -1692,6 +1891,9 @@ classdef PipelineWidget < handle
         end
         function resetParameter(obj)
             if obj.SelectedParam == 0, return; end
+            if ~strcmp(obj.RunPicker.Value,'draft') || ~isempty(obj.AdvancedEditor) && isvalid(obj.AdvancedEditor)
+                obj.setStatus('Close the Pipeline Designer and select a draft before editing run parameters'); return;
+            end
             row = obj.SelectedParam; node = obj.Template.nodes(obj.SelectedStep);
             obj.Draft.reset(node.id,obj.ParamKeys{row}); obj.invalidate();
             obj.showParams(obj.SelectedStep); obj.selectParam(struct('Indices',[row 1]));
@@ -1745,6 +1947,9 @@ classdef PipelineWidget < handle
         end
         function selectRun(obj,event)
             if isempty(event.Indices), return; end
+            obj.SelectedBinding = 0; obj.BindingApply.Enable = 'off'; obj.BindingReset.Enable = 'off';
+            obj.BindingChoice.Enable = 'off'; obj.BindingScope.Enable = 'off'; obj.clearParamEditor();
+            if strcmp(obj.SettingsFigure.Visible,'on'), obj.Tabs.SelectedTab = ancestor(obj.Runs,'uitab'); end
             obj.Inspect.UserData = event.Indices(1,1); obj.Inspect.Enable = 'on';
             obj.UseRunPipeline.Enable = 'on';
             obj.RunPicker.Value = obj.RunObjects(obj.Inspect.UserData).runId;

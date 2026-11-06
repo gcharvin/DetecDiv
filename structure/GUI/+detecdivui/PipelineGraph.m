@@ -32,6 +32,7 @@ classdef PipelineGraph < handle
         function show(obj,nodes,edges,selected,included,statuses)
             if nargin < 5, included = true(1,numel(nodes)); end
             if nargin < 6, statuses = repmat({''},1,numel(nodes)); end
+            edges = detecdivui.PipelineBindings.edges(nodes,edges);
             obj.Model = struct('nodes',nodes,'edges',edges,'selected',selected, ...
                 'included',included,'statuses',{statuses});
             layout = detecdivui.PipelineGraphLayout.build(nodes,edges);
@@ -172,7 +173,8 @@ classdef PipelineGraph < handle
             if ~isempty(toPort), target = [target '.' char(string(toPort))]; end
             model = obj.Model;
             obj.show(model.nodes,model.edges,model.selected,model.included,model.statuses);
-            detecdivui.Callback.call(obj.OnStatus,[source ' → ' target]);
+            prefix = ''; if r.resource, prefix = 'Binding: '; end
+            detecdivui.Callback.call(obj.OnStatus,[prefix source ' → ' target]);
         end
     end
     methods (Static, Access = private)

@@ -62,7 +62,7 @@ lines = findall(graph.Axes,'Tag','pipeline-graph-edge');
 resource = lines(arrayfun(@(h)h.UserData.edgeIndex==numel(edges),lines)); assert(strcmp(resource.LineStyle,'--'));
 % Clicking a link inspects its real ports and highlights just that link.
 stale = resource.ButtonDownFcn; stale(resource,[]);
-assert(strcmp(status.Text,'step_3.mask → step_4.mask'));
+assert(strcmp(status.Text,'Binding: step_3.mask → step_4.mask'));
 lines = findall(graph.Axes,'Tag','pipeline-graph-edge'); assert(nnz([lines.LineWidth]>2)==1);
 graph.show(nodes,edges,1); status.Text = 'Unchanged'; stale([],[]); assert(strcmp(status.Text,'Unchanged'));
 if ~isempty(previewPath)
