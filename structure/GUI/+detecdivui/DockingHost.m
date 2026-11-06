@@ -29,6 +29,9 @@ classdef DockingHost < handle
         InvalidLayout = false
         HiddenLayouts
         ArrangedWidgets = struct('data',false,'objects',false)
+        AppCloseApproved = false
+        PendingCloses
+        HiddenFloating
     end
     methods
         function obj = DockingHost(layoutFile,autoSave)
@@ -36,6 +39,8 @@ classdef DockingHost < handle
                 'detecdivui:DockingRelease','The docking host currently requires Windows MATLAB R2026a.');
             obj.LayoutFile = char(layoutFile); obj.AutoSave = autoSave;
             obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
+            obj.PendingCloses = containers.Map('KeyType','char','ValueType','any');
+            obj.HiddenFloating = containers.Map('KeyType','char','ValueType','any');
             obj.App = matlab.ui.container.internal.AppContainer( ...
                 'Tag',['DetecDivUI_' char(matlab.lang.internal.uuid)],'Title','DetecDiv', ...
                 'PersistLayout',false,'PersistDocuments',false,'CleanStart',true, ...
@@ -46,8 +51,10 @@ classdef DockingHost < handle
             for name = {'Projects','Image','Display','Pipeline','Objects','Data'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
-                    'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',false);
+                    'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',true);
                 obj.App.add(doc); obj.Widgets.(id) = doc;
+                doc.CanCloseFcn = @(document)obj.requestWidgetClose(id,document);
+                doc.Figure.CloseRequestFcn = @(~,~)obj.deferWidgetClose(id);
                 if ismember(id,{'data','objects'}), doc.Visible = false; end
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
@@ -107,12 +114,16 @@ classdef DockingHost < handle
         end
         function setDocked(obj,name,docked)
             doc = obj.widget(name);
+            id = lower(char(name)); previous = [];
+            if isKey(obj.HiddenFloating,id), previous = obj.HiddenFloating(id); remove(obj.HiddenFloating,id); end
             doc.Visible = true; doc.Docked = logical(docked);
             obj.settle(); obj.syncMenus();
+            if ~docked && ~isempty(previous), doc.WindowBounds = previous.windowBounds; end
             obj.notifyVisibility(name,true);
         end
         function value = isDocked(obj,name)
-            value = obj.widget(name).Docked;
+            doc = obj.widget(name); value = doc.Docked;
+            if ~doc.Visible && isKey(obj.HiddenFloating,lower(char(name))), value = false; end
         end
         function focusWidget(obj,name)
             obj.setWidgetVisible(name,true);
@@ -135,17 +146,35 @@ classdef DockingHost < handle
             end
             obj.openObjects(); obj.openData();
         end
+        function closeWidget(obj,name)
+            % Native tab/floating-window Close hides the document only.
+            % Scientific drafts and component handles remain owned by Viewer.
+            if obj.Closing || obj.AppCloseApproved, return; end
+            obj.setWidgetVisible(name,false);
+        end
         function setWidgetVisible(obj,name,visible)
             id = lower(char(name)); doc = obj.widget(id);
             if doc.Visible == logical(visible), obj.syncMenus(); return; end
-            remembered = [];
-            if ~visible && doc.Docked
+            remembered = []; floating = [];
+            if ~visible && ~doc.Docked
+                % Hiding a floating peer directly can discard its document
+                % node. Park it in the main host before hiding, retaining
+                % its floating intent/bounds for the next open operation.
+                floating = struct('windowBounds',doc.WindowBounds);
+                obj.HiddenFloating(id) = floating;
+                doc.Docked = true; obj.waitForLayout();
+            elseif visible && isKey(obj.HiddenFloating,id)
+                floating = obj.HiddenFloating(id);
+            end
+            if ~visible && doc.Docked && isempty(floating)
                 obj.waitForLayout();
                 remembered = obj.App.DocumentLayout;
             elseif visible && doc.Docked && isKey(obj.HiddenLayouts,id)
                 obj.waitForLayout();
                 saved = obj.HiddenLayouts(id);
                 current = obj.stableLayoutFields(obj.App.DocumentLayout);
+                % JSON does not retain row/column orientation of vector
+                % arrays; compare canonical encodings across saved sessions.
                 if strcmp(jsonencode(current),jsonencode(obj.stableLayoutFields(saved.hidden)))
                     remembered = saved.visible;
                 end
@@ -153,6 +182,11 @@ classdef DockingHost < handle
             end
             doc.Visible = logical(visible);
             obj.waitForLayout();
+            if visible && ~isempty(floating)
+                doc.Docked = false; obj.waitForLayout();
+                doc.WindowBounds = floating.windowBounds; obj.waitForLayout();
+                remove(obj.HiddenFloating,id);
+            end
             if ~isempty(remembered)
                 if visible
                     obj.App.DocumentLayout = detecdivui.WorkspaceLayout.geometry(remembered); obj.waitForLayout();
@@ -172,6 +206,7 @@ classdef DockingHost < handle
             for k = 1:numel(names)
                 doc = obj.widget(names{k}); doc.Docked = true;
             end
+            obj.HiddenFloating = containers.Map('KeyType','char','ValueType','any');
             obj.settle(); obj.syncMenus();
         end
         function resetLayout(obj)
@@ -206,11 +241,17 @@ classdef DockingHost < handle
             names = fieldnames(obj.Widgets);
             for k = 1:numel(names)
                 doc = obj.widget(names{k});
-                record.widgets.(names{k}) = struct('docked',doc.Docked, ...
-                    'visible',doc.Visible,'windowBounds',doc.WindowBounds);
+                bounds = doc.WindowBounds;
+                if ~doc.Visible && isKey(obj.HiddenFloating,names{k}), bounds = obj.HiddenFloating(names{k}).windowBounds; end
+                record.widgets.(names{k}) = struct('docked',obj.isDocked(names{k}), ...
+                    'visible',doc.Visible,'windowBounds',bounds);
                 if isfield(obj.ArrangedWidgets,names{k})
                     record.widgets.(names{k}).placed = obj.ArrangedWidgets.(names{k}) || doc.Visible || ~doc.Docked;
                 end
+            end
+            record.hiddenLayouts = struct();
+            for id = reshape(obj.HiddenLayouts.keys,1,[])
+                record.hiddenLayouts.(id{1}) = obj.HiddenLayouts(id{1});
             end
         end
         function saveLayout(obj,file)
@@ -255,11 +296,14 @@ classdef DockingHost < handle
                 end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
+                obj.HiddenFloating = containers.Map('KeyType','char','ValueType','any');
                 names = fieldnames(obj.Widgets);
                 for k = 1:numel(names)
                     state = record.widgets.(names{k}); doc = obj.widget(names{k});
-                    doc.WindowBounds = reshape(state.windowBounds,1,4);
-                    doc.Docked = state.docked; doc.Visible = state.visible;
+                    doc.Docked = state.docked || ~state.visible; doc.Visible = state.visible;
+                    if ~state.docked && ~state.visible
+                        obj.HiddenFloating(names{k}) = struct('windowBounds',reshape(state.windowBounds,1,4));
+                    end
                     if isfield(obj.ArrangedWidgets,names{k})
                         placed = state.visible || ~state.docked;
                         if isfield(state,'placed'), placed = state.placed; end
@@ -269,16 +313,28 @@ classdef DockingHost < handle
                 obj.waitForLayout();
                 obj.App.Layout = record.layout;
                 obj.waitForLayout();
-                % A newly opened floating CEF window can publish its default
-                % bounds after the initial state set. Apply saved bounds last.
+                % Reparent before applying bounds: docked defaults can use
+                % negative sentinels, invalid for a still-floating viewport.
+                % Floating CEF windows can also publish their defaults late.
                 for k = 1:numel(names)
                     state = record.widgets.(names{k});
-                    if ~state.docked
-                        doc = obj.widget(names{k});
+                    doc = obj.widget(names{k});
+                    if doc.Docked || all(state.windowBounds(3:4)>=0)
                         doc.WindowBounds = reshape(state.windowBounds,1,4);
                     end
                 end
                 obj.waitForLayout(); obj.syncMenus();
+                obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
+                if isfield(record,'hiddenLayouts')
+                    for id = reshape(fieldnames(record.hiddenLayouts),1,[])
+                        if isfield(obj.Widgets,id{1})
+                            saved = record.hiddenLayouts.(id{1});
+                            assert(isstruct(saved) && all(isfield(saved,{'visible','hidden'})), ...
+                                'detecdivui:LayoutSchema','Invalid hidden widget placement.');
+                            obj.HiddenLayouts(id{1}) = saved;
+                        end
+                    end
+                end
                 for k = 1:numel(names), obj.notifyVisibility(names{k},obj.widget(names{k}).Visible); end
                 obj.LastLayoutError = ''; ok = true;
                 obj.InvalidLayout = false;
@@ -328,10 +384,13 @@ classdef DockingHost < handle
             % A partial/new failed host must not overwrite a saved layout.
             obj.AutoSave = false;
             obj.stopPump();
+            obj.stopPendingCloses();
         end
         function delete(obj)
             if obj.Closing, return; end
+            teardown = detecdivui.startupGuard('begin'); %#ok<NASGU>
             obj.stopPump();
+            obj.stopPendingCloses();
             obj.saveOnClose(); obj.Closing = true;
             if ~isempty(obj.StateListener), delete(obj.StateListener); end
             if ~isempty(obj.App) && isvalid(obj.App), delete(obj.App); end
@@ -340,6 +399,8 @@ classdef DockingHost < handle
     methods (Access = private)
         function openInspector(obj,name,anchor,fraction)
             id = lower(name); doc = obj.widget(id);
+            floatingBounds = [];
+            if ~doc.Visible && isKey(obj.HiddenFloating,id), floatingBounds = obj.HiddenFloating(id).windowBounds; end
             obj.show();
             obj.waitForLayout(); current = obj.App.DocumentLayout;
             arrange = ~doc.Visible && doc.Docked && ~obj.ArrangedWidgets.(id) && ...
@@ -355,6 +416,43 @@ classdef DockingHost < handle
             end
             obj.ArrangedWidgets.(id) = true;
             obj.focusWidget(name);
+            if ~isempty(floatingBounds)
+                % The newly focused floating peer can publish default
+                % bounds after visibility/docking updates have settled.
+                doc.WindowBounds = floatingBounds; obj.waitForLayout();
+                doc.WindowBounds = floatingBounds; obj.settle();
+            end
+        end
+        function ok = requestWidgetClose(obj,id,~)
+            % AppContainer also queries document callbacks while closing the
+            % whole application; only that approved path may destroy them.
+            ok = obj.Closing || obj.AppCloseApproved;
+            if ok, return; end
+            % Floating peers can restore Visible during their native close
+            % transaction. Veto destruction, then hide on the next event turn.
+            obj.deferWidgetClose(id);
+        end
+        function deferWidgetClose(obj,id)
+            if obj.Closing || obj.AppCloseApproved, return; end
+            if isKey(obj.PendingCloses,id) && isvalid(obj.PendingCloses(id)), return; end
+            pending = timer('ExecutionMode','singleShot','StartDelay',.03, ...
+                'Tag','DetecDivWidgetClose','TimerFcn',@(~,~)obj.closeWidget(id), ...
+                'StopFcn',@(source,~)obj.closeTimerStopped(id,source));
+            obj.PendingCloses(id) = pending; start(pending);
+        end
+        function closeTimerStopped(obj,id,pending)
+            if isKey(obj.PendingCloses,id) && isequal(obj.PendingCloses(id),pending), remove(obj.PendingCloses,id); end
+            if isvalid(pending), delete(pending); end
+        end
+        function stopPendingCloses(obj)
+            if isempty(obj.PendingCloses), return; end
+            ids = obj.PendingCloses.keys;
+            for k = 1:numel(ids)
+                pending = obj.PendingCloses(ids{k});
+                if isvalid(pending), stop(pending); end
+                if isKey(obj.PendingCloses,ids{k}), remove(obj.PendingCloses,ids{k}); end
+                if isvalid(pending), delete(pending); end
+            end
         end
         function notifyVisibility(obj,name,visible)
             detecdivui.Callback.call(obj.OnWidgetVisibility,char(name),logical(visible));
@@ -451,6 +549,8 @@ classdef DockingHost < handle
             ok = true;
             if ~isempty(obj.OnCanClose), ok = detecdivui.Callback.call(obj.OnCanClose); end
             if ~ok, return; end
+            obj.AppCloseApproved = true;
+            obj.stopPendingCloses();
             obj.stopPump(); obj.saveOnClose(); ok = true;
         end
         function appStateChanged(obj)
@@ -481,6 +581,7 @@ classdef DockingHost < handle
                 validateattributes(state.docked,{'logical'},{'scalar'});
                 validateattributes(state.visible,{'logical'},{'scalar'});
                 validateattributes(state.windowBounds,{'numeric'},{'vector','numel',4,'finite'});
+                if isfield(state,'placed'), validateattributes(state.placed,{'logical'},{'scalar'}); end
             end
         end
     end

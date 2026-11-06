@@ -80,6 +80,7 @@ assertToolbar(again.roiAxes()); assertOldViewer();
 assert(~detecdivui.startupGuard('active'));
 assert(isequal(project.fov.roi,originalROI) && isequal(originalROI.image,pixels));
 assert(isempty(project.processing.pipelineRun) && isempty(dir(fullfile(folder,'**','*.h5'))));
+clear cleanup;
 disp('Startup test passed: existing viewer preserved, deleted-container recovery, bounded failure cleanup, saved-layout protection, released startup guard and ordinary relaunch.');
 
     function assertOldViewer()
@@ -179,7 +180,7 @@ end
 function timers = ownedTimers()
 timers = timerfindall;
 if isempty(timers), return; end
-tags = {'DetecDivDockMenu','DetecDivPipelineFollow','DetecDivLiveDisplay'};
+tags = {'DetecDivDockMenu','DetecDivPipelineFollow','DetecDivLiveDisplay','DetecDivWidgetClose'};
 timers = timers(ismember({timers.Tag},tags));
 end
 
@@ -211,11 +212,16 @@ fprintf(fid,'%s',text);
 end
 
 function cleanAll(resources,folder,fixtureRoot)
+teardown = detecdivui.startupGuard('begin'); %#ok<NASGU>
 for key = {'unexpected','again','recovered','old'}
     if isKey(resources,key{1})
-        object = resources(key{1}); if ~isempty(object) && isvalid(object), delete(object); end
+        object = resources(key{1});
+        if ~isempty(object) && isvalid(object)
+            fprintf('Startup cleanup: deleting %s viewer.\n',key{1}); delete(object);
+        end
     end
 end
+disp('Startup cleanup: removing fixture.');
 rmpath(fixtureRoot);
 if isfolder(folder), rmdir(folder,'s'); end
 end

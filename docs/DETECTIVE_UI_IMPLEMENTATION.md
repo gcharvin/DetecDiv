@@ -44,8 +44,11 @@ Pipeline recent history reuses `prefdir/recentPipelines.mat` / `RecentPipelines`
 - A Layers table with independent visibility, an active layer, Solo, source-unit min/max contrast and a range slider, Auto, color and opacity. Label layers use score's renderer and stable ID colors or a selected RGB color.
 - Reference ROI outlines that can be hidden; no temporal geometry is inferred.
 - Frame number, slider and previous/next actions. Zoom survives temporal navigation of the same view.
-- Independent Projects, Image, Display and Pipeline widgets, with native detachment/redocking and View menu docking commands. Widget visibility and layout can be saved and restored across launches. Older three-widget layouts keep their geometry and initially hide Pipeline.
+- Independent Projects, Image, Display, Pipeline, Objects and Data widgets, with native detachment/redocking and View menu commands. Document X hides its retained controls and drafts; View restores it, including floating placement. Application/project closure keeps explicit unsaved-edit protection. Layout migration preserves older arrangements and initializes newly added documents hidden.
 - Pipeline has a compact Open/Recent tree at the top, a graph below, then two equal New Run/Settings buttons and status. Template selection activates its retained draft; selecting a project run in Projects displays its frozen graph, with run ID · pipeline name in the header. Use Pipeline is available from that header's context menu and the Run Settings > Runs footer. The main widget has no duplicate template dropdown or nested Pipeline/Runs/Pipelines tabs. The dialog retains its internal configuration picker and Run/Steps/Checks/Runs tools. New Run/common settings open this shared dialog; Advanced uses `pipeline2` with the same run identity and configuration. Execution/remote monitoring and the richer editor remain transitional bridges. See `DETECTIVE_UI_PIPELINE.md`.
+- Pipeline distinguishes Parameter Bindings, Run Parameters and staged Static Parameters. Bindings show direction/resource, exact symbolic value and Pipeline/This Run scope; dashed graph links expose shared-contract resource references alongside declared execution edges without resolving or rewriting them. Typed static controls support the native scalar/choice/matrix subset, Apply/Cancel and stale-dialog guards. Specialized concrete-resource inventory selectors, classifier/artifact linkage and complex editors remain in Advanced/pipeline2.
+- Objects has a compact family/layer browser and current-frame label/track/parent/state table, with Contours/Tracks as contextual assistant tabs inside its independent document. Selecting a family enables multicolor image selection/editing while Display retains its active channel and settings. Same-provider families retain separate IDs, exact uint64 tracks and one shared annotation draft/history/save controller. See `DETECTIVE_UI_OBJECTS.md`.
+- Data reuses Score's dataseries plotting below Image, with variable/group selection and synchronized frame markers/navigation. View > Arrange Analysis Workspace exposes Display/Objects alongside the shared image and its lower data plot. Compact Display keeps a 100-pixel Layers area; the `Hist.` button controls its detailed plot, with explicit choices retained for the session.
 - Edit > Define ROIs... and the image/Projects context menus open the contextual assistant on the main raw image. Its tab is absent at launch; Done removes it and drawing handles while retaining the draft. Manual/Pattern/Grid definitions use existing backends; pipeline ROI commands reuse this assistant instead of opening Workflow. Save Project writes lightweight JSON metadata without extracting/saving ROI pixels. See `DETECTIVE_UI_ROIS.md`.
 - Image browsing reuses Score's Left/Right Arrow and configurable ten-frame jump keys (L/M by default), with focus isolation, clamped frame bounds and float/redock support. Navigate shows the keys; Help > Keyboard Shortcuts... lists available actions. Annotation/painting keys remain reserved for their respective editors. See `DETECTIVE_UI_SHORTCUTS.md`.
 - Edit > Edit Contours... opens a contextual indexed-mask assistant on Image: selection, polygon/freehand, boundary editing, brush/eraser, fill/delete, undo/redo and Score keyboard preferences. Drafts are isolated from canonical ROI pixels/model/data until Save Masks, retained across navigation, and guarded on normal closure. Persistence reuses ROI and Score helpers; partial-file failures remain dirty/retryable. See `DETECTIVE_UI_CONTOURS.md`.
@@ -58,7 +61,7 @@ On demand, the session uses existing `fov.readImage` and `roi.load('Data',false)
 
 ## Limits
 
-The current interface is an exploration prototype. Scientific editing, full classifier/processor management, inline pipeline editing/execution, guided segmentation, cross-session display presets and lazy reconstruction of non-extracted ROIs remain to be integrated. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
+The current interface is an exploration prototype. Managed Annotation/Review, full classifier/processor management, complete native pipeline editor/execution parity, guided segmentation, cross-session display presets and lazy reconstruction of non-extracted ROIs remain incomplete. Native binding/static editing covers the documented subset; specialized selectors still use the established advanced editor. A three-plane logical channel is displayed as RGB; other multi-plane groups are exposed individually. Outlines use the same reference rectangles as workflow; mobile trajectories are not reconstructed.
 
 Reading is synchronous, with a bounded current-frame cache for requested channels. Contrast defaults to finite pixel min/max and stays fixed while navigating until changed or reset with Auto. Display settings are separate for each project's FOV/ROI during the session, without changing source pixels or metadata. Project switching restores frame and channel but does not preserve an independent zoom for every FOV/ROI. Data is synthetic in automated validation; real acquisitions and performance still need validation.
 
@@ -89,6 +92,11 @@ detecdivui.dockingTest();
 detecdivui.layerTest();
 detecdivui.displayTest();
 detecdivui.lazyImageTest();
+detecdivui.pipelineBindingsTest();
+detecdivui.pipelineBindingUITest();
+detecdivui.staticParameterDialogTest();
+detecdivui.objectsTest();
+detecdivui.analysisLayoutTest();
 % Optional visible export for visual inspection:
 detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 ```
@@ -96,6 +104,8 @@ detecdivui.smokeTest(fullfile(tempdir, 'detective-ui-desktop.png'));
 The smoke test creates temporary TIFFs and in-memory ROIs. It exercises pixels, logical/RGB channels, image/contrast limits, outlines, timeline, failed-read recovery, menu callbacks, tree selection, multiple projects, duplicate opening, closing active/inactive/last projects and empty projects. It does not yet validate real acquisitions or extracted H5 data. The optional PNG export briefly shows the window.
 
 Validated on 4 November 2026 with MATLAB R2026a: smoke test passed, Code Analyzer clean for the entry point and package, and the exported desktop window inspected visually with two projects open.
+
+The 6 November tranche passed native binding/static, Objects/Data, Contours/Tracks, close/docking and live-display checks, plus a combined workspace visual check. Startup fault recovery and multi-viewer cleanup also passed after native teardown was guarded against other hosts' menu polling. Code Analyzer was clean. These exercise synthetic local fixtures and existing helpers; they do not establish complete Score/pipeline2 parity, real inference performance or every optional external dependency.
 
 ## Docking and layout preferences
 
@@ -105,7 +115,7 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
-The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Contours and Tracks now share scientific drafts/save/undo. The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md).
+The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Objects, Contours and Tracks now share scientific drafts/save/undo independently of Display. The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md).
 
 The intent bridge now provides metadata-only resource inspection, five curated intent profiles, added/reused/input states in the Pipeline graph, independent effective-configuration forks and run-linked proposal provenance. Use Edit > Plan Workflow... or Pipeline > Plan...; see [DETECTIVE_UI_INTENT_WORKFLOWS.md](DETECTIVE_UI_INTENT_WORKFLOWS.md). The next bridge tranche is common method configuration/binding and validation, then task-triggered execution and full semantic history. Automatic launch is not implemented by this first planner. Missing model artifacts and unverified results must remain explicit prerequisites.
 

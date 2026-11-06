@@ -69,6 +69,19 @@ assert(viewer.Host.isWidgetVisible('Display'));
 if ~isempty(previewPath)
     viewer.Host.show(); viewer.Host.focusWidget('Objects'); drawnow; pause(.3); viewer.Host.capture(previewPath);
 end
+% Native Close preserves an actual unsaved scientific draft, not only its
+% document controls. Reopening must reconnect that same provider draft.
+frame = viewer.annotationFrame(); baselinePixel = source.image(14,12,2,frame);
+draft.edit(frame,'paint',[12 14],8,1,false); viewer.contourChanged();
+assert(draft.Dirty);
+viewer.Host.Widgets.objects.close(); started = tic;
+while viewer.Host.isWidgetVisible('Objects')
+    assert(toc(started)<12,'Objects did not close.'); pause(.05); drawnow;
+end
+assert(draft.Dirty && source.image(14,12,2,frame)==baselinePixel && ~viewer.Masks.Active);
+viewer.openObjects();
+assert(viewer.annotationDraft('Prediction')==draft && draft.Dirty);
+draft.discard(); viewer.contourChanged();
 viewer.Host.setWidgetVisible('Objects',false);
 assert(~viewer.Masks.Active && (isempty(viewer.Tracks) || ~viewer.Tracks.Active));
 hiddenSelection = families.CellSelectionCallback;
