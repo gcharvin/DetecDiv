@@ -521,6 +521,7 @@ function opts = localParse(varargin)
     opts.priority = 10;
     opts.requestedBy = '';
     opts.executionTargetId = '';
+    opts.codeCommit = '';
     opts.saveProject = true;
     opts.writeScope = 'project_update';
     opts.projectResolveInitialWaitSec = 1;
@@ -544,6 +545,10 @@ function opts = localParse(varargin)
                 opts.requestedBy = char(string(value));
             case 'executiontargetid'
                 opts.executionTargetId = char(string(value));
+            case 'codecommit'
+                opts.codeCommit=char(string(value));
+                assert(isempty(opts.codeCommit)||~isempty(regexp(opts.codeCommit,'^[a-fA-F0-9]{40}$','once')), ...
+                    'detecdiv_hub_submit_pipeline_run:CodeCommit','Use an exact full Git SHA for a renderer release.');
             case 'saveproject'
                 opts.saveProject = logical(value);
             case 'writescope'
@@ -2262,6 +2267,7 @@ function execution = localBuildExecution(opts, runObj)
     if ~isempty(opts.executionTargetId)
         execution.execution_target_id = opts.executionTargetId;
     end
+    if ~isempty(opts.codeCommit), execution.code_commit=opts.codeCommit; end
 end
 
 function pathText = localJoinRemotePath(folder, name)

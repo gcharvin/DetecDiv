@@ -182,20 +182,20 @@ structure/GUI/+detecdivui/ROIWidget.m,181,"function ctx = apply(obj)",.Progress.
 structure/GUI/+detecdivui/ROIWidget.m,209,"function preview(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/TracksWidget.m,248,"function action(obj,action)",.Progress.begin,initiating widget,review,source
 structure/GUI/+detecdivui/TracksWidget.m,284,"function showLineage(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,398,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,445,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,483,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,500,"function classifier = openClassifier(obj,path)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,782,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,810,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,955,"function openContourTool(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,987,"function openTracksTool(obj)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,1189,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,2065,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,2240,"function render(obj,preview)",.Progress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,2401,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,2516,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
-structure/GUI/+detecdivui/Viewer.m,2538,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,400,"function addProject(obj,project)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,447,"function closeProject(obj,index)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,485,"function project = openProject(obj,path)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,502,"function classifier = openClassifier(obj,path)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,792,"function ok = saveProject(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,820,"function report = relinkRawData(obj,root)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,965,"function openContourTool(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,997,"function openTracksTool(obj)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,1199,"function refreshWorkspace(obj)",.ProjectProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,2079,"function refreshView(obj,loadImage)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,2254,"function render(obj,preview)",.Progress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,2415,"function editLayer(obj,action)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,2530,"function editLayerRow(obj,action,index,value)",.DisplayProgress.begin,initiating widget,review,source
+structure/GUI/+detecdivui/Viewer.m,2552,"function copyImage(obj)",.Progress.begin,initiating widget,review,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,551,"function refreshTypedTrainingBindingChoices(app)",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,1828,"function displayData(app, annotationScanMode) % displays rois in the table",uiprogressdlg,app.ClassifierUIFigure,onCleanup in function; verify ownership,source
 structure/GUI/classifier/private/classifierGUI_runtime_code.m,2973,"function SaveclassifierparametersButtonPushed(app, event)",uiprogressdlg,app.ClassifierUIFigure,manual close/delete; verify early exits,source

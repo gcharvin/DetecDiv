@@ -2,6 +2,7 @@ function rgb = score_captureMovieFrame(fig, graphicsHandles)
 % Render the complete export canvas, independently of the desktop viewport.
 canvas = graphicsHandles.movieLayout.canvasSize;
 dpi = round(get(groot,'ScreenPixelsPerInch'));
+if isfield(graphicsHandles.movieLayout,'dpi'), dpi=graphicsHandles.movieLayout.dpi; end
 fig.PaperUnits = 'inches';
 fig.PaperPositionMode = 'manual';
 fig.PaperPosition = [0 0 canvas/dpi];

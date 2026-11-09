@@ -133,6 +133,10 @@ bottomH = 3*font + gap;
 if compactMovie && ~hasPlots, bottomH = 0; end
 blockH = headerH + imageBlockH + gap + sum(plotHeights) + bottomH;
 canvas = ceil([opts.Ncol*blockW,opts.Nrow*blockH+globalHeaderH]/2)*2;
+if isfield(opts,'expectedCanvas')
+    assert(isequal(canvas,opts.expectedCanvas),'score:ExportLayoutMismatch', ...
+        'The worker cannot reproduce the viewer export geometry. Use a matching MATLAB/font environment.');
+end
 fig.Units = 'pixels';
 fig.WindowState = 'normal';
 pos = fig.Position; pos(3:4) = canvas; fig.Position = pos;
@@ -140,6 +144,7 @@ fig.InvertHardcopy = 'off';
 opts.movieTextPixels = font;
 layout = struct('timeHandles',gobjects(0),'plots',plots, ...
     'canvasSize',canvas,'hideStamp',logical(opts.hideStamp),'fontPixels',font);
+if isfield(opts,'exportDPI'), layout.dpi=opts.exportDPI; end
 
 if globalHeaderH > 0
     globalWidth = canvas(1)-2*gap;

@@ -26,7 +26,8 @@ Progress objects, GUI handles and scopes are never added to persisted run contex
 | Adjust display/Auto, copy image | Display / Image | Indeterminate; cached source data is preserved |
 | Open/refresh/save pipeline | Pipeline | Indeterminate around existing helpers and graph refresh |
 | Validate/dry run, save run, read run review | Pipeline | Indeterminate around shared backend calls |
-| Movie/PDF snapshot, preview and export | Export Movie (Display), falling back to Image/visible footer | Source loading indeterminate; real video-frame/sequence-cell fractions; cooperative Cancel, writer/temp cleanup |
+| Movie/PDF/PNG/TIFF snapshot, preview and export | Export Movie (Display), falling back to Image/visible footer | Source loading indeterminate; real video-frame/sequence-cell fractions; cooperative Cancel, writer/temp cleanup |
+| Frozen export snapshot and Hub submission | Export Movie / visible footer | Selected frame count during snapshot; standard Score Hub submit; widget-owned status polling/cancel, no startup request |
 | Open advanced editor or run inspector | Pipeline | Caller covers construction; destination owns its subsequent operations |
 | Save/restore/reset layout | Image | Scoped host activity callback |
 

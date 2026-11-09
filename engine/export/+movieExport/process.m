@@ -11,6 +11,16 @@ params = localParams(ctx);
 sourceType = lower(strtrim(char(string(localField(params, 'sourceType', 'score_roi')))));
 
 switch sourceType
+    case 'viewer_snapshot'
+        [snapshot,~]=detecdiv_paths_map_module_path(params.snapshotPath,ctx,'local');
+        [output,~]=detecdiv_paths_map_module_path(params.outputPath,ctx,'local');
+        job=detecdivui.MovieExportJob.fromSnapshot(snapshot,params.snapshotChecksum);
+        job.Cancel=@()localSnapshotCancelled(ctx);
+        job.Progress=@(fraction)detecdiv_progress(ctx,fraction,'Exporting frozen viewer frames');
+        outputPath=job.write(output,logical(localField(params,'overwrite',false)));
+        kind='viewer_movie';
+        if strcmp(job.Settings.mode,'images'), kind='viewer_image_sequence';
+        elseif strcmp(job.Settings.mode,'sequence'), kind='movie_sequence_pdf'; end
     case {'score_roi','score_classifier'}
         [outputPath, kind] = localRenderScore(ctx, params);
     case 'raw_fov'
@@ -20,6 +30,10 @@ switch sourceType
 end
 
 ctx = localAddArtifact(ctx, kind, outputPath);
+end
+
+function yes=localSnapshotCancelled(ctx)
+detecdiv_check_cancel(ctx,'movie export'); yes=false;
 end
 
 function [outputPath, kind] = localRenderScore(ctx, params)

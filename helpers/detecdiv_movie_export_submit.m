@@ -17,7 +17,7 @@ if ~any(strcmp(target, {'local','hub'}))
     error('detecdiv_movie_export_submit:Target', 'Target must be local or hub.');
 end
 if strcmp(target, 'hub')
-    params = localMapHubOutputPath(params);
+    params = localMapHubOutputPath(params,opts.Hub);
 end
 isClassifierTarget = isa(targetObj, 'classi');
 
@@ -61,7 +61,8 @@ if strcmp(target, 'hub')
     hubProject = [];
     if ~isClassifierTarget, hubProject = targetObj; end
     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, hubProject, ...
-        'SaveProject', false, 'WriteScope', 'project_update');
+        'SaveProject', false, 'WriteScope', 'project_update','Hub',opts.Hub, ...
+        'ExecutionTargetId',opts.ExecutionTargetId,'CodeCommit',opts.CodeCommit);
     result.status = char(string(job.status));
     result.job = job;
     return;
@@ -114,14 +115,13 @@ function ref = localClassifierTargetRef(classiObj)
 end
 end
 
-function params = localMapHubOutputPath(params)
+function params = localMapHubOutputPath(params,hub)
     requested = char(string(localField(params, 'outputPath', '')));
     if isempty(strtrim(requested))
         error('detecdiv_movie_export_submit:HubOutputPathMissing', ...
             ['Select a local output path before submitting to the Hub. ' ...
              'It must be under the Local root configured in Hub connection settings.']);
     end
-    hub = detecdiv_hub_settings_get();
     [remotePath, mapped] = detecdiv_paths_map_module_path(requested, struct('hub', hub), 'server');
     if ~mapped
         error('detecdiv_movie_export_submit:HubOutputPathUnmapped', ...
@@ -132,6 +132,11 @@ function params = localMapHubOutputPath(params)
     params.outputPath = remotePath;
     params.useRunArtifactFolder = false;
     params.hubOutputPath = struct('localPath', requested, 'remotePath', remotePath);
+    if isfield(params,'snapshotPath') && ~isempty(params.snapshotPath)
+        [snapshot,mapped]=detecdiv_paths_map_module_path(params.snapshotPath,struct('hub',hub),'server');
+        assert(mapped,'detecdiv_movie_export_submit:SnapshotUnmapped','The export snapshot must be below a shared Hub path root.');
+        params.snapshotPath=snapshot;
+    end
 end
 
 function pipeObj = localCreatePipeline(runObj, params)
@@ -165,7 +170,7 @@ text = sprintf('%s export (%s)', source, mode);
 end
 
 function opts = localParse(varargin)
-opts = struct('Target', 'local');
+opts = struct('Target', 'local','Hub',detecdiv_hub_settings_get(),'ExecutionTargetId','','CodeCommit','');
 if mod(numel(varargin), 2) ~= 0
     error('detecdiv_movie_export_submit:Args', 'Options must be Name/Value pairs.');
 end
@@ -173,6 +178,12 @@ for i = 1:2:numel(varargin)
     switch lower(char(string(varargin{i})))
         case 'target'
             opts.Target = varargin{i+1};
+        case 'hub'
+            opts.Hub=varargin{i+1};
+        case 'executiontargetid'
+            opts.ExecutionTargetId=varargin{i+1};
+        case 'codecommit'
+            opts.CodeCommit=varargin{i+1};
         otherwise
             error('detecdiv_movie_export_submit:Args', 'Unknown option: %s', char(string(varargin{i})));
     end

@@ -22,6 +22,8 @@ classdef MovieExportOptions < handle
             obj.field(form,'ROI titles','roiTitle','logical');
             obj.field(form,'Image scale','scale','numeric',[.01 20]);
             obj.field(form,'Crop [x y width height]','crop','vector');
+            obj.field(form,'Use visible image area','useViewport','logical');
+            obj.Controls.useViewport.Tooltip='Use Image pan/zoom when Crop is empty; an explicit Crop takes priority';
             obj.field(form,'Rotate counterclockwise','rotation','choice',{'0','90','180','270'});
             obj.field(form,'Flip','flip','choice',{'None','Vertical','Horizontal'});
             obj.field(form,'Mosaic rows (0 = auto)','rows','numeric',[0 100]);
@@ -36,7 +38,7 @@ classdef MovieExportOptions < handle
             obj.field(form,'Data window (frames)','trackWindow','numeric',[1 1000000]);
             obj.field(form,'Image / data ratio','imageDataRatio','numeric',[1 20]);
             obj.field(form,'Data colormap','dataColormap','choice',{'lines','parula','turbo','hsv','jet','gray'});
-            form.RowHeight=form.RowHeight(1:17);
+            form.RowHeight=form.RowHeight(1:18);
             panel=uipanel(root,'Title','Events'); events=uigridlayout(panel,[2 1]); events.RowHeight={'1x',24};
             obj.Events=uitable(events,'Data',settings.events,'RowName',{}, ...
                 'ColumnName',{'On','Start frame','End frame','Label','Width'}, ...

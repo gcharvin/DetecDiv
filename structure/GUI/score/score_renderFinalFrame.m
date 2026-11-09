@@ -635,6 +635,23 @@ masterTL = displayHandles.masterTiledLayout;
 if isfield(layoutOptions,'previewOnly') && layoutOptions.previewOnly, return; end
 outputname = layoutOptions.name;
 [folder, name, ~] = fileparts(outputname);
+imageSequence=isfield(layoutOptions,'imageSequence') && ~isempty(layoutOptions.imageSequence);
+if imageSequence
+    fig=get(masterTL,'Parent');
+    for frame=1:numel(layoutOptions.frames)
+        if isfield(layoutOptions,'exportCancel') && layoutOptions.exportCancel()
+            error('score:ExportCancelled','Export cancelled.');
+        end
+        score_updateRender(graphicsHandles,roiobj,layoutOptions,displayHandles,frame);
+        drawnow;
+        rgb=score_captureMovieFrame(fig,graphicsHandles);
+        format=layoutOptions.imageSequence.format;
+        file=fullfile(layoutOptions.imageSequence.path,sprintf('frame_%06d.%s',layoutOptions.frames(frame),format));
+        imwrite(rgb,file,format);
+        if isfield(layoutOptions,'exportProgress'), layoutOptions.exportProgress(frame/numel(layoutOptions.frames)); end
+    end
+    return;
+end
 
 % 1) Profil demandé par l'appli (optionnel)
 if isfield(layoutOptions, 'movieProfile') && ~isempty(layoutOptions.movieProfile)

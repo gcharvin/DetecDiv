@@ -1,7 +1,7 @@
 classdef MovieExportJob < handle
     % Frozen viewer adapter to Score's export layout, data panels and writer.
     properties (SetAccess=private)
-        Entries = struct('session',{},'model',{},'proxy',{},'selected',{},'overlay',{},'regions',{},'frameCount',{})
+        Entries = struct('session',{},'model',{},'proxy',{},'selected',{},'overlay',{},'regions',{},'frameCount',{},'viewport',{})
         Options
         Settings
         Output = ''
@@ -12,6 +12,7 @@ classdef MovieExportJob < handle
     end
     methods
         function obj=MovieExportJob(sources,settings,drafts,dataSelection)
+            if nargin==0, return; end % Restored immutable export snapshot.
             if nargin<3, drafts={}; end
             if nargin<4, dataSelection=[]; end
             assert(~isempty(sources),'detecdivui:ExportSource','Select and load an image first.');
@@ -83,8 +84,9 @@ classdef MovieExportJob < handle
                 else, proxy.data=dataseries.empty;
                 end
                 regions=struct([]); if source.zone==0 && source.outlines, regions=live.referenceRegions(); end
+                viewport=[]; if isfield(source,'viewport'), viewport=source.viewport; end
                 obj.Entries(end+1)=struct('session',session,'model',model,'proxy',proxy,'selected',selected, ...
-                    'overlay',source.overlay,'regions',regions,'frameCount',count);
+                    'overlay',source.overlay,'regions',regions,'frameCount',count,'viewport',viewport);
             end
             counts=[obj.Entries.frameCount];
             if (ischar(settings.frames)||isstring(settings.frames))&&strcmpi(strtrim(settings.frames),'all')
@@ -92,7 +94,8 @@ classdef MovieExportJob < handle
                     'The selected images have different frame counts. Choose a common frame range or export separately.');
             end
             frames=obj.parseFrames(settings.frames,min(counts));
-            opts=score_collectDisplayOptions('mode',settings.mode,'frames',frames,'IPS',settings.fps, ...
+            mode=settings.mode; if strcmp(mode,'images'), mode='movie'; end
+            opts=score_collectDisplayOptions('mode',mode,'frames',frames,'IPS',settings.fps, ...
                 'framerate',settings.interval,'hideStamp',~settings.timestamp,'timeOffset',settings.zeroTime, ...
                 'title',settings.title,'ROITitle',settings.roiTitle,'fontSize',settings.fontSize, ...
                 'textColor',settings.textColor,'background',settings.background,'legend',settings.legend, ...
@@ -160,7 +163,7 @@ classdef MovieExportJob < handle
                         'FaceColor',[.25 .9 .85],'FaceAlpha',.025,'EdgeColor',[.25 .9 .85],'LineWidth',1.5);
                     view.vectors=[view.vectors item];
                 end
-                view=obj.transform(view); views{k}=view;
+                view=obj.transform(view,entry.viewport); views{k}=view;
             end
         end
         function [rgb,vectors,overlay,alpha]=composite(obj,source,frame,opts)
@@ -187,28 +190,51 @@ classdef MovieExportJob < handle
         end
         function path=write(obj,path,overwrite)
             if nargin<3, overwrite=false; end
-            [folder,name,~]=fileparts(path); if isempty(folder), folder=pwd; end
+            if strcmp(obj.Settings.mode,'movie')
+                profiles=VideoWriter.getProfiles;
+                assert(ismember(obj.Settings.profile,{profiles.Name}),'detecdivui:ExportProfile', ...
+                    'The selected video profile is unavailable on this worker. Choose a compatible target; no fallback is allowed.');
+            end
+            [folder,name,suffix]=fileparts(path); if isempty(folder), folder=pwd; end
+            if strcmp(obj.Settings.mode,'images'), name=[name suffix]; end
             assert(isfolder(folder)&&~isempty(name),'detecdivui:ExportPath','Choose an existing output folder and a filename.');
             extension=obj.extension(obj.Settings.mode,obj.Settings.profile); path=fullfile(folder,[name extension]);
+            images=strcmp(obj.Settings.mode,'images');
+            assert(~isfolder(path),'detecdivui:ExportExists','Choose a new sequence folder; existing folders are never merged or removed.');
             assert(overwrite||~isfile(path),'detecdivui:ExportExists','The output already exists. Choose another filename or confirm replacement.');
             temp=[tempname(folder) extension];
             opts=obj.Options; opts.name=temp; opts.exportCancel=@()obj.cancelled(); opts.exportProgress=@(f)obj.report(f);
+            if images
+                mkdir(temp); opts.imageSequence=struct('path',temp,'format',obj.Settings.imageFormat);
+            end
             fig=figure('Visible','off','Color',opts.background,'IntegerHandle','off','HandleVisibility','callback');
+            if isfield(opts,'exportAxesFont'), set(fig,'DefaultAxesFontName',opts.exportAxesFont); end
+            if isfield(opts,'exportTextFont'), set(fig,'DefaultTextFontName',opts.exportTextFont); end
             cleanup=onCleanup(@()obj.cleanup(fig,temp));
             handles=score_createDisplayHandles(opts,fig);
             score_renderFinalFrame(handles,[obj.Entries.proxy],opts);
             obj.checkCancel();
-            assert(isfile(temp),'detecdivui:ExportOutput','The renderer did not create the requested output.');
+            assert(isfile(temp)||isfolder(temp),'detecdivui:ExportOutput','The renderer did not create the requested output.');
+            assert(~isfolder(path),'detecdivui:ExportExists','The destination folder appeared during export.');
             assert(overwrite||~isfile(path),'detecdivui:ExportExists','The destination appeared during export. Choose another filename.');
             [ok,message]=movefile(temp,path,'f'); assert(ok,'detecdivui:ExportMove','%s',message);
             obj.Output=path; obj.report(1); clear cleanup;
         end
+        function descriptor=saveSnapshot(obj,folder)
+            descriptor=detecdivui.MovieExportSnapshot.write(obj,folder);
+        end
     end
     methods (Access=private)
-        function view=transform(obj,view)
+        function view=transform(obj,view,viewport)
             s=obj.Settings; h=size(view.pixels,1); w=size(view.pixels,2); origin=[1 1];
-            if ~isempty(s.crop)
-                p=s.crop;
+            crop=s.crop;
+            if isempty(crop)&&isfield(s,'useViewport')&&s.useViewport&&numel(viewport)==4
+                x=max(1,ceil(viewport(1))); y=max(1,ceil(viewport(3)));
+                crop=[x y min(w,floor(viewport(2)))-x+1 min(h,floor(viewport(4)))-y+1];
+                assert(all(crop(3:4)>0),'detecdivui:ExportViewport','The current view is outside the image. Fit Image before exporting.');
+            end
+            if ~isempty(crop)
+                p=crop;
                 validateattributes(p,{'numeric'},{'numel',4,'integer','positive','finite'});
                 assert(p(1)+p(3)-1<=w && p(2)+p(4)-1<=h,'detecdivui:ExportCrop','Crop must fit every selected image.');
                 view.pixels=view.pixels(p(2):p(2)+p(4)-1,p(1):p(1)+p(3)-1,:); origin=p(1:2);
@@ -240,8 +266,8 @@ classdef MovieExportJob < handle
     end
     methods (Static)
         function settings=defaults()
-            settings=struct('mode','movie','profile','MPEG-4','fps',20,'interval',1,'frames','all', ...
-                'timestamp',true,'zeroTime',true,'title','','roiTitle',true,'scale',1,'crop',[], ...
+            settings=struct('mode','movie','profile','MPEG-4','imageFormat','png','fps',20,'interval',1,'frames','all', ...
+                'timestamp',true,'zeroTime',true,'title','','roiTitle',true,'scale',1,'crop',[],'useViewport',true, ...
                 'rotation',0,'flip','None','fontSize',10,'textColor',[1 1 1],'background',[0 0 0], ...
                 'rows',0,'columns',0,'includeDrafts',true,'includeData',false,'legend',true, ...
                 'track',false,'trackWindow',20,'dataColormap','lines','imageDataRatio',3,'events',{{}});
@@ -275,7 +301,9 @@ classdef MovieExportJob < handle
             assert(all(diff(frames)>0),'detecdivui:ExportFrames','Frames must be in increasing order without duplicates.');
         end
         function extension=extension(mode,profile)
-            if strcmpi(mode,'sequence')
+            if strcmpi(mode,'images')
+                extension='';
+            elseif strcmpi(mode,'sequence')
                 extension='.pdf';
             elseif strcmp(profile,'MPEG-4')
                 extension='.mp4';
@@ -284,6 +312,24 @@ classdef MovieExportJob < handle
             else
                 extension='.avi';
             end
+        end
+        function obj=fromSnapshot(path,checksum)
+            payload=detecdivui.MovieExportSnapshot.read(path,checksum);
+            obj=detecdivui.MovieExportJob(); obj.Settings=payload.settings; obj.Options=payload.options;
+            for k=1:numel(payload.entries)
+                item=payload.entries(k); proxy=roi(item.id,item.value); proxy.display=item.display;
+                if ~isempty(item.data)
+                    ds=dataseries(); names=fieldnames(item.data);
+                    for j=1:numel(names), ds.(names{j})=item.data.(names{j}); end
+                    proxy.data=ds;
+                else, proxy.data=dataseries.empty;
+                end
+                session=detecdivui.MovieSnapshotSession(item,proxy,fileparts(path));
+                model=detecdivui.LayerModel(); model.restoreSnapshot(session,item.layers,item.styles);
+                obj.Entries(end+1)=struct('session',session,'model',model,'proxy',proxy,'selected',item.selected, ...
+                    'overlay',item.overlay,'regions',item.regions,'frameCount',item.frameCount,'viewport',item.viewport);
+            end
+            obj.Options.compositeProvider=@(r,f,p)obj.composite(r,f,p);
         end
     end
     methods (Static,Access=private)
@@ -299,6 +345,12 @@ classdef MovieExportJob < handle
         function cleanup(fig,temp)
             if isgraphics(fig), delete(fig); end
             if isfile(temp), delete(temp); end
+            if isfolder(temp)
+                parent=char(java.io.File(fileparts(temp)).getCanonicalPath());
+                actual=char(java.io.File(temp).getCanonicalPath());
+                assert(strcmpi(fileparts(actual),parent),'detecdivui:ExportCleanup','Temporary output escaped its output directory.');
+                rmdir(temp,'s');
+            end
         end
     end
 end

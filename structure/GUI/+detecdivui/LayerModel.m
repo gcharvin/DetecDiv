@@ -97,6 +97,14 @@ classdef LayerModel < handle
             end
             copy.store();
         end
+        function restoreSnapshot(obj,session,layers,styles)
+            obj.Session=session; obj.Key='1:1'; obj.Layers=layers;
+            obj.invalidate(); obj.Styles=containers.Map('KeyType','char','ValueType','any');
+            for k=1:numel(layers)
+                key=sprintf('%s:%d:%s',obj.Key,k,layers(k).name); obj.Styles(key)=styles{k};
+            end
+            obj.store();
+        end
         function plane = read(obj,index,frame)
             if obj.Frame ~= frame
                 obj.Planes = cell(1,numel(obj.Layers)); obj.Histograms = cell(1,numel(obj.Layers)); obj.Frame = frame;

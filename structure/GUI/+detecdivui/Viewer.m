@@ -21,6 +21,7 @@ classdef Viewer < handle
         RecentClassifiers
         Classifiers
         MovieExport
+        Hub
     end
     properties (Access = private)
         LayerDialog = []
@@ -161,6 +162,7 @@ classdef Viewer < handle
             if nargin < 7, recentClassifierFile = fullfile(prefdir,'recentClassifiers.mat'); end
             obj.RecentProjects = detecdivui.RecentProjects(recentFile);
             obj.RecentClassifiers = detecdivui.RecentClassifiers(recentClassifierFile);
+            obj.Hub=detecdivui.HubConnection(); obj.Hub.OnChanged=detecdivui.Callback(obj,'hubChanged');
             obj.Session = detecdivui.Session();
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
             obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
@@ -709,13 +711,21 @@ classdef Viewer < handle
         function progress=movieProgress(obj)
             progress=obj.progressOwner('Display');
         end
+        function connectHub(obj)
+            obj.Hub.connect(obj.Figure);
+        end
+        function hubChanged(obj)
+            obj.Status.Text=obj.Hub.Message; obj.Status.Tooltip=obj.Hub.Message;
+            if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), obj.MovieExport.refreshHub(); end
+        end
         function sources=movieSources(obj,scope)
-            sources=struct('session',{},'model',{},'position',{},'zone',{},'frame',{},'channel',{},'overlay',{},'outlines',{});
+            sources=struct('session',{},'model',{},'position',{},'zone',{},'frame',{},'channel',{},'overlay',{},'outlines',{},'viewport',{});
             if obj.Session.Position==0, return; end
             obj.rememberImageView();
             if strcmp(scope,'current')
                 states=struct('project',obj.Session.Project,'position',obj.Session.Position,'zone',obj.Session.Zone, ...
-                    'frame',obj.Frame.Value,'channel',obj.Channels.Items{obj.Channels.Value},'overlay',obj.OverlayChannels.Value);
+                    'frame',obj.Frame.Value,'channel',obj.Channels.Items{obj.Channels.Value},'overlay',obj.OverlayChannels.Value, ...
+                    'xlim',obj.Axes.XLim,'ylim',obj.Axes.YLim);
             elseif strcmp(scope,'open')
                 states=obj.ImageViews([obj.ImageViews.zone]>0);
             else
@@ -735,7 +745,7 @@ classdef Viewer < handle
                 if isempty(at), continue; end
                 sources(end+1)=struct('session',obj.Sessions{at},'model',obj.DisplayModels{at}, ...
                     'position',state.position,'zone',state.zone,'frame',state.frame,'channel',state.channel, ...
-                    'overlay',state.overlay,'outlines',obj.Overlays.Value); %#ok<AGROW>
+                    'overlay',state.overlay,'outlines',obj.Overlays.Value,'viewport',[state.xlim state.ylim]); %#ok<AGROW>
             end
         end
         function refreshClassifierAccess(obj)
@@ -1567,6 +1577,10 @@ classdef Viewer < handle
             obj.ProjectRunsMenu = obj.Host.menu(pipelines,'Project Runs','Separator','on','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.showProjectRuns());
             obj.Host.menu(pipelines,'Refresh Project Runs','MenuSelectedFcn',@(~,~)obj.Pipeline.refreshProjectRuns());
+            hub=obj.Host.menu([],'Hub');
+            obj.Host.menu(hub,'Connection...','MenuSelectedFcn',@(~,~)obj.connectHub());
+            obj.Host.menu(hub,'Refresh Connection','MenuSelectedFcn',@(~,~)obj.Hub.refresh());
+            obj.Host.menu(hub,'Sign Out','MenuSelectedFcn',@(~,~)obj.Hub.logout());
             view = obj.Host.menu([],'View');
             obj.BrowserMenu = obj.Host.widgetMenu(view,'Projects');
             obj.Host.widgetMenu(view,'Image');

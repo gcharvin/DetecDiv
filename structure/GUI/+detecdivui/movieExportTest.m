@@ -56,6 +56,19 @@ reader=VideoReader(path); assert(abs(reader.FrameRate-20)<.01);
 count=0; while hasFrame(reader), frame=readFrame(reader); assert(size(frame,3)==3); count=count+1; end
 assert(count==3 && ~widget.Busy && ~widget.Progress.Active); clear reader;
 assert(isequal(r.image,pixels)&&isequal(r.display,metadata)&&d.Dirty);
+% Image sequences use the identical capture path and a new folder per export.
+format.Value='PNG Sequence'; format.ValueChangedFcn(format,[]);
+png=widget.exportNow(fullfile(folder,'png_frames'));
+assert(isfolder(png)&&numel(dir(fullfile(png,'*.png')))==3&&isempty(widget.LastError));
+format.Value='TIFF Sequence'; format.ValueChangedFcn(format,[]);
+tiff=widget.exportNow(fullfile(folder,'tiff_frames'));
+assert(isfolder(tiff)&&numel(dir(fullfile(tiff,'*.tif')))==3&&isempty(widget.LastError));
+assert(isequal(imread(fullfile(png,'frame_000001.png')),imread(fullfile(tiff,'frame_000001.tif'))));
+assert(~isempty(v.Host.findCommand('Connection...')));
+execution=findall(body,'Tag','movie-execution'); target=findall(body,'Tag','movie-hub-target');
+execution.Value='hub'; execution.ValueChangedFcn(execution,[]);
+assert(strcmp(target.Visible,'on')&&strcmp(findall(body,'Tag','movie-export').Text,'Submit'));
+execution.Value='local'; execution.ValueChangedFcn(execution,[]); assert(strcmp(target.Visible,'off'));
 % Sequence/PDF uses Score's isolated full-canvas print path.
 format.Value='PDF Sequence'; format.ValueChangedFcn(format,[]);
 pdf=widget.exportNow(fullfile(folder,'sequence.pdf')); assert(isfile(pdf)&&isempty(widget.LastError));

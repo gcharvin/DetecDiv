@@ -1,9 +1,11 @@
 function gh = score_exportSequence(dh, gh, rois, opts)
 % Print the entire logical canvas, independently of desktop window limits.
 [gh, ~] = score_layoutExport(gh, dh, rois, opts);
+if isfield(opts,'previewOnly')&&opts.previewOnly, return; end
 fig = dh.Figure;
 canvas = gh.sequenceLayout.canvasSize;
 dpi = get(groot,'ScreenPixelsPerInch');
+if isfield(opts,'exportDPI'), dpi=opts.exportDPI; end
 fig.PaperUnits = 'inches';
 fig.PaperPositionMode = 'manual';
 fig.PaperPosition = [0 0 canvas/dpi];
