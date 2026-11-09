@@ -271,7 +271,7 @@ classdef MaskDraft < handle
                 cfg = score_getObjectDisplayConfig(scratch,obj.Channel);
                 cfg.objectFamily = families.name{row}; cfg.maskProvider = obj.Channel;
                 score_setObjectDisplayConfig(scratch,obj.Channel,cfg);
-                score_syncCellModelFrames(scratch,obj.Channel,frames,'Save',false);
+                score_syncCellModelFrames(scratch,obj.Channel,frames,'Save',false,'TrackPolicy','preserve_frame_or_unassigned');
             end
             scratch.display = display;
         end

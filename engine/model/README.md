@@ -15,6 +15,12 @@ families may use different indexed channels in the same ROI. Several families
 may also share one provider, but their instances and genealogies remain
 independent.
 
+The new viewer exposes **Masks** and **Tracks** in **Annotations**. Its editing
+policy requires one tracking result per mask layer: `cellModel.maskLayerPlan`
+plans explicit copies/rebindings for legacy shared providers without renumbering
+IDs or changing the schema. See `docs/DETECTIVE_UI_ANNOTATIONS.md`. This does
+not impose an automatic migration on historical runs or other frontends.
+
 ## HDF5 layout
 
 The sidecar uses typed columnar datasets:
@@ -33,6 +39,11 @@ their object, track and state IDs. Explicit relabel operations use
 `cellModel.relabelFrame` so an object's identity follows the pixels. Score
 persists the model sidecar after editing but never writes model data into the
 ROI image HDF5.
+
+`syncFrame` additionally accepts `preserve_frame_or_unassigned`: existing
+same-frame labels retain identity, while newly painted labels have track ID 0.
+The new viewer uses it to avoid treating equal pixel labels on different frames
+as inferred tracking. Legacy callers retain their existing default policies.
 
 Genealogy is scoped by `family_id`. One parent may have several children, but
 a child track may have only one parent within a family. Validation also

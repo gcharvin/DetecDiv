@@ -6,7 +6,7 @@ p=inputParser;
 p.addParameter('TrackPolicy','preserve_or_unassigned',@(x)ischar(x)||isstring(x));
 p.parse(varargin{:});
 policy=lower(char(string(p.Results.TrackPolicy)));
-if ~any(strcmp(policy,{'preserve_or_unassigned','preserve_or_label','mask_label'}))
+if ~any(strcmp(policy,{'preserve_or_unassigned','preserve_or_label','mask_label','preserve_frame_or_unassigned'}))
     error('cellModel:BadTrackPolicy','Unknown TrackPolicy: %s',policy);
 end
 
@@ -49,6 +49,7 @@ report=struct('family_id',familyId,'frame',frame,'added',added, ...
 end
 
 function trackId=newTrackId(model,familyId,label,policy)
+if strcmp(policy,'preserve_frame_or_unassigned'), trackId=uint64(0); return; end
 if strcmp(policy,'mask_label'), trackId=uint64(label); return; end
 same=find(model.instances.family_id==familyId & model.instances.mask_label==label & ...
     model.instances.track_id~=0,1,'last');

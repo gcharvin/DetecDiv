@@ -3,6 +3,7 @@ function reports = score_syncCellModelFrames(roiobj, channelName, frames, vararg
 
 p = inputParser;
 p.addParameter('Save', true, @(x) islogical(x) && isscalar(x));
+p.addParameter('TrackPolicy','preserve_or_label',@(x)ischar(x)||isstring(x));
 p.parse(varargin{:});
 
 reports = struct([]);
@@ -27,7 +28,7 @@ frames = unique(round(double(frames(:).')), 'stable');
 frames = frames(frames >= 1 & frames <= size(roiobj.image,4));
 for frame = frames
     [model, report] = cellModel.syncFrame(model, familyId, frame, ...
-        roiobj.image(:,:,pix,frame), 'TrackPolicy', 'preserve_or_label');
+        roiobj.image(:,:,pix,frame), 'TrackPolicy', p.Results.TrackPolicy);
     report.status = 'ok';
     if isempty(reports), reports = report; else, reports(end+1) = report; end %#ok<AGROW>
 end
