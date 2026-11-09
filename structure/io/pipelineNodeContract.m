@@ -1053,6 +1053,10 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.parameters.static = unique([contract.parameters.static cnnLstmExecutionStaticKeys()], 'stable');
                 contract.binding.mode = 'singleChannel';
                 contract.binding.exactCount = 1;
+                if isequal(getNestedParam(node,{'frozen_encoder_head'},false),true)
+                    contract.binding.mode='channelSet';
+                    contract.binding.exactCount=[];
+                end
                 contract.binding.resolveAt = 'design';
                 contract.capabilities.outputsMasks = false;
                 contract.capabilities.outputsChannels = false;

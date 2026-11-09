@@ -22,6 +22,11 @@ c.bounds.Values=[1 6];c.dataset.split=struct('train',[1 2],'val',3,'test',4);
 classifier=dlnetwork([imageInputLayer([16 16 3],'Normalization','none','Name','image'); ...
  globalAveragePooling2dLayer('Name','pool')]);
 encoderFile=fullfile(c.path,['netCNN_' c.strid '.mat']);save(encoderFile,'classifier');
+node=struct('id','frozen','type','classifier','pkg','cnn_lstm','params', ...
+ struct('modulePath',c.path,'moduleId',c.strid,'operation','train','channels',{{'R','G','B'}}));
+node.params=classifierApplyPipelineInputBindings(node.params,c,pipelineNodeContract(node),'train',[]);
+verifyTrue(testCase,node.params.frozen_encoder_head);
+contract=pipelineNodeContract(node);verifyEmpty(testCase,contract.binding.exactCount);
 for k=1:4
  r=roi(['fixture' num2str(k)],[1 1 16 16]);r.parent=c;r.path=c.path;r.channelid=[1 1 1];
  r.display.channel={'RGB'};r.display.stretchlim=repmat([0;1],1,3);r.display.indexed=0;
@@ -46,4 +51,25 @@ verifyEqual(testCase,numel(unique(ds.data.labels(1:3))),1);
 c.roi(4).data(1)=ds;
 [score,fig]=lstm_timeseries.statistics(c,'Rois',4,'Confusion','Classes','Silent');
 verifyEqual(testCase,score.N,2);verifyEqual(testCase,sum(score.confusion,'all'),2);close(fig);
+end
+function testFrozenTrainingPreflightRequiresEncoderButNotTrainedHead(testCase)
+root=tempname;mkdir(root);cleanup=onCleanup(@()rmdir(root,'s')); %#ok<NASGU>
+c=classi(root,'preflight_fixture',1);c.classifierPkg='cnn_lstm';c.category={'LSTM'};
+c.classes={'budding','dead'};c.trainingParam=cnn_lstm.setparam();c.trainingParam.frozen_encoder_head=true;
+c.trainingParam.train_CNN_classifier=false;c.trainingParam.classifier_output{end}='sequence-to-one';
+c.channelName={'R','G','B'};c.dataset.channels=c.channelName;
+r=roi('image_fixture',[1 1 2 2]);r.path=c.path;r.channelid=[1 2 3];r.display.channel=c.channelName;
+r.image=zeros(2,2,3,14,'uint16');c.roi=r;
+classiObj=c;save(fullfile(c.path,[c.strid '_classification.mat']),'classiObj');
+classifier=struct('fixture',true);save(fullfile(c.path,['netCNN_' c.strid '.mat']),'classifier');
+p=struct('pkg','cnn_lstm','modulePath',c.path,'moduleId',c.strid,'operation','train', ...
+ 'frozen_encoder_head',true,'channels',{c.channelName},'outputName','prediction');
+node=struct('id','test','type','classifier','pkg','cnn_lstm','params',p,'enabled',true);
+pipe=struct('nodes',node,'edges',struct([]));ctx=struct('roiList',r);
+[~,report]=validatePipeline(pipe,ctx);
+verifyFalse(testCase,any(contains(string(report.errors),'assembled model')));
+verifyFalse(testCase,any(contains(string(report.errors),'expects exactly 1')));
+verifyFalse(testCase,any(strcmp({report.classifierArtifacts.status},'missing_model')));
+pipe.nodes.params.operation='validate';[~,report]=validatePipeline(pipe,ctx);
+verifyTrue(testCase,any(strcmp({report.classifierArtifacts.status},'missing_model')));
 end

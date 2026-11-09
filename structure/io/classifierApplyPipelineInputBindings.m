@@ -27,6 +27,10 @@ if isempty(selectorKeys)
 end
 
 trainingParam = classifierStructProperty(classiObj, 'trainingParam');
+if cnn_lstm.isFrozenEncoder(classiObj)
+    % Architecture marker from the linked model, not a user data binding.
+    params.frozen_encoder_head=true;
+end
 % Numeric LSTM bindings have separate persisted storage; retain the legacy
 % selector overlay behavior for other modules and older classifier files.
 try

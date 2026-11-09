@@ -2918,6 +2918,16 @@ function [ok, msg, modelPath] = validateCnnLstmArtifacts(modulePath, moduleId, p
     end
     mainModel = fullfile(modulePath, [moduleId '.mat']);
     cnnModel = fullfile(modulePath, ['netCNN_' moduleId '.mat']);
+    if isfield(p,'frozen_encoder_head')&&isequal(p.frozen_encoder_head,true)
+        intent=lower(char(string(getField(p,'operation',getField(p,'intent','validate')))));
+        required={cnnModel};modelPath=cnnModel;
+        if ~strcmp(intent,'train'),required{end+1}=mainModel;modelPath=mainModel;end
+        missing=required(~cellfun(@isfile,required));
+        if ~isempty(missing)
+            ok=false;msg=sprintf('Frozen CNN/LSTM %s requires: %s.',intent,strjoin(missing,', '));
+        end
+        return;
+    end
     modelPath = mainModel;
     switch outputMode
         case 'cnn_only'
