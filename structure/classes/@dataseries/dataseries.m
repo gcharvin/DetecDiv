@@ -548,7 +548,7 @@ function ensurePlotProperties(obj)
             col = obj.data.(nm);
             % Plot metadata must not rewrite existing annotation categories,
             % ordinal ordering, or values outside the inference class list.
-            if iscategorical(col)
+            if iscategorical(col) || endsWith(nm,'_training')
                 continue;
             end
             if ~iscategorical(col)

@@ -80,3 +80,11 @@ verifyEqual(testCase,ds.data.labels_training(1:2),labels);
 verifyEqual(testCase,categories(ds.data.labels_training),categories(labels));
 verifyTrue(testCase,isordinal(ds.data.labels_training));
 end
+
+function testStringTrainingAnnotationsRemainUnchanged(testCase)
+t=table(["manually reviewed";"uncertain"],'VariableNames',{'labels_training'});
+ds=dataseries();ds.data=t;ds.userData=struct('classes',{{'cell','unclassified'}});
+ds=cnn_lstm.resetInferenceOutputs(ds,"cell",false,["undefined","cell"],4);
+verifyClass(testCase,ds.data.labels_training,'string');
+verifyEqual(testCase,ds.data.labels_training(1:2),t.labels_training);
+end
