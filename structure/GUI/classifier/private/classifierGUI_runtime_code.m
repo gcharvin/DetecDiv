@@ -682,6 +682,7 @@ function showParamEditor(app, key)
         'Position',[baseX 55 w 170], ...
         'Editable','off', ...
         'WordWrap','on', ...
+        'Tag','ClassifierTrainingScope', ...
         'Value',trainingScopeLines(app,app.Data.classiObj));
     scopeBox.Tooltip = ['Explicit ownership contract: data quality, trainable ' ...
         'sub-module, frozen neighbours, split, and prediction output.'];
@@ -1257,6 +1258,13 @@ function lines = trainingScopeLines(app,classiObj) %#ok<INUSD>
 % Render package-owned training/data provenance.
 scope=classifierBinding.trainingScopeSpec(classiObj);
 lines={['TRAINING SCOPE - ' scope.displayName]};
+[~,inputPolicy]=classifierBinding.trainingParameterSpec(classiObj);
+separateInputs=isfield(inputPolicy,'inputSummary')&&~isempty(inputPolicy.inputSummary);
+if separateInputs
+    selected=feval(inputPolicy.inputSummary,classiObj);
+    lines{end+1}=sprintf('MODEL INPUT BINDINGS (%d, shared by all ROIs):',numel(selected));
+    lines=[lines selected(:)'];
+end
 if ~isempty(scope.objective),lines{end+1}=['Objective: ' scope.objective];end %#ok<AGROW>
 if ~isempty(scope.trainedComponents)
     lines{end+1}=['CHANGES: ' strjoin(scope.trainedComponents,', ')]; %#ok<AGROW>
@@ -1267,6 +1275,7 @@ end
 bindings=classifierBinding.trainingSpec(classiObj);
 if ~isempty(bindings),lines{end+1}='DATA USED:';end %#ok<AGROW>
 for i=1:numel(bindings)
+    if separateInputs&&strcmpi(bindings(i).storage,'packageInputs'),continue;end
     value='';
     try value=scopeValueText(app,classifierBinding.value(classiObj,bindings(i)));catch,end
     if isempty(value),value='<not configured>';end
@@ -1354,7 +1363,12 @@ if isempty(app.inputBindingPanel)||~isvalid(app.inputBindingPanel)
         'ButtonPushedFcn',@(~,~)openSeparateInputBindings(app));
 end
 app.inputBindingPanel.Visible='on';app.inputBindingTrainingButton.Visible='on';
-app.inputBindingSummary.Value=feval(policy.inputSummary,classiObj);
+selected=feval(policy.inputSummary,classiObj);
+app.inputBindingPanel.Title=sprintf('Model input bindings (%d, all ROIs)',numel(selected));
+app.inputBindingSummary.Value=selected;
+app.inputBindingSummary.Tag='ClassifierModelInputBindings';
+app.inputBindingTrainingButton.Text=sprintf('Model bindings (%d) - Configure inputs...',numel(selected));
+app.inputBindingTrainingButton.Tooltip='Opens the existing Pipeline2 binding editor. Model inputs are separate from static training parameters.';
 end
 
 function openSeparateInputBindings(app)

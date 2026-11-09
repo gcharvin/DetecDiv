@@ -28,6 +28,21 @@ when comparing them with legacy formatted datasets.
 Legacy Windows run snapshots whose selector separator was rewritten to `\`
 are also read as logical bindings, without requiring another dataset export.
 
+The ROI annotation window shows the full ordered model binding list and its
+global scope. **Configure inputs in Pipeline2...** opens the same input editor
+used by Classifier GUI, and **Apply inputs** refreshes the ROI summary. The
+**Show** checkboxes control curve visibility only. Hiding a curve never removes
+a model input.
+
+A classifier-scoped training pipeline imports those bindings and displays them
+read-only under **Bindings**. Reopen the training pipeline after applying a new
+selection in the classifier input editor. **Training parameters...** imports
+the classifier's static architecture, optimizer, and formatting settings for
+the run. Input count, selectors, order and components are excluded from that
+static dialog. Inference keeps its separate execution parameter contract.
+The existing launch confirmation also lists effective model bindings,
+including any per-run overrides, before submission.
+
 In **Training parameters**:
 - Choose `outputMode`: `frame`, `window`, or `video`.
 - `windowLength` is the fixed number of frames for `window`; in `frame` mode it

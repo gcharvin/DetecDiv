@@ -265,7 +265,11 @@ end
 spec = struct();
 try
     specFun = str2func([params.pkg '.executionSpec']);
-    spec = specFun(classiObj);
+    if strcmp(params.pkg,'lstm_timeseries')
+        spec = specFun(classiObj,opts.intent);
+    else
+        spec = specFun(classiObj);
+    end
     if isstruct(spec) && isfield(spec, 'defaults') && isstruct(spec.defaults)
         defaults = spec.defaults;
         privateKeys = {};

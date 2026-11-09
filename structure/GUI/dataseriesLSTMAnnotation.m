@@ -20,8 +20,14 @@ for shortcutIndex=1:numel(legend)
 end
 hint=uilabel(grid,'Text',[strjoin(legend,'   ') '     ← / →: previous / next annotation unit'],'Tag','AnnotationShortcuts');
 hint.Layout.Row=2;
-panel=uipanel(grid);body=uigridlayout(panel,[1 2]);body.ColumnWidth={250,'1x'};
-choicesPanel=uipanel(body,'Title','Visible curves (display only)');choiceGrid=uigridlayout(choicesPanel,[1 1]);choiceGrid.Scrollable='on';
+panel=uipanel(grid);body=uigridlayout(panel,[1 2]);body.ColumnWidth={320,'1x'};
+sidebar=uigridlayout(body,[4 1]);sidebar.RowHeight={24,112,30,'1x'};sidebar.Padding=[0 0 0 0];
+inputTitle=uilabel(sidebar,'Text','Model input bindings','FontWeight','bold','Tag','NumericModelBindingsTitle');
+inputSummary=uitextarea(sidebar,'Editable','off','Tag','NumericModelBindings');
+inputSummary.Tooltip='Ordered model bindings shared by every ROI: dataseries / variable and component. Edited only in the existing Pipeline2 input editor.';
+inputEditor=uibutton(sidebar,'Text','Configure inputs in Pipeline2...', ...
+    'Tag','ConfigureNumericModelBindings','ButtonPushedFcn',@(~,~)editBindings());
+choicesPanel=uipanel(sidebar,'Title','Show curves (display only)');choiceGrid=uigridlayout(choicesPanel,[1 1]);choiceGrid.Scrollable='on';
 plots=uigridlayout(body,[1 1]);plots.Scrollable='on';
 labelAxes=uiaxes(grid);labelAxes.Layout.Row=4;labelAxes.Tag='NumericStateLabels';
 bottom=uigridlayout(grid,[1 10]);bottom.ColumnWidth={40,75,25,75,60,'1x',85,85,85,85};
@@ -49,6 +55,9 @@ loadRoi();
         roiIndex=str2double(roiChoice.Value);session=classif.annotationSession(roiIndex);loadRoi();
     end
     function loadRoi()
+        selected=lstm_timeseries.inputBindingSummary(classif);
+        inputTitle.Text=sprintf('Model bindings: %d inputs, all ROIs',numel(selected));
+        inputSummary.Value=selected;
         try
             r=classif.roi(roiIndex);[X,schema]=lstm_timeseries.features(classif,r);
             n=size(X,2);frame.Limits=[1 max(2,n)];frame.Value=1;
@@ -70,7 +79,7 @@ loadRoi();
                 caption=schema(k).selector;
                 if schema(k).column>1,caption=sprintf('%s — component %d',caption,schema(k).column);end
                 title(ax,caption,'Interpreter','none');ax.XLim=[1 max(2,n)];
-                checkCaption=sprintf('%d. %s',k,schema(k).variable);
+                checkCaption=sprintf('Show %d. %s',k,schema(k).variable);
                 if schema(k).column>1,checkCaption=sprintf('%s [%d]',checkCaption,schema(k).column);end
                 traceChecks(k)=uicheckbox(choiceGrid,'Text',checkCaption, ...
                     'Tooltip',[caption newline 'Display only. To change training inputs, use Configure inputs in Pipeline2 in Classifier GUI.'], ...
@@ -91,6 +100,12 @@ loadRoi();
             if ~isempty(firstFrame),frame.Value=firstFrame(1);end
             changeVisibility();position();status.Text='Select an annotation unit and press its class key, or Assign. Changes are saved.';
         catch ME,status.Text=ME.message;end
+    end
+    function editBindings()
+        lstm_timeseries.openInputBindings(classif,@bindingsApplied);
+    end
+    function bindingsApplied()
+        if isvalid(fig),loadRoi();end
     end
     function pick(ax)
         point=ax.CurrentPoint;frame.Value=max(1,min(frame.Limits(2),round(point(1,1))));position();

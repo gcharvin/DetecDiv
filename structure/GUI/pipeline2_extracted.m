@@ -7207,6 +7207,11 @@ classdef pipeline2 < matlab.apps.AppBase
 
             if showBindings
                 bindingLabel = uilabel(grid, 'Text', 'Bindings');
+                if strcmpi(node.pkg,'lstm_timeseries')
+                    bindingLabel.Text=sprintf('Bindings - %d model inputs (all ROIs)',node.params.featureCount);
+                    bindingLabel.Tooltip='Ordered dataseries / variable / component bindings from the classifier input editor; separate from static training parameters.';
+                    bindingLabel.Tag='NumericModelBindingsHeading';
+                end
                 bindingLabel.FontWeight = 'bold';
                 bindingLabel.Layout.Row = row;
                 bindingLabel.Layout.Column = layoutSpan(app, 1, colCount);
@@ -7436,7 +7441,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function txt = staticParamSectionTitle(app, node) %#ok<INUSD>
-            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+            if isNumericTrainingNode(app,node)
+                txt = 'Training parameters';
+            elseif strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 txt = 'Execution parameters';
             else
                 txt = 'Static parameters';
@@ -7444,7 +7451,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function txt = staticParamButtonText(app, node) %#ok<INUSD>
-            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+            if isNumericTrainingNode(app,node)
+                txt = 'Training parameters...';
+            elseif strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 txt = 'Execution parameters...';
             else
                 txt = 'Static parameters...';
@@ -7453,6 +7462,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function txt = staticParamSummary(app, node, staticData) %#ok<INUSD>
             n = size(staticData, 1);
+            if isNumericTrainingNode(app,node)
+                txt=sprintf('%d settings imported from classifier; inputs in Bindings',n);
+                return;
+            end
             if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 if n == 0
                     txt = 'No execution parameter.';
@@ -7532,7 +7545,9 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function txt = staticParametersDialogHeader(app, node)
             nodeId = char(string(getField(app, node, 'id', 'module')));
-            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+            if isNumericTrainingNode(app,node)
+                txt = ['Training parameters for ' nodeId];
+            elseif strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 txt = ['Pipeline execution parameters for ' nodeId];
             else
                 txt = ['Static/template parameters for ' nodeId];
@@ -7540,7 +7555,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function txt = staticParametersDialogHint(app, node)
-            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+            if isNumericTrainingNode(app,node)
+                txt = 'Imported classifier training settings. Changes apply to this pipeline run. Model inputs remain in Bindings.';
+            elseif strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 policy = pipelineClassifierReferencePolicy(node);
                 if policy.declared && ~policy.required
                     txt = 'Module settings, model releases and environment paths are saved in this pipeline; no trained classifier object is required.';
@@ -8559,7 +8576,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(pkg,'lstm_timeseries') && isempty(classiObj)
                 classiObj=struct('trainingParam',params);
             end
-            [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj);
+            intent=getField(app,params,'operation',getField(app,params,'intent',''));
+            [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj, intent);
             if ~hasExecutionSpec
                 return;
             end
@@ -8580,13 +8598,17 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function [spec, available] = classifierExecutionSpec(app, pkg, classiObj)
+        function [spec, available] = classifierExecutionSpec(app, pkg, classiObj, intent)
             if nargin < 3
                 classiObj = [];
             end
+            if nargin < 4,intent='';end
             pkg = canonicalModulePackageName(app, 'classifier', pkg);
             available = true;
             switch lower(strtrim(char(string(pkg))))
+                case 'lstm_timeseries'
+                    if isempty(intent),spec=lstm_timeseries.executionSpec(classiObj);
+                    else,spec=lstm_timeseries.executionSpec(classiObj,intent);end
                 case 'cnn_lstm'
                     spec = cnnLstmExecutionSpec(app, classiObj);
                 case 'cellposesam'
@@ -8622,6 +8644,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 spec.defaults = classifierApplyTrainingExecutionDefaults( ...
                     spec.defaults, classiObj, spec, 'pipeline');
             end
+        end
+
+        function [spec, available] = classifierExecutionSpecForNode(app,node)
+            pkg=getField(app,node,'pkg','');classif=[];
+            if strcmpi(pkg,'lstm_timeseries')
+                classif=struct('trainingParam',getField(app,node,'params',struct()));
+            end
+            [spec,available]=classifierExecutionSpec(app,pkg,classif);
+        end
+
+        function tf = isNumericTrainingNode(app,node)
+            p=getField(app,node,'params',struct());
+            intent=getField(app,p,'operation',getField(app,p,'intent',''));
+            tf=strcmpi(getField(app,node,'pkg',''),'lstm_timeseries')&& ...
+                any(strcmpi(string(intent),{'train','training','fit'}));
         end
 
         function params = migrateCellLatentBindings(app, params) %#ok<INUSD>
@@ -11096,12 +11133,18 @@ classdef pipeline2 < matlab.apps.AppBase
                 resLabel.Layout.Column = 2;
                 resLabel.Tooltip = tooltip;
 
-                ctrl = createBindingControl(app, grid, node, param, value, choices, direction, editable);
+                rowEditable=editable;
+                if isNumericTrainingNode(app,node)&&app.RuntimeInputModeLocked&& ...
+                        isempty(app.BindingEditorClassifier)&&startsWith(param,'feature')
+                    rowEditable=false;
+                    tooltip=[tooltip ' Model input bindings are edited in Configure inputs in Pipeline2 from Classifier GUI. Reopen the training pipeline after applying them.'];
+                end
+                ctrl = createBindingControl(app, grid, node, param, value, choices, direction, rowEditable);
                 ctrl.Layout.Row = i;
                 ctrl.Layout.Column = 3;
-                if strcmpi(node.pkg,'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'))
+                if rowEditable&&strcmpi(node.pkg,'lstm_timeseries')&&~isempty(regexp(param,'^feature\d+$','once'))
                     remove=uibutton(grid,'Text','Remove','Tag',['RemoveInput_' param], ...
-                        'Enable',ternary(app,editable&&node.params.featureCount>1,'on','off'), ...
+                        'Enable',ternary(app,rowEditable&&node.params.featureCount>1,'on','off'), ...
                         'ButtonPushedFcn',@(~,~)changeNumericInputList(app,node,param));
                     remove.Layout.Row=i;remove.Layout.Column=4;
                 end
@@ -11432,6 +11475,10 @@ classdef pipeline2 < matlab.apps.AppBase
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
             enableState = ternary(app, editable, 'on', 'off');
             if strcmpi(node.pkg,'lstm_timeseries')&&strcmp(param,'featureCount')
+                if ~editable
+                    ctrl=uilabel(parent,'Text',sprintf('%d model input bindings (from classifier)',node.params.featureCount));
+                    return;
+                end
                 ctrl=uigridlayout(parent,[1 2]);ctrl.RowHeight={24};ctrl.ColumnWidth={'1x',100};ctrl.Padding=[0 0 0 0];
                 uilabel(ctrl,'Text',sprintf('%d input traces',node.params.featureCount));
                 uibutton(ctrl,'Text','Add input','Tag','AddNumericInput','Enable',enableState, ...
@@ -11439,6 +11486,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             isInput = strcmpi(char(string(direction)), 'Input');
+            if isInput&&~editable&&strcmpi(node.pkg,'lstm_timeseries')&& ...
+                    ~isempty(regexp(param,'^feature\d+$','once'))
+                key=['featureColumn' regexp(param,'\d+$','match','once')];
+                component=getField(app,node.params,key,1);text=char(string(value));
+                if component>1,text=sprintf('%s (component %d)',text,component);end
+                ctrl=uitextarea(parent,'Editable','off','Value',{text},'Tag',['NumericReadOnlyBinding_' param]);
+                return;
+            end
             if isInput && isDataSeriesVariableBindingParamForUi(app, param)
                 ctrl = createDataSeriesVariableBindingControl(app, parent, node, param, value, choices, direction, editable);
                 return;
@@ -14364,7 +14419,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     if strcmp(keyLower, 'callmode'), choices = {'context','arguments'}; end
                 case 'classifier'
                     pkgName = char(string(getField(app, node, 'pkg', '')));
-                    [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                    [spec, hasExecutionSpec] = classifierExecutionSpecForNode(app, node);
                     if hasExecutionSpec
                         [declaredChoices, found] = classifierSpecMetadataValue(app, spec, 'choices', key);
                         if found
@@ -15367,7 +15422,7 @@ classdef pipeline2 < matlab.apps.AppBase
             keyLower = lower(keyText);
             if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
                 pkgName = char(string(getField(app, node, 'pkg', '')));
-                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                [spec, hasExecutionSpec] = classifierExecutionSpecForNode(app, node);
                 if hasExecutionSpec
                     [declaredLabel, found] = classifierSpecMetadataValue(app, spec, 'labels', keyText);
                     if found && ~isempty(strtrim(char(string(declaredLabel))))
@@ -15467,7 +15522,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier')
                 pkgName = char(string(getField(app, node, 'pkg', '')));
-                [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkgName);
+                [spec, hasExecutionSpec] = classifierExecutionSpecForNode(app, node);
                 if hasExecutionSpec
                     [declaredTip, found] = classifierSpecMetadataValue(app, spec, 'tips', key);
                     if found && ~isempty(strtrim(char(string(declaredTip))))
@@ -16062,6 +16117,10 @@ classdef pipeline2 < matlab.apps.AppBase
             lines{end+1} = ['Nodes: ' formatRunNodeListForConfirm(app, getNestedFieldLocal(app, ctx, {'run','selectedNodes'}, {}))];
             nodeConstraints = formatNodeConstraintSummary(app, getNestedFieldLocal(app, ctx, {'run','nodeParams'}, struct()));
             lines = [lines nodeConstraints]; %#ok<AGROW>
+            trainingInputs = pipelineClassifierTrainingSummary(app.Data.nodes, ...
+                getNestedFieldLocal(app,ctx,{'run','nodeParams'},struct()), ...
+                getNestedFieldLocal(app,ctx,{'run','selectedNodes'},{}));
+            lines = [lines trainingInputs(:)'];
             txt = strjoin(lines, newline);
         end
 
