@@ -71,6 +71,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
     pipelineAssertConcreteInputs(report.nodes);
+    pipelineAssertRoiCompleteness(report.nodes, ctx, true);
     report.bindingResolution = bindingResolution;
     report = initRunReport(report, ctx);
     ctx = initializePipelineProgress(ctx, report);
@@ -2182,6 +2183,8 @@ function ctx = executeProcessorNode(node, ctx)
     end
 
     rois = selectRoisForNode(ctx, node);
+    coverageCtx = ctx; coverageCtx.roiList = rois;
+    pipelineAssertRoiCompleteness(node, coverageCtx);
     if isempty(rois)
         warning('runPipeline:ProcessorNoROI', ...
             'Processor node %s has no ROI to process; skipping.', char(string(node.id)));
@@ -2650,6 +2653,8 @@ end
 function ctx = executeClassifierNode(node, ctx)
     shallowObj = getShallowObject(ctx);
     rois = selectRoisForNode(ctx, node);
+    coverageCtx = ctx; coverageCtx.roiList = rois;
+    pipelineAssertRoiCompleteness(node, coverageCtx);
     if isempty(shallowObj) && isempty(rois)
         error('runPipeline:ClassifierNoInput', ...
             'Classifier node %s requires either a shallow project context or explicit ROI input.', char(string(node.id)));

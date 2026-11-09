@@ -1154,6 +1154,14 @@ function validateExtractedRoisForFov(fovList, fovIdx, roiSel, requirePersistedOu
                 fovIdx, mat2str(missing), newline, details);
         end
     end
+    % Existence alone is insufficient after an interrupted streaming write.
+    [channelIdx, ~] = resolvePreflightChannels(fovList(fovIdx), p);
+    frames = [];
+    if isfield(p, 'frames'), frames = p.frames; end
+    if isempty(frames)
+        frames = 1:max(fovList(fovIdx).frames);
+    end
+    roiAssertFrameCoverage(rois(roiSel), fovList(fovIdx).channel(channelIdx), frames, requirePersistedOutput);
 end
 
 function tf = roiExtractionMaterialized(r, requirePersistedOutput)

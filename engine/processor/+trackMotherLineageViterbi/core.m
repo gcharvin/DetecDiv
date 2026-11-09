@@ -147,6 +147,11 @@ if isempty(frameIdx)
 end
 
 nF = numel(frameIdx);
+if any(~isfinite(frameIdx) | frameIdx < 1 | frameIdx ~= fix(frameIdx) | frameIdx > Tfull)
+    error('trackMotherLineageViterbi:IncompleteInput', ...
+        'ROI %s has %d image frames, but requested frames include %g. Re-extract the ROI before tracking.', ...
+        roiobj.id, Tfull, max(frameIdx));
+end
 
 %% ---- Extraction des features par frame (candidats) ----
 feats = localComputeFeaturesFromLabelSeq(maskSeq(:,:,1,frameIdx));

@@ -23,8 +23,9 @@ function [ok, report] = runPipelineDry(pipe, ctx, opts)
     if okV
         try
             pipelineAssertConcreteInputs(report.nodes);
+            pipelineAssertRoiCompleteness(report.nodes, ctx, true);
         catch ME
-            if ~strcmp(ME.identifier, 'runPipeline:UnresolvedResource')
+            if ~any(strcmp(ME.identifier, {'runPipeline:UnresolvedResource','runPipeline:IncompleteROI'}))
                 rethrow(ME);
             end
             okV = false;
