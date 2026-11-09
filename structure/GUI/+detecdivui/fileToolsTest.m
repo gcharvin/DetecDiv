@@ -5,7 +5,7 @@ classiObj = classi(); classiObj.strid = 'Test classifier'; classiObj.path = fold
 file = fullfile(folder,'test_classification.mat'); save(file,'classiObj');
 template = pipelineConstruct(folder,'Test pipeline',1); pipelineSave(template);
 viewer = detecdiv_ui([],'Visible','off','LayoutFile','','AutoSaveLayout',false, ...
-    'RecentProjectsFile','','RecentPipelinesFile','');
+    'RecentProjectsFile','','RecentPipelinesFile','','RecentClassifiersFile','');
 closeViewer = onCleanup(@()delete(viewer));
 baseNames = evalin('base','who');
 assert(~isempty(viewer.Host.findCommand('Open Classifier...')));

@@ -30,7 +30,7 @@ assertToolbar(oldAxes);
 before = snapshotResources();
 
 state('mode') = 'once'; state('created') = 0; state('poisoned') = 0; state('guarded') = false;
-recovered = feval(fixture,project,'off',layout,false,'','',fault); resources('recovered') = recovered;
+recovered = feval(fixture,project,'off',layout,false,'','','',fault); resources('recovered') = recovered;
 assert(state('poisoned') == 1, ...
     'The fixture did not exercise the deleted interaction-container fault.');
 assert(state('guarded'),'Image axes were constructed outside the startup menu-dispatch guard.');
@@ -46,7 +46,7 @@ waitUntil(@()noNewResources(before));
 state('mode') = 'always'; state('created') = 0; state('poisoned') = 0;
 failed = false;
 try
-    unexpected = feval(fixture,project,'off',layout,true,'','',fault); resources('unexpected') = unexpected;
+    unexpected = feval(fixture,project,'off',layout,true,'','','',fault); resources('unexpected') = unexpected;
 catch err
     failed = true;
     assert(contains(lower(getReport(err,'basic','hyperlinks','off')),'interaction') || ...
@@ -63,7 +63,7 @@ assertOldViewer();
 state('mode') = 'delete'; state('created') = 0; state('poisoned') = 0;
 failed = false;
 try
-    unexpected = feval(fixture,project,'off',layout,true,'','',fault); resources('unexpected') = unexpected;
+    unexpected = feval(fixture,project,'off',layout,true,'','','',fault); resources('unexpected') = unexpected;
 catch
     failed = true;
 end
@@ -95,7 +95,7 @@ end
 
 function viewer = launch(project,layout,autoSave)
 viewer = detecdiv_ui(project,'Visible','off','DiscoverWorkspace',false,'LayoutFile',layout, ...
-    'AutoSaveLayout',autoSave,'RecentProjectsFile','','RecentPipelinesFile','');
+    'AutoSaveLayout',autoSave,'RecentProjectsFile','','RecentPipelinesFile','','RecentClassifiersFile','');
 end
 
 function injectFault(ax,phase,state)

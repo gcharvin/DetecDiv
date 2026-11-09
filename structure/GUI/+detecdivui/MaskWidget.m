@@ -42,9 +42,9 @@ classdef MaskWidget < handle
             radius = min(256,max(1,round(double(radius))));
             grid = uigridlayout(parent,[12 1]); grid.Padding = [6 6 6 6];
             grid.RowHeight = {24,28,28,28,28,28,28,28,24,'1x',28,24};
-            header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0]; header.ColumnWidth = {'1x',60};
+            header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0]; header.ColumnWidth = {'1x',90};
             obj.Target = uilabel(header,'Text','','Interpreter','none','Tag','mask-target');
-            uibutton(header,'Text','Done','Tag','mask-done','Tooltip','Close the assistant and keep mask drafts', ...
+            uibutton(header,'Text','← Objects','Tag','mask-done','Tooltip','Return to Objects and keep mask drafts', ...
                 'ButtonPushedFcn',@(~,~)viewer.closeContourTool());
             obj.Provider = uidropdown(grid,'Items',{'—'},'Tag','mask-provider', ...
                 'Tooltip','Authoritative mask provider resolved by Score', ...
@@ -193,6 +193,16 @@ classdef MaskWidget < handle
         function saved(obj,draft)
             obj.followSave(draft); obj.Viewer.contourChanged();
         end
+        function forgetCleanSource(obj,source)
+            keep = true(1,numel(obj.Drafts));
+            for k = 1:numel(obj.Drafts)
+                if ~isequal(obj.Drafts{k}.Source,source), continue; end
+                assert(~obj.Drafts{k}.Dirty,'detecdivui:AnnotationDraft', ...
+                    'Save or discard pending annotations before refreshing GT metadata.');
+                keep(k) = false;
+            end
+            obj.Drafts = obj.Drafts(keep); obj.Projects = obj.Projects(keep);
+        end
         function assertEditable(obj,draft,modelMutation)
             assert(obj.Viewer.annotationEditingAllowed(draft.Source),'detecdivui:ClassifierReview', ...
                 'Switch this classifier to Edit before modifying or saving annotations.');
@@ -222,7 +232,7 @@ classdef MaskWidget < handle
                 if d.Dirty && (nargin < 2 || isequal(d.Source,source)), yes = true; return; end
             end
         end
-        function ok = resolve(obj,project,callback)
+        function ok = resolve(obj,project,callback,sources)
             if nargin < 2, project = []; end
             if nargin < 3, callback = []; end
             ok = false;
@@ -230,7 +240,9 @@ classdef MaskWidget < handle
             obj.ResolveQueue = {};
             for k = 1:numel(obj.Drafts)
                 d = obj.Drafts{k};
-                if d.Dirty && (isempty(project) || isequal(obj.Projects{k},project))
+                matches = isempty(project) || isequal(obj.Projects{k},project);
+                if nargin >= 4, matches = any(arrayfun(@(r)isequal(r,d.Source),sources)); end
+                if d.Dirty && matches
                     obj.ResolveQueue{end+1} = d;
                 end
             end
@@ -470,6 +482,7 @@ classdef MaskWidget < handle
         end
         function followSave(obj,draft)
             for k = 1:numel(obj.Drafts), obj.Drafts{k}.followSave(draft); end
+            obj.Viewer.annotationSaved(draft.Source);
         end
     end
 end

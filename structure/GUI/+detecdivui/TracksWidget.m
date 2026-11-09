@@ -33,7 +33,7 @@ classdef TracksWidget < handle
             grid = uigridlayout(parent,[13 1]); grid.Padding = [6 6 6 6];
             grid.RowSpacing = 6; grid.Scrollable = 'on';
             grid.RowHeight = {24,28,28,130,28,28,28,28,28,94,28,28,24};
-            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',60};
+            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',90};
             obj.Target = uilabel(row,'Text','','Interpreter','none','Tag','tracks-target');
             uibutton(row,'Text','Done','Tag','tracks-done','Tooltip','Close Tracks and retain the annotation draft', ...
                 'ButtonPushedFcn',@(~,~)viewer.closeTracksTool());

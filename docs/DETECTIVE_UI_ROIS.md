@@ -1,6 +1,6 @@
 # ROIs on the main image
 
-Choose Edit > Define ROIs..., or right-click the image or Projects tree and choose Define ROIs.... These actions require a selected FOV and remain usable with no pipeline selected. The contextual Define ROIs tab then appears in the Display document; it is absent at launch. Done removes the tab and its drawing/preview overlays, returns to Display and retains the pending draft. Switching to Display also suspends drawing handles. Opening an extracted ROI or leaving the FOV context dismisses the assistant. It shares the Image viewport, frame/channel selection and raw-source relinking tools; it never opens a second raw-data viewer.
+Choose Edit > Define ROIs..., or right-click the image or Projects tree and choose Define ROIs.... These actions require a selected FOV and remain usable with no pipeline selected. The contextual Define ROIs assistant replaces the Display document contents on demand. Its ← Display button restores the layer controls and removes drawing/preview overlays while retaining the pending draft. There is no second visible tab strip inside Display. Opening an extracted ROI or leaving the FOV context dismisses the assistant. It shares the Image viewport, frame/channel selection and raw-source relinking tools; it never opens a second raw-data viewer.
 
 ## Drawing and generation
 
@@ -11,7 +11,7 @@ Choose Edit > Define ROIs..., or right-click the image or Projects tree and choo
 
 Manual/Grid previews use scratch FOV objects and the existing package processors; no project ROIs are created by preview. Create ROIs appends through the existing package backend on the selected project FOV. Existing ROI images, IDs and results are preserved; standalone creation does not extract pixels into H5. Save Project (Ctrl+S) explicitly persists lightweight JSON inventory/ROI geometry through shallowSave(...,'shallowObj'), without saving/clearing ROI image caches. Extraction remains a separate pipeline operation.
 
-The assistant is created lazily on explicit opening; its detached tab and draft remain in memory after Done. Navigation/rendering and project closure do not require it to exist; deleted tool instances are rebuilt on their next explicit opening. Opening the assistant is metadata-only. Drawing/preview requests the raw image on demand; absent sources use the existing Relink Raw Data... action. ROI geometry is drawn in raw FOV coordinates, even when the user entered the assistant from a cropped ROI view. The FOV target is shown at the top. Pending shapes/settings are remembered per project/FOV during the session and released when the project closes. Closing the viewer also deletes the detached tab.
+The assistant is created lazily on explicit opening; its hidden page and draft remain in memory after returning to Display. Navigation/rendering and project closure do not require it to exist; deleted tool instances are rebuilt on their next explicit opening. Opening the assistant is metadata-only. Drawing/preview requests the raw image on demand; absent sources use the existing Relink Raw Data... action. ROI geometry is drawn in raw FOV coordinates, even when the user entered the assistant from a cropped ROI view. The FOV target is shown at the top. Pending shapes/settings are remembered per project/FOV during the session and released when the project closes. Closing the viewer also deletes the assistant controls.
 
 ## Pipeline reuse
 
@@ -21,7 +21,7 @@ The definition-only Pipeline Designer uses the same route, with Use in Pipeline.
 
 Replies are checked against the live owner, pipeline/run/module/effective parameter signature and target project/FOV. Switching FOV dismisses a bound assistant rather than silently converting it into standalone creation. Closing its editor or changing the module/run selections rejects a stale reply. Pending module drafts are stored by owner/request identity and FOV, separately from the standalone draft; switching between two ROI steps on the same image preserves each pending geometry.
 
-Successful Use in Run/Pipeline dismisses the image assistant and leaves the editor available. Reopening the module creates a request from the accepted definition; the old request cannot overwrite it. Done suspends an unsubmitted draft without applying it.
+Successful Use in Run/Pipeline dismisses the image assistant and leaves the editor available. Reopening the module creates a request from the accepted definition; the old request cannot overwrite it. Returning to Display suspends an unsubmitted draft without applying it.
 
 Inclusion-crop persistence is not yet fully isolated: bound Use in Run currently applies a changed crop to the project FOV, as required by the existing pattern backend. A separate explicit project-edit or supported run-local crop contract is required before claiming complete draft isolation. See [the pipeline parity matrix](DETECTIVE_UI_PIPELINE_PARITY.md), P23. Preview itself still uses a scratch FOV.
 

@@ -118,7 +118,10 @@ assert(isempty(findall(ax,'Tag','roi-draft-shape')));
 slider.Value = 2; slider.ValueChangedFcn(slider,[]);
 viewer.Host.findCommand('Define ROIs...').invoke();
 assert(viewer.ROIs == assistant && isequal(assistant.Rects,[10 10 12 12]));
-assert(isscalar(findall(ax,'Tag','roi-draft-shape')));
+assert(isscalar(findall(ax,'Tag','roi-draft-shape')), ...
+    'ROI redraw: %d shapes, %d images, same axes %d, zone %d, context %s', ...
+    numel(findall(ax,'Tag','roi-draft-shape')),numel(findall(ax,'Type','image')), ...
+    isequal(ax,viewer.roiAxes()),viewer.Session.Zone,assistant.imageContext());
 % Display is a viewing context: inactive drawing handles must disappear.
 roiTab = findall(tabs,'Tag','roi-tab'); other = tabs.Children(tabs.Children ~= roiTab);
 tabs.SelectedTab = other(1); tabs.SelectionChangedFcn(tabs,[]);
@@ -129,7 +132,7 @@ viewer.ROIs.clearDraft();
 % Selecting the ROIs tab directly must lazily recreate the same tool too.
 tabs.SelectedTab = other(1); delete(viewer.ROIs);
 tabs.SelectedTab = roiTab; tabs.SelectionChangedFcn(tabs,[]);
-assert(isvalid(viewer.ROIs) && isscalar(findall(roiTab,'Tag','roi-mode')));
+assert(isvalid(viewer.ROIs) && isscalar(findall(viewer.widgetFigure('Display'),'Tag','roi-mode')));
 % Entering a cropped ROI dismisses a FOV drawing context.
 node = findall(tree,'Tag','roi-node','Text','ROI 2 · Cells 01');
 tree.SelectedNodes = node; tree.SelectionChangedFcn(tree,[]);

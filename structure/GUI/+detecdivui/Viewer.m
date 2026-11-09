@@ -18,6 +18,7 @@ classdef Viewer < handle
         Data
         Objects
         RecentProjects
+        RecentClassifiers
         Classifiers
     end
     properties (Access = private)
@@ -88,6 +89,9 @@ classdef Viewer < handle
         MaxFrame = 1
         Closing = false
         DisplayTabs
+        DisplayRoot
+        DisplayPage
+        ROIsPage
         ROIsTab
         MasksTab
         TracksTab
@@ -114,12 +118,20 @@ classdef Viewer < handle
         RecentMenu
         RecentCommands = {}
         ClearRecentCommand
+        RecentClassifiersMenu
+        RecentClassifierCommands = {}
+        ClearRecentClassifiersCommand
+        ClassifierSources = struct('object',{},'path',{})
         ProjectSources = {}
         PreviewTimer = []
         PendingPreview = []
         ConstructionComplete = true % Existing live viewers predate this startup flag.
         ObjectsTabs
         ObjectsBrowserTab
+        ObjectsRoot
+        ObjectsPage
+        MasksPage
+        TracksPage
         ObjectsSync = false
         DisplayTools
         HistogramButton
@@ -134,7 +146,7 @@ classdef Viewer < handle
         SwitchingImageView = false
     end
     methods
-        function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile,recentPipelineFile)
+        function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile,recentPipelineFile,recentClassifierFile)
             obj.ConstructionComplete = false;
             startup = detecdivui.startupGuard('begin');
             construction = onCleanup(@()obj.finishConstruction(startup));
@@ -142,7 +154,9 @@ classdef Viewer < handle
             if nargin < 2, visibility = 'on'; end
             if nargin < 5, recentFile = fullfile(prefdir,'recentProjects.mat'); end
             if nargin < 6, recentPipelineFile = fullfile(prefdir,'recentPipelines.mat'); end
+            if nargin < 7, recentClassifierFile = fullfile(prefdir,'recentClassifiers.mat'); end
             obj.RecentProjects = detecdivui.RecentProjects(recentFile);
+            obj.RecentClassifiers = detecdivui.RecentClassifiers(recentClassifierFile);
             obj.Session = detecdivui.Session();
             obj.Host = detecdivui.DockingHost(layoutFile,autoSave);
             obj.Host.OnClosed = detecdivui.Callback(obj,'delete');
@@ -262,10 +276,13 @@ classdef Viewer < handle
             obj.TimeSlider.Layout.Row = 2; obj.TimeSlider.Layout.Column = [1 5];
             displayRoot = uigridlayout(obj.Host.widgetFigure('Display'),[1 1]);
             displayRoot.Padding = [0 0 0 0];
-            obj.DisplayTabs = uitabgroup(displayRoot,'Tag','display-tabs');
-            displayTab = uitab(obj.DisplayTabs,'Title','Display');
-            displayGrid = uigridlayout(displayTab,[1 1]); displayGrid.Padding = [0 0 0 0];
-            displayPanel = uipanel(displayGrid,'BorderType','none');
+            obj.DisplayRoot = displayRoot;
+            % Selection tokens retain controller state, never a second visible
+            % tab strip below the native dockable document header.
+            obj.DisplayTabs = uitabgroup(obj.Host.widgetFigure('Display'),'Tag','display-tabs','Visible','off');
+            uitab(obj.DisplayTabs,'Title','Display');
+            displayPanel = uipanel(displayRoot,'BorderType','none','Tag','display-page');
+            obj.DisplayPage = displayPanel;
             tools = uigridlayout(displayPanel,[13 1]); obj.DisplayTools = tools;
             tools.RowSpacing = 6; tools.Scrollable = 'on';
             tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
@@ -473,11 +490,13 @@ classdef Viewer < handle
                     path = fullfile(folder,file);
                 end
                 activity = obj.Classifiers.Progress.begin('Loading classifier...'); %#ok<NASGU>
+                path = detecdivui.RecentClassifiers.normalizePath(path);
                 [classifier,message] = classiLoad(path);
                 assert(isa(classifier,'classi') && isscalar(classifier) && isvalid(classifier), ...
                     'detecdivui:ClassifierLoad','Could not open this classifier. %s',char(string(message)));
                 obj.Classifiers.add(classifier);
                 obj.Status.Text = 'Classifier opened';
+                obj.rememberClassifier(path,classifier);
             catch err
                 classifier = []; obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
             end
@@ -486,6 +505,52 @@ classdef Viewer < handle
             if nargin < 2, template = obj.Pipeline.openTemplate();
             else, template = obj.Pipeline.openTemplate(path); end
             if ~isempty(template), obj.Host.focusWidget('Pipeline'); end
+        end
+        function ok = rememberClassifier(obj,path,classifier)
+            ok = false;
+            try
+                path = detecdivui.RecentClassifiers.normalizePath(path);
+                at = find(arrayfun(@(r)isequal(r.object,classifier),obj.ClassifierSources),1);
+                record = struct('object',classifier,'path',path);
+                if isempty(at), obj.ClassifierSources(end+1) = record;
+                else, obj.ClassifierSources(at) = record; end
+                obj.RecentClassifiers.remember(path); ok = true;
+            catch err
+                message = ['Classifier opened/saved; recent history was not saved: ' err.message];
+                obj.Status.Text = message; obj.Status.Tooltip = message;
+                obj.Classifiers.annotationStatus(message);
+            end
+            obj.refreshRecentClassifiersMenu();
+        end
+        function classifier = openRecentClassifier(obj,path)
+            classifier = [];
+            try
+                path = detecdivui.RecentClassifiers.normalizePath(path);
+                % Prefer the currently selected snapshot when explicit Open
+                % has loaded several independent handles from the same file.
+                candidates = fliplr(obj.Classifiers.Classifiers);
+                if ~isempty(obj.Classifiers.Current), candidates = [{obj.Classifiers.Current} candidates]; end
+                for item = candidates
+                    c = item{1}; if ~isvalid(c), continue; end
+                    source = '';
+                    at = find(arrayfun(@(r)isequal(r.object,c),obj.ClassifierSources),1);
+                    if ~isempty(at), source = obj.ClassifierSources(at).path;
+                    elseif ~isempty(c.path) && ~isempty(c.strid)
+                        [folder,name] = c.getPath(); source = fullfile(folder,[name '_classification.mat']);
+                    end
+                    if isempty(source) || ~detecdivui.RecentClassifiers.samePath(source,path), continue; end
+                    if ~isequal(obj.Session.Classifier,c)
+                        index = 0;
+                        session = find(cellfun(@(s)isequal(s.Classifier,c),obj.Sessions),1);
+                        if ~isempty(session), index = obj.Sessions{session}.Zone; end
+                        obj.showClassifierROI(c,index);
+                    end
+                    obj.Host.focusWidget('Classifier'); obj.rememberClassifier(path,c); classifier = c; return;
+                end
+                classifier = obj.openClassifier(path);
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
         end
         function showClassifierROI(obj,classifier,index)
             % Share canonical ROI handles with the existing image/editing
@@ -514,9 +579,17 @@ classdef Viewer < handle
         end
         function ok = resolveClassifierEdits(obj,classifier,callback)
             ok = true;
-            k = find(cellfun(@(s)~isempty(s.Classifier) && isequal(s.Classifier,classifier),obj.Sessions),1);
-            if ~isempty(k) && obj.hasMaskWidget()
-                ok = obj.Masks.resolve(obj.Sessions{k}.Project,callback);
+            if obj.hasMaskWidget()
+                ok = obj.Masks.resolve([],callback,classifier.roi);
+            end
+        end
+        function annotationSaved(obj,source)
+            if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), obj.Classifiers.annotationChanged(source); end
+        end
+        function annotationMetadataSaved(obj,source)
+            if obj.hasMaskWidget(), obj.Masks.forgetCleanSource(source); end
+            if obj.Session.Zone > 0 && isequal(obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone),source)
+                obj.loadCurrentImage();
             end
         end
         function yes = annotationEditingAllowed(obj,source)
@@ -706,6 +779,7 @@ classdef Viewer < handle
             end
             obj.ROIsTab.Parent = obj.DisplayTabs;
             obj.DisplayTabs.SelectedTab = obj.ROIsTab;
+            obj.syncDisplayPages();
             obj.ROIs.setActive(true);
             obj.updateImageContext();
             obj.refreshKeyboard();
@@ -727,6 +801,7 @@ classdef Viewer < handle
                 % Detach rather than delete: retain controls and the pending draft.
                 obj.ROIsTab.Parent = [];
             end
+            obj.syncDisplayPages();
             obj.refreshKeyboard();
         end
         function ax = roiAxes(obj)
@@ -747,6 +822,7 @@ classdef Viewer < handle
                 obj.ensureAnnotationDrafts();
                 obj.ObjectsSync = true;
                 obj.MasksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.MasksTab;
+                obj.syncObjectsPages();
                 obj.Masks.setActive(true); obj.refreshKeyboard();
                 obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeContourTool(); obj.widgetEvent('status',err.message);
@@ -757,6 +833,7 @@ classdef Viewer < handle
             obj.ObjectsSync = true;
             if obj.hasMaskWidget(), obj.Masks.setActive(false); end
             if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), obj.MasksTab.Parent = []; end
+            obj.syncObjectsPages();
             obj.ObjectsSync = previousSync;
             obj.refreshKeyboard();
         end
@@ -773,11 +850,13 @@ classdef Viewer < handle
                 obj.closeROITool(); obj.closeContourTool(); obj.ensureAnnotationDrafts();
                 if ~obj.hasTracksWidget()
                     obj.TracksTab = uitab(obj.ObjectsTabs,'Title','Tracks','Tag','tracks-tab');
-                    obj.Tracks = detecdivui.TracksWidget(obj.TracksTab,obj);
+                    obj.TracksPage = obj.toolPage(obj.ObjectsRoot,'tracks-page');
+                    obj.Tracks = detecdivui.TracksWidget(obj.TracksPage,obj);
                     obj.Tracks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
                 end
                 obj.ObjectsSync = true;
                 obj.TracksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.TracksTab;
+                obj.syncObjectsPages();
                 obj.Tracks.setActive(true); obj.refreshKeyboard();
                 obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeTracksTool(); obj.widgetEvent('status',err.message);
@@ -788,6 +867,7 @@ classdef Viewer < handle
             obj.ObjectsSync = true;
             if obj.hasTracksWidget(), obj.Tracks.setActive(false); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), obj.TracksTab.Parent = []; end
+            obj.syncObjectsPages();
             obj.ObjectsSync = previousSync;
             obj.refreshKeyboard();
         end
@@ -836,6 +916,7 @@ classdef Viewer < handle
         function openObjects(obj)
             obj.ensureObjectsWidget(); obj.Host.openObjects(); obj.Objects.setContext();
             obj.ObjectsTabs.SelectedTab = obj.ObjectsBrowserTab;
+            obj.syncObjectsPages();
             obj.Objects.loadObjects();
         end
         function arrangeAnalysisWorkspace(obj)
@@ -1018,21 +1099,25 @@ classdef Viewer < handle
             if obj.hasMaskWidget(), return; end
             obj.ensureObjectsWidget();
             obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Contours','Tag','mask-tab');
-            obj.Masks = detecdivui.MaskWidget(obj.MasksTab,obj);
+            obj.MasksPage = obj.toolPage(obj.ObjectsRoot,'mask-page');
+            obj.Masks = detecdivui.MaskWidget(obj.MasksPage,obj);
             obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
             obj.MasksTab.Parent = [];
         end
         function ensureObjectsWidget(obj)
             if ~isempty(obj.Objects) && isvalid(obj.Objects), return; end
             grid = uigridlayout(obj.Host.widgetFigure('Objects'),[1 1],'Padding',[0 0 0 0]);
-            obj.ObjectsTabs = uitabgroup(grid,'Tag','objects-tools', ...
+            obj.ObjectsRoot = grid;
+            obj.ObjectsTabs = uitabgroup(obj.Host.widgetFigure('Objects'),'Tag','objects-tools','Visible','off', ...
                 'SelectionChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','objectsTab')});
             obj.ObjectsBrowserTab = uitab(obj.ObjectsTabs,'Title','Objects','Tag','objects-browser-tab');
-            obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsBrowserTab,obj);
+            obj.ObjectsPage = obj.toolPage(grid,'objects-page'); obj.ObjectsPage.Visible = 'on';
+            obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsPage,obj);
             obj.Objects.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
         end
         function objectsTabSelected(obj)
             if obj.ObjectsSync || isempty(obj.Objects) || ~isvalid(obj.Objects), return; end
+            obj.syncObjectsPages();
             if ~obj.annotationEditingAllowed()
                 obj.closeContourTool(); obj.closeTracksTool(); return;
             end
@@ -1151,6 +1236,27 @@ classdef Viewer < handle
             obj.RecentMenu.Children = [obj.RecentCommands(1:numel(paths)) {obj.ClearRecentCommand}];
             obj.RecentMenu.Enable = obj.onOff(~isempty(paths)); obj.Host.syncMenus();
         end
+        function clearRecentClassifiers(obj)
+            try
+                obj.RecentClassifiers.clear(); obj.refreshRecentClassifiersMenu();
+                obj.Status.Text = 'Recent classifiers cleared';
+            catch err, obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
+        end
+        function refreshRecentClassifiersMenu(obj)
+            if isempty(obj.RecentClassifiersMenu), return; end
+            paths = obj.RecentClassifiers.Paths;
+            for k = 1:numel(obj.RecentClassifierCommands)
+                command = obj.RecentClassifierCommands{k}; command.Enable = 'off'; command.MenuSelectedFcn = [];
+                if k <= numel(paths)
+                    path = char(paths(k)); [folder,name,extension] = fileparts(path);
+                    command.Text = sprintf('%d %s%s — %s',k,name,extension,folder);
+                    command.Enable = 'on'; command.MenuSelectedFcn = @(~,~)obj.openRecentClassifier(path);
+                end
+            end
+            obj.RecentClassifiersMenu.Children = [obj.RecentClassifierCommands(1:numel(paths)) {obj.ClearRecentClassifiersCommand}];
+            obj.RecentClassifiersMenu.Enable = obj.onOff(~isempty(paths)); obj.Host.syncMenus();
+        end
         function yes = hasROIWidget(obj)
             yes = isa(obj.ROIs,'detecdivui.ROIWidget') && isscalar(obj.ROIs) && isvalid(obj.ROIs);
         end
@@ -1159,9 +1265,12 @@ classdef Viewer < handle
             if isempty(obj.ROIsTab) || ~isvalid(obj.ROIsTab)
                 obj.ROIsTab = uitab(obj.DisplayTabs,'Title','Define ROIs','Tag','roi-tab');
             end
-            % A deleted assistant may have left its controls in the tab.
-            delete(obj.ROIsTab.Children);
-            obj.ROIs = detecdivui.ROIWidget(obj.ROIsTab,obj);
+            if isempty(obj.ROIsPage) || ~isvalid(obj.ROIsPage)
+                obj.ROIsPage = obj.toolPage(obj.DisplayRoot,'roi-page');
+            end
+            % Keep each assistant's controls in the flat document layout.
+            delete(obj.ROIsPage.Children);
+            obj.ROIs = detecdivui.ROIWidget(obj.ROIsPage,obj);
             obj.ROIs.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
             obj.ROIs.OnDismiss = detecdivui.Callback(obj,'closeROITool');
             obj.ROIs.setContext(obj.Session); obj.ROIs.onRender();
@@ -1174,7 +1283,29 @@ classdef Viewer < handle
             if obj.hasROIWidget()
                 obj.ROIs.setActive(isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab));
             end
+            obj.syncDisplayPages();
             obj.refreshKeyboard();
+        end
+        function page = toolPage(~,root,tag)
+            page = uipanel(root,'BorderType','none','Tag',tag,'Visible','off');
+            page.Layout.Row = 1; page.Layout.Column = 1;
+        end
+        function syncDisplayPages(obj)
+            if isempty(obj.DisplayPage) || ~isgraphics(obj.DisplayPage), return; end
+            assistant = obj.hasROIWidget() && ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab) && ...
+                isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab) && ~isempty(obj.ROIsTab.Parent);
+            obj.DisplayPage.Visible = obj.onOff(~assistant);
+            if ~isempty(obj.ROIsPage) && isgraphics(obj.ROIsPage), obj.ROIsPage.Visible = obj.onOff(assistant); end
+        end
+        function syncObjectsPages(obj)
+            if isempty(obj.ObjectsPage) || ~isgraphics(obj.ObjectsPage), return; end
+            mask = obj.hasMaskWidget() && ~isempty(obj.MasksTab) && isvalid(obj.MasksTab) && ...
+                isequal(obj.ObjectsTabs.SelectedTab,obj.MasksTab) && ~isempty(obj.MasksTab.Parent);
+            tracks = obj.hasTracksWidget() && ~isempty(obj.TracksTab) && isvalid(obj.TracksTab) && ...
+                isequal(obj.ObjectsTabs.SelectedTab,obj.TracksTab) && ~isempty(obj.TracksTab.Parent);
+            obj.ObjectsPage.Visible = obj.onOff(~mask && ~tracks);
+            if ~isempty(obj.MasksPage) && isgraphics(obj.MasksPage), obj.MasksPage.Visible = obj.onOff(mask); end
+            if ~isempty(obj.TracksPage) && isgraphics(obj.TracksPage), obj.TracksPage.Visible = obj.onOff(tracks); end
         end
         function finishROIGesture(obj)
             if isvalid(obj), obj.DrawingROI = false; obj.refreshKeyboard(); end
@@ -1231,6 +1362,13 @@ classdef Viewer < handle
                 'Separator','on','MenuSelectedFcn',@(~,~)obj.clearRecentProjects());
             obj.refreshRecentMenu();
             obj.Host.menu(file,'Open Classifier...','MenuSelectedFcn',@(~,~)obj.openClassifier());
+            obj.RecentClassifiersMenu = obj.Host.menu(file,'Recent Classifiers','Enable','off');
+            for k = 1:10
+                obj.RecentClassifierCommands{k} = obj.Host.menu(obj.RecentClassifiersMenu,'','Enable','off');
+            end
+            obj.ClearRecentClassifiersCommand = obj.Host.menu(obj.RecentClassifiersMenu,'Clear Recent Classifiers', ...
+                'Separator','on','MenuSelectedFcn',@(~,~)obj.clearRecentClassifiers());
+            obj.refreshRecentClassifiersMenu();
             obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.saveProject());
             obj.SaveMasksMenu = obj.Host.menu(file,'Save Masks','Enable','off', ...
@@ -1974,6 +2112,7 @@ classdef Viewer < handle
                 if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
                 obj.showReviewSelection();
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
+                if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), obj.Classifiers.onImageFrame(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end

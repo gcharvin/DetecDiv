@@ -12,7 +12,7 @@ r.image=repmat(reshape(uint16(100:102),1,1,1,3),16,12,2,1);
 r.channelid=[1 2]; r.display.channel={'Phase','Fluorescence'};
 r.save(); c.roi=r; c.trainingset=1;
 v=detecdiv_ui([],'Visible','off','DiscoverWorkspace',false,'LayoutFile','', ...
-    'AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','');
+    'AutoSaveLayout',false,'RecentProjectsFile','','RecentPipelinesFile','','RecentClassifiersFile','');
 cleanup=onCleanup(@()delete(v)); v.Classifiers.add(c);
 assert(strcmp(v.Classifiers.Mode,'Review') && ~v.annotationEditingAllowed());
 assert(~v.Classifiers.initializeGT(c,1,'Blank GT'));

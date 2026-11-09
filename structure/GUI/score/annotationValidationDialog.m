@@ -120,8 +120,10 @@ if isvalid(figureHandle), delete(figureHandle); end
         end
         detail.Value = cellstr(detailLines);
         goButton.Enable = onOff(isfinite(row.frame) && row.frame > 0);
-        repairButton.Enable = onOff(row.repairable);
-        repairAllButton.Enable = onOff(any([rows.repairable]));
+        repairButton.Enable = onOff(row.repairable && ...
+            (~persistentMode || ~isempty(p.Results.OnRepair)));
+        repairAllButton.Enable = onOff(any([rows.repairable]) && ...
+            (~persistentMode || ~isempty(p.Results.OnRepairAll)));
         actionable = row.suggested_censor && persistentMode;
         acceptCensorButton.Enable = onOff(actionable && ...
             ~isempty(p.Results.OnAcceptCensor));

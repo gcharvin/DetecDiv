@@ -15,7 +15,7 @@ end
 c.trainingset = 1; originalPixels = c.roi(1).image;
 p = shallow(); p.io.file = 'Real project'; p.fov.id = 'Position';
 v = detecdiv_ui(p,'Visible','off','LayoutFile','','AutoSaveLayout',false, ...
-    'RecentProjectsFile','','RecentPipelinesFile','');
+    'RecentProjectsFile','','RecentPipelinesFile','','RecentClassifiersFile','');
 cleanup = onCleanup(@()delete(v));
 legacy = v.Host.snapshot(); legacy.widgets = rmfield(legacy.widgets,'classifier');
 for k = 1:numel(legacy.layout.documentLayout.tileOccupancy)

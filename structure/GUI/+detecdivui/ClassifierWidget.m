@@ -27,6 +27,8 @@ classdef ClassifierWidget < handle
         ModeField
         ModeSource = []
         InitializeGT
+        ReviewActions = gobjects(0)
+        ReviewDialog = []
     end
     methods
         function obj = ClassifierWidget(figure,viewer)
@@ -42,7 +44,7 @@ classdef ClassifierWidget < handle
             obj.Actions(2) = uibutton(bar,'Text','Advanced...','Tag','classifier-advanced', ...
                 'Tooltip','Open the existing Classifier GUI for dataset preparation, training, validation and runtime export', ...
                 'ButtonPushedFcn',@(~,~)obj.openAdvanced());
-            dataset = uigridlayout(root,[3 1]); dataset.Padding = [0 0 0 0]; dataset.RowHeight = {28,28,'1x'};
+            dataset = uigridlayout(root,[4 1]); dataset.Padding = [0 0 0 0]; dataset.RowHeight = {28,28,'1x',28};
             obj.Selector = uidropdown(dataset,'Items',{'—'},'ItemsData',0,'Enable','off', ...
                 'Tag','classifier-selector','Tooltip','Open classifiers','ValueChangedFcn',@(~,~)obj.selected());
             mode = uigridlayout(dataset,[1 2]); mode.Padding = [0 0 0 0]; mode.ColumnWidth = {'1x',130};
@@ -57,6 +59,13 @@ classdef ClassifierWidget < handle
                 'ColumnWidth',{36,'auto',78,88,80,80}, ...
                 'ColumnFormat',{'numeric','char',{'Training','Test','Validation'},'char','char','char'}, ...
                 'ColumnEditable',[false false true true false false],'Tag','classifier-rois');
+            review = uigridlayout(dataset,[1 2]); review.Padding = [0 0 0 0];
+            obj.ReviewActions(1) = uibutton(review,'Text','Review GT...','Tag','classifier-review', ...
+                'Tooltip','Inspect components and review coverage for the selected ROI', ...
+                'ButtonPushedFcn',@(~,~)obj.reviewGroundTruth('open'));
+            obj.ReviewActions(2) = uibutton(review,'Text','Validate GT','Tag','classifier-validate-gt', ...
+                'Tooltip','Validate saved ground truth and review coverage; successful validation sets Ready', ...
+                'ButtonPushedFcn',@(~,~)obj.reviewGroundTruth('validate'));
             obj.Name = uilabel(root,'Text','Classifier','FontWeight','bold','Interpreter','none');
             row = uigridlayout(root,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',48};
             obj.Path = uitextarea(row,'Editable','off','Value',{'—'},'Tag','classifier-path');
@@ -144,6 +153,61 @@ classdef ClassifierWidget < handle
             yes = ~isempty(classifier) && isequal(classifier,obj.Current) && strcmp(obj.Mode,'Edit') && ...
                 (isempty(obj.Advanced) || ~isvalid(obj.Advanced));
         end
+        function yes = annotationContextMatches(obj,c,index,source,editing)
+            yes = isvalid(c) && isequal(c,obj.Current) && index == obj.SelectedROI && ...
+                index > 0 && index <= numel(c.roi) && isequal(c.roi(index),source) && ...
+                isequal(obj.Viewer.Session.Classifier,c) && obj.Viewer.Session.Zone == index;
+            if editing, yes = yes && obj.canEdit(c); end
+        end
+        function dialog = reviewGroundTruth(obj,action)
+            if nargin < 2, action = 'open'; end
+            dialog = [];
+            try
+                c = obj.Current; index = obj.SelectedROI;
+                if isempty(c) || index < 1 || index > numel(c.roi), return; end
+                if strcmp(action,'validate'), obj.assertEdit(c); end
+                if isempty(obj.ReviewDialog) || ~isvalid(obj.ReviewDialog) || ~obj.ReviewDialog.matches(c,index)
+                    if ~isempty(obj.ReviewDialog) && isvalid(obj.ReviewDialog), delete(obj.ReviewDialog); end
+                    obj.ReviewDialog = detecdivui.ClassifierReviewDialog(obj,obj.Viewer,c,index);
+                end
+                dialog = obj.ReviewDialog;
+                if strcmp(action,'open'), dialog.show();
+                else, dialog.perform(action); end
+            catch err, obj.annotationStatus(err.message);
+            end
+        end
+        function annotationChanged(obj,source)
+            if ~isempty(obj.Current)
+                index = find(arrayfun(@(r)isequal(r,source),obj.Current.roi),1);
+                if ~isempty(index), obj.scanAnnotations(index); obj.datasetRows(); end
+            end
+            if ~isempty(obj.ReviewDialog) && isvalid(obj.ReviewDialog) && isequal(obj.ReviewDialog.Source,source)
+                obj.ReviewDialog.refresh();
+            end
+        end
+        function onImageFrame(obj)
+            if ~isempty(obj.ReviewDialog) && isvalid(obj.ReviewDialog), obj.ReviewDialog.onFrame(); end
+        end
+        function setFrameBounds(obj,c,index,source,value)
+            try
+                obj.assertEdit(c);
+                assert(index > 0 && index <= numel(c.roi) && isequal(c.roi(index),source), ...
+                    'detecdivui:ClassifierContext','The dataset changed. Select the ROI again.');
+                [~,info] = trainingBounds.resolve(c,index);
+                assert(~strcmp(info.source,'global'),'detecdivui:ClassifierBounds', ...
+                    'Global frame bounds are active. Change their mode in Advanced first.');
+                callback = detecdivui.Callback(obj,'setFrameBounds',c,index,source,value);
+                if ~obj.Viewer.resolveClassifierEdits(c,callback), obj.datasetRows(); return; end
+                session = c.annotationSession(index); session.setFrameBounds(value);
+                obj.Viewer.annotationMetadataSaved(source); obj.annotationChanged(source); obj.datasetRows();
+                obj.annotationStatus('Frame bounds updated; save classifier to persist');
+            catch err
+                obj.datasetRows(); obj.annotationStatus(err.message);
+            end
+        end
+        function annotationStatus(obj,message)
+            obj.Status.Text = message; obj.Status.Tooltip = message;
+        end
         function setMode(obj,mode)
             assert(ismember(mode,{'Review','Edit'}),'detecdivui:ClassifierMode','Choose Review or Edit.');
             if ~isempty(obj.Advanced) && isvalid(obj.Advanced)
@@ -182,7 +246,7 @@ classdef ClassifierWidget < handle
                 assert(~isempty(exists),'detecdivui:ClassifierGT','No annotation contract is available for this classifier.');
                 if all(exists(required)) && any(exists)
                     obj.openGroundTruth(source,index,session.Spec);
-                    obj.scanAnnotations(index); obj.datasetRows();
+                    obj.annotationChanged(target);
                     obj.Status.Text = 'Existing ground truth opened'; return;
                 end
                 assert(~any(exists),'detecdivui:ClassifierGT', ...
@@ -210,7 +274,7 @@ classdef ClassifierWidget < handle
                 end
                 initialized = true;
                 obj.openGroundTruth(source,index,session.Spec);
-                obj.scanAnnotations(index); obj.datasetRows(); obj.parameters();
+                obj.annotationChanged(target); obj.parameters();
                 obj.Status.Text = 'Ground truth initialized as Draft; save classifier to persist its bindings';
             catch err
                 obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
@@ -234,6 +298,7 @@ classdef ClassifierWidget < handle
                 assert(isfile(fullfile(folder,[name '_classification.mat'])), ...
                     'detecdivui:ClassifierSave','The classifier file was not written.');
                 obj.refresh(); obj.Status.Text = 'Classifier saved';
+                obj.Viewer.rememberClassifier(fullfile(folder,[name '_classification.mat']),obj.Current);
             catch err
                 obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
             end
@@ -257,6 +322,7 @@ classdef ClassifierWidget < handle
         end
         function delete(obj)
             if ~isempty(obj.Editor) && isvalid(obj.Editor), delete(obj.Editor); end
+            if ~isempty(obj.ReviewDialog) && isvalid(obj.ReviewDialog), delete(obj.ReviewDialog); end
             % The legacy editor owns its save/close flow; never force-close it.
         end
     end
@@ -337,12 +403,7 @@ classdef ClassifierWidget < handle
                 if column == 3
                     c.setRoiSet(index,event.NewData);
                 elseif column == 4
-                    [~,info] = trainingBounds.resolve(c,index);
-                    assert(~strcmp(info.source,'global'),'detecdivui:ClassifierBounds', ...
-                        'Global frame bounds are active. Change their mode in Advanced first.');
-                    count = annotationManager.frameCount(c.roi(index));
-                    trainingBounds.setRoi(c,index,event.NewData,'FrameCount',count);
-                    obj.scanAnnotations(index);
+                    obj.setFrameBounds(c,index,c.roi(index),event.NewData); return;
                 else, return;
                 end
                 obj.datasetRows(); obj.parameters(); obj.Status.Text = 'Dataset updated; save classifier to persist';
@@ -391,6 +452,9 @@ classdef ClassifierWidget < handle
             for item = reshape(obj.Actions,1,[]), item.Enable = matlab.lang.OnOffSwitchState(editable); end
             obj.ModeField.Enable = matlab.lang.OnOffSwitchState(available);
             obj.InitializeGT.Enable = matlab.lang.OnOffSwitchState(editable && obj.SelectedROI > 0);
+            obj.ReviewActions(1).Enable = matlab.lang.OnOffSwitchState(available && obj.SelectedROI > 0);
+            obj.ReviewActions(2).Enable = obj.InitializeGT.Enable;
+            if ~isempty(obj.ReviewDialog) && isvalid(obj.ReviewDialog), obj.ReviewDialog.refreshAccess(); end
             if ~available
                 obj.Parameters.Data = cell(0,2); return;
             end
