@@ -69,6 +69,9 @@ setVisible(viewer,3,true); setVisible(viewer,4,true);
 assert(isscalar(panels(viewer)) && viewer.roiAxes().UserData.layer == 3);
 % The raw ROI assistant uses the clicked panel's source channel/provenance.
 viewer.Host.findCommand('Parent FOV').invoke(); setVisible(viewer,1,true); setVisible(viewer,2,true);
+% FOV tabs retain their own presentation and frame, independently of ROIs.
+layout.Value = false; layout.ValueChangedFcn(layout,[]);
+frame.Value = 2; frame.ValueChangedFcn(frame,[]);
 axes = panels(viewer); image = findall(axes(2),'Type','image');
 detecdivui.Callback.call(image.ButtonDownFcn,image,[]);
 viewer.openROITool(); mode = findall(figure,'Tag','roi-mode'); mode.Value = 'roiPattern'; mode.ValueChangedFcn(mode,[]);

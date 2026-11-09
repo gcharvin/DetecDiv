@@ -45,7 +45,7 @@ assert(key(window,'ArrowLeft','',false)); waitFrame(17);
 viewer.Host.findCommand('Back 10 Frames').invoke(); assert(frame.Value == 7);
 viewer.Host.findCommand('Forward 10 Frames').invoke(); assert(frame.Value == 17);
 viewer.openROITool(); viewer.Host.focusWidget('Image'); settle();
-assert(~key(window,'ArrowLeft','canvas div',false)); settle(); assert(frame.Value == 17);
+assert(~key(window,'ArrowLeft','canvas div',false)); settle(); assert(frame.Value == 1);
 viewer.closeROITool();
 % ROI definition switches the central image to raw FOV coordinates. Return
 % explicitly to the cached ROI sequence before testing frame navigation.

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font:12px "Segoe UI",sans-serif;color:#222;background:#efefef}
+#tabs{height:100%;display:flex;align-items:stretch;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;border-bottom:1px solid #b7b7b7}
+.tab{display:flex;flex:none;align-items:center;border:1px solid #b7b7b7;border-bottom:0;background:#e5e5e5;white-space:nowrap}
+.tab+.tab{border-left:0}.tab.selected{background:#fafafa;border-top:2px solid #2879b3}
+button{font:inherit;color:inherit;border:0;background:transparent;cursor:default}
+.select{height:100%;padding:2px 7px;text-align:left}.close{flex:none;width:22px;height:22px;margin-right:2px;padding:0;font-size:17px;line-height:20px;border-radius:2px}
+button:hover{background:#dceaf5}.close:hover{background:#e8b9b9;color:#7e1717}
+button:focus-visible{outline:1px solid #2879b3;outline-offset:-2px}
+.empty{padding:4px 8px;color:#555}
+</style></head><body><div id="tabs" role="tablist" aria-label="Images"></div><script>
+function setup(component){
+    const root=document.getElementById('tabs'); let state={},sequence=0;
+    function send(action,id){component.Data={...state,action,id,sequence:++sequence};}
+    function update(){
+        const data=component.Data;
+        if(!data || !Object.prototype.hasOwnProperty.call(data,'tabs'))return;
+        const previous=state.selected; state=data;
+        const tabs=Array.isArray(data.tabs)?data.tabs:(data.tabs&&data.tabs.id?[data.tabs]:[]);
+        root.replaceChildren();
+        if(!tabs.length){const empty=document.createElement('span');empty.className='empty';empty.textContent='Image';root.append(empty);return;}
+        for(const tab of tabs){
+            const holder=document.createElement('div');holder.className='tab'+(tab.id===data.selected?' selected':'');holder.dataset.id=tab.id;
+            const select=document.createElement('button');select.className='select';select.type='button';select.textContent=tab.title;
+            select.title=tab.tooltip||tab.title;select.setAttribute('role','tab');select.setAttribute('aria-selected',String(tab.id===data.selected));
+            select.onclick=()=>send('select',tab.id);
+            const close=document.createElement('button');close.className='close';close.type='button';close.textContent='×';
+            close.title='Close '+tab.title;close.setAttribute('aria-label','Close '+tab.title);
+            close.onclick=event=>{event.stopPropagation();send('close',tab.id);};
+            holder.append(select,close);root.append(holder);
+            if(tab.id===data.selected && previous!==data.selected)holder.scrollIntoView({block:'nearest',inline:'nearest'});
+        }
+    }
+    component.addEventListener('DataChanged',update);update();document.body.dataset.ready='true';
+}
+</script></body></html>

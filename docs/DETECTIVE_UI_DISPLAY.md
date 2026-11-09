@@ -41,8 +41,20 @@ Semantic coloring by lineage, censoring, cell state and tracking provider, layer
 
 ## Tests
 
+The central Image workspace keeps one tab per visited project/FOV/ROI context.
+FOV tabs use `Image: FOV <name>` and cropped views use `ROI <number>`;
+the tooltip includes the project and full hierarchy. Selecting an existing ROI
+reactivates its tab. Frame, active channel, overlay mode and zoom are retained
+per tab, while the existing LayerModel retains contrast/color/layer settings.
+Display, Objects, Data and Pipeline follow the selected context. The canvas stays
+in its original native figure to preserve axes interactions and drawing tools.
+Each image tab has a close button; closing removes its UI reference. Scientific data
+and annotation drafts remain owned by the existing controllers. Closing a project
+removes its image tabs. Tabs are session-local and do not reopen raw files on startup.
+
 ```matlab
 detecdivui.layerTest();
+detecdivui.imageTabsTest();
 detecdivui.displayTest();
 detecdivui.contoursTest();
 detecdivui.separateChannelsTest();

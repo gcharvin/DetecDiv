@@ -94,7 +94,7 @@ back = findall(viewer.Figure,'Tag','parent-fov');
 viewer.Host.setWidgetVisible('Display',false);
 back.ButtonPushedFcn(back,[]);
 assert(viewer.Session.Zone == 0);
-assert(isequal(getPixels(ax),pixels+100));
+assert(isequal(getPixels(ax),pixels)); % FOV retains its own frame.
 assert(isempty(viewer.ROIs));
 viewer.Host.setWidgetVisible('Display',true);
 viewer.openROITool(); assert(isa(viewer.ROIs,'detecdivui.ROIWidget') && isvalid(viewer.ROIs));
@@ -102,7 +102,7 @@ delete(viewer.ROIs); % Deleted optional tools must also leave navigation usable.
 node = findall(tree,'Tag','roi-node','Text','ROI 2 · Cells 01'); assert(isscalar(node));
 tree.SelectedNodes = node;
 tree.SelectionChangedFcn(tree,[]); back.ButtonPushedFcn(back,[]);
-assert(viewer.Session.Zone == 0 && isequal(getPixels(ax),pixels+100));
+assert(viewer.Session.Zone == 0 && isequal(getPixels(ax),pixels));
 viewer.openROITool();
 assert(isvalid(viewer.ROIs) && isscalar(findall(viewer.widgetFigure('Display'),'Tag','roi-mode')));
 % Done removes the contextual tab and drawing handles, retaining the draft.
@@ -137,6 +137,7 @@ assert(isempty(findall(tabs,'Tag','roi-tab')));
 back.ButtonPushedFcn(back,[]);
 % An unreadable frame must clear old pixels, then recover on navigation.
 position.srclist{1}(2).name = 'missing-frame.tif';
+slider.Value = 2; slider.ValueChangedFcn(slider,[]);
 viewer.Host.findCommand('Reload Image').invoke();
 assert(isempty(findall(ax,'Type','image')));
 status = findall(viewer.Figure,'Tag','status');

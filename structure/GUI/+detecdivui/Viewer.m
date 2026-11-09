@@ -123,6 +123,14 @@ classdef Viewer < handle
         DisplayTools
         HistogramButton
         HistogramRequested = []
+        ImageTabs
+        ImageTabStrip
+        NextImageTabId = 0
+        ImageTabRevision = 0
+        ImageViews = struct('tab',{},'project',{},'position',{},'zone',{}, ...
+            'frame',{},'channel',{},'overlay',{},'xlim',{},'ylim',{})
+        ActiveImageView = 0
+        SwitchingImageView = false
     end
     methods
         function obj = Viewer(project, visibility, layoutFile, autoSave,recentFile,recentPipelineFile)
@@ -144,7 +152,19 @@ classdef Viewer < handle
                 obj.JumpKeys = cellfun(@lower,specialKeys{3},'UniformOutput',false);
             end
             obj.createMenus();
-            root = uigridlayout(obj.Figure,[4 1]);
+            imageWorkspace = uigridlayout(obj.Figure,[2 1]);
+            imageWorkspace.Padding = [0 0 0 0]; imageWorkspace.RowSpacing = 0;
+            imageWorkspace.RowHeight = {30,'1x'};
+            obj.ImageTabStrip = uihtml(imageWorkspace,'Tag','image-tab-strip', ...
+                'HTMLSource',fullfile(fileparts(mfilename('fullpath')),'imageTabs.html'), ...
+                'DataChangedFcn',@(~,event)obj.imageTabEvent(event.Data));
+            % Native tabs retain navigation handles; the visible header adds
+            % accessible close buttons without moving the image axes.
+            obj.ImageTabs = uitabgroup(obj.Figure,'Tag','image-tabs','Visible','off', ...
+                'SelectionChangedFcn',@(~,~)obj.imageTabSelected());
+            uitab(obj.ImageTabs,'Title','Image','Tag','empty-image-tab');
+            obj.syncImageTabStrip();
+            root = uigridlayout(imageWorkspace,[4 1]);
             root.RowHeight = {32,'1x',24,0};
             root.Padding = [8 6 8 6];
             root.BackgroundColor = [0.95 0.96 0.97];
@@ -370,6 +390,9 @@ classdef Viewer < handle
                     if zone > 0 && zone <= numel(project.fov(position).roi), session.selectZone(zone); end
                 end
                 obj.DisplayModels{index}.invalidate(); obj.rebuildTree();
+                for k = 1:numel(obj.ImageViews)
+                    if isequal(obj.ImageViews(k).project,old), obj.ImageViews(k).project = project; end
+                end
             end
             obj.activate(index);
             obj.selectProjectNode();
@@ -396,6 +419,7 @@ classdef Viewer < handle
             obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
             if obj.hasROIWidget(), obj.ROIs.forgetProject(obj.Sessions{index}.Project); end
             obj.storeView();
+            obj.forgetImageViews(obj.Sessions{index}.Project);
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             if numel(obj.ProjectSources) >= index, obj.ProjectSources(index) = []; end
             obj.DisplayModels(index) = [];
@@ -1384,6 +1408,7 @@ classdef Viewer < handle
         end
         function activate(obj,index)
             if obj.ActiveProject == index, return; end
+            obj.rememberImageView();
             obj.storeView();
             obj.ImageRequested = false;
             obj.ActiveProject = index; obj.Session = obj.Sessions{index};
@@ -1424,6 +1449,150 @@ classdef Viewer < handle
             if index > 0, obj.SelectedZone = index; end
             obj.selectCurrentNode(); obj.refreshView();
         end
+        function rememberImageView(obj)
+            k = obj.ActiveImageView;
+            if k == 0 || ~obj.ImageRequested || isempty(obj.Frame), return; end
+            state = obj.ImageViews(k);
+            % activate() saves before replacing the project's controls.
+            if ~isequal(state.project,obj.Session.Project), return; end
+            % A queued callback may refresh the new tab before its pixels
+            % replace the outgoing image. Only snapshot a rendered context.
+            key = sprintf('%d:%d:%d',obj.ActiveProject,state.position,state.zone);
+            if ~strcmp(obj.RenderKey,key), return; end
+            state.frame = obj.Frame.Value;
+            state.channel = obj.Channels.Items{obj.Channels.Value};
+            state.overlay = obj.OverlayChannels.Value;
+            state.xlim = obj.Axes.XLim; state.ylim = obj.Axes.YLim;
+            obj.ImageViews(k) = state;
+        end
+        function syncImageView(obj)
+            if obj.SwitchingImageView, return; end
+            obj.rememberImageView();
+            if obj.Session.Position == 0, return; end
+            obj.SwitchingImageView = true;
+            guard = onCleanup(@()obj.endImageSwitch());
+            k = find(arrayfun(@(view)isequal(view.project,obj.Session.Project) && ...
+                view.position == obj.Session.Position && view.zone == obj.Session.Zone,obj.ImageViews),1);
+            if isempty(k)
+                tab = uitab(obj.ImageTabs,'Tag','image-context-tab');
+                obj.NextImageTabId = obj.NextImageTabId+1;
+                tab.UserData = sprintf('image-%d',obj.NextImageTabId);
+                menu = uicontextmenu(obj.Figure);
+                uimenu(menu,'Text','Close','MenuSelectedFcn',@(~,~)obj.closeImageView(tab));
+                tab.ContextMenu = menu;
+                obj.ImageViews(end+1) = struct('tab',tab,'project',obj.Session.Project, ...
+                    'position',obj.Session.Position,'zone',obj.Session.Zone, ...
+                    'frame',obj.Frame.Value,'channel','','overlay',obj.OverlayChannels.Value, ...
+                    'xlim',[],'ylim',[]);
+                k = numel(obj.ImageViews);
+            end
+            state = obj.ImageViews(k);
+            if state.zone == 0
+                state.tab.Title = ['Image: FOV ' char(string(state.project.fov(state.position).id))];
+            else
+                state.tab.Title = sprintf('ROI %d',state.zone);
+            end
+            state.tab.Tooltip = obj.Session.breadcrumb();
+            if k ~= obj.ActiveImageView
+                obj.Frame.Value = state.frame; obj.PreferredChannel = state.channel;
+                obj.OverlayChannels.Value = state.overlay; obj.RenderKey = '';
+                obj.ActiveImageView = k;
+            end
+            obj.ImageTabs.SelectedTab = state.tab;
+            empty = findall(obj.ImageTabs,'Tag','empty-image-tab');
+            delete(empty);
+            obj.syncImageTabStrip();
+        end
+        function syncImageTabStrip(obj)
+            if isempty(obj.ImageTabStrip) || ~isvalid(obj.ImageTabStrip), return; end
+            tabs = struct('id',{},'title',{},'tooltip',{}); selected = '';
+            for k = 1:numel(obj.ImageViews)
+                tab = obj.ImageViews(k).tab;
+                tabs(end+1) = struct('id',tab.UserData,'title',tab.Title,'tooltip',tab.Tooltip); %#ok<AGROW>
+                if k == obj.ActiveImageView, selected = tab.UserData; end
+            end
+            obj.ImageTabRevision = obj.ImageTabRevision+1;
+            obj.ImageTabStrip.Data = struct('revision',obj.ImageTabRevision,'tabs',tabs,'selected',selected);
+        end
+        function imageTabEvent(obj,event)
+            if obj.Closing || obj.SwitchingImageView || obj.DrawingROI || ~isstruct(event) || ...
+                    ~all(isfield(event,{'action','id'})), return; end
+            k = find(arrayfun(@(view)strcmp(view.tab.UserData,event.id),obj.ImageViews),1);
+            if isempty(k), return; end % Closed IDs are never reused.
+            tab = obj.ImageViews(k).tab;
+            switch char(event.action)
+                case 'close', obj.closeImageView(tab);
+                case 'select'
+                    obj.ImageTabs.SelectedTab = tab; obj.imageTabSelected();
+            end
+            if obj.ImageRequested, obj.focusImage(); end
+        end
+        function imageTabSelected(obj)
+            if obj.SwitchingImageView || obj.Closing, return; end
+            if obj.DrawingROI
+                if obj.ActiveImageView > 0, obj.ImageTabs.SelectedTab = obj.ImageViews(obj.ActiveImageView).tab; end
+                return;
+            end
+            k = find(arrayfun(@(view)isequal(view.tab,obj.ImageTabs.SelectedTab),obj.ImageViews),1);
+            if isempty(k) || k == obj.ActiveImageView, return; end
+            obj.cancelPreview(); obj.rememberImageView();
+            state = obj.ImageViews(k);
+            project = obj.findProject(state.project);
+            if project == 0, obj.closeImageView(state.tab); return; end
+            obj.activate(project);
+            obj.Session.selectPosition(state.position); obj.Session.selectZone(state.zone);
+            if state.zone > 0, obj.SelectedZone = state.zone; end
+            % syncImageView must not save the outgoing controls a second time.
+            obj.ActiveImageView = 0;
+            obj.selectCurrentNode(); obj.refreshView(true);
+        end
+        function closeImageView(obj,tab)
+            if obj.DrawingROI, return; end
+            k = find(arrayfun(@(view)isequal(view.tab,tab),obj.ImageViews),1);
+            if isempty(k), return; end
+            if k == obj.ActiveImageView
+                other = setdiff(1:numel(obj.ImageViews),k,'stable');
+                if ~isempty(other)
+                    obj.ImageTabs.SelectedTab = obj.ImageViews(other(1)).tab;
+                    obj.imageTabSelected();
+                else
+                    uitab(obj.ImageTabs,'Title','Image','Tag','empty-image-tab');
+                    obj.cancelPreview(); obj.closeROITool(); obj.closeContourTool(); obj.closeTracksTool();
+                    obj.ImageRequested = false; obj.clearImagePanels();
+                    obj.RenderKey = ''; obj.setControls({},1); obj.FrameCount.Text = '';
+                    obj.CopyMenu.Enable = 'off';
+                    obj.LoadImage.Text = 'Load Image'; obj.Status.Text = 'Ready'; obj.Status.Tooltip = 'Ready';
+                    obj.ActiveImageView = 0;
+                    if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
+                    if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
+                end
+            end
+            menu = tab.ContextMenu;
+            obj.ImageViews(k) = [];
+            if obj.ActiveImageView > k, obj.ActiveImageView = obj.ActiveImageView-1; end
+            delete(tab); delete(menu);
+            obj.syncImageTabStrip();
+        end
+        function forgetImageViews(obj,project)
+            obj.SwitchingImageView = true;
+            guard = onCleanup(@()obj.endImageSwitch());
+            indices = find(arrayfun(@(view)isequal(view.project,project),obj.ImageViews));
+            if any(indices == obj.ActiveImageView)
+                uitab(obj.ImageTabs,'Title','Image','Tag','empty-image-tab');
+                obj.ActiveImageView = 0;
+            else
+                obj.ActiveImageView = obj.ActiveImageView-sum(indices < obj.ActiveImageView);
+            end
+            for k = indices
+                menu = obj.ImageViews(k).tab.ContextMenu;
+                delete(obj.ImageViews(k).tab); delete(menu);
+            end
+            obj.ImageViews(indices) = [];
+            obj.syncImageTabStrip();
+        end
+        function endImageSwitch(obj)
+            obj.SwitchingImageView = false;
+        end
         function returnToPosition(obj)
             if obj.Session.Position == 0, return; end
             obj.openZone(0);
@@ -1431,6 +1600,7 @@ classdef Viewer < handle
         function refreshView(obj,loadImage)
             obj.cancelPreview();
             if nargin < 2, loadImage = true; end
+            obj.syncImageView();
             if ~isa(obj.Pipeline.OnStatus,'detecdivui.Callback'), obj.rebindCallbacks(); end
             obj.refreshProjectInfo();
             if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.setContext(); end
@@ -1674,6 +1844,14 @@ classdef Viewer < handle
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
                 obj.renderImagePanels(views,separated,keepView,xl,yl);
+                if ~keepView && obj.ActiveImageView > 0
+                    state = obj.ImageViews(obj.ActiveImageView);
+                    if ~isempty(state.xlim)
+                        for ax = reshape(obj.ImageAxes,1,[])
+                            ax.XLim = state.xlim; ax.YLim = state.ylim;
+                        end
+                    end
+                end
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasMaskWidget(), obj.Masks.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
@@ -1790,6 +1968,10 @@ classdef Viewer < handle
             obj.Overlays.Value = visible; obj.OverlayMenu.Checked = obj.onOff(visible); obj.render();
         end
         function resetView(obj)
+            if obj.ActiveImageView > 0
+                obj.ImageViews(obj.ActiveImageView).xlim = [];
+                obj.ImageViews(obj.ActiveImageView).ylim = [];
+            end
             obj.RenderKey = ''; obj.render();
         end
         function reloadImage(obj)
