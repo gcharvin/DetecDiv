@@ -21,7 +21,7 @@ end
 hint=uilabel(grid,'Text',[strjoin(legend,'   ') '     ← / →: previous / next annotation unit'],'Tag','AnnotationShortcuts');
 hint.Layout.Row=2;
 panel=uipanel(grid);body=uigridlayout(panel,[1 2]);body.ColumnWidth={250,'1x'};
-choicesPanel=uipanel(body,'Title','Visible dataseries');choiceGrid=uigridlayout(choicesPanel,[1 1]);choiceGrid.Scrollable='on';
+choicesPanel=uipanel(body,'Title','Visible curves (display only)');choiceGrid=uigridlayout(choicesPanel,[1 1]);choiceGrid.Scrollable='on';
 plots=uigridlayout(body,[1 1]);plots.Scrollable='on';
 labelAxes=uiaxes(grid);labelAxes.Layout.Row=4;labelAxes.Tag='NumericStateLabels';
 bottom=uigridlayout(grid,[1 10]);bottom.ColumnWidth={40,75,25,75,60,'1x',85,85,85,85};
@@ -72,7 +72,8 @@ loadRoi();
                 title(ax,caption,'Interpreter','none');ax.XLim=[1 max(2,n)];
                 checkCaption=sprintf('%d. %s',k,schema(k).variable);
                 if schema(k).column>1,checkCaption=sprintf('%s [%d]',checkCaption,schema(k).column);end
-                traceChecks(k)=uicheckbox(choiceGrid,'Text',checkCaption,'Tooltip',caption, ...
+                traceChecks(k)=uicheckbox(choiceGrid,'Text',checkCaption, ...
+                    'Tooltip',[caption newline 'Display only. To change training inputs, use Configure inputs in Pipeline2 in Classifier GUI.'], ...
                     'Value',visibleTraces(k),'Tag',sprintf('VisibleTrace%d',k), ...
                     'ValueChangedFcn',@(~,~)changeVisibility());
                 traceChecks(k).Layout.Row=k+1;

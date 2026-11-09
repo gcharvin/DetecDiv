@@ -8556,6 +8556,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isstruct(params)
                 params = struct();
             end
+            if strcmpi(pkg,'lstm_timeseries') && isempty(classiObj)
+                classiObj=struct('trainingParam',params);
+            end
             [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj);
             if ~hasExecutionSpec
                 return;

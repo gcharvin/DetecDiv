@@ -2114,8 +2114,11 @@ function ctx = executeClassifierNode(node, ctx)
             clsObj.roi = rois;
             clsObj.trainingset = 1:numel(rois);
             if isprop(clsObj, 'dataset')
-                clsObj.dataset = struct('classes', {clsObj.classes}, 'channels', {{}}, ...
-                    'split', struct('train', 1:numel(rois), 'val', [], 'test', []));
+                dataset = clsObj.dataset;
+                if ~isstruct(dataset), dataset = struct(); end
+                dataset.classes = clsObj.classes;
+                dataset.split = struct('train', 1:numel(rois), 'val', [], 'test', []);
+                clsObj.dataset = dataset;
             end
             checkPipelineCancellation(ctx, 'before_classifier_training', char(string(node.id)));
             % Pass the live pipeline context explicitly. In particular this
@@ -2272,7 +2275,7 @@ end
 function clsObj = applyClassifierReference(clsObj, refClassi)
 props = {'path','strid','description','category','channel','channelName','channelName2', ...
     'classes','classifyFun','trainingFun','classifierPkg','outputType','outputFun','outputArg', ...
-    'trainingParam','executionParam','runProfiles'};
+    'trainingParam','executionParam','runProfiles','dataset'};
 for i = 1:numel(props)
     name = props{i};
     try

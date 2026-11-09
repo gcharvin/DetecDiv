@@ -19,7 +19,16 @@ try
 catch
 end
 if nargin>=2&&isstruct(overrides)
-    names=fieldnames(overrides);for k=1:numel(names),p.(names{k})=overrides.(names{k});end
+    names=fieldnames(overrides);
+    for k=1:numel(names)
+        value=overrides.(names{k});
+        if strcmp(names{k},'executionEnvironment')
+            selected=value;if iscell(selected),selected=selected{end};end
+            % Pipeline2's placeholder means keep the classifier setting.
+            if strcmp(string(selected),'module_default'),continue;end
+        end
+        p.(names{k})=value;
+    end
 end
 for key={'outputMode','missingPolicy','executionEnvironment','classWeighting'}
     value=p.(key{1});if iscell(value),value=value{end};end
@@ -53,9 +62,15 @@ for k=1:p.featureCount
     key=sprintf('feature%d',k);col=sprintf('featureColumn%d',k);
     if ~isfield(p,key),p.(key)='';end
     if iscell(p.(key)),p.(key)=p.(key){end};end
-    p.(key)=char(string(p.(key)));
+    p.(key)=lstm_timeseries.featureSelector(p.(key));
     if ~isfield(p,col),p.(col)=1;end
     v=p.(col);assert(isnumeric(v)&&isscalar(v)&&isfinite(v)&&v>=1&&v==fix(v), ...
         'lstm_timeseries:FeatureColumn','%s must be a positive column index.',col);
+end
+% Removing an input must remove its dormant legacy/default slots as well.
+keys=fieldnames(p);
+for k=1:numel(keys)
+    slot=regexp(keys{k},'^feature(?:Column)?(\d+)$','tokens','once');
+    if ~isempty(slot)&&str2double(slot{1})>p.featureCount,p=rmfield(p,keys{k});end
 end
 end

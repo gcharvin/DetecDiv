@@ -32,6 +32,18 @@ trainingParam = classifierStructProperty(classiObj, 'trainingParam');
 try
     if strcmp(classiObj.classifierPkg,'lstm_timeseries')
         trainingParam=lstm_timeseries.parameters(classiObj);
+        % Count, order and components are one binding set. Do not overlay
+        % inference selectors or positional image channels onto that set.
+        keys=fieldnames(params);
+        drop=~cellfun(@isempty,regexp(keys,'^feature(?:Column)?\d+$','once'));
+        params=rmfield(params,keys(drop));
+        params.featureCount=trainingParam.featureCount;
+        for k=1:trainingParam.featureCount
+            for name={sprintf('feature%d',k),sprintf('featureColumn%d',k)}
+                params.(name{1})=trainingParam.(name{1});
+            end
+        end
+        return;
     end
 catch
 end

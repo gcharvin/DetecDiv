@@ -20,6 +20,13 @@ Input order is significant. New selections are stored in
 Legacy `trainingParam.featureN`/`featureColumnN` files remain readable and are
 migrated only when bindings are applied. Input changes require reformatting
 and retraining; an existing trained network is never silently adapted.
+Classifier-scoped training and validation import the complete saved binding
+set (count, order and components). Removed slots are not restored from defaults
+or older execution settings. Logical `group / variable` selectors remain
+unchanged by worker path translation; whitespace around `/` is normalized
+when comparing them with legacy formatted datasets.
+Legacy Windows run snapshots whose selector separator was rewritten to `\`
+are also read as logical bindings, without requiring another dataset export.
 
 In **Training parameters**:
 - Choose `outputMode`: `frame`, `window`, or `video`.

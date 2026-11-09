@@ -65,6 +65,23 @@ verifyEqual(testCase,report.pluginPackages.status,'unmapped_windows_path');
 verifyFalse(testCase,report.pluginPackages.accessible);
 end
 
+function testWorkerPreservesLogicalSelectorsAndMapsFileParameters(testCase)
+[payload, cleanup] = localFixture('local_process'); %#ok<ASGLU>
+p=struct('feature1','metrics /Area_Cell','labelVariable','states / labels', ...
+    'description','probabilities / geometry','relativeFile','weights/model.mat', ...
+    'inputFiles',{{'images/raw.tif','images/other.tif'}});
+payload.run_request.node_params=struct('id','processor_probe_1','params',p);
+result=detecdiv_run_pipeline_job(payload);
+[runObj,message]=pipelineRunLoad(result.run_json_path);
+assertNotEmpty(testCase,runObj,message);
+actual=runObj.ctx.run.nodeParams.params;
+verifyEqual(testCase,actual.feature1,p.feature1);
+verifyEqual(testCase,actual.labelVariable,p.labelVariable);
+verifyEqual(testCase,actual.description,p.description);
+verifyEqual(testCase,actual.relativeFile,fullfile('weights','model.mat'));
+verifyEqual(testCase,actual.inputFiles(:),{fullfile('images','raw.tif');fullfile('images','other.tif')});
+end
+
 function testNoRoisReturnsShortInformationalResult(testCase)
 [payload, cleanup] = localNoDetectionFixture(); %#ok<ASGLU>
 result = detecdiv_run_pipeline_job(payload);

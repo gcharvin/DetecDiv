@@ -385,6 +385,84 @@ verifyEqual(testCase,c.trainingParam.hiddenUnits,4);
 verifyFalse(testCase,any(startsWith(string(fieldnames(c.trainingParam)),'feature')));
 verifyNumElements(testCase,lstm_timeseries.inputBindingSummary(c),2);
 end
+
+function testSavedBindingSetOverridesStalePipelineInputs(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+lstm_timeseries.storeInputBindings(c,struct('featureCount',1,'feature1','input /b','featureColumn1',2));
+c.executionParam=struct('feature1','stale / a','feature2','stale / b');
+old=struct('featureCount',3,'feature1','old / a','feature2','old / b','feature3','old / c', ...
+    'featureColumn1',1,'featureColumn2',1,'featureColumn3',1);
+contract=lstm_timeseries.executionSpec().contract;
+for intent={'train','validate'}
+    actual=classifierApplyPipelineInputBindings(old,c,contract,intent{1},'');
+    verifyEqual(testCase,actual.featureCount,1);
+    verifyEqual(testCase,actual.feature1,'input / b');
+    verifyEqual(testCase,actual.featureColumn1,2);
+    verifyFalse(testCase,isfield(actual,'feature2'));
+    verifyFalse(testCase,isfield(actual,'featureColumn3'));
+end
+end
+
+function testLegacySeparatorWhitespaceDoesNotInvalidateDataset(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.formatDataForTraining();
+filename=fullfile(c.path,'trainingdataset','lstm_timeseries_dataset.mat');
+s=load(filename,'dataset');dataset=s.dataset;
+for k=1:numel(dataset.features)
+    dataset.features(k).selector=strrep(dataset.features(k).selector,' / ',' /');
+end
+save(filename,'dataset','-v7.3');
+out=lstm_timeseries.train(c,struct('params',struct('feature1','input \a')));
+verifyTrue(testCase,isfile(out.artifacts.model));
+verifyError(testCase,@()lstm_timeseries.train(c,struct('params',struct('feature1','input / b'))), ...
+    'lstm_timeseries:StaleDataset');
+verifyError(testCase,@()lstm_timeseries.train(c,struct('params',struct('featureColumn2',1))), ...
+    'lstm_timeseries:StaleDataset');
+end
+
+function testModuleDefaultKeepsClassifierTrainingDevice(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+p=lstm_timeseries.parameters(c,struct('executionEnvironment','module_default'));
+verifyEqual(testCase,p.executionEnvironment,'cpu');
+p=lstm_timeseries.parameters(c,struct('executionEnvironment','gpu'));
+verifyEqual(testCase,p.executionEnvironment,'gpu');
+end
+
+function testReducedBindingsReachPipelineBuildAndWorkerTraining(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+lstm_timeseries.storeInputBindings(c,struct('featureCount',1,'feature1','input / b','featureColumn1',2));
+c.formatDataForTraining();
+for k=1:numel(c.roi),c.roi(k).save('data',false);end
+app=classifierOpenTrainingPipeline(c,'ExecutionTarget','local');
+finish=onCleanup(@()delete(app)); %#ok<NASGU>
+verifyNumElements(testCase,findall(app.UIFigure,'Tag','NumericVariable_feature1'),1);
+verifyEmpty(testCase,findall(app.UIFigure,'Tag','NumericVariable_feature2'));
+spec=lstm_timeseries.executionSpec(c);p=spec.defaults;
+p.pkg='lstm_timeseries';p.modulePath=c.path;p.moduleId=c.strid;p.operation='train';
+pipe=pipelineConstruct(fileparts(c.path),'numeric_worker',1);
+node=struct('id',c.strid,'type','classifier','pkg','lstm_timeseries','func','lstm_timeseries.classify', ...
+    'params',p,'enabled',true);
+pipe.nodes=pipelineNormalizeNodes(node,'persist');pipelineSave(pipe,'Artifacts',false);
+run=pipelineRun('', 'numeric_worker_training',1);
+run.path=fullfile(c.path,'pipeline_runs',run.runId);
+run.targetRef.type='classi';run.targetRef.classiPath=c.path;run.targetRef.roiIds=[1 2];
+run.ctx=struct('run',struct('intent','train','inputSource','classifier attached rois', ...
+    'runPolicy','restart','nodeParams',struct('id',c.strid,'params',p)), ...
+    'sel',struct('rois',[1 2]));
+payload=pipelineRunJobPayload(run,[],fullfile(pipe.path,'pipeline.json'),'SaveProject',false);
+% Pipeline2 declares the persisted numeric inventory in its job payload.
+payload.run_request.data_series={'input',c.strid};
+result=detecdiv_run_pipeline_job(jsondecode(jsonencode(payload)));
+diary off; % release the worker training diary before removing the fixture
+verifyEqual(testCase,result.status,'done');
+s=load(fullfile(c.path,[c.strid '.mat']),'model');
+verifyNumElements(testCase,s.model.features,1);
+verifyEqual(testCase,s.model.features.selector,'input / b');
+verifyEqual(testCase,s.model.features.column,2);
+verifyEqual(testCase,s.model.trainingParameters.hiddenUnits,c.trainingParam.hiddenUnits);
+verifyEqual(testCase,s.model.trainingParameters.featureCount,1);
+verifyEqual(testCase,s.model.trainingParameters.executionEnvironment,'cpu');
+end
 function [c,cleanup]=fixture()
 root=tempname;mkdir(root);cleanup=onCleanup(@()rmdir(root,'s'));
 c=classi(root,'numeric_fixture',1);

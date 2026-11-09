@@ -1502,37 +1502,43 @@ function nodeParams = localNormalizeNodeParams(value, payload)
     end
 end
 
-function value = localTranslateValuePathsForWorker(value, payload)
+function value = localTranslateValuePathsForWorker(value, payload, key)
+    if nargin < 3, key = ''; end
     if isstruct(value)
         for i = 1:numel(value)
             names = fieldnames(value(i));
             for j = 1:numel(names)
-                value(i).(names{j}) = localTranslateValuePathsForWorker(value(i).(names{j}), payload);
+                value(i).(names{j}) = localTranslateValuePathsForWorker(value(i).(names{j}), payload, names{j});
             end
         end
     elseif iscell(value)
         for i = 1:numel(value)
-            value{i} = localTranslateValuePathsForWorker(value{i}, payload);
+            value{i} = localTranslateValuePathsForWorker(value{i}, payload, key);
         end
     elseif isstring(value)
         for i = 1:numel(value)
             textValue = char(value(i));
-            if localLooksLikePathText(textValue)
+            if localLooksLikePathText(textValue, key)
                 value(i) = string(localTranslatePathForWorker(textValue, payload));
             end
         end
     elseif ischar(value)
-        if localLooksLikePathText(value)
+        if localLooksLikePathText(value, key)
             value = localTranslatePathForWorker(value, payload);
         end
     end
 end
 
-function tf = localLooksLikePathText(value)
+function tf = localLooksLikePathText(value, key)
     value = char(string(value));
+    % A slash also separates logical dataseries/variable selectors. Only
+    % absolute paths or relative values in path fields belong to the mapper.
+    pathField = any(contains(lower(string(key)), ...
+        {'path','file','directory','folder','uri'})) || ...
+        any(strcmpi(key, {'customPackageRoot','customPackageDir'}));
     tf = ~isempty(regexp(value, '^[A-Za-z]:[\\/]', 'once')) || ...
         startsWith(value, '\') || startsWith(value, '/') || ...
-        contains(value, '\') || contains(value, '/');
+        (pathField && (contains(value, '\') || contains(value, '/')));
 end
 
 function pathOut = localTranslatePathForWorker(pathIn, payload)

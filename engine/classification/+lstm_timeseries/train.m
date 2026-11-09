@@ -17,7 +17,7 @@ for key={'featureCount','outputMode','windowLength','missingPolicy'}
     assert(isequal(p.(key{1}),d.parameters.(key{1})),'lstm_timeseries:StaleDataset','%s changed; format the dataset again.',key{1});
 end
 for k=1:p.featureCount
-    assert(strcmp(p.(sprintf('feature%d',k)),d.features(k).selector)&&p.(sprintf('featureColumn%d',k))==d.features(k).column, ...
+    assert(strcmp(p.(sprintf('feature%d',k)),lstm_timeseries.featureSelector(d.features(k).selector))&&p.(sprintf('featureColumn%d',k))==d.features(k).column, ...
         'lstm_timeseries:StaleDataset','Input feature %d changed; format the dataset again.',k);
 end
 trainIdx=find(strcmp({d.samples.split},'train'));valIdx=find(strcmp({d.samples.split},'val'));
