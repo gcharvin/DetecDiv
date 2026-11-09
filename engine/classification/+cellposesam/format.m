@@ -279,28 +279,7 @@ for ii = 1:numel(all_rois)
     splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = "train" (au sens global)
 
     for jj = frameList
-        instMask    = zeros(Hloc, Wloc, 'uint16');
-        instCounter = uint16(0);
-
-        for kk = 1:numel(classif.classes)
-            chName = [classif.strid '_' classif.classes{kk}];
-            cc     = cltmp(roi_id).findChannelID(chName);
-            if isempty(cc), continue; end
-
-            lab   = cltmp(roi_id).image(:, :, cc, jj);
-            lab   = uint32(lab);
-            maxId = max(lab(:));
-            if maxId < 1, continue; end
-
-            for id = 1:maxId
-                pixz = (lab == id);
-                if any(pixz(:))
-                    instCounter = instCounter + 1;
-                    writeIdx    = pixz & instMask == 0;
-                    instMask(writeIdx) = instCounter;
-                end
-            end
-        end
+        instMask = cellposesam.utils.trainingInstanceMask(cltmp(roi_id), classif, jj);
 
         n_masks  = double(max(instMask(:)));
         n_pixels = nnz(instMask);
@@ -669,28 +648,7 @@ for ii = 1:numel(all_rois)
             error('formatPixelTrainingSetCPSAM:MissingFrameIndex', ...
                 'No framebank index for ROI %d frame %d.', roi_id, jj);
         end
-        instMask    = zeros(Hloc, Wloc, 'uint16');
-        instCounter = uint16(0);
-
-        for kk = 1:numel(classif.classes)
-            chName = [classif.strid '_' classif.classes{kk}];
-            cc     = cltmp(roi_id).findChannelID(chName);
-            if isempty(cc), continue; end
-
-            lab   = cltmp(roi_id).image(:, :, cc, jj);
-            lab   = uint32(lab);
-            maxId = max(lab(:));
-            if maxId < 1, continue; end
-
-            for id = 1:maxId
-                pixz = (lab == id);
-                if any(pixz(:))
-                    instCounter = instCounter + 1;
-                    writeIdx    = pixz & instMask == 0;
-                    instMask(writeIdx) = instCounter;
-                end
-            end
-        end
+        instMask = cellposesam.utils.trainingInstanceMask(cltmp(roi_id), classif, jj);
 
         % --- gestion des frames sans masque ---
         if max(instMask(:)) == 0
