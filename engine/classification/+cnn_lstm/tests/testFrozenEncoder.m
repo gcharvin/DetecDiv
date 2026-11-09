@@ -42,6 +42,8 @@ s=load(fullfile(c.path,'trainingdataset','frozen_encoder_dataset.mat'));
 verifyEqual(testCase,s.dataset.trainRoiIndices,[1 2]);verifyEqual(testCase,s.dataset.validationRoiIndices,3);
 verifyEqual(testCase,numel(s.dataset.samples),6);verifyFalse(testCase,any([s.dataset.samples.roiIndex]==4));
 verifyEqual(testCase,s.dataset.parameters.featureCount,3);
+c.classes=c.classes(:);c.dataset.split.train=c.dataset.split.train(:);
+c.dataset.split.val=c.dataset.split.val(:);c.dataset.split.test=c.dataset.split.test(:);
 cnn_lstm.train(c,struct());m=load(fullfile(c.path,[c.strid '.mat']),'model');
 verifyTrue(testCase,m.model.frozenEncoder);verifyEqual(testCase,m.model.trainingClassCounts,[2 2]);
 c.roi(4).load('Data','Silent');truth=c.roi(4).data(1).data.labels_training;

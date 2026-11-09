@@ -1,6 +1,8 @@
 function out = frozenClassify(r,c,ctx)
 %FROZENCLASSIFY Return the normal classification patch from frozen CNN features.
 s=load(fullfile(c.path,[c.strid '.mat']),'classifier','model');m=s.model;
+assert(isequal(cellstr(string(c.classes(:))),cellstr(string(m.classes(:)))), ...
+ 'cnn_lstm:ClassSchema','Restore the trained class order or retrain.');
 p=cnn_lstm.frozenParameters(c);assert(p.windowLength==m.windowLength,'cnn_lstm:StaleModel','Restore trained window length or retrain.');
 if isfield(ctx,'params')&&isfield(ctx.params,'executionEnvironment')&&~strcmp(ctx.params.executionEnvironment,'module_default')
  p.executionEnvironment=ctx.params.executionEnvironment;

@@ -2,7 +2,7 @@ function encoder=encoderIdentity(c,p)
 %ENCODERIDENTITY Checksum-pinned CNN artifact and image binding identity.
 file=fullfile(c.path,['netCNN_' c.strid '.mat']);
 encoder=struct('file',['netCNN_' c.strid '.mat'],'sha256',sha256File(file), ...
- 'layer',p.encoderLayer,'channels',{cellstr(string(c.channelName))});
+ 'layer',p.encoderLayer,'channels',{cellstr(string(c.channelName(:).'))});
 end
 
 function hash=sha256File(file)
