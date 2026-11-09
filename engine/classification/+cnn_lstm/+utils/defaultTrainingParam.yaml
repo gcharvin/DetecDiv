@@ -140,6 +140,28 @@ params:
   - name: LSTM_keep_valid_distrib
     value: true
     tip: Keep validation distribution unbalanced (true/false)
+  - name: frozen_encoder_head
+    value: false
+    tip: Opt-in frozen CNN feature encoder and ROI-disjoint LSTM head training.
+  - name: frozen_encoder_layer
+    value: pool5-7x7_s1
+    tip: Feature layer before the source CNN class head; frozen with the model.
+  - name: LSTM_dropout
+    value: 0.5
+    tip: Dropout for the opt-in frozen encoder temporal head.
+  - name: LSTM_l2_regularization
+    value: 0.01
+    tip: L2 penalty for the opt-in frozen encoder temporal head.
+  - name: LSTM_class_weighting
+    value: [none, inverse-frequency]
+    default: inverse-frequency
+    tip: Frozen encoder class weights fitted from training ROI only.
+  - name: LSTM_validation_patience
+    value: 8
+    tip: Frozen encoder validation checks without improvement before stopping.
+  - name: LSTM_return_best_validation
+    value: true
+    tip: Save the frozen encoder temporal checkpoint with lowest validation loss.
   - name: Format_Fraction
     value: 1.0
     tip: Fraction of ROIs used when formatting the LSTM training set

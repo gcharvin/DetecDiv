@@ -435,8 +435,8 @@ c.formatDataForTraining();
 for k=1:numel(c.roi),c.roi(k).save('data',false);end
 app=classifierOpenTrainingPipeline(c,'ExecutionTarget','local');
 finish=onCleanup(@()delete(app)); %#ok<NASGU>
-verifyNumElements(testCase,findall(app.UIFigure,'Tag','NumericVariable_feature1'),1);
-verifyEmpty(testCase,findall(app.UIFigure,'Tag','NumericVariable_feature2'));
+verifyNumElements(testCase,findall(app.UIFigure,'Tag','NumericReadOnlyBinding_feature1'),1);
+verifyEmpty(testCase,findall(app.UIFigure,'Tag','NumericReadOnlyBinding_feature2'));
 spec=lstm_timeseries.executionSpec(c);p=spec.defaults;
 p.pkg='lstm_timeseries';p.modulePath=c.path;p.moduleId=c.strid;p.operation='train';
 pipe=pipelineConstruct(fileparts(c.path),'numeric_worker',1);

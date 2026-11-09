@@ -28,12 +28,19 @@ end
 rois=unique(double(rois(:).'),'stable');
 assert(~isempty(rois)&&all(isfinite(rois)&rois==fix(rois)&rois>=1&rois<=numel(classif.roi)), ...
     'lstm_timeseries:NoTestRois','Select test ROIs before displaying statistics.');
-p=lstm_timeseries.parameters(classif);names=cellstr(string(classif.classes(:).'));C=numel(names);
+if cnn_lstm.isFrozenEncoder(classif)
+    p=cnn_lstm.frozenParameters(classif);
+else
+    p=lstm_timeseries.parameters(classif);
+end
+names=cellstr(string(classif.classes(:).'));C=numel(names);
 spec=annotationManager.specForClassifier(classif);
 selection=annotationManager.reviewedFramesForClassifier(classif,rois);
 predictionGroup=classif.strid;
 try
-    e=lstm_timeseries.executionSpec(classif);predictionGroup=char(string(e.defaults.outputName));
+    if cnn_lstm.isFrozenEncoder(classif),e=cnn_lstm.executionSpec(classif);
+    else,e=lstm_timeseries.executionSpec(classif);end
+    predictionGroup=char(string(e.defaults.outputName));
 catch
 end
 samples=struct('roiIndex',{},'roiId',{},'firstFrame',{},'lastFrame',{},'truth',{},'prediction',{});
@@ -105,7 +112,9 @@ score.roi=roiScores;
 classif.score=score;fig=[];
 if show||~isempty(export)
     visibility='on';if silent,visibility='off';end
-    fig=figure('Name','Numeric LSTM validation statistics','NumberTitle','off','Color','w','Visible',visibility);
+    name='Numeric LSTM validation statistics';
+    if cnn_lstm.isFrozenEncoder(classif),name='Frozen CNN LSTM validation statistics';end
+    fig=figure('Name',name,'NumberTitle','off','Color','w','Visible',visibility);
     layout=tiledlayout(fig,1,2+double(plotRois));
     ax=nexttile(layout);imagesc(ax,matrix);axis(ax,'image');colorbar(ax);
     xticks(ax,1:C);yticks(ax,1:C);xticklabels(ax,names);yticklabels(ax,names);

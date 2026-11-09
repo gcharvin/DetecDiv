@@ -37,6 +37,9 @@ cnn_lstm.ensureClassMetadata(classif);
 if isfield(ctx, 'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     classif.trainingParam = cnn_lstm.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
+if cnn_lstm.isFrozenEncoder(classif)
+    out=cnn_lstm.frozenTrain(classif,ctx);return;
+end
 
 trainingParam = updateLSTMTrainingParam(classif);
 scope=classifierBinding.logTrainingScope(classif);

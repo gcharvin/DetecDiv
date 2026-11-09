@@ -14,6 +14,9 @@ function out = format(classif, rois, ctx)
 if nargin < 3 || isempty(ctx)
     ctx = struct();
 end
+if cnn_lstm.isFrozenEncoder(classif)
+    out=cnn_lstm.frozenFormat(classif,rois,ctx);return;
+end
 
 params = struct();
 if isfield(ctx, 'params') && isstruct(ctx.params)

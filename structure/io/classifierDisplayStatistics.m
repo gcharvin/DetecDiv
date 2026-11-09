@@ -1,7 +1,7 @@
 function classifierDisplayStatistics(classif,roiIndices)
 %CLASSIFIERDISPLAYSTATISTICS Frontend selection for independently named outputs.
 % The backend never guesses which classifier produced an arbitrary channel.
-if ~classifierStats.supports(classif)
+if cnn_lstm.isFrozenEncoder(classif) || ~classifierStats.supports(classif)
     classif.stats('Confusion','Classes','Rois',roiIndices,'Force');return;
 end
 spec=annotationManager.specForClassifier(classif);channelBindings=struct();groupBindings=struct();

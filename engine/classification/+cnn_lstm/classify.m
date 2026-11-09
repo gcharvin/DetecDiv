@@ -19,6 +19,9 @@ function out = classify(roiobj, classif, ctx)
 if nargin < 3 || isempty(ctx)
     ctx = struct();
 end
+if cnn_lstm.isFrozenEncoder(classif)
+    out=cnn_lstm.frozenClassify(roiobj,classif,ctx);return;
+end
 
 params = struct();
 if isfield(ctx, 'params') && isstruct(ctx.params)

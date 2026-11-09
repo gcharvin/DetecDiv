@@ -2,7 +2,7 @@ function stats(classif,varargin)
 % Numeric state classifiers evaluate one sample per output unit and only
 % reviewed GT. The legacy image collector counts repeated window labels as
 % independent frames and ignores the annotation review mask.
-if strcmpi(char(string(classif.classifierPkg)), 'lstm_timeseries')
+if strcmpi(char(string(classif.classifierPkg)), 'lstm_timeseries') || cnn_lstm.isFrozenEncoder(classif)
     lstm_timeseries.statistics(classif,varargin{:});
     return;
 end

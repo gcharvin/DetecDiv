@@ -6,6 +6,8 @@ spec=setLabel(spec,'compute_CNN_activations','Compute CNN features','Training st
 spec=setLabel(spec,'train_LSTM_network','Train LSTM temporal head','Training stages');
 spec=setLabel(spec,'assemble_network','Assemble deployable CNN + LSTM','Training stages');
 spec=setLabel(spec,'classifier_output','Prediction time scale','Training objective');
+spec=setLabel(spec,'frozen_encoder_head','Use frozen CNN encoder with ROI-disjoint LSTM training','Training stages');
+spec=setLabel(spec,'frozen_encoder_layer','Frozen CNN feature layer','Training objective');
 end
 
 function spec=setLabel(spec,param,label,group)
