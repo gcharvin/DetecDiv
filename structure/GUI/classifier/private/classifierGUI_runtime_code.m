@@ -3626,8 +3626,9 @@ end
                 return;
             end
             try
-                if strcmpi(char(string(classiObj.classifierPkg)), 'sam31') || ...
-                        strcmpi(char(string(classiObj.classifyFun)), 'sam31.classify')
+                if (strcmpi(char(string(classiObj.classifierPkg)), 'sam31') || ...
+                        strcmpi(char(string(classiObj.classifyFun)), 'sam31.classify')) && ...
+                        ~classifierStats.supports(classiObj)
                     sam31.displayValidationRuns(classiObj, selectedfortest);
                     return;
                 end
@@ -3638,7 +3639,7 @@ end
                 return;
             end
             try
-                classiObj.stats('Confusion','Classes','Rois',selectedfortest,'Force');
+                classifierDisplayStatistics(classiObj,selectedfortest);
             catch ME
                 uialert(app.ClassifierUIFigure,ME.message,'Statistics unavailable','Icon','error');
             end

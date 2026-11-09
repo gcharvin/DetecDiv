@@ -6,6 +6,10 @@ if strcmpi(char(string(classif.classifierPkg)), 'lstm_timeseries')
     lstm_timeseries.statistics(classif,varargin{:});
     return;
 end
+if classifierStats.supports(classif)
+    classifierStats.statistics(classif,varargin{:});
+    return;
+end
 outputstr='temp';
 % compute, displays and stores statististics regarding the selected classification
 % roiid is an array of roiid from the object classi
@@ -175,9 +179,9 @@ if compute==1 % compute new scores
 
         data=collectROIData(classif,roiid);  % collect prediction and ground truth data
 
-        if ~isfield(data,'reg')
-            disp('There are no statistics to display.... quitting');
-            return;
+        if ~isfield(data,'reg') || isempty(data.gt) || isempty(data.pred)
+            error('classifierStats:NoEvaluationSamples', ...
+                'No comparable ground truth and predictions. Select test ROIs and validate their reviewed annotations first.');
         end
 
 
