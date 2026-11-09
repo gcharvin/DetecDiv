@@ -1930,8 +1930,9 @@ function displayData(app, annotationScanMode) % displays rois in the table
     end
 
     rois         = app.Data.classiObj.roi;
-    trainingrois = app.Data.classiObj.trainingset;
     classiObj    = app.Data.classiObj;
+    selection = classifierDatasetSelection(classiObj);
+    trainingrois = selection.train;
 
     [boundsType, globalBounds] = localBoundsConfig(app,classiObj);
     frameBoundsEditable = ~(strcmpi(boundsType,'Auto') && ...
@@ -2004,7 +2005,7 @@ function displayData(app, annotationScanMode) % displays rois in the table
     for i = 1:numel(rois)
 
         istrainee   = false;
-        istest      = true;
+        istest      = ismember(i,selection.test);
         isannotated = false;
         isvalidated = false;
         pixdata     = [];
@@ -2158,6 +2159,15 @@ function displayData(app, annotationScanMode) % displays rois in the table
                              boundsTxt, displayAnnotationStatus, annotationCoverage};
             end
         end
+    end
+
+    if ~isempty(Data)
+        roles=repmat({'Unused'},numel(rois),1);
+        roles(selection.train)={'Training'};roles(selection.val)={'Validation'};roles(selection.test)={'Test'};
+        Data(:,end+1)=roles;
+        t.ColumnName=[t.ColumnName(:).' {'Dataset split'}];
+        t.ColumnWidth=[t.ColumnWidth(:).' {100}];
+        t.ColumnEditable=[t.ColumnEditable(:).' false];
     end
 
     filterValue = 'All';
@@ -2515,28 +2525,7 @@ function value = localOnOff(app, condition) %#ok<INUSD>
 end
 
 function setClassifierTrainingSelection(app, trainIndices)
-    classiObj = app.Data.classiObj;
-    nRoi = numel(classiObj.roi);
-    trainIndices = unique(round(double(trainIndices(:).')), 'stable');
-    trainIndices = trainIndices(isfinite(trainIndices) & ...
-        trainIndices >= 1 & trainIndices <= nRoi);
-    testIndices = setdiff(1:nRoi, trainIndices, 'stable');
-    classiObj.trainingset = trainIndices;
-    try
-        if ~isprop(classiObj, 'dataset') || ~isstruct(classiObj.dataset)
-            classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
-                'split', struct('train', [], 'val', [], 'test', []));
-        end
-        if ~isfield(classiObj.dataset, 'split') || ...
-                ~isstruct(classiObj.dataset.split)
-            classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
-        end
-        classiObj.dataset.split.train = trainIndices;
-        classiObj.dataset.split.val = [];
-        classiObj.dataset.split.test = testIndices;
-    catch
-    end
-    app.Data.classiObj = classiObj;
+    app.Data.classiObj=classifierSetTrainingSelection(app.Data.classiObj,trainIndices);
 end
 
 function refreshTrainingSelectionTable(app)
@@ -2546,7 +2535,16 @@ function refreshTrainingSelectionTable(app)
     isTraining = ismember(roiIndices, ...
         double(app.Data.classiObj.trainingset(:)));
     data(:,1) = num2cell(isTraining);
-    data(:,2) = num2cell(~isTraining);
+    selection=classifierDatasetSelection(app.Data.classiObj);
+    data(:,2)=num2cell(ismember(roiIndices,selection.test));
+    roleColumn=find(strcmp(string(app.UITableData.ColumnName),'Dataset split'),1);
+    if ~isempty(roleColumn)
+        roles=repmat({'Unused'},numel(roiIndices),1);
+        roles(ismember(roiIndices,selection.train))={'Training'};
+        roles(ismember(roiIndices,selection.val))={'Validation'};
+        roles(ismember(roiIndices,selection.test))={'Test'};
+        data(:,roleColumn)=roles;
+    end
     app.UITableData.Data = data;
 end
 
@@ -3467,6 +3465,8 @@ end
             if col ~= 1 && col ~= 2, return; end
 
             roiIndex = double(app.UITableData.Data{row,3});
+            selection=classifierDatasetSelection(app.Data.classiObj);
+            app.Data.classiObj.dataset.split.val=setdiff(selection.val,roiIndex,'stable');
             trainIdx = double(app.Data.classiObj.trainingset(:).');
             selectForTraining = (col == 1 && logical(event.NewData)) || ...
                 (col == 2 && ~logical(event.NewData));

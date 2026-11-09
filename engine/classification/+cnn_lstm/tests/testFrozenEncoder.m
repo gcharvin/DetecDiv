@@ -62,6 +62,13 @@ verifyEqual(testCase,numel(unique(ds.data.labels(1:3))),1);
 c.roi(4).data(1)=ds;
 [score,fig]=lstm_timeseries.statistics(c,'Rois',4,'Confusion','Classes','Silent');
 verifyEqual(testCase,score.N,2);verifyEqual(testCase,sum(score.confusion,'all'),2);close(fig);
+gui=classifierGUI(c);finishGui=onCleanup(@()delete(gui)); %#ok<NASGU>
+gui.TabGroup.SelectedTab=gui.SettrainingandvalidationsetROIsTab;
+cb=gui.SettrainingandvalidationsetROIsTab.ButtonDownFcn;cb(gui.SettrainingandvalidationsetROIsTab,[]);drawnow;
+rows=gui.UITableData.Data;
+checked=cellfun(@logical,rows(:,2));verifyEqual(testCase,cell2mat(rows(checked,3)),4);
+role=find(strcmp(string(gui.UITableData.ColumnName),'Dataset split'));
+verifyEqual(testCase,rows{3,role},'Validation');verifyFalse(testCase,rows{3,1});verifyFalse(testCase,rows{3,2});
 end
 function testFrozenTrainingPreflightRequiresEncoderButNotTrainedHead(testCase)
 root=tempname;mkdir(root);cleanup=onCleanup(@()rmdir(root,'s')); %#ok<NASGU>
@@ -96,4 +103,7 @@ verifyEqual(testCase,c.trainingset,[1 3]);verifyEqual(testCase,c.bounds.Values,[
 c.classifierPkg='lstm_timeseries';c.trainingParam=struct();
 c=classifierTrainingRoiContext(c,source,source.roi([1 3]));
 verifyEqual(testCase,c.dataset.split,source.dataset.split);
+selection=classifierDatasetSelection(c);verifyEqual(testCase,selection.test,4);
+c=classifierSetTrainingSelection(c,1);verifyEqual(testCase,c.dataset.split.val,2);
+verifyEqual(testCase,c.dataset.split.test,[3 4]);
 end
