@@ -524,9 +524,11 @@ function ensurePlotProperties(obj)
             for k = 1:numel(labelVars)
                 col = obj.data.(labelVars{k});
                 if iscategorical(col)
-                    allCats = [allCats, categories(col)]; %#ok<AGROW>
+                    cats = categories(col);
+                    allCats = [allCats, cats(:)']; %#ok<AGROW>
                 else
-                    allCats = [allCats, categories(categorical(string(col)))]; %#ok<AGROW>
+                    cats = categories(categorical(string(col)));
+                    allCats = [allCats, cats(:)']; %#ok<AGROW>
                 end
             end
             allCats = unique(allCats, 'stable');
@@ -544,6 +546,11 @@ function ensurePlotProperties(obj)
         for k = 1:numel(labelVars)
             nm = labelVars{k};
             col = obj.data.(nm);
+            % Plot metadata must not rewrite existing annotation categories,
+            % ordinal ordering, or values outside the inference class list.
+            if iscategorical(col)
+                continue;
+            end
             if ~iscategorical(col)
                 col = categorical(string(col));
             end
