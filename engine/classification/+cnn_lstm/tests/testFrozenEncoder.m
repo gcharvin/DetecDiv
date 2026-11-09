@@ -44,7 +44,16 @@ verifyEqual(testCase,numel(s.dataset.samples),6);verifyFalse(testCase,any([s.dat
 verifyEqual(testCase,s.dataset.parameters.featureCount,3);
 c.classes=c.classes(:);c.dataset.split.train=c.dataset.split.train(:);
 c.dataset.split.val=c.dataset.split.val(:);c.dataset.split.test=c.dataset.split.test(:);
-cnn_lstm.train(c,struct());m=load(fullfile(c.path,[c.strid '.mat']),'model');
+classiObj=c;save(fullfile(c.path,[c.strid '_classification.mat']),'classiObj');
+p=struct('pkg','cnn_lstm','modulePath',c.path,'moduleId',c.strid,'operation','train', ...
+ 'frozen_encoder_head',true,'channels',{{'RGB'}},'outputName',c.strid,'executionEnvironment','cpu');
+node=struct('id',c.strid,'type','classifier','pkg','cnn_lstm','func','cnn_lstm.classify','params',p,'enabled',true);
+node.params=classifierApplyPipelineInputBindings(p,c,pipelineNodeContract(node),'train',[]);
+pipe=struct('name','frozen_round_trip','nodes',node,'edges',struct([]));
+ctx=struct('roiList',c.roi,'sel',struct('rois',[1 2]),'run',struct('intent','train'), ...
+ 'allowGUI',false,'interactive',false);
+runPipelineStructured(pipe,ctx);
+m=load(fullfile(c.path,[c.strid '.mat']),'model');
 verifyTrue(testCase,m.model.frozenEncoder);verifyEqual(testCase,m.model.trainingClassCounts,[2 2]);
 c.roi(4).load('Data','Silent');truth=c.roi(4).data(1).data.labels_training;
 out=cnn_lstm.classify(c.roi(4),c,struct());ds=out.patch.roi.dataseries.upsert{1}.dataseries;
@@ -74,4 +83,17 @@ verifyFalse(testCase,any(contains(string(report.errors),'expects exactly 1')));
 verifyFalse(testCase,any(strcmp({report.classifierArtifacts.status},'missing_model')));
 pipe.nodes.params.operation='validate';[~,report]=validatePipeline(pipe,ctx);
 verifyTrue(testCase,any(strcmp({report.classifierArtifacts.status},'missing_model')));
+end
+function testPipelineTrainingRetainsCanonicalRoiIdentityAndSplit(testCase)
+source=classi('','source_fixture',1);source.classifierPkg='cnn_lstm';
+source.trainingParam=struct('frozen_encoder_head',true);source.bounds.Values=[1 42];
+for k=1:4,source.roi(k)=roi(['R' num2str(k)],[1 1 2 2]);end
+source.dataset.split=struct('train',[1 3],'val',2,'test',4);
+c=classi('','runtime',1);c.classifierPkg=source.classifierPkg;c.trainingParam=source.trainingParam;
+c=classifierTrainingRoiContext(c,source,source.roi([1 3]));
+verifyEqual(testCase,{c.roi.id},{source.roi.id});verifyEqual(testCase,c.dataset.split,source.dataset.split);
+verifyEqual(testCase,c.trainingset,[1 3]);verifyEqual(testCase,c.bounds.Values,[1 42]);
+c.classifierPkg='lstm_timeseries';c.trainingParam=struct();
+c=classifierTrainingRoiContext(c,source,source.roi([1 3]));
+verifyEqual(testCase,c.dataset.split,source.dataset.split);
 end

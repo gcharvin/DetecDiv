@@ -2734,17 +2734,14 @@ function ctx = executeClassifierNode(node, ctx)
     catch
     end
 
+    if strcmp(intent,'validate') && ~isempty(refClassi) && ...
+            (strcmpi(clsObj.classifierPkg,'lstm_timeseries')||cnn_lstm.isFrozenEncoder(clsObj))
+        clsObj.bounds=refClassi.bounds;
+    end
+
     if strcmp(intent, 'train')
         try
-            clsObj.roi = rois;
-            clsObj.trainingset = 1:numel(rois);
-            if isprop(clsObj, 'dataset')
-                dataset = clsObj.dataset;
-                if ~isstruct(dataset), dataset = struct(); end
-                dataset.classes = clsObj.classes;
-                dataset.split = struct('train', 1:numel(rois), 'val', [], 'test', []);
-                clsObj.dataset = dataset;
-            end
+            clsObj = classifierTrainingRoiContext(clsObj,refClassi,rois);
             checkPipelineCancelled(ctx, ['before classifier training ' char(string(node.id))]);
             % Keep transient pipeline callbacks out of persisted profiles,
             % but pass them to the trainer so epoch progress remains live.
