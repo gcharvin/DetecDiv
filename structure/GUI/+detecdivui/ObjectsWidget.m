@@ -13,7 +13,7 @@ classdef ObjectsWidget < handle
         Source = []
         Target
         Load
-        Families
+        FamilyText
         FrameText
         Items
         Controls = {}
@@ -21,23 +21,20 @@ classdef ObjectsWidget < handle
         Busy = false
         Revision = 0
         LastError = ''
-        StyledFamily = -1
         StyledObject = -1
     end
     methods
         function obj = ObjectsWidget(parent,viewer)
             obj.Viewer = viewer;
             grid = uigridlayout(parent,[7 1]); grid.Padding = [6 6 6 6];
-            grid.RowHeight = {24,64,20,'1x',26,26,22}; grid.RowSpacing = 4;
+            grid.RowHeight = {24,22,20,'1x',26,26,22}; grid.RowSpacing = 4;
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',65};
             obj.Target = uilabel(row,'Text','—','Interpreter','none','Tag','objects-target');
             obj.Load = uibutton(row,'Text','Load','Tag','objects-load','Enable','off', ...
                 'Tooltip','Load the selected ROI masks and object model on demand', ...
                 'ButtonPushedFcn',@(~,~)obj.loadObjects());
-            obj.Families = uitable(grid,'Data',cell(0,2),'RowName',{}, ...
-                'ColumnName',{'Family','Layer'},'ColumnWidth',{'auto','auto'}, ...
-                'ColumnEditable',[false false],'Tag','objects-families', ...
-                'Tooltip','Select a family to show its mask layer in multicolor and enable object selection');
+            obj.FamilyText = uilabel(grid,'Text','—','Interpreter','none','Tag','objects-family', ...
+                'Tooltip','Object family associated with the active Display layer');
             obj.FrameText = uilabel(grid,'Text','Objects','Interpreter','none','Tag','objects-frame');
             obj.Items = uitable(grid,'Data',cell(0,4),'RowName',{}, ...
                 'ColumnName',{'Label','Track','Parent','State'},'ColumnWidth',{50,80,80,'auto'}, ...
@@ -75,7 +72,20 @@ classdef ObjectsWidget < handle
         end
         function onRender(obj)
             if obj.Busy, return; end
+            previous = obj.SelectedProvider;
             obj.setContext();
+            if ~strcmp(previous,obj.SelectedProvider) || isempty(obj.SelectedProvider)
+                % Keep existing drafts, but never leave image editing attached
+                % to the previously selected Display layer.
+                obj.Viewer.closeTracksTool(); obj.Viewer.closeContourTool();
+            end
+            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive()
+                masks = obj.Viewer.Masks; draft = [];
+                if ~isempty(masks) && isvalid(masks) && masks.Active, draft = masks.current(); end
+                if isempty(draft) || ~isequal(draft.Source,obj.Source) || ~strcmp(draft.Channel,obj.SelectedProvider)
+                    obj.resumeSelection();
+                end
+            end
         end
         function resumed = resumeSelection(obj)
             resumed = false;
@@ -104,7 +114,6 @@ classdef ObjectsWidget < handle
                 assert(any(strcmp(status,{'ok','missing'})),'detecdivui:ObjectsModel','Cannot read the cellular model: %s',status);
                 obj.refresh();
                 row = obj.selectedRow();
-                if isempty(row) && ~isempty(obj.Rows), row = 1; end
                 if ~isempty(row), obj.activateFamily(row,0); end
                 obj.status('Ready');
             catch err, obj.LastError = err.message;
@@ -173,7 +182,8 @@ classdef ObjectsWidget < handle
             catch err
                 % Optional object metadata cannot invalidate the image view.
                 obj.Rows = obj.Rows([]); obj.ObjectsRows = obj.ObjectsRows([]);
-                obj.Families.Data = cell(0,2); obj.Items.Data = cell(0,4);
+                obj.SelectedProvider = ''; obj.SelectedFamily = uint32(0); obj.SelectedLabel = 0;
+                obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4);
                 obj.FrameText.Text = 'Objects'; obj.Revision = obj.Revision+1;
                 obj.enableTools(false);
                 obj.status(['Object model unavailable: ' err.message]);
@@ -196,23 +206,28 @@ classdef ObjectsWidget < handle
         function refresh(obj)
             if isempty(obj.Source)
                 obj.Rows = obj.Rows([]); obj.ObjectsRows = obj.ObjectsRows([]);
-                obj.Families.Data = cell(0,2); obj.Items.Data = cell(0,4); obj.FrameText.Text = 'Objects';
+                obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4); obj.FrameText.Text = 'Objects';
                 obj.enableTools(false); obj.status('Select a ROI'); return;
             end
             model = obj.currentModel(); obj.Rows = obj.familyRows(model);
-            familyData = cell(numel(obj.Rows),2);
-            for k = 1:numel(obj.Rows), familyData(k,:) = {obj.Rows(k).name,obj.Rows(k).provider}; end
-            if ~isequal(obj.Families.Data,familyData)
-                removeStyle(obj.Families); obj.StyledFamily = -1; obj.Families.Data = familyData;
+            provider = obj.Viewer.activeLayer();
+            if ~strcmp(provider,obj.SelectedProvider)
+                obj.SelectedProvider = provider; obj.SelectedFamily = uint32(0); obj.SelectedLabel = 0;
             end
             selection = obj.Viewer.selectedAnnotation();
-            if ~isempty(selection) && any(strcmp({obj.Rows.provider},selection.channel))
+            if ~isempty(selection) && strcmp(selection.channel,provider)
                 obj.SelectedProvider = selection.channel; obj.SelectedLabel = double(selection.label);
                 if isfield(selection,'family') && selection.family > 0, obj.SelectedFamily = uint32(selection.family); end
             end
             row = obj.selectedRow();
+            if isempty(row), row = find(strcmp({obj.Rows.provider},provider),1); end
             if isempty(row)
                 obj.SelectedProvider = ''; obj.SelectedFamily = uint32(0); obj.SelectedLabel = 0;
+                obj.FamilyText.Text = '—'; obj.FamilyText.Tooltip = 'The active Display layer has no object family';
+            else
+                obj.SelectedProvider = obj.Rows(row).provider; obj.SelectedFamily = obj.Rows(row).familyId;
+                obj.FamilyText.Text = obj.Rows(row).name;
+                obj.FamilyText.Tooltip = [obj.Rows(row).name ' · ' obj.Rows(row).provider];
             end
             frame = obj.Viewer.annotationFrame();
             obj.ObjectsRows = obj.instanceRows(model,frame);
@@ -225,18 +240,14 @@ classdef ObjectsWidget < handle
                 removeStyle(obj.Items); obj.StyledObject = -1; obj.Items.Data = data;
             end
             selectedObject = find([obj.ObjectsRows.label] == obj.SelectedLabel,1);
-            obj.styleSelection(obj.Families,row,'StyledFamily');
             obj.styleSelection(obj.Items,selectedObject,'StyledObject');
             obj.FrameText.Text = sprintf('Frame %d · %d objects',frame,numel(obj.ObjectsRows));
             obj.Revision = obj.Revision+1; revision = obj.Revision;
-            obj.Families.UserData = obj.Rows; obj.Items.UserData = obj.ObjectsRows;
-            obj.Families.CellSelectionCallback = @(~,event)obj.selectEvent('family',event,revision);
+            obj.Items.UserData = obj.ObjectsRows;
             obj.Items.CellSelectionCallback = @(~,event)obj.selectEvent('object',event,revision);
             context = obj.Viewer.contourContext(); ready = ~isempty(row) && isequal(context.roi,obj.Source);
             obj.enableTools(ready);
-            if ~isempty(row), obj.Families.Tooltip = [obj.Rows(row).name ' · ' obj.Rows(row).provider]; end
-            if isempty(obj.Rows), obj.status('No object families or label layers');
-            elseif isempty(row), obj.status('Select a family');
+            if isempty(row), obj.status('No objects for the active layer');
             elseif ~ready, obj.status('Load the ROI to edit objects');
             else
                 draft = obj.existingDraft();

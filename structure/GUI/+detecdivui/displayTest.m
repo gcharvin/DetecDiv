@@ -22,6 +22,7 @@ tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree');
 tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tree,[]);
 figure = viewer.widgetFigure('Display');
 table = findall(figure,'Tag','layers'); active = findall(figure,'Tag','channels');
+assert(strcmp(active.Visible,'off')); % Selection is exposed by the table only.
 ax = findall(viewer.Figure,'Tag','image-view');
 assert(numel(table.Data.layers) == 3 && all([viewer.DisplayModel.Layers.visible]));
 histogram = findall(figure,'Tag','display-histogram');
@@ -33,7 +34,7 @@ tableEdit(table,'visible',3,false);
 after = pixels(ax);
 assert(any(before(:) ~= after(:)) && ~viewer.DisplayModel.Layers(3).visible);
 assert(isequal(before(1,1,:),after(1,1,:))); % background stays transparent
-active.Value = 2; active.ValueChangedFcn(active,[]);
+tableEdit(table,'select',2,[]); assert(active.Value == 2);
 assert(isequal([viewer.DisplayModel.Layers.visible],[true true false]));
 solo = findall(figure,'Tag','solo-layer'); solo.ButtonPushedFcn(solo,[]);
 color = findall(figure,'Tag','layer-color'); color.Value = '1 0 0'; color.ValueChangedFcn(color,[]);
@@ -44,7 +45,7 @@ tableEdit(table,'color',2,[1 0 0]);
 opacity = findall(figure,'Tag','layer-opacity'); opacity.Value = 0.25; opacity.ValueChangedFcn(opacity,[]);
 rendered = pixels(ax);
 assert(max(rendered(:,:,1),[],'all') <= 64 && ~any(rendered(:,:,2:3),'all'));
-active.Value = 1; active.ValueChangedFcn(active,[]); solo.ButtonPushedFcn(solo,[]);
+tableEdit(table,'select',1,[]); assert(active.Value == 1); solo.ButtonPushedFcn(solo,[]);
 range = findall(figure,'Tag','contrast-range'); range.Value = [500 1800]; range.ValueChangedFcn(range,[]);
 assert(isequal(viewer.DisplayModel.Layers(1).limits,[500 1800]));
 frame = findall(viewer.Figure,'Tag','frame-number'); frame.Value = 2; frame.ValueChangedFcn(frame,[]);

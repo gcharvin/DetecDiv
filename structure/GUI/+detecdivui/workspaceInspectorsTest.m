@@ -24,6 +24,11 @@ cleanup = onCleanup(@()delete(v));
 menus = timerfindall('Tag','DetecDivDockMenu'); if ~isempty(menus), stop(menus); end
 tree = findall(v.widgetFigure('Projects'),'Tag','projects-tree');
 tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tree,[]);
+layers = findall(v.widgetFigure('Display'),'Tag','layers');
+event = struct('revision',layers.Data.revision,'action','select','index',2,'value',[]);
+layers.DataChangedFcn(layers,struct('Data',event));
+event = struct('revision',layers.Data.revision,'action','visible','index',2,'value',true);
+layers.DataChangedFcn(layers,struct('Data',event));
 v.openObjects(); v.openData();
 assert(v.Host.isWidgetVisible('Display') && v.Host.isWidgetVisible('Objects') && v.Host.isWidgetVisible('Data'));
 assert(v.Host.Widgets.display.Showing && v.Host.Widgets.objects.Showing && v.Host.Widgets.data.Showing);
@@ -33,9 +38,16 @@ assert(v.DisplayModel.Layers(2).visible && ~isempty(layers));
 histogram = findall(v.widgetFigure('Display'),'Tag','display-histogram');
 toggle = findall(v.widgetFigure('Display'),'Tag','display-histogram-toggle');
 assert(strcmp(histogram.Visible,'off') && ~toggle.Value);
+% Histograms belong to intensity layers; Objects follows that same selection.
+event = struct('revision',layers.Data.revision,'action','select','index',1,'value',[]);
+layers.DataChangedFcn(layers,struct('Data',event));
+assert(isempty(v.Objects.ObjectsRows) && ~v.Masks.Active);
 toggle.Value = true; detecdivui.Callback.call(toggle.ValueChangedFcn,toggle,[]);
 assert(strcmp(histogram.Visible,'on'));
 toggle.Value = false; detecdivui.Callback.call(toggle.ValueChangedFcn,toggle,[]);
+event = struct('revision',layers.Data.revision,'action','select','index',2,'value',[]);
+layers.DataChangedFcn(layers,struct('Data',event));
+assert(numel(v.Objects.ObjectsRows)==2 && v.Masks.Active);
 v.Data.navigate(2);
 marker = findall(v.Data.Axes,'Tag','data-frame-marker');
 assert(v.annotationFrame()==2 && marker.Value==2);

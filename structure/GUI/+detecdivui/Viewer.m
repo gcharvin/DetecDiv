@@ -278,9 +278,11 @@ classdef Viewer < handle
                 'ValueChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','histogramVisibility')});
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
-            active = uigridlayout(tools,[1 3]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
-            active.ColumnWidth = {'1x',42,36};
-            obj.Channels = uidropdown(active,'Items',{'—'},'ItemsData',1, ...
+            active = uigridlayout(tools,[1 2]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
+            active.ColumnWidth = {'1x','1x'};
+            % Retain the legacy channel state/callback bridge outside the
+            % visible layout. The Layers table is the active-layer selector.
+            obj.Channels = uidropdown(obj.Host.widgetFigure('Display'),'Items',{'—'},'ItemsData',1,'Visible','off', ...
                 'Enable','off','Tag','channels','Tooltip','Select the layer to adjust', ...
                 'ValueChangedFcn',@(~,~)obj.render());
             uibutton(active,'Text','Solo','Tag','solo-layer','Tooltip','Show only the active layer', ...
@@ -731,6 +733,16 @@ classdef Viewer < handle
             selection = obj.AnnotationSelection; c = obj.contourContext();
             if isempty(selection) || ~isequal(selection.roi,c.roi) || selection.frame ~= c.frame, selection = []; end
         end
+        function name = activeLayer(obj)
+            name = '';
+            if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
+            index = obj.Channels.Value; layers = obj.DisplayModel.Layers;
+            if index >= 1 && index <= numel(layers), name = layers(index).name; end
+        end
+        function yes = objectsBrowserActive(obj)
+            yes = ~obj.ObjectsSync && ~isempty(obj.ObjectsBrowserTab) && isvalid(obj.ObjectsBrowserTab) && ...
+                isequal(obj.ObjectsTabs.SelectedTab,obj.ObjectsBrowserTab) && obj.Host.isWidgetVisible('Objects');
+        end
         function context = contourContext(obj)
             context = struct('roi',[],'frame',obj.Frame.Value,'project',obj.Session.Project,'masks',{{}});
             if obj.Session.Zone == 0 || ~obj.ImageRequested, return; end
@@ -763,8 +775,12 @@ classdef Viewer < handle
             obj.closeROITool(); obj.closeTracksTool(); obj.ensureAnnotationDrafts();
             index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
             assert(~isempty(index),'detecdivui:ObjectsProvider','The object mask provider is unavailable.');
+            changingLayer = obj.Channels.Value ~= index;
+            obj.Channels.Value = index;
             if ~strcmp(obj.DisplayModel.Layers(index).kind,'Labels'), obj.DisplayModel.setKind(index,'Labels'); end
-            obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
+            if changingLayer
+                obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
+            end
             obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
             obj.rememberAnnotation(c.roi,provider,c.frame,label,'objects',family);
             obj.render(); obj.refreshKeyboard();
@@ -1945,6 +1961,7 @@ classdef Viewer < handle
                 obj.refreshLayerControls();
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
+                if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
             end
         end
         function drawRegions(obj,ax,layer)

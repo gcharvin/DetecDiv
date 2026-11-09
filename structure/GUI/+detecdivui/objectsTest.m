@@ -16,6 +16,9 @@ tree = findall(viewer.widgetFigure('Projects'),'Tag','projects-tree'); choose(tr
 assert(isempty(viewer.Objects) && isempty(viewer.Masks));
 viewer.openObjects(); widget = viewer.Objects;
 assert(viewer.Host.isWidgetVisible('Objects') && viewer.Host.isWidgetVisible('Display'));
+assert(isempty(findall(viewer.widgetFigure('Objects'),'Tag','objects-families')));
+assert(isempty(widget.ObjectsRows) && isempty(widget.SelectedProvider)); % Phase has no family.
+selectLayer('Prediction');
 assert(viewer.Masks.Active && ~isempty(widget.Rows));
 row = find([widget.Rows.familyId] == secondFamily); widget.selectFamily(row);
 assert(widget.SelectedFamily == secondFamily && strcmp(widget.SelectedProvider,'Prediction'));
@@ -58,11 +61,11 @@ assert(isequal(source.image,loaded.image));
 
 viewer.navigateDataFrame(source,2);
 assert(~any([widget.ObjectsRows.label]==7) && numel(widget.ObjectsRows)==2);
-families = findall(viewer.widgetFigure('Objects'),'Tag','objects-families'); stale = families.CellSelectionCallback;
+stale = table.CellSelectionCallback;
 choose(tree,2); before = viewer.selectedAnnotation();
-stale(families,struct('Indices',[row 1]));
+stale(table,struct('Indices',[1 1]));
 assert(isequal(viewer.selectedAnnotation(),before) && isequal(other.image,otherPixels) && isequal(other.cellModel,otherModel));
-choose(tree,1); viewer.openObjects();
+choose(tree,1); selectLayer('Prediction'); viewer.openObjects();
 viewer.Host.setDocked('Objects',false); viewer.Host.setDocked('Objects',true);
 assert(viewer.Objects==widget && viewer.annotationDraft('Prediction')==draft);
 assert(viewer.Host.isWidgetVisible('Display'));
@@ -84,22 +87,37 @@ assert(viewer.annotationDraft('Prediction')==draft && draft.Dirty);
 draft.discard(); viewer.contourChanged();
 viewer.Host.setWidgetVisible('Objects',false);
 assert(~viewer.Masks.Active && (isempty(viewer.Tracks) || ~viewer.Tracks.Active));
-hiddenSelection = families.CellSelectionCallback;
-hiddenSelection(families,struct('Indices',[row 1]));
+hiddenSelection = table.CellSelectionCallback;
+hiddenSelection(table,struct('Indices',[1 1]));
 assert(~viewer.Masks.Active && ~widget.resumeSelection(), ...
     'A hidden Objects document resumed image editing from a queued selection.');
 assert(isequal(other.image,otherPixels) && isequal(other.cellModel,otherModel));
+viewer.openObjects(); selectLayer('Alternative');
+assert(strcmp(widget.SelectedProvider,'Alternative') && numel(widget.ObjectsRows)==1 && widget.ObjectsRows.label==5);
+assert(strcmp(viewer.Masks.current().Channel,'Alternative'));
+selectLayer('Phase');
+assert(isempty(widget.ObjectsRows) && isempty(widget.SelectedProvider) && ~viewer.Masks.Active);
+assert(strcmp(findall(viewer.widgetFigure('Objects'),'Tag','objects-family').Text,'—'));
 disp('Objects test passed: family/provider distinction, multicolor editing defaults, exact track IDs, shared drafts/history/save, frame and selection updates, stale events, ROI isolation and independent Display docking.');
+    function selectLayer(name)
+        layers = findall(viewer.widgetFigure('Display'),'Tag','layers');
+        index = find(strcmp({viewer.DisplayModel.Layers.name},name));
+        event = struct('revision',layers.Data.revision,'action','select','index',index,'value',[]);
+        layers.DataChangedFcn(layers,struct('Data',event));
+        visible = struct('revision',layers.Data.revision,'action','visible','index',index,'value',true);
+        layers.DataChangedFcn(layers,struct('Data',visible));
+    end
 end
 
 function [r,family,exact] = fixture(folder,id)
 r = roi(id,[1 1 24 22]); r.path = folder;
-r.image = zeros(22,24,2,2,'uint16'); r.image(:,:,1,:) = 100;
+r.image = zeros(22,24,3,2,'uint16'); r.image(:,:,1,:) = 100;
 r.image(3:7,3:7,2,:) = 1; r.image(12:17,16:21,2,:) = 2;
-r.channelid = [1 2]; r.display.channel = {'Phase','Prediction'};
-r.display.indexed = [false true]; r.display.intensity = [1 1 1;0 0 0];
-r.display.rgb = [1 1 1;0 1 0]; r.display.selectedchannel = [true false];
-[model,report] = cellModel.fromLegacy(r,'Channels',{'Prediction'}); assert(report.validation.ok);
+r.image(4:8,14:18,3,:) = 5;
+r.channelid = [1 2 3]; r.display.channel = {'Phase','Prediction','Alternative'};
+r.display.indexed = [false true true]; r.display.intensity = [1 1 1;0 0 0;0 0 0];
+r.display.rgb = [1 1 1;0 1 0;1 0 0]; r.display.selectedchannel = [true false false];
+[model,report] = cellModel.fromLegacy(r,'Channels',{'Prediction','Alternative'}); assert(report.validation.ok);
 [model,family,report] = cellModel.cloneFamily(model,1,'Reviewed cells','Prediction'); assert(report.validation.ok);
 exact = uint64(9007199254740992)+uint64(1);
 rows = model.instances.family_id==family;
