@@ -23,7 +23,7 @@ function setup(component){
  const scroll=document.documentElement.scrollTop;root.replaceChildren();const layers=Array.isArray(state.layers)?state.layers:(state.layers&&state.layers.name?[state.layers]:[]);
  if(!layers.length){root.append(element('div','empty','No layers'));return;}
  layers.forEach((layer,j)=>{const i=j+1,selected=i===state.selected,row=element('div','row'+(selected?' selected':''));row.setAttribute('role','option');row.setAttribute('aria-selected',selected);row.title=layer.name;
- const head=element('div','head'),visible=element('input');visible.type='checkbox';visible.checked=layer.visible;visible.title='Show / hide '+layer.name;visible.setAttribute('aria-label',visible.title);visible.onchange=()=>send('visible',i,visible.checked);
+ const head=element('div','head'),visible=element('input');visible.type='checkbox';visible.checked=layer.visible;visible.title='Show and select / hide '+layer.name;visible.setAttribute('aria-label',visible.title);visible.onchange=()=>send('visible',i,visible.checked);
  const name=element('button','name',layer.name);name.title='Select '+layer.name;name.onclick=()=>send('select',i,true);name.onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();send('select',Math.max(1,Math.min(layers.length,i+(e.key==='ArrowDown'?1:-1))),true);}};
  const color=element('input','swatch');color.type='color';color.value=rgb(layer.color)||'#ffffff';color.disabled=layer.kind==='RGB';color.title='Choose color for '+layer.name; color.setAttribute('aria-label',color.title);
  if(!rgb(layer.color))color.classList.add('mapped');

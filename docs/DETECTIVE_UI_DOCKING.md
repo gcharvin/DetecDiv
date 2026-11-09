@@ -18,10 +18,17 @@ viewer = detecdiv_ui();
 - Each widget has a native document tab and docking controls. View > Docking provides explicit Dock/Undock commands and Dock All.
 - Native tab/floating-window Close hides the widget and preserves its figure, controls and scientific drafts. View reopens it. Closing the main window still uses the existing scientific dirty/save checks before releasing the application.
 - View > Projects / Image / Display / Pipeline / Objects / Data shows or hides a widget.
-- First opening Objects splits its own tile below Display/Pipeline, so Display and Objects can remain visible together. First opening Data splits Image into an upper image and lower dataseries view. These local splits retain other tiles and custom column widths. Previously floating or arranged inspectors keep their placement.
+- First opening Annotations (including View or checking a mask layer) splits its own panel below Display/Pipeline, so Display and Annotations remain visible together. Checking a mask keeps focus in Display. First opening Data splits Image into an upper image and lower dataseries view. These local splits retain other tiles and custom column widths. Previously floating or arranged inspectors keep their placement.
+- Older saved layouts that stacked Annotations with Display are migrated once to this separate lower panel. New layout records carry `annotationsLayoutVersion=2`; later custom docking/tab choices are preserved.
 - A hidden docked widget returns to its previous placement if the remaining layout has not been rearranged, including after saving and restoring that hidden state. Explicit rearrangements made while it was hidden take priority.
 - View > Save Layout stores the current workspace. Restore Layout reloads it; Reset Layout restores the initial three-column arrangement.
 - The current layout is also saved when the workspace closes normally, and loaded at the next launch.
+
+`detecdivui.layerAnnotationsTest()` checks actual layer checkbox events, active
+mask/track synchronization, concurrent Display/Annotations, retained Display
+focus, legacy shared-tab migration and later custom placement. The broader
+`detecdivui.analysisLayoutTest()` covers floating, closing/reopening and saved
+inspector geometry.
 
 The default file is `fullfile(prefdir, 'DetecDiv', 'ui-layout-r2026a.json')`. Layout preferences do not contain microscopy pixels or automatically reopen project data.
 

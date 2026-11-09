@@ -23,7 +23,15 @@ classdef WorkspaceLayout
             if nargin < 4, topFraction = .70; end
             validateattributes(topFraction,{'numeric'},{'scalar','>',0,'<',1});
             anchor = detecdivui.WorkspaceLayout.tile(layout,anchorId);
-            if isempty(anchor) || ~isempty(detecdivui.WorkspaceLayout.tile(layout,newId)), return; end
+            present=detecdivui.WorkspaceLayout.tile(layout,newId);
+            if isempty(anchor) || (~isempty(present)&&present~=anchor), return; end
+            if ~isempty(present)
+                % Older layouts stacked this inspector with its anchor.
+                layout=detecdivui.WorkspaceLayout.geometry(layout);
+                children=layout.tileOccupancy(anchor).children;
+                layout.tileOccupancy(anchor).children=children(~strcmp({children.id},newId));
+                layout.tileOccupancy(anchor).showingChildId=char(anchorId);
+            end
             coverage = layout.tileCoverage;
             [rows,columns] = find(coverage == anchor);
             if isempty(rows), return; end

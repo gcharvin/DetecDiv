@@ -2655,6 +2655,7 @@ classdef Viewer < handle
                     case 'visible'
                         validateattributes(value,{'logical'},{'scalar'});
                         obj.DisplayModel.setVisible(index,value);
+                        if value, obj.Channels.Value = index; end
                     case 'limits', obj.DisplayModel.setLimits(index,value); obj.Channels.Value = index;
                     case 'opacity', obj.DisplayModel.setOpacity(index,value);
                     case 'color'
@@ -2664,6 +2665,10 @@ classdef Viewer < handle
                     otherwise, return;
                 end
                 obj.render();
+                if strcmp(action,'visible') && value && strcmp(obj.DisplayModel.Layers(index).kind,'Labels')
+                    obj.Host.openObjects(false);
+                    if ~isempty(obj.Objects)&&isvalid(obj.Objects), obj.Objects.onRender(); end
+                end
             catch err
                 obj.refreshLayerControls(); obj.Status.Text = err.message;
             end

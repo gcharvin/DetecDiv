@@ -313,6 +313,10 @@ classdef ObjectsWidget < handle
         function model = currentModel(obj)
             model = [];
             if isstruct(obj.Source.cellModel) && isfield(obj.Source.cellModel,'schema_version'), model = obj.Source.cellModel; end
+            if isempty(model)&&detecdivui.MaskDraft.isLabel(obj.Source,obj.Viewer.activeLayer())
+                [model,status]=score_getCellModel(obj.Source);
+                assert(any(strcmp(status,{'ok','missing'})),'detecdivui:ObjectsModel','Cannot read the cellular model: %s',status);
+            end
             draft = obj.existingDraft();
             if ~isempty(draft), model = draft.previewModel(); end
         end

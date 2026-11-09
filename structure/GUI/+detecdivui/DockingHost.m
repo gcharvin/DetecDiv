@@ -141,8 +141,9 @@ classdef DockingHost < handle
         function openData(obj)
             obj.openInspector('Data','Image',.70);
         end
-        function openObjects(obj)
-            obj.openInspector('Objects','Display',.55);
+        function openObjects(obj,focus)
+            if nargin<2, focus=true; end
+            obj.openInspector('Objects','Display',.55,focus);
         end
         function arrangeAnalysis(obj)
             activity = obj.activity('Arranging analysis workspace...'); %#ok<NASGU>
@@ -164,6 +165,7 @@ classdef DockingHost < handle
             id = obj.widgetId(name); doc = obj.widget(id);
             if doc.Visible == logical(visible)
                 if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
+                if visible && strcmp(id,'objects'), obj.ensureAnnotationPlacement(); end
                 obj.syncMenus(); return;
             end
             remembered = []; floating = [];
@@ -191,6 +193,10 @@ classdef DockingHost < handle
                 end
                 remove(obj.HiddenLayouts,id);
             end
+            annotationLayout=[];
+            if visible && strcmp(id,'objects') && isempty(remembered)
+                annotationLayout=obj.App.DocumentLayout;
+            end
             doc.Visible = logical(visible);
             obj.waitForLayout();
             if visible && ~isempty(floating)
@@ -208,6 +214,7 @@ classdef DockingHost < handle
             end
             obj.settle(); obj.syncMenus();
             if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
+            if visible && strcmp(id,'objects'), obj.ensureAnnotationPlacement(annotationLayout); end
             obj.notifyVisibility(id,logical(visible));
         end
         function value = isWidgetVisible(obj,name)
@@ -251,7 +258,8 @@ classdef DockingHost < handle
         function record = snapshot(obj)
             obj.waitForLayout();
             record = struct('schema','detecdiv.ui.layout.v1','release',version('-release'), ...
-                'layout',obj.App.Layout,'windowBounds',obj.App.WindowBounds,'widgets',struct());
+                'layout',obj.App.Layout,'windowBounds',obj.App.WindowBounds,'widgets',struct(), ...
+                'annotationsLayoutVersion',2);
             names = fieldnames(obj.Widgets);
             for k = 1:numel(names)
                 doc = obj.widget(names{k});
@@ -353,6 +361,10 @@ classdef DockingHost < handle
                         end
                     end
                 end
+                if ~isfield(record,'annotationsLayoutVersion')
+                    obj.ArrangedWidgets.objects=false;
+                    obj.ensureAnnotationPlacement();
+                end
                 for k = 1:numel(names), obj.notifyVisibility(names{k},obj.widget(names{k}).Visible); end
                 obj.LastLayoutError = ''; ok = true;
                 obj.InvalidLayout = false;
@@ -418,6 +430,19 @@ classdef DockingHost < handle
         end
     end
     methods (Access = private)
+        function ensureAnnotationPlacement(obj,reference)
+            if obj.ArrangedWidgets.objects || ~obj.Widgets.objects.Visible || ~obj.Widgets.objects.Docked || ...
+                    ~obj.Widgets.display.Visible || ~obj.Widgets.display.Docked, return; end
+            if nargin<2||isempty(reference), reference=obj.App.DocumentLayout; end
+            [layout,changed]=detecdivui.WorkspaceLayout.below(reference, ...
+                'workspace_display','workspace_objects',.55);
+            if changed
+                obj.App.DocumentLayout=layout; obj.waitForLayout();
+            end
+            obj.App.SelectedChild=struct('tag','display','documentGroupTag','workspace');
+            obj.settle();
+            obj.ArrangedWidgets.objects=true;
+        end
         function ensureClassifierPlacement(obj)
             if ~obj.Widgets.classifier.Docked || ~obj.Widgets.classifier.Visible, return; end
             % Older layouts have no node for this new document. Its controls
@@ -432,13 +457,14 @@ classdef DockingHost < handle
             current.tileOccupancy(tile).showingChildId = 'workspace_classifier';
             obj.App.DocumentLayout = current; obj.waitForLayout();
         end
-        function openInspector(obj,name,anchor,fraction)
+        function openInspector(obj,name,anchor,fraction,focus)
+            if nargin<5, focus=true; end
             id = lower(name); doc = obj.widget(id);
             floatingBounds = [];
             if ~doc.Visible && isKey(obj.HiddenFloating,id), floatingBounds = obj.HiddenFloating(id).windowBounds; end
             obj.show();
             obj.waitForLayout(); current = obj.App.DocumentLayout;
-            arrange = ~doc.Visible && doc.Docked && ~obj.ArrangedWidgets.(id) && ...
+            arrange = ~strcmp(id,'objects') && ~doc.Visible && doc.Docked && ~obj.ArrangedWidgets.(id) && ...
                 obj.widget(anchor).Docked && obj.widget(anchor).Visible;
             obj.setWidgetVisible(name,true);
             if arrange
@@ -450,7 +476,7 @@ classdef DockingHost < handle
                 end
             end
             obj.ArrangedWidgets.(id) = true;
-            obj.focusWidget(name);
+            if focus, obj.focusWidget(name); end
             if ~isempty(floatingBounds)
                 % The newly focused floating peer can publish default
                 % bounds after visibility/docking updates have settled.
