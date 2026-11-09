@@ -70,6 +70,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     if ~ok
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
+    pipelineAssertConcreteInputs(report.nodes);
     report.bindingResolution = bindingResolution;
     report = initRunReport(report, ctx);
     ctx = initializePipelineProgress(ctx, report);

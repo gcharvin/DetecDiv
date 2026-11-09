@@ -69,6 +69,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     if ~ok
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
+    % Check the entire selected graph before an earlier node can mutate ROIs.
+    pipelineAssertConcreteInputs(report.nodes);
     report.bindingResolution = bindingResolution;
     report = initRunReport(report, ctx);
 

@@ -20,6 +20,17 @@ function [ok, report] = runPipelineDry(pipe, ctx, opts)
         ctx.run = rmfield(ctx.run, 'nodeParams');
     end
     [okV, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', allowGui));
+    if okV
+        try
+            pipelineAssertConcreteInputs(report.nodes);
+        catch ME
+            if ~strcmp(ME.identifier, 'runPipeline:UnresolvedResource')
+                rethrow(ME);
+            end
+            okV = false;
+            report.errors{end+1} = ME.message;
+        end
+    end
     report.bindingResolution = bindingResolution;
 
     % strict ok if any missing params (even if GUI could fill them)

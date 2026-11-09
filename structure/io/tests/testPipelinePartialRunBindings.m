@@ -191,6 +191,26 @@ verifyEqual(testCase, resolved.nodes(2).params.instanceChannelName, ...
     'results_custom_segmentation_cell');
 end
 
+function testGuardChecksEverySelectedNodeBeforeExecution(testCase)
+[pipe, ~] = fixture();
+verifyError(testCase, @()pipelineAssertConcreteInputs(pipe.nodes), ...
+    'runPipeline:UnresolvedResource');
+pipe.nodes(2).enabled = false;
+pipelineAssertConcreteInputs(pipe.nodes);
+end
+
+function testCellArrayRunOverridesStayResolvedInDryRun(testCase)
+[pipe, ctx] = fixture();
+ctx.run = struct();
+ctx.run.nodeParams = {struct('nodeId', pipe.nodes(2).id, 'params', ...
+    struct('instanceChannelName', '@resource:segmentation:classifier_cellposesam_4'))};
+[ok, report] = runPipelineDry(pipe, ctx, struct('allowGui', false));
+verifyTrue(testCase, ok, strjoin(report.errors, ' | '));
+pipelineAssertConcreteInputs(report.nodes);
+verifyEqual(testCase, report.nodes(2).params.instanceChannelName, ...
+    'results_pred_cellposesam_cell');
+end
+
 function [pipe, ctx] = fixture()
 cellpose = node('classifier_cellposesam_4', 'classifier', 'cellposesam', ...
     struct('pkg','cellposesam','channel','BF','outputType','segmentation', ...
