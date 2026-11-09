@@ -141,6 +141,16 @@ classdef DataWidget < handle
         function delete(obj)
             obj.Series = {};
         end
+        function selection=exportSelection(obj)
+            selection=[];
+            if isempty(obj.SelectedData)||~obj.Sync, return; end
+            ds=obj.SelectedData; variables={obj.Variable.Value}; label=obj.Variable.Value;
+            if ~strcmp(obj.Group.Value,'Variable')
+                at=find(strcmp(string(ds.plotProperties(:,6)),obj.Group.Value));
+                variables=ds.data.Properties.VariableNames(at); label=obj.Group.Value;
+            end
+            selection=struct('source',obj.Source,'data',ds,'groupid',ds.groupid,'variables',{variables},'label',label);
+        end
     end
     methods (Access = private)
         function selectSeries(obj)

@@ -44,7 +44,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 
 | Menu | Available commands |
 | --- | --- |
-| File | Open Project..., Recent Projects, Open Classifier..., Recent Classifiers, Save Project, Save Annotations, New Pipeline..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
+| File | Open Project..., Recent Projects, Open Classifier..., Recent Classifiers, Save Project, Save Annotations, Export Movie..., New Pipeline..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
 | Edit | Copy Image, Define ROIs..., Edit Masks..., Edit Tracks... |
 | Pipeline | New Pipeline..., Open Pipeline..., Edit Pipeline..., Project Runs, Refresh Project Runs |
 | View | Projects, Image, Display, Pipeline, Annotations, Data, Arrange Analysis Workspace, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
@@ -84,3 +84,5 @@ Display exposes a visibility table, an active layer, Solo, source-unit contrast,
 Annotations can stay visible beside Display. Its region list follows the active mask layer; Masks and Tracks replace the document body as contextual tools. Shared mask providers remain read-only until explicit separation; each editable result then owns its layer. Missing optional tracking metadata does not invalidate Image. See `DETECTIVE_UI_ANNOTATIONS.md`.
 
 Workspace discovery supplies the independent Classifier widget and the Processors collection in Projects. Live pipeline handles populate Pipeline's top Open/Recent tree; a single click displays the retained draft in the graph below. Project runs are listed with their status in the bottom Projects context panel and recall frozen graphs in Pipeline. New Run/Settings sit below the graph and use the shared settings dialog; advanced bindings and execution still reuse pipeline2 with the same run identity/configuration while the larger native editor is migrated. ROI definition uses the independent ROIs assistant on the main image. Connect guided actions to the same inspectable templates/runs, including compatible-model selection. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_ROIS.md`.
+
+Movie export is an on-demand Display assistant with isolated preview/output, explicit scope, real progress/cancellation and a frozen copy of layer/draft settings. Keep FPS separate from acquisition time, and keep full options in a typed dialog. See `DETECTIVE_UI_MOVIES.md`.

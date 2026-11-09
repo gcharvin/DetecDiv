@@ -28,6 +28,13 @@ function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeCom
 %   indexedOverlay : [H W 3] double (0..1) pour l'overlay raster
 %   alphaOverlay   : [H W] double (0..1) alpha pour l'overlay raster
 
+% An export adapter can supply a frozen display frame while retaining the
+% shared Score layout, events, data panels, capture and writer.
+if isfield(param,'compositeProvider') && ~isempty(param.compositeProvider)
+    [displayImage,vContours,indexedOverlay,alphaOverlay]=param.compositeProvider(roitmp,fr,param);
+    return;
+end
+
 % ------------------- unpack param (robuste) -------------------
 channel      = param.channel;
 overlay      = param.overlay;

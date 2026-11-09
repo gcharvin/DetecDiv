@@ -26,6 +26,7 @@ Progress objects, GUI handles and scopes are never added to persisted run contex
 | Adjust display/Auto, copy image | Display / Image | Indeterminate; cached source data is preserved |
 | Open/refresh/save pipeline | Pipeline | Indeterminate around existing helpers and graph refresh |
 | Validate/dry run, save run, read run review | Pipeline | Indeterminate around shared backend calls |
+| Movie/PDF snapshot, preview and export | Export Movie (Display), falling back to Image/visible footer | Source loading indeterminate; real video-frame/sequence-cell fractions; cooperative Cancel, writer/temp cleanup |
 | Open advanced editor or run inspector | Pipeline | Caller covers construction; destination owns its subsequent operations |
 | Save/restore/reset layout | Image | Scoped host activity callback |
 
@@ -65,3 +66,5 @@ detecdivui.newRunTest('',true);
 The native progress test covers nested and independent owners, hidden-widget fallback, error unwinding, early scope removal, real project-load metadata callbacks, failed file opens, manual dialog close and deleted parents. Viewer smoke/display/workspace/pipeline/lazy-image regressions cover the connected controls. Optional PNG capture checks footer layout at the default compact width. Runtime/source equality and scoped ownership of synchronous dialog sites are checked statically for all five principal apps; representative advanced-editor construction is exercised natively. Score's ROI-save menu callback was also exercised on a temporary H5 store, and its existing GT-progress regression passed. Real acquisition processing, remote submission and every scientific error/cancel branch are not executed by these UI tests.
 
 For each future port from Score, DetecDiv, Workflow or Pipeline: review the source operation and its callers, retain backend progress/cancel callbacks, choose a visible owner before blocking, scope cleanup, and add the handoff to this inventory. Do not silently drop existing progress while moving a function into a widget.
+
+Movie export reuses Score's layout/render/capture/writer on an isolated canvas. The contextual assistant moves its active progress scope to a visible footer when its document is hidden/covered. Cancellation is checked before composition and between video frames; PDF printing itself is synchronous. See `DETECTIVE_UI_MOVIES.md` and the movie export/recipe tests.

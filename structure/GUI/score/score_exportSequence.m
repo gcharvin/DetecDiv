@@ -12,6 +12,10 @@ fig.InvertHardcopy = 'off';
 [folder, name] = fileparts(opts.name);
 path = fullfile(folder,[name '.pdf']);
 drawnow;
+if isfield(opts,'exportCancel') && opts.exportCancel()
+    error('score:ExportCancelled','Export cancelled.');
+end
 print(fig,path,'-dpdf','-painters','-r0');
+if isfield(opts,'exportProgress'), opts.exportProgress(1); end
 fprintf('Sequence saved as PDF: %s\n',path);
 end

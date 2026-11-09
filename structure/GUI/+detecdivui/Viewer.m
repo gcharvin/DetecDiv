@@ -20,9 +20,12 @@ classdef Viewer < handle
         RecentProjects
         RecentClassifiers
         Classifiers
+        MovieExport
     end
     properties (Access = private)
         LayerDialog = []
+        MovieTab = []
+        MoviePage = []
         Tree
         ProjectName
         DetailsPanel
@@ -253,6 +256,7 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.openROITool());
             uimenu(obj.ImageMenu,'Text','Edit Masks...','MenuSelectedFcn',@(~,~)obj.openContourTool());
             uimenu(obj.ImageMenu,'Text','Edit Tracks...','MenuSelectedFcn',@(~,~)obj.openTracksTool());
+            uimenu(obj.ImageMenu,'Text','Export Movie...','Separator','on','MenuSelectedFcn',@(~,~)obj.openMovieExport());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             timeline = uigridlayout(canvas,[2 5]);
@@ -681,6 +685,59 @@ classdef Viewer < handle
         function openMasksTool(obj)
             obj.openContourTool();
         end
+        function openMovieExport(obj)
+            try
+                assert(obj.Session.Position>0,'detecdivui:ExportSource','Select an image first.');
+                if ~obj.ImageRequested, obj.loadCurrentImage(); end
+                obj.closeROITool();
+                if isempty(obj.MovieExport)||~isvalid(obj.MovieExport)
+                    obj.MovieTab=uitab(obj.DisplayTabs,'Title','Export Movie','Tag','movie-tab');
+                    obj.MoviePage=obj.toolPage(obj.DisplayRoot,'movie-page');
+                    obj.MovieExport=detecdivui.MovieExportWidget(obj.MoviePage,obj);
+                    obj.MovieExport.Progress.Route=detecdivui.Callback(obj,'widgetEvent','progressOwner','Display');
+                end
+                obj.MovieTab.Parent=obj.DisplayTabs; obj.DisplayTabs.SelectedTab=obj.MovieTab;
+                obj.MovieExport.setContext(); obj.syncDisplayPages(); obj.Host.focusWidget('Display'); obj.Host.show();
+            catch err
+                obj.widgetEvent('status',err.message);
+            end
+        end
+        function closeMovieExport(obj)
+            if ~isempty(obj.MovieTab)&&isvalid(obj.MovieTab), obj.MovieTab.Parent=[]; end
+            obj.syncDisplayPages();
+        end
+        function progress=movieProgress(obj)
+            progress=obj.progressOwner('Display');
+        end
+        function sources=movieSources(obj,scope)
+            sources=struct('session',{},'model',{},'position',{},'zone',{},'frame',{},'channel',{},'overlay',{},'outlines',{});
+            if obj.Session.Position==0, return; end
+            obj.rememberImageView();
+            if strcmp(scope,'current')
+                states=struct('project',obj.Session.Project,'position',obj.Session.Position,'zone',obj.Session.Zone, ...
+                    'frame',obj.Frame.Value,'channel',obj.Channels.Items{obj.Channels.Value},'overlay',obj.OverlayChannels.Value);
+            elseif strcmp(scope,'open')
+                states=obj.ImageViews([obj.ImageViews.zone]>0);
+            else
+                states=obj.ImageViews([]); [~,indices]=obj.Session.zoneItems();
+                for index=indices
+                    at=find(arrayfun(@(s)isequal(s.project,obj.Session.Project)&&s.position==obj.Session.Position&&s.zone==index,obj.ImageViews),1);
+                    if ~isempty(at)
+                        states(end+1)=obj.ImageViews(at); %#ok<AGROW>
+                    else
+                        states(end+1)=struct('tab',[],'project',obj.Session.Project,'position',obj.Session.Position,'zone',index, ...
+                            'frame',1,'channel','','overlay',obj.OverlayChannels.Value,'xlim',[],'ylim',[]); %#ok<AGROW>
+                    end
+                end
+            end
+            for state=reshape(states,1,[])
+                at=find(cellfun(@(s)isequal(s.Project,state.project),obj.Sessions),1);
+                if isempty(at), continue; end
+                sources(end+1)=struct('session',obj.Sessions{at},'model',obj.DisplayModels{at}, ...
+                    'position',state.position,'zone',state.zone,'frame',state.frame,'channel',state.channel, ...
+                    'overlay',state.overlay,'outlines',obj.Overlays.Value); %#ok<AGROW>
+            end
+        end
         function refreshClassifierAccess(obj)
             if ~isempty(obj.Session.Classifier) && ~obj.annotationEditingAllowed()
                 obj.closeContourTool(); obj.closeTracksTool();
@@ -833,6 +890,7 @@ classdef Viewer < handle
         end
         function opened = openROITool(obj,project,node,callback,scope)
             opened = false;
+            obj.closeMovieExport();
             if ~isempty(obj.Session.Classifier), obj.widgetEvent('status','Select a project FOV to define ROIs'); return; end
             if nargin < 5, scope = struct(); end
             obj.closeTracksTool();
@@ -1074,6 +1132,9 @@ classdef Viewer < handle
         end
         function yes = canClose(obj)
             yes = true;
+            if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport)&&obj.MovieExport.Busy
+                obj.MovieExport.cancel(); yes=false; return;
+            end
             if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog) && obj.LayerDialog.Draft.SaveFailed
                 obj.LayerDialog.Figure.Visible='on'; obj.LayerDialog.close(); yes=false; return;
             end
@@ -1150,6 +1211,8 @@ classdef Viewer < handle
             if ~obj.ConstructionComplete && ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.abortStartup(); end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), delete(obj.MovieExport); end
+            if ~isempty(obj.MovieTab)&&isvalid(obj.MovieTab), delete(obj.MovieTab); end
             if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog), delete(obj.LayerDialog); end
             obj.cancelPreview();
             if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
@@ -1381,8 +1444,10 @@ classdef Viewer < handle
             if isempty(obj.DisplayPage) || ~isgraphics(obj.DisplayPage), return; end
             assistant = obj.hasROIWidget() && ~isempty(obj.ROIsTab) && isvalid(obj.ROIsTab) && ...
                 isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab) && ~isempty(obj.ROIsTab.Parent);
-            obj.DisplayPage.Visible = obj.onOff(~assistant);
+            movie=~isempty(obj.MovieTab)&&isvalid(obj.MovieTab)&&~isempty(obj.MovieTab.Parent)&&isequal(obj.DisplayTabs.SelectedTab,obj.MovieTab);
+            obj.DisplayPage.Visible = obj.onOff(~assistant && ~movie);
             if ~isempty(obj.ROIsPage) && isgraphics(obj.ROIsPage), obj.ROIsPage.Visible = obj.onOff(assistant); end
+            if ~isempty(obj.MoviePage)&&isgraphics(obj.MoviePage), obj.MoviePage.Visible=obj.onOff(movie); end
         end
         function syncObjectsPages(obj)
             if isempty(obj.ObjectsPage) || ~isgraphics(obj.ObjectsPage), return; end
@@ -1409,6 +1474,9 @@ classdef Viewer < handle
             if ~isempty(obj.Objects) && isvalid(obj.Objects), owners.Objects = obj.Objects.Progress; end
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
                 owners.Display = obj.ROIs.Progress;
+            end
+            if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport)&&isequal(obj.DisplayTabs.SelectedTab,obj.MovieTab)
+                owners.Display=obj.MovieExport.Progress;
             end
             if obj.hasMaskWidget() && obj.Masks.Active, owners.Objects = obj.Masks.Progress; end
             if obj.hasTracksWidget() && obj.Tracks.Active, owners.Objects = obj.Tracks.Progress; end
@@ -1449,6 +1517,7 @@ classdef Viewer < handle
                 'Separator','on','MenuSelectedFcn',@(~,~)obj.clearRecentProjects());
             obj.refreshRecentMenu();
             obj.Host.menu(file,'Open Classifier...','MenuSelectedFcn',@(~,~)obj.openClassifier());
+            obj.Host.menu(file,'Export Movie...','MenuSelectedFcn',@(~,~)obj.openMovieExport());
             obj.RecentClassifiersMenu = obj.Host.menu(file,'Recent Classifiers','Enable','off');
             for k = 1:10
                 obj.RecentClassifierCommands{k} = obj.Host.menu(obj.RecentClassifiersMenu,'','Enable','off');
@@ -2200,6 +2269,7 @@ classdef Viewer < handle
                 obj.showReviewSelection();
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), obj.Classifiers.onImageFrame(); end
+                if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), obj.MovieExport.setContext(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end

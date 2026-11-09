@@ -93,7 +93,7 @@ switch lower(displayHandles.mode)
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
 
-                        hImg = imshow(displayImage, []);
+                        hImg = imshow(displayImage, [],'Parent',ax);
                         score_drawMovieEventText(ax, layoutOptions, curframe);
 
                         [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
@@ -135,7 +135,7 @@ switch lower(displayHandles.mode)
                             ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
 
                             %  img = roiData.image(:,:,ch,frame);
-                            hImg = imshow(displayImage(:,:,:,ch), []);
+                            hImg = imshow(displayImage(:,:,:,ch), [],'Parent',ax);
                             if ch == 1
                                 score_drawMovieEventText(ax, layoutOptions, curframe);
                             end
@@ -262,7 +262,7 @@ switch lower(displayHandles.mode)
             set(ax, 'HitTest', 'off');
             axarray=[axarray ax];
             %compositeImg = max(roiData.image, [], 3);
-            hImg = imshow(displayImage, []);
+            hImg = imshow(displayImage, [],'Parent',ax);
             %  title('Overlay Composite');
             graphicsHandles.imgHandles(tileIndex) = hImg;
             % Ajout d'un axe overlay transparent.
@@ -298,7 +298,7 @@ switch lower(displayHandles.mode)
 
                 axarray=[axarray ax];
                 img = displayImage(:,:,:,ch);
-                hImg = imshow(img, []);
+                hImg = imshow(img, [],'Parent',ax);
                 %    title(sprintf('Ch:%d', ch));
                 graphicsHandles.imgHandles(tileIndex) = hImg;
                 % Ajout d'un axe overlay transparent sur chaque tuile.
@@ -384,7 +384,7 @@ switch lower(displayHandles.mode)
                     [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
 
 
-                    hImg = imshow(displayImage, []);
+                    hImg = imshow(displayImage, [],'Parent',ax);
 
 titleStr = score_wrapDisplayLabel(localBuildMovieRoiTitle_(layoutOptions, roiData), 28);
 if strlength(titleStr) > 0
@@ -426,7 +426,7 @@ end
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
                         %  img = roiData.image(:,:,ch,1);
-                        hImg = imshow(displayImage(:,:,:,ch), []);
+                        hImg = imshow(displayImage(:,:,:,ch), [],'Parent',ax);
                         hScale = score_drawChannelScaleBar(ax, layoutOptions, ch);
                         if ~isempty(hScale)
                             graphicsHandles.scaleBarHandles(tileIndex) = hScale;
@@ -632,6 +632,7 @@ end
 function graphicsHandles = localWriteMovie(displayHandles, graphicsHandles, roiobj, layoutOptions)
 masterTL = displayHandles.masterTiledLayout;
 [graphicsHandles, layoutOptions] = score_layoutMovie(graphicsHandles, displayHandles, roiobj, layoutOptions);
+if isfield(layoutOptions,'previewOnly') && layoutOptions.previewOnly, return; end
 outputname = layoutOptions.name;
 [folder, name, ~] = fileparts(outputname);
 
@@ -697,6 +698,7 @@ end
 v.FrameRate = fps;
 
 open(v);
+writerCleanup = onCleanup(@()localCloseMovieWriter(v)); %#ok<NASGU>
 fig = get(masterTL, 'Parent');
 set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
 
@@ -709,6 +711,9 @@ set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
         % end
 
 for frame = 1:numel(layoutOptions.frames)
+    if isfield(layoutOptions,'exportCancel') && layoutOptions.exportCancel()
+        error('score:ExportCancelled','Export cancelled.');
+    end
     score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles, frame);
     drawnow;  % important pour stabiliser le rendu avant capture
 
@@ -716,9 +721,16 @@ for frame = 1:numel(layoutOptions.frames)
 
     fprintf('Rendering frame %d / %d\n', frame, numel(layoutOptions.frames));
     writeVideo(v, rgb);  % <-- direct, pas im2frame
+    if isfield(layoutOptions,'exportProgress')
+        layoutOptions.exportProgress(frame/numel(layoutOptions.frames));
+    end
 end
 
 
         close(v);
         fprintf('Movie saved: %s\n', newPath);
+end
+
+function localCloseMovieWriter(writer)
+try, close(writer); catch, end
 end

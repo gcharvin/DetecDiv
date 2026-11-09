@@ -73,6 +73,30 @@ classdef LayerModel < handle
         function invalidate(obj)
             obj.Frame = 0; obj.Planes = {}; obj.Histograms = {};
         end
+        function copy = copyFor(obj,session)
+            % Independent export/display state, with no live draft callback.
+            copy=detecdivui.LayerModel(); copy.configure(session,1);
+            key=sprintf('%d:%d',session.Position,session.Zone);
+            if isKey(obj.Views,key)
+                previous=obj.Views(key);
+                assert(all(ismember({previous([previous.visible]).name},{copy.Layers.name})), ...
+                    'detecdivui:ExportLayers','Load the visible Display layers before exporting this image.');
+                for k=1:numel(copy.Layers)
+                    at=find(strcmp({previous.name},copy.Layers(k).name),1);
+                    if ~isempty(at), copy.Layers(k)=previous(at); end
+                end
+            end
+            if isa(obj.Styles,'containers.Map')
+                keys=obj.Styles.keys;
+                for k=1:numel(keys)
+                    if startsWith(keys{k},[key ':'])
+                        if ~isa(copy.Styles,'containers.Map'), copy.Styles=containers.Map('KeyType','char','ValueType','any'); end
+                        copy.Styles(keys{k})=obj.Styles(keys{k});
+                    end
+                end
+            end
+            copy.store();
+        end
         function plane = read(obj,index,frame)
             if obj.Frame ~= frame
                 obj.Planes = cell(1,numel(obj.Layers)); obj.Histograms = cell(1,numel(obj.Layers)); obj.Frame = frame;
