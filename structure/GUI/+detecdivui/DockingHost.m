@@ -52,6 +52,7 @@ classdef DockingHost < handle
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',true);
+                if strcmp(id,'objects'), doc.Title='Annotations'; end
                 obj.App.add(doc); obj.Widgets.(id) = doc;
                 doc.CanCloseFcn = @(document)obj.requestWidgetClose(id,document);
                 doc.Figure.CloseRequestFcn = @(~,~)obj.deferWidgetClose(id);
@@ -59,6 +60,12 @@ classdef DockingHost < handle
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
             obj.StateListener = addlistener(obj.App,'StateChanged',@(~,~)obj.appStateChanged());
+        end
+        function name = widgetId(~,name)
+            name=lower(char(name)); if strcmp(name,'annotations'), name='objects'; end
+        end
+        function name = widgetLabel(~,name)
+            name=char(name); if strcmpi(name,'Objects'), name='Annotations'; end
         end
         function figure = widgetFigure(obj,name)
             figure = obj.widget(name).Figure;
@@ -74,7 +81,7 @@ classdef DockingHost < handle
             names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'};
             for k = 1:numel(names)
                 name = names{k};
-                obj.DockCommands{k} = obj.menu(docking,['Undock ' name], ...
+                obj.DockCommands{k} = obj.menu(docking,['Undock ' obj.widgetLabel(name)], ...
                     'MenuSelectedFcn',@(~,~)obj.setDocked(name,~obj.widget(name).Docked));
             end
             obj.menu(docking,'Dock All','Separator','on', ...
@@ -85,7 +92,7 @@ classdef DockingHost < handle
             obj.menu(parent,'Reset Layout','MenuSelectedFcn',@(~,~)obj.resetLayout());
         end
         function item = widgetMenu(obj,parent,name)
-            item = obj.menu(parent,name,'Checked','on', ...
+            item = obj.menu(parent,obj.widgetLabel(name),'Checked','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setWidgetVisible(name,~obj.isWidgetVisible(name)));
             obj.VisibilityCommands{end+1} = struct('name',name,'command',item);
         end
@@ -114,7 +121,7 @@ classdef DockingHost < handle
         end
         function setDocked(obj,name,docked)
             doc = obj.widget(name);
-            id = lower(char(name)); previous = [];
+            id = obj.widgetId(name); previous = [];
             if isKey(obj.HiddenFloating,id), previous = obj.HiddenFloating(id); remove(obj.HiddenFloating,id); end
             doc.Visible = true; doc.Docked = logical(docked);
             obj.waitForLayout(); obj.syncMenus();
@@ -128,7 +135,7 @@ classdef DockingHost < handle
         function focusWidget(obj,name)
             obj.setWidgetVisible(name,true);
             if strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
-            obj.App.SelectedChild = struct('tag',lower(char(name)),'documentGroupTag','workspace');
+            obj.App.SelectedChild = struct('tag',obj.widgetId(name),'documentGroupTag','workspace');
             obj.settle();
         end
         function openData(obj)
@@ -154,7 +161,7 @@ classdef DockingHost < handle
             obj.setWidgetVisible(name,false);
         end
         function setWidgetVisible(obj,name,visible)
-            id = lower(char(name)); doc = obj.widget(id);
+            id = obj.widgetId(name); doc = obj.widget(id);
             if doc.Visible == logical(visible)
                 if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
                 obj.syncMenus(); return;
@@ -357,6 +364,9 @@ classdef DockingHost < handle
             end
         end
         function item = findCommand(obj,text)
+            text = strrep(text,'Objects','Annotations');
+            if strcmp(text,'Edit Contours...'), text='Edit Masks...'; end
+            if strcmp(text,'Save Masks'), text='Save Annotations'; end
             matches = cellfun(@(command)strcmp(command.Text,text),obj.Commands);
             assert(nnz(matches) == 1,'detecdivui:MenuCommand','Menu command is missing or ambiguous: %s',text);
             item = obj.Commands{find(matches,1)};
@@ -367,7 +377,7 @@ classdef DockingHost < handle
                 names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
-                obj.DockCommands{k}.Text = [verb ' ' name];
+                obj.DockCommands{k}.Text = [verb ' ' obj.widgetLabel(name)];
             end
             for k = 1:numel(obj.VisibilityCommands)
                 binding = obj.VisibilityCommands{k};
@@ -480,7 +490,7 @@ classdef DockingHost < handle
             end
         end
         function notifyVisibility(obj,name,visible)
-            detecdivui.Callback.call(obj.OnWidgetVisibility,char(name),logical(visible));
+            detecdivui.Callback.call(obj.OnWidgetVisibility,obj.widgetId(name),logical(visible));
         end
         function scope = activity(obj,message)
             scope = [];
@@ -495,7 +505,7 @@ classdef DockingHost < handle
             if isvalid(obj), obj.WebBusy = false; end
         end
         function doc = widget(obj,name)
-            id = lower(char(name));
+            id = obj.widgetId(name);
             assert(isfield(obj.Widgets,id),'detecdivui:Widget','Unknown widget: %s',id);
             doc = obj.Widgets.(id);
         end

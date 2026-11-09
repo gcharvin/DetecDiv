@@ -11,6 +11,10 @@ classdef MaskWidget < handle
         ContextROI = []
         Target
         Provider
+        LayerText
+        Palette
+        LabelControls
+        Semantic = false
         Label
         Tool
         Shape
@@ -41,20 +45,28 @@ classdef MaskWidget < handle
             if isfield(prefs,'painting_normal_brush_radius'), radius = prefs.painting_normal_brush_radius; end
             radius = min(256,max(1,round(double(radius))));
             grid = uigridlayout(parent,[12 1]); grid.Padding = [6 6 6 6];
+            grid.Scrollable='on';
             grid.RowHeight = {24,28,28,28,28,28,28,28,24,'1x',28,24};
-            header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0]; header.ColumnWidth = {'1x',90};
+            header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0]; header.ColumnWidth = {'1x',110};
             obj.Target = uilabel(header,'Text','','Interpreter','none','Tag','mask-target');
-            uibutton(header,'Text','← Objects','Tag','mask-done','Tooltip','Return to Objects and keep mask drafts', ...
+            uibutton(header,'Text','← Annotations','Tag','mask-done','Tooltip','Return to Annotations and keep mask drafts', ...
                 'ButtonPushedFcn',@(~,~)viewer.closeContourTool());
-            obj.Provider = uidropdown(grid,'Items',{'—'},'Tag','mask-provider', ...
+            obj.LayerText=uilabel(grid,'Text','—','Interpreter','none','Tag','mask-layer');
+            obj.Provider = uidropdown(parent,'Visible','off','Items',{'—'},'Tag','mask-provider', ...
                 'Tooltip','Authoritative mask provider resolved by Score', ...
                 'ValueChangedFcn',@(~,~)obj.providerChanged());
             row = uigridlayout(grid,[1 3]); row.Padding = [0 0 0 0]; row.ColumnWidth = {45,'1x',70};
-            uilabel(row,'Text','Label');
+            labelTitle=uilabel(row,'Text','Label');
             obj.Label = uieditfield(row,'numeric','Value',0,'Limits',[0 65535],'RoundFractionalValues','on', ...
                 'Tag','mask-label','Tooltip','Mask label, distinct from track ID', ...
                 'ValueChangedFcn',@(~,~)obj.showSelection());
-            uibutton(row,'Text','New ID','ButtonPushedFcn',@(~,~)obj.newLabel());
+            newLabelButton=uibutton(row,'Text','New Label','ButtonPushedFcn',@(~,~)obj.newLabel());
+            obj.LabelControls={labelTitle,obj.Label,newLabelButton};
+            obj.Palette=uidropdown(row,'Visible','off','Items',{'Unlabeled'},'ItemsData',0, ...
+                'Tag','mask-class','Tooltip','GT class to paint; Unlabeled clears annotations', ...
+                'ValueChangedFcn',@(~,~)obj.classChanged());
+            obj.Palette.Layout.Row=1; obj.Palette.Layout.Column=[1 3];
+            row.RowHeight={'1x'};
             obj.Tool = uidropdown(grid,'Items',{'Select','Brush','Eraser'},'Tag','mask-tool', ...
                 'Tooltip','Click to select; drag to paint; Shift temporarily erases');
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',75};
@@ -77,7 +89,7 @@ classdef MaskWidget < handle
             obj.Overwrite = uicheckbox(grid,'Text','Overwrite other labels','Value',false,'Tag','mask-overwrite');
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0];
             row.Layout.Row = 11;
-            uibutton(row,'Text','Save Masks','Tag','mask-save','Tooltip','Save masks, cell model and annotation lifecycle data', ...
+            uibutton(row,'Text','Save Edits','Tag','mask-save','Tooltip','Save masks, tracks and annotation lifecycle data', ...
                 'ButtonPushedFcn',@(~,~)obj.action('save'));
             uibutton(row,'Text','Discard','Tag','mask-discard','Tooltip','Discard this provider draft', ...
                 'ButtonPushedFcn',@(~,~)obj.action('discard'));
@@ -204,6 +216,7 @@ classdef MaskWidget < handle
             obj.Drafts = obj.Drafts(keep); obj.Projects = obj.Projects(keep);
         end
         function assertEditable(obj,draft,modelMutation)
+            obj.Viewer.assertAnnotationLayer(draft.Source,draft.Channel);
             assert(obj.Viewer.annotationEditingAllowed(draft.Source),'detecdivui:ClassifierReview', ...
                 'Switch this classifier to Edit before modifying or saving annotations.');
             for k = 1:numel(obj.Drafts)
@@ -301,8 +314,9 @@ classdef MaskWidget < handle
                 d = obj.current(); c = obj.Viewer.contourContext(); ax = obj.Viewer.roiAxes();
                 obj.assertEditable(d,false);
                 mask = d.read(c.frame); holes = false(size(mask));
-                if obj.Label.Value == 0, obj.newLabel(); end
+                if obj.Label.Value == 0 && ~obj.Semantic, obj.newLabel(); end
                 label = obj.Label.Value; args = {};
+                assert(~obj.Semantic || label>0,'detecdivui:SemanticClass','Choose a class before drawing; use Eraser to clear annotations.');
                 if editing
                     selected = mask == label; components = bwconncomp(selected);
                     assert(components.NumObjects == 1,'detecdivui:MaskComponents', ...
@@ -387,9 +401,25 @@ classdef MaskWidget < handle
             end
             c = obj.Viewer.contourContext();
             if isempty(c.roi) || isempty(c.masks), obj.Viewer.closeContourTool(); return; end
-            if ~isequal(obj.ContextROI,c.roi) || ~any(strcmp(obj.Provider.Value,c.masks))
-                obj.ContextROI = c.roi; obj.Provider.Items = c.masks; obj.Provider.Value = c.masks{1};
+            provider=obj.Viewer.activeLayer();
+            if ~any(strcmp(c.masks,provider)) || ~obj.Viewer.annotationLayerEditable(provider)
+                obj.Viewer.closeContourTool(); return;
+            end
+            changed=~isequal(obj.ContextROI,c.roi) || ~strcmp(obj.Provider.Value,provider);
+            if changed
+                obj.ContextROI = c.roi; obj.Provider.Items = c.masks; obj.Provider.Value = provider;
                 obj.Label.Value = 0;
+            end
+            target=obj.Viewer.annotationTarget(provider); obj.Semantic=target.semantic;
+            if changed, obj.Overwrite.Value=obj.Semantic; end
+            obj.LayerText.Text=[target.role ' · ' provider];
+            for k=1:numel(obj.LabelControls), obj.LabelControls{k}.Visible=obj.onOff(~obj.Semantic); end
+            obj.Palette.Visible=obj.onOff(obj.Semantic);
+            if obj.Semantic
+                obj.Palette.Items=[{'Unlabeled'} reshape(cellstr(string(target.classes)),1,[])];
+                obj.Palette.ItemsData=0:numel(target.classes);
+                if obj.Label.Value>numel(target.classes), obj.Label.Value=0; end
+                obj.Palette.Value=obj.Label.Value;
             end
             d = obj.current(); marker = ''; if d.Dirty, marker = ' *'; end
             obj.Target.Text = sprintf('%s · Frame %d%s',c.roi.id,c.frame,marker);
@@ -400,13 +430,18 @@ classdef MaskWidget < handle
         function providerChanged(obj)
             obj.cancelStroke(); obj.Label.Value = 0; obj.refresh();
         end
+        function classChanged(obj)
+            obj.Label.Value=obj.Palette.Value; obj.showSelection();
+        end
         function newLabel(obj)
+            assert(~obj.Semantic,'detecdivui:SemanticLabel','Select a class in the palette.');
             d = obj.current(); value = double(max(d.Masks(:)))+1;
             assert(value <= 65535,'detecdivui:MaskLabels','No free uint16 label remains.');
             obj.Label.Value = value;
         end
         function showSelection(obj)
             obj.clearOutline(); if ~obj.Active, return; end
+            if obj.Semantic && any(obj.Palette.ItemsData==obj.Label.Value), obj.Palette.Value=obj.Label.Value; end
             d = obj.current(); c = obj.Viewer.contourContext(); mask = d.read(c.frame);
             label = obj.Label.Value;
             if label == 0 || ~any(mask(:) == label), label = 0; end
@@ -433,7 +468,7 @@ classdef MaskWidget < handle
                 obj.assertEditable(d,false);
                 if ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
                 erase = strcmp(obj.Tool.Value,'Eraser') || any(strcmp(obj.Viewer.Figure.CurrentModifier,'shift'));
-                if obj.Label.Value == 0 && ~erase
+                if obj.Label.Value == 0 && ~erase && ~obj.Semantic
                     mask = d.read(c.frame); x = round(point(1)); y = round(point(2));
                     if x >= 1 && x <= size(mask,2) && y >= 1 && y <= size(mask,1) && mask(y,x) > 0
                         obj.Label.Value = double(mask(y,x));
@@ -468,6 +503,7 @@ classdef MaskWidget < handle
             stroke = obj.Stroke; obj.cancelStroke(); c = obj.Viewer.contourContext();
             if ~isequal(c.roi,stroke.roi) || c.frame ~= stroke.frame, return; end
             try
+                obj.assertEditable(stroke.draft,false);
                 stroke.draft.edit(stroke.frame,'paint',stroke.points,stroke.label,obj.Radius.Value,obj.Overwrite.Value);
                 obj.Viewer.contourChanged();
             catch err, obj.status(err.message);
@@ -479,6 +515,9 @@ classdef MaskWidget < handle
         end
         function status(obj,message)
             obj.Status.Text = message; obj.Status.Tooltip = message;
+        end
+        function value=onOff(~,yes)
+            value='off'; if yes, value='on'; end
         end
         function followSave(obj,draft)
             for k = 1:numel(obj.Drafts), obj.Drafts{k}.followSave(draft); end

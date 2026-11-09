@@ -10,6 +10,8 @@ classdef TracksWidget < handle
         Target
         Provider
         Family
+        LayerText
+        ResultText
         Info
         InfoValues = gobjects(0)
         Destination
@@ -33,15 +35,17 @@ classdef TracksWidget < handle
             grid = uigridlayout(parent,[13 1]); grid.Padding = [6 6 6 6];
             grid.RowSpacing = 6; grid.Scrollable = 'on';
             grid.RowHeight = {24,28,28,130,28,28,28,28,28,94,28,28,24};
-            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',90};
+            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',110};
             obj.Target = uilabel(row,'Text','','Interpreter','none','Tag','tracks-target');
-            uibutton(row,'Text','Done','Tag','tracks-done','Tooltip','Close Tracks and retain the annotation draft', ...
+            uibutton(row,'Text','← Annotations','Tag','tracks-done','Tooltip','Return to Annotations and retain the annotation draft', ...
                 'ButtonPushedFcn',@(~,~)viewer.closeTracksTool());
-            obj.Provider = uidropdown(grid,'Items',{'—'},'Tag','tracks-provider', ...
+            obj.LayerText=uilabel(grid,'Text','—','Interpreter','none','Tag','tracks-layer');
+            obj.Provider = uidropdown(parent,'Visible','off','Items',{'—'},'Tag','tracks-provider', ...
                 'Tooltip','Authoritative mask provider','ValueChangedFcn',@(~,~)obj.resetContext());
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',100};
-            obj.Family = uidropdown(row,'Items',{'—'},'ItemsData',0,'Tag','tracks-family', ...
-                'Tooltip','Object family','ValueChangedFcn',@(~,~)obj.resetSelection());
+            obj.ResultText=uilabel(row,'Text','—','Interpreter','none','Tag','tracks-result');
+            obj.Family = uidropdown(parent,'Visible','off','Items',{'—'},'ItemsData',0,'Tag','tracks-family', ...
+                'Tooltip','Tracking result','ValueChangedFcn',@(~,~)obj.resetSelection());
             obj.ImportButton = uibutton(row,'Text','Import Legacy','Tag','tracks-import', ...
                 'Tooltip','Explicitly import existing mask IDs as track IDs with cellModel.fromLegacy; Save Edits persists it', ...
                 'ButtonPushedFcn',@(~,~)obj.action('import'));
@@ -182,7 +186,7 @@ classdef TracksWidget < handle
             try
                 c = obj.Viewer.contourContext(); d = obj.current(); model = d.previewModel();
                 assert(isfield(model,'schema_version') && obj.Family.Value > 0, ...
-                    'detecdivui:TrackModel','Import legacy tracks or select a registered object family first.');
+                    'detecdivui:TrackModel','Import legacy tracks or select a registered tracking result first.');
                 mask = d.read(c.frame); x = round(x); y = round(y);
                 if x < 1 || y < 1 || x > size(mask,2) || y > size(mask,1), return; end
                 label = double(mask(y,x));
@@ -281,7 +285,7 @@ classdef TracksWidget < handle
             try
                 d = obj.current(); model = d.previewModel(); family = obj.Family.Value;
                 assert(isfield(model,'schema_version') && family > 0, ...
-                    'detecdivui:LineageFamily','Select a registered object family first.');
+                    'detecdivui:LineageFamily','Select a registered tracking result first.');
                 obj.LineageToken = obj.LineageToken+1; token = obj.LineageToken;
                 source = obj.ROI; channel = d.Channel;
                 key = sprintf('%s|%s|%d',source.id,channel,family);
@@ -319,9 +323,15 @@ classdef TracksWidget < handle
         function refresh(obj)
             c = obj.Viewer.contourContext();
             if isempty(c.roi) || isempty(c.masks), obj.Viewer.closeTracksTool(); return; end
-            if ~isequal(obj.ROI,c.roi) || ~any(strcmp(obj.Provider.Value,c.masks))
+            provider=obj.Viewer.activeLayer();
+            if ~any(strcmp(c.masks,provider)) || ~obj.Viewer.annotationLayerEditable(provider)
+                obj.Viewer.closeTracksTool(); return;
+            end
+            target=obj.Viewer.annotationTarget(provider);
+            if target.semantic, obj.Viewer.closeTracksTool(); return; end
+            if ~isequal(obj.ROI,c.roi) || ~strcmp(obj.Provider.Value,provider)
                 obj.closeLineage();
-                obj.ROI = c.roi; obj.Project = c.project; obj.Provider.Items = c.masks; obj.Provider.Value = c.masks{1};
+                obj.ROI = c.roi; obj.Project = c.project; obj.Provider.Items = c.masks; obj.Provider.Value = provider;
                 obj.clearSelection();
             end
             d = obj.current(); model = d.previewModel();
@@ -337,6 +347,8 @@ classdef TracksWidget < handle
             if any(ids == previous), obj.Family.Value = previous;
             else, obj.Family.Value = ids(1); obj.closeLineage(); obj.clearSelection(); end
             obj.Family.Enable = obj.onOff(any(ids > 0));
+            obj.LayerText.Text=[target.role ' · ' provider];
+            obj.ResultText.Text=items{find(ids==obj.Family.Value,1)};
             obj.ImportButton.Enable = obj.onOff(~isfield(model,'schema_version'));
             marker = ''; if d.Dirty, marker = ' *'; end
             obj.Target.Text = sprintf('%s · Frame %d%s',c.roi.id,c.frame,marker);
@@ -361,7 +373,7 @@ classdef TracksWidget < handle
         function [c,d,instance] = selection(obj)
             c = obj.Viewer.contourContext(); d = obj.current(); model = d.previewModel();
             assert(isfield(model,'schema_version') && obj.Family.Value > 0, ...
-                'detecdivui:TrackModel','Import legacy tracks or select a registered object family first.');
+                'detecdivui:TrackModel','Import legacy tracks or select a registered tracking result first.');
             label = obj.currentLabel(model,c.frame);
             instance = cellModel.findInstance(model,obj.Family.Value,c.frame,label);
             assert(~isempty(instance),'detecdivui:TrackSelection','Select an object present on this frame.');
@@ -404,7 +416,8 @@ classdef TracksWidget < handle
                 if isempty(x), continue; end
                 track = model.instances.track_id(row); color = [1 1 1];
                 if track == obj.SelectedTrack && track > 0, color = [1 .75 0]; end
-                obj.Overlays(end+1) = text(ax,mean(x),mean(y),char(string(track)), ...
+                trackText=char(string(track)); if track==0, trackText='Unassigned'; end
+                obj.Overlays(end+1) = text(ax,mean(x),mean(y),trackText, ...
                     'Color',color,'FontWeight','bold','HitTest','off','PickableParts','none','Tag','track-label');
             end
             label = obj.currentLabel(model,frame);

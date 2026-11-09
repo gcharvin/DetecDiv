@@ -31,6 +31,8 @@ File > Recent Projects reuses the classic `prefdir/recentProjects.mat` / `Recent
 
 Pipeline recent history reuses `prefdir/recentPipelines.mat` / `RecentPipelines`, merging pipeline2's existing `DetecDiv/pipeline2RecentPipelines` preference only for the default store. Explicit Open/reuse/Save records successful entries, with lexical path deduplication and a ten-entry MRU limit. Startup reads saved references without probing their files/drives or automatically opening them. A failed open keeps the active pipeline/draft and the missing recent entry. The Pipelines tree context menu clears history without closing templates. Use `'RecentPipelinesFile',''` or an explicit temporary MAT file to isolate history; these stores do not access the shared legacy preference. Selecting a pipeline leaves the current project/FOV and its run scope unchanged.
 
+File > Recent Classifiers uses the compatible `prefdir/recentClassifiers.mat` / `RecentClassifiers` store. Successful explicit Open and Save update a ten-entry list, with lexical path deduplication and no startup source probes. Recent focuses an already-open classifier without reloading its unsaved settings/ROI/frame; explicit Open retains its independent-snapshot behavior. Missing sources remain listed, and failed opens preserve active data. Clear Recent Classifiers only clears history. Use `'RecentClassifiersFile',''` or a temporary MAT path for isolated tests. `recentClassifiersTest` exercises native menu dispatch, persistence, canonical source identity, failed paths, snapshot reuse and save/clear behavior.
+
 - File, Edit, View, Navigate and Help menus, with standard open/close/copy accelerators.
 - One Projects tree containing Project → FOV → ROI nodes. Multiple projects remain open; selecting a node updates the central image. Opening the same handle, stable project ID or project path focuses the existing project.
 - Browser rebuilding briefly detaches the tree from its layout, populates its hierarchy without a live native peer, then reattaches the same control and expands project/collection roots. Incremental construction of large live trees failed inside R2026a's graphics property setter; changing metadata or constructor alone did not reliably fix it. Navigation records stay in MATLAB-side `UserData`. `detecdivui.treeTest()` checks visible workspace import, live rebuilding and selection with 641 ROIs. Failed launch-time discovery closes its partially opened viewer.
@@ -107,6 +109,8 @@ Validated on 4 November 2026 with MATLAB R2026a: smoke test passed, Code Analyze
 
 The 6 November tranche passed native binding/static, Objects/Data, Contours/Tracks, close/docking and live-display checks, plus a combined workspace visual check. Startup fault recovery and multi-viewer cleanup also passed after native teardown was guarded against other hosts' menu polling. Code Analyzer was clean. These exercise synthetic local fixtures and existing helpers; they do not establish complete Score/pipeline2 parity, real inference performance or every optional external dependency.
 
+Display and Objects have no inner visible tab header. Their controls live directly in flat document pages; ROI/Contours/Tracks replace the body on request and return through ← Display / ← Objects. Hidden selection tokens preserve navigation/controller state without hosting visible controls. `widgetPagesTest` checks the flat layout, return actions, retained shared drafts and floating/redocking, with optional desktop capture.
+
 ## Docking and layout preferences
 
 See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapter, JSON layout contract and test scope. Preferences default to `fullfile(prefdir, 'DetecDiv', 'ui-layout-r2026a.json')`. Use `'LayoutFile', '', 'AutoSaveLayout', false` to isolate a temporary session.
@@ -156,7 +160,7 @@ ClassifierGUI migration inventory, based on
 | Classifier properties / package configuration | Metadata and typed common properties | Package/type changes, model-specific output/postprocessing selectors |
 | Training parameters and bindings | Separate static/binding views, typed controls, resource catalog, common/advanced settings | Specialized package input editors and structured values |
 | Dataset preparation | ROI table, canonical handles and synchronized split editing | Import/removal, remapping, formatting and missing-ROI checks |
-| Annotation and frame bounds | Review/Edit, status/coverage, persistent bounds, shared image/Objects editing, blank/source-based annotationManager GT initialization | Batch/partial-GT repair, validation/approval and model-assisted prediction |
+| Annotation and frame bounds | Review/Edit, GT initialization, scoped review/unreview, readiness validation, persistent findings on the central image, bounds invalidating old validation | Batch/partial-GT repair, model-assisted prediction and specialized dataseries annotation |
 | Training and validation | Advanced compatibility entry | Existing training/validation pipelines, target selection, logs and curves |
 | Runtime export | Advanced compatibility entry | Package-specific checksum/release validation and export UI |
 
@@ -165,7 +169,7 @@ the existing package contracts and annotationManager rather than reproducing
 those rules in widget callbacks. `classifierWidgetTest`, `fileToolsTest`, and
 `workspaceTest` cover the new browser boundary and source identity.
 
-The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Objects, Contours and Tracks now share scientific drafts/save/undo independently of Display. The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md).
+The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Annotations (Masks/Tracks) shares scientific drafts/save/undo independently of Display. The one-result-per-layer policy, semantic GT palette and legacy separation/retry behavior are documented in [DETECTIVE_UI_ANNOTATIONS.md](DETECTIVE_UI_ANNOTATIONS.md). The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md).
 
 The intent bridge now provides metadata-only resource inspection, five curated intent profiles, added/reused/input states in the Pipeline graph, independent effective-configuration forks and run-linked proposal provenance. Use Edit > Plan Workflow... or Pipeline > Plan...; see [DETECTIVE_UI_INTENT_WORKFLOWS.md](DETECTIVE_UI_INTENT_WORKFLOWS.md). The next bridge tranche is common method configuration/binding and validation, then task-triggered execution and full semantic history. Automatic launch is not implemented by this first planner. Missing model artifacts and unverified results must remain explicit prerequisites.
 

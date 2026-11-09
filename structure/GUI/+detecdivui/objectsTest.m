@@ -19,22 +19,32 @@ assert(viewer.Host.isWidgetVisible('Objects') && viewer.Host.isWidgetVisible('Di
 assert(isempty(findall(viewer.widgetFigure('Objects'),'Tag','objects-families')));
 assert(isempty(widget.ObjectsRows) && isempty(widget.SelectedProvider)); % Phase has no family.
 selectLayer('Prediction');
-assert(viewer.Masks.Active && ~isempty(widget.Rows));
+assert((isempty(viewer.Masks)||~viewer.Masks.Active) && ~isempty(widget.Rows));
+assert(widget.SelectedFamily==0);
+assert(strcmp(findall(viewer.widgetFigure('Annotations'),'Tag','objects-contours').Enable,'off'));
+cancelled=viewer.createAnnotationLayers(); assert(~isempty(cancelled)); cancelled.close();
+assert(isequal(source.image,pixels) && isequal(source.display,metadata) && isequal(source.cellModel,baseline));
+separation=viewer.createAnnotationLayers(); assert(~isempty(separation));
+resultLayer=separation.Draft.Plan.changes(1).layer;
+assert(separation.apply()); delete(separation);
+originalLayer=find(strcmp({viewer.DisplayModel.Layers.name},'Prediction'));
+assert(~viewer.DisplayModel.Layers(originalLayer).visible);
+pixels=source.image; metadata=source.display; baseline=source.cellModel;
 row = find([widget.Rows.familyId] == secondFamily); widget.selectFamily(row);
-assert(widget.SelectedFamily == secondFamily && strcmp(widget.SelectedProvider,'Prediction'));
+assert(widget.SelectedFamily == secondFamily && strcmp(widget.SelectedProvider,resultLayer));
 assert(numel(widget.ObjectsRows)==2 && widget.ObjectsRows(1).track==exact);
 table = findall(viewer.widgetFigure('Objects'),'Tag','objects-table');
 assert(strcmp(table.Data{1,2},char(string(exact))) && strcmp(table.Data{1,4},'Dividing'));
 widget.selectObject(1); selection = viewer.selectedAnnotation();
 assert(selection.label==1 && selection.family==secondFamily);
 assert(~isempty(findall(viewer.roiAxes(),'Tag','mask-selection')));
-layer = find(strcmp({viewer.DisplayModel.Layers.name},'Prediction'));
+layer = find(strcmp({viewer.DisplayModel.Layers.name},resultLayer));
 assert(viewer.DisplayModel.Layers(layer).visible && strcmp(viewer.DisplayModel.Layers(layer).color,'Labels'));
-draft = viewer.annotationDraft('Prediction');
+draft = viewer.annotationDraft(resultLayer);
 assert(viewer.Masks.current()==draft && ~draft.Dirty);
 assert(isequal(source.image,pixels) && isequal(source.display,metadata) && isequal(source.cellModel,baseline));
 
-% Same-provider families must remain distinct when entering the track editor.
+% The separated tracking result remains selected when entering the track editor.
 viewer.Host.findCommand('Edit Tracks...').invoke();
 family = findall(viewer.widgetFigure('Objects'),'Tag','tracks-family'); assert(family.Value==double(secondFamily));
 info = findall(viewer.widgetFigure('Objects'),'Tag','tracks-info');
@@ -54,8 +64,9 @@ assert(draft.Dirty && any([widget.ObjectsRows.label]==7));
 assert(isequal(source.image,pixels) && isequal(source.cellModel,baseline));
 widget.action('undo'); assert(~draft.Dirty && ~any([widget.ObjectsRows.label]==7));
 widget.action('redo'); assert(draft.Dirty && any([widget.ObjectsRows.label]==7));
-widget.action('save'); assert(~draft.Dirty && source.image(14,12,2,1)==7);
+widget.action('save'); assert(~draft.Dirty && source.image(14,12,source.findChannelID(resultLayer),1)==7);
 assert(isequal(source.image(:,:,1,:),pixels(:,:,1,:)));
+assert(isequal(source.image(:,:,2,:),pixels(:,:,2,:)),'Editing the copied result modified the original masks.');
 loaded = roi(source.id,source.value); loaded.path = folder; loaded.load('Data',false,'Silent');
 assert(isequal(source.image,loaded.image));
 
@@ -65,25 +76,25 @@ stale = table.CellSelectionCallback;
 choose(tree,2); before = viewer.selectedAnnotation();
 stale(table,struct('Indices',[1 1]));
 assert(isequal(viewer.selectedAnnotation(),before) && isequal(other.image,otherPixels) && isequal(other.cellModel,otherModel));
-choose(tree,1); selectLayer('Prediction'); viewer.openObjects();
+choose(tree,1); selectLayer(resultLayer); viewer.openObjects();
 viewer.Host.setDocked('Objects',false); viewer.Host.setDocked('Objects',true);
-assert(viewer.Objects==widget && viewer.annotationDraft('Prediction')==draft);
+assert(viewer.Objects==widget && viewer.annotationDraft(resultLayer)==draft);
 assert(viewer.Host.isWidgetVisible('Display'));
 if ~isempty(previewPath)
     viewer.Host.show(); viewer.Host.focusWidget('Objects'); drawnow; pause(.3); viewer.Host.capture(previewPath);
 end
 % Native Close preserves an actual unsaved scientific draft, not only its
 % document controls. Reopening must reconnect that same provider draft.
-frame = viewer.annotationFrame(); baselinePixel = source.image(14,12,2,frame);
+frame = viewer.annotationFrame(); baselinePixel = source.image(14,12,source.findChannelID(resultLayer),frame);
 draft.edit(frame,'paint',[12 14],8,1,false); viewer.contourChanged();
 assert(draft.Dirty);
 viewer.Host.Widgets.objects.close(); started = tic;
 while viewer.Host.isWidgetVisible('Objects')
     assert(toc(started)<12,'Objects did not close.'); pause(.05); drawnow;
 end
-assert(draft.Dirty && source.image(14,12,2,frame)==baselinePixel && ~viewer.Masks.Active);
+assert(draft.Dirty && source.image(14,12,source.findChannelID(resultLayer),frame)==baselinePixel && ~viewer.Masks.Active);
 viewer.openObjects();
-assert(viewer.annotationDraft('Prediction')==draft && draft.Dirty);
+assert(viewer.annotationDraft(resultLayer)==draft && draft.Dirty);
 draft.discard(); viewer.contourChanged();
 viewer.Host.setWidgetVisible('Objects',false);
 assert(~viewer.Masks.Active && (isempty(viewer.Tracks) || ~viewer.Tracks.Active));

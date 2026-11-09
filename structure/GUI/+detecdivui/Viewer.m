@@ -22,6 +22,7 @@ classdef Viewer < handle
         Classifiers
     end
     properties (Access = private)
+        LayerDialog = []
         Tree
         ProjectName
         DetailsPanel
@@ -250,7 +251,7 @@ classdef Viewer < handle
             obj.ImageMenu = uicontextmenu(obj.Figure);
             obj.ImageROIMenu = uimenu(obj.ImageMenu,'Text','Define ROIs...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openROITool());
-            uimenu(obj.ImageMenu,'Text','Edit Contours...','MenuSelectedFcn',@(~,~)obj.openContourTool());
+            uimenu(obj.ImageMenu,'Text','Edit Masks...','MenuSelectedFcn',@(~,~)obj.openContourTool());
             uimenu(obj.ImageMenu,'Text','Edit Tracks...','MenuSelectedFcn',@(~,~)obj.openTracksTool());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
@@ -423,6 +424,9 @@ classdef Viewer < handle
             % Closing removes the UI reference only; scientific data is unchanged.
             if nargin < 2, index = obj.ActiveProject; end
             if index == 0, return; end
+            if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog) && obj.LayerDialog.Draft.SaveFailed
+                obj.LayerDialog.close(); return;
+            end
             validateattributes(index,{'numeric'},{'scalar','integer','positive','<=',numel(obj.Sessions)});
             if obj.hasMaskWidget() && ~obj.Masks.resolve(obj.Sessions{index}.Project, ...
                     detecdivui.Callback(obj,'closeProjectHandle',obj.Sessions{index}.Project)), return; end
@@ -602,6 +606,81 @@ classdef Viewer < handle
             end
             yes = isempty(classifier) || obj.Classifiers.canEdit(classifier);
         end
+        function target = annotationTarget(obj,provider)
+            c = obj.contourContext();
+            assert(~isempty(c.roi),'detecdivui:AnnotationROI','Select and load a ROI first.');
+            target = detecdivui.AnnotationTarget.describe(c.roi,provider,obj.Session.Classifier);
+        end
+        function yes = annotationLayerEditable(obj,provider)
+            c = obj.contourContext(); yes = false;
+            if isempty(c.roi) || ~any(strcmp(c.masks,provider)), return; end
+            target = obj.annotationTarget(provider);
+            yes = obj.annotationEditingAllowed() && target.editable && numel(target.families)<=1;
+        end
+        function assertAnnotationLayer(obj,source,provider)
+            assert(detecdivui.MaskDraft.isLabel(source,provider),'detecdivui:AnnotationLayer','Select a mask layer in Display first.');
+            assert(isempty(obj.LayerDialog) || ~isvalid(obj.LayerDialog) || ~obj.LayerDialog.Draft.SaveFailed, ...
+                'detecdivui:AnnotationLayerSave','Retry the incomplete layer save before editing annotations.');
+            assert(obj.annotationEditingAllowed(source),'detecdivui:ClassifierReview','Switch this classifier to Edit first.');
+            classifier = [];
+            if ~isempty(obj.Session.Classifier) && any(arrayfun(@(r)isequal(r,source),obj.Session.Classifier.roi))
+                classifier = obj.Session.Classifier;
+            end
+            target = detecdivui.AnnotationTarget.describe(source,provider,classifier);
+            assert(target.editable,'detecdivui:AnnotationGT','Select this classifier''s GT layer to edit; predictions remain read-only.');
+            assert(numel(target.families)<=1,'detecdivui:AnnotationShared', ...
+                'Separate the tracking results into dedicated mask layers before editing.');
+        end
+        function prepareAnnotationLayer(obj)
+            c=obj.contourContext();
+            assert(~isempty(c.roi) && ~isempty(c.masks),'detecdivui:AnnotationROI','Load a ROI with a mask layer first.');
+            provider=obj.activeLayer();
+            if ~any(strcmp(c.masks,provider))
+                editable=cellfun(@(name)obj.annotationLayerEditable(name),c.masks);
+                at=find(editable,1);
+                assert(~isempty(at),'detecdivui:AnnotationLayer','Select an editable GT or dedicated mask layer in Display.');
+                provider=c.masks{at}; obj.selectDisplayLayer(provider);
+            end
+            obj.assertAnnotationLayer(c.roi,provider);
+        end
+        function dialog = createAnnotationLayers(obj,newResult)
+            if nargin<2, newResult=''; end
+            dialog = [];
+            try
+                c = obj.contourContext(); provider = obj.activeLayer();
+                assert(~isempty(c.roi) && any(strcmp(c.masks,provider)),'detecdivui:AnnotationLayer','Select a mask layer in Display first.');
+                assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch to Edit before creating mask layers.');
+                if obj.hasMaskWidget() && ~obj.Masks.resolve([],detecdivui.Callback(obj,'createAnnotationLayers',newResult),c.roi), return; end
+                if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog)
+                    assert(~obj.LayerDialog.Draft.SaveFailed,'detecdivui:AnnotationLayerSave','Retry the incomplete layer save first.');
+                    delete(obj.LayerDialog);
+                end
+                [~,status] = score_getCellModel(c.roi);
+                assert(ismember(status,{'ok','missing'}),'detecdivui:AnnotationModel','Cannot read this ROI tracking model.');
+                keep = uint32(0); model = c.roi.cellModel;
+                if ~isempty(obj.Session.Classifier)
+                    spec = annotationManager.specForClassifier(obj.Session.Classifier);
+                    for component=reshape(spec.components,1,[])
+                        [at,id] = cellModel.familyIndex(model,component.groundTruth.family);
+                        if ~isempty(at) && strcmp(model.families.mask_provider{at},provider), keep=id; break; end
+                    end
+                end
+                if strcmp(newResult,'new')
+                    answer = inputdlg('Tracking result name','New Tracking Result',1,{[provider ' tracks']});
+                    if isempty(answer), return; end
+                    newResult = answer{1}; assert(~isempty(strtrim(newResult)),'detecdivui:AnnotationName','Enter a tracking result name.');
+                end
+                draft = detecdivui.AnnotationLayerDraft(c.roi,provider,'KeepFamily',keep,'NewResult',newResult);
+                dialog = detecdivui.AnnotationLayersDialog(obj,draft); obj.LayerDialog = dialog;
+            catch err, obj.widgetEvent('status',err.message);
+            end
+        end
+        function openAnnotations(obj)
+            obj.openObjects();
+        end
+        function openMasksTool(obj)
+            obj.openContourTool();
+        end
         function refreshClassifierAccess(obj)
             if ~isempty(obj.Session.Classifier) && ~obj.annotationEditingAllowed()
                 obj.closeContourTool(); obj.closeTracksTool();
@@ -619,7 +698,7 @@ classdef Viewer < handle
         end
         function showReviewSelection(obj)
             delete(findall(obj.Axes,'Tag','review-selection'));
-            if obj.annotationEditingAllowed(), return; end
+            if obj.annotationLayerEditable(obj.activeLayer()), return; end
             selection = obj.selectedAnnotation();
             if isempty(selection) || selection.label == 0 || ~strcmp(selection.channel,obj.activeLayer()), return; end
             source = selection.roi; pix = source.findChannelID(selection.channel);
@@ -810,6 +889,7 @@ classdef Viewer < handle
         function openContourTool(obj)
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify annotations.');
+                obj.prepareAnnotationLayer();
                 obj.ensureObjectsWidget();
                 previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
                 sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
@@ -840,6 +920,9 @@ classdef Viewer < handle
         function openTracksTool(obj)
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify tracks.');
+                obj.prepareAnnotationLayer();
+                target=obj.annotationTarget(obj.activeLayer());
+                assert(~target.semantic,'detecdivui:SemanticTracks','Class masks have no track identities. Use Masks to paint classes.');
                 obj.ensureObjectsWidget();
                 previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
                 sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
@@ -932,16 +1015,16 @@ classdef Viewer < handle
             c = obj.contourContext();
             assert(~isempty(c.roi),'detecdivui:ObjectsROI','Select and load a ROI first.');
             obj.closeROITool(); obj.closeTracksTool();
-            if obj.annotationEditingAllowed(), obj.ensureAnnotationDrafts(); end
+            if obj.annotationLayerEditable(provider), obj.ensureAnnotationDrafts(); end
             index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
-            assert(~isempty(index),'detecdivui:ObjectsProvider','The object mask provider is unavailable.');
+            assert(~isempty(index),'detecdivui:ObjectsProvider','The mask layer is unavailable.');
             changingLayer = obj.Channels.Value ~= index;
             obj.Channels.Value = index;
             if ~strcmp(obj.DisplayModel.Layers(index).kind,'Labels'), obj.DisplayModel.setKind(index,'Labels'); end
             if changingLayer
                 obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
             end
-            if obj.annotationEditingAllowed()
+            if obj.annotationLayerEditable(provider)
                 obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
             else, obj.closeContourTool();
             end
@@ -991,6 +1074,9 @@ classdef Viewer < handle
         end
         function yes = canClose(obj)
             yes = true;
+            if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog) && obj.LayerDialog.Draft.SaveFailed
+                obj.LayerDialog.Figure.Visible='on'; obj.LayerDialog.close(); yes=false; return;
+            end
             if obj.hasMaskWidget() && obj.Masks.dirty()
                 yes = obj.Masks.resolve([],detecdivui.Callback(obj,'close'));
             end
@@ -1064,6 +1150,7 @@ classdef Viewer < handle
             if ~obj.ConstructionComplete && ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.abortStartup(); end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog), delete(obj.LayerDialog); end
             obj.cancelPreview();
             if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
             if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
@@ -1098,7 +1185,7 @@ classdef Viewer < handle
         function ensureAnnotationDrafts(obj)
             if obj.hasMaskWidget(), return; end
             obj.ensureObjectsWidget();
-            obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Contours','Tag','mask-tab');
+            obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Masks','Tag','mask-tab');
             obj.MasksPage = obj.toolPage(obj.ObjectsRoot,'mask-page');
             obj.Masks = detecdivui.MaskWidget(obj.MasksPage,obj);
             obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
@@ -1110,7 +1197,7 @@ classdef Viewer < handle
             obj.ObjectsRoot = grid;
             obj.ObjectsTabs = uitabgroup(obj.Host.widgetFigure('Objects'),'Tag','objects-tools','Visible','off', ...
                 'SelectionChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','objectsTab')});
-            obj.ObjectsBrowserTab = uitab(obj.ObjectsTabs,'Title','Objects','Tag','objects-browser-tab');
+            obj.ObjectsBrowserTab = uitab(obj.ObjectsTabs,'Title','Annotations','Tag','objects-browser-tab');
             obj.ObjectsPage = obj.toolPage(grid,'objects-page'); obj.ObjectsPage.Visible = 'on';
             obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsPage,obj);
             obj.Objects.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
@@ -1371,7 +1458,7 @@ classdef Viewer < handle
             obj.refreshRecentClassifiersMenu();
             obj.SaveProjectMenu = obj.Host.menu(file,'Save Project','Accelerator','S','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.saveProject());
-            obj.SaveMasksMenu = obj.Host.menu(file,'Save Masks','Enable','off', ...
+            obj.SaveMasksMenu = obj.Host.menu(file,'Save Annotations','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.Masks.saveAll());
             obj.OpenPipelineMenu = obj.Host.menu(file,'Open Pipeline...','MenuSelectedFcn',@(~,~)obj.openPipeline());
             obj.NewPipelineMenu = obj.Host.menu(file,'New Pipeline...','MenuSelectedFcn',@(~,~)obj.newPipeline());
@@ -1388,7 +1475,7 @@ classdef Viewer < handle
                 'Enable','off','MenuSelectedFcn',@(~,~)obj.copyImage());
             obj.DefineROIMenu = obj.Host.menu(edit,'Define ROIs...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openROITool());
-            obj.EditContoursMenu = obj.Host.menu(edit,'Edit Contours...','Enable','off', ...
+            obj.EditContoursMenu = obj.Host.menu(edit,'Edit Masks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.EditTracksMenu = obj.Host.menu(edit,'Edit Tracks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openTracksTool());
@@ -2006,13 +2093,13 @@ classdef Viewer < handle
                 'Ctrl+R','Reload image','Main window'};
             if obj.hasMaskWidget()
                 keys = obj.Masks.shortcuts();
-                rows = [rows; {'Delete','Delete selected label on this frame','Contours'; ...
-                    upper(keys{5}),'Fill selected label holes','Contours'; ...
-                    [upper(keys{6}) ' / ' upper(keys{7})],'Decrease / increase mask opacity','Contours'; ...
-                    'Up / Down Arrow','Increase / decrease mask opacity','Contours'; ...
-                    'Ctrl+Z / Ctrl+Y','Undo / redo annotation edit','Contours'; ...
-                    'Escape','Cancel stroke / return to Select','Contours'; ...
-                    'Shift + drag','Erase with the brush','Contours'}];
+                rows = [rows; {'Delete','Delete selected label on this frame','Masks'; ...
+                    upper(keys{5}),'Fill selected label holes','Masks'; ...
+                    [upper(keys{6}) ' / ' upper(keys{7})],'Decrease / increase mask opacity','Masks'; ...
+                    'Up / Down Arrow','Increase / decrease mask opacity','Masks'; ...
+                    'Ctrl+Z / Ctrl+Y','Undo / redo annotation edit','Masks'; ...
+                    'Escape','Cancel stroke / return to Select','Masks'; ...
+                    'Shift + drag','Erase with the brush','Masks'}];
             end
             if obj.hasTracksWidget()
                 rows = [rows; {'Delete','Delete selected contour on this frame','Tracks'; ...

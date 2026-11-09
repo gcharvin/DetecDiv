@@ -1,20 +1,22 @@
-# Contour editing on Image
+# Masks and contour editing on Image
 
 ## Entry points and scope
 
-Select an extracted ROI with a loaded indexed annotation mask, then choose Edit > Edit Contours..., the Image context menu, or Objects > Contours.... The on-demand Contours tab appears inside the independent Objects document. Display remains available alongside it for channel, level and histogram adjustments. Contours is independent of Pipeline and different from Define ROIs, which edits extraction rectangles on raw FOVs. Done removes the assistant tab, selection outline and image callbacks while retaining its drafts. Project/FOV/ROI navigation retains drafts by canonical ROI handle and resolved mask provider. Closing a project releases its records after resolving unsaved changes.
+Select an extracted ROI with a loaded indexed annotation mask, then choose Edit > Edit Masks..., the Image context menu, or Annotations > Masks.... The on-demand Contours assistant replaces the browser contents inside the independent Annotations document. Display remains available alongside it for channel, level and histogram adjustments. Contours is independent of Pipeline and different from Define ROIs, which edits extraction rectangles on raw FOVs. The ← Annotations button restores the browser and removes the selection outline and image callbacks while retaining drafts. Project/FOV/ROI navigation retains drafts by canonical ROI handle and resolved mask provider. Closing a project releases its records after resolving unsaved changes.
 
-The Objects browser is the first tab in that document. Selecting a family shows its mask in multicolor and enables shared image selection/edit readiness; detailed drawing controls remain in Contours. Family ID, mask provider, frame-local label and biological track ID remain distinct, including when several families share one mask provider. The browser and Contours use the same existing draft and selection, not separate editable mask copies. Native document Close hides Objects and releases its image callbacks; View > Objects reopens it with retained drafts and layout. Display tab changes do not dismiss object editing. See `DETECTIVE_UI_OBJECTS.md`.
+The Annotations browser is the default view in that document; no inner tab strip is displayed. Selecting a family shows its mask in multicolor and enables shared image selection/edit readiness; detailed drawing controls remain in Contours. Mask labels and biological track IDs remain distinct. Several results sharing a mask provider must be explicitly separated before editing; see `DETECTIVE_UI_ANNOTATIONS.md`. The browser and Contours use the same existing draft and selection, not separate editable mask copies. Native document Close hides Annotations and releases its image callbacks; View > Annotations reopens it with retained drafts and layout. Display tab changes do not dismiss object editing. See `DETECTIVE_UI_OBJECTS.md`.
 
-The provider selector lists indexed mask layers, including the legacy zero-intensity convention. `score_resolveMaskProvider` resolves the authoritative channel/family; it never assumes a mask from its channel order. RGB/multi-plane and intensity channels are rejected. Cached temporal windows with a nonzero `write_abs_start` require loading the complete sequence. The Label field is a mask label, not a track ID.
+The editor follows the indexed mask layer selected in Display, including the legacy zero-intensity convention. No additional provider selector is visible. `score_resolveMaskProvider` resolves the authoritative channel/family; it never assumes a mask from its channel order. RGB/multi-plane and intensity channels are rejected. Cached temporal windows with a nonzero `write_abs_start` require loading the complete sequence. The Label field is a mask label, not a track ID.
+
+Semantic classifier GT exposes a class palette instead of a numeric label. Unlabeled (0) erases; choosing a class never creates a track. Classifier Review and prediction layers are read-only. The same editor and draft/save protections apply to project and classifier ROIs.
 
 ## Tools
 
 - Select: click an object in the main image; its label and boundary are highlighted.
-- Polygon/Freehand + Draw: draw in source-pixel coordinates, double-click to complete, Escape to cancel. New ID uses the next global label across the provider's frames. Drawing can also extend an explicitly selected label.
+- Polygon/Freehand + Draw: draw in source-pixel coordinates, double-click to complete, Escape to cancel. New Label uses the next global label across the provider's frames. Drawing can also extend an explicitly selected label.
 - Edit: adjust the selected connected object's outer boundary, then double-click to apply. Existing holes are retained. Disconnected objects require Brush rather than silently dropping components.
 - Brush/Eraser: drag and release to commit one undoable stroke. A path preview follows the pointer. Radius is in source pixels; Shift temporarily erases. With no selected label, starting on an object reuses its label; background painting allocates a new ID.
-- Fill Holes and Delete operate on the selected label on the current frame only. Overwrite other labels defaults off. Erasing intentionally clears pixels under the brush.
+- Fill Holes and Delete operate on the selected label on the current frame only. Overwrite other labels defaults off for instances and on for semantic class painting. Erasing intentionally clears pixels under the brush.
 - Undo/Redo retain at most 20 frame transactions, with a 64 MiB history target (one unusually large transaction is retained). A successful save clears history; it does not offer an apparent undo of already persisted disk data.
 
 Score and the assistant share the pure `score_editMaskPlane` disk-brush primitive. Score's paint overlay calls it directly; it retains its existing selection, track synchronization, rendering and persistence callbacks. Other operations use MATLAB ROI geometry, `createMask`, `bwboundaries` and `imfill`. No alternative segmentation or tracking implementation is introduced.
@@ -35,11 +37,11 @@ While the Image canvas is focused and Contours is active:
 | Escape | Cancel pending stroke and return to Select; native geometry tools handle Escape during drawing |
 | Shift + brush drag | Erase |
 
-Keys do not intercept text/number edits, tables, sliders, menus or other widgets. Help > Keyboard Shortcuts... includes the editor bindings once the assistant has been opened. Ctrl+S remains Save Project and does not save masks. Use Save Masks for scientific mask edits.
+Keys do not intercept text/number edits, tables, sliders, menus or other widgets. Help > Keyboard Shortcuts... includes the editor bindings once the assistant has been opened. Ctrl+S remains Save Project and does not save masks. Use Save Edits or File > Save Annotations for scientific edits.
 
 ## Drafts and persistence
 
-`detecdivui.MaskDraft` holds an isolated channel volume and bounded frame history. Canonical ROI images, data and cell model remain unchanged during editing. LayerModel reads staged label planes through an optional callback; only edited indexed providers are replaced, never raw intensity pixels. The assistant marks its target with `*`, and Image status shows Unsaved masks even after Done.
+`detecdivui.MaskDraft` holds an isolated channel volume and bounded frame history. Canonical ROI images, data and cell model remain unchanged during editing. LayerModel reads staged label planes through an optional callback; only edited indexed providers are replaced, never raw intensity pixels. The assistant marks its target with `*`, and Image status shows Unsaved masks after returning to Objects.
 
 The widget Save Masks saves its current provider. File > Save Masks saves all pending providers/ROIs, stopping on an error. Before saving, each draft checks the original in-memory provider pixels, channel mapping, cached model, and H5/MAT/objects file timestamps/sizes. Conflicting external changes are rejected rather than overwritten. Successful saves of another provider on the same ROI rebase that ROI's remaining drafts onto the updated model/files without replacing their pixels.
 

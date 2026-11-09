@@ -22,27 +22,38 @@ classdef ObjectsWidget < handle
         Revision = 0
         LastError = ''
         StyledObject = -1
+        NewTracks
+        Separate
+        Shared = false
     end
     methods
         function obj = ObjectsWidget(parent,viewer)
             obj.Viewer = viewer;
-            grid = uigridlayout(parent,[7 1]); grid.Padding = [6 6 6 6];
-            grid.RowHeight = {24,22,20,'1x',26,26,22}; grid.RowSpacing = 4;
+            grid = uigridlayout(parent,[8 1]); grid.Padding = [6 6 6 6];
+            grid.RowHeight = {24,22,20,'1x',28,26,26,22}; grid.RowSpacing = 4;
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',65};
             obj.Target = uilabel(row,'Text','—','Interpreter','none','Tag','objects-target');
             obj.Load = uibutton(row,'Text','Load','Tag','objects-load','Enable','off', ...
-                'Tooltip','Load the selected ROI masks and object model on demand', ...
+                'Tooltip','Load this ROI mask layers and tracking results on demand', ...
                 'ButtonPushedFcn',@(~,~)obj.loadObjects());
             obj.FamilyText = uilabel(grid,'Text','—','Interpreter','none','Tag','objects-family', ...
-                'Tooltip','Object family associated with the active Display layer');
-            obj.FrameText = uilabel(grid,'Text','Objects','Interpreter','none','Tag','objects-frame');
+                'Tooltip','Annotation target associated with the selected Display layer');
+            obj.FrameText = uilabel(grid,'Text','Masks','Interpreter','none','Tag','objects-frame');
             obj.Items = uitable(grid,'Data',cell(0,4),'RowName',{}, ...
-                'ColumnName',{'Label','Track','Parent','State'},'ColumnWidth',{50,80,80,'auto'}, ...
+                'ColumnName',{'Mask','Track','Parent','State'},'ColumnWidth',{50,80,80,'auto'}, ...
                 'ColumnEditable',false(1,4),'Tag','objects-table', ...
-                'Tooltip','Mask label, track identity and parent are separate values; select an object to locate it on the image');
+                'Tooltip','Select a region to locate its mask and track on Image');
+            row = uigridlayout(grid,[1 2]); row.Padding=[0 0 0 0];
+            obj.NewTracks=uibutton(row,'Text','New Tracks...','Tag','annotations-new-tracks', ...
+                'Tooltip','Copy the active masks to a dedicated manual tracking layer', ...
+                'ButtonPushedFcn',@(~,~)viewer.createAnnotationLayers('new'));
+            obj.Separate=uibutton(row,'Text','Separate Layers...','Tag','annotations-separate-layers', ...
+                'Tooltip','Give shared tracking results independent mask layers before editing', ...
+                'ButtonPushedFcn',@(~,~)viewer.createAnnotationLayers());
             row = uigridlayout(grid,[1 3]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x','1x','1x'};
-            for name = {'Contours','Tracks','Lineage'}
+            for name = {'Masks','Tracks','Lineage'}
                 action = lower(name{1});
+                if strcmp(action,'masks'), action='contours'; end % Preserve callback/tag compatibility.
                 obj.Controls{end+1} = uibutton(row,'Text',[name{1} '...'],'Tag',['objects-' action], ...
                     'Enable','off','ButtonPushedFcn',@(~,~)obj.action(action));
             end
@@ -79,7 +90,7 @@ classdef ObjectsWidget < handle
                 % to the previously selected Display layer.
                 obj.Viewer.closeTracksTool(); obj.Viewer.closeContourTool();
             end
-            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive() && obj.Viewer.annotationEditingAllowed()
+            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive() && obj.Viewer.annotationLayerEditable(obj.SelectedProvider)
                 masks = obj.Viewer.Masks; draft = [];
                 if ~isempty(masks) && isvalid(masks) && masks.Active, draft = masks.current(); end
                 if isempty(draft) || ~isequal(draft.Source,obj.Source) || ~strcmp(draft.Channel,obj.SelectedProvider)
@@ -89,14 +100,14 @@ classdef ObjectsWidget < handle
         end
         function resumed = resumeSelection(obj)
             resumed = false;
-            if obj.Busy || isempty(obj.Source) || ~obj.Viewer.Host.isWidgetVisible('Objects'), return; end
+            if obj.Busy || isempty(obj.Source) || ~obj.Viewer.Host.isWidgetVisible('Annotations'), return; end
             context = obj.Viewer.contourContext(); row = obj.selectedRow();
             if isempty(row) || ~isequal(context.roi,obj.Source) || ...
                     ~any(strcmp(context.masks,obj.SelectedProvider)), return; end
             obj.Busy = true; cleanup = onCleanup(@()obj.finish());
             obj.LastError = '';
             try
-                obj.activateFamily(row,obj.SelectedLabel); resumed = true;
+                obj.activateFamily(row,obj.SelectedLabel); resumed = obj.Viewer.annotationLayerEditable(obj.SelectedProvider);
             catch err, obj.LastError = err.message;
             end
         end
@@ -104,7 +115,7 @@ classdef ObjectsWidget < handle
             if obj.Busy || isempty(obj.Source), return; end
             obj.Busy = true; cleanup = onCleanup(@()obj.finish());
             obj.LastError = '';
-            scope = obj.Progress.begin('Loading ROI objects...'); %#ok<NASGU>
+            scope = obj.Progress.begin('Loading ROI annotations...'); %#ok<NASGU>
             source = obj.Source;
             try
                 obj.Viewer.loadCurrentImage();
@@ -114,8 +125,8 @@ classdef ObjectsWidget < handle
                 assert(any(strcmp(status,{'ok','missing'})),'detecdivui:ObjectsModel','Cannot read the cellular model: %s',status);
                 obj.refresh();
                 row = obj.selectedRow();
-                if ~isempty(row), obj.activateFamily(row,0); end
-                obj.status('Ready');
+                if ~isempty(row) && ~obj.Shared, obj.activateFamily(row,0); end
+                if ~obj.Shared, obj.status('Ready'); end
             catch err, obj.LastError = err.message;
             end
         end
@@ -123,7 +134,7 @@ classdef ObjectsWidget < handle
             if obj.Busy || row < 1 || row > numel(obj.Rows), return; end
             obj.Busy = true; cleanup = onCleanup(@()obj.finish());
             obj.LastError = '';
-            scope = obj.Progress.begin('Selecting object family...'); %#ok<NASGU>
+            scope = obj.Progress.begin('Selecting tracking result...'); %#ok<NASGU>
             try
                 obj.activateFamily(row,0);
             catch err, obj.LastError = err.message;
@@ -131,6 +142,9 @@ classdef ObjectsWidget < handle
         end
         function selectObject(obj,row)
             if obj.Busy || row < 1 || row > numel(obj.ObjectsRows), return; end
+            if obj.Shared
+                obj.Viewer.selectObjectFamily(obj.SelectedProvider,uint32(0),obj.ObjectsRows(row).label); return;
+            end
             family = obj.selectedRow(); if isempty(family), return; end
             obj.Busy = true; cleanup = onCleanup(@()obj.finish());
             obj.LastError = '';
@@ -143,9 +157,10 @@ classdef ObjectsWidget < handle
             if obj.Busy || isempty(obj.SelectedProvider), return; end
             obj.Busy = true; cleanup = onCleanup(@()obj.finish());
             obj.LastError = '';
-            scope = obj.Progress.begin('Opening object tools...'); %#ok<NASGU>
+            scope = obj.Progress.begin('Opening annotation tools...'); %#ok<NASGU>
             try
-                assert(obj.Viewer.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify objects.');
+                assert(obj.Viewer.annotationLayerEditable(obj.SelectedProvider),'detecdivui:AnnotationReadOnly', ...
+                    'Select an editable mask layer; shared results need dedicated layers first.');
                 switch action
                     case 'contours'
                         obj.Viewer.openContourTool();
@@ -164,7 +179,7 @@ classdef ObjectsWidget < handle
             end
         end
         function selectEvent(obj,kind,event,revision)
-            if ~isvalid(obj) || ~isvalid(obj.Viewer) || ~obj.Viewer.Host.isWidgetVisible('Objects') || ...
+            if ~isvalid(obj) || ~isvalid(obj.Viewer) || ~obj.Viewer.Host.isWidgetVisible('Annotations') || ...
                     revision ~= obj.Revision || isempty(event.Indices), return; end
             row = event.Indices(1,1);
             if strcmp(kind,'family'), obj.selectFamily(row); else, obj.selectObject(row); end
@@ -185,29 +200,30 @@ classdef ObjectsWidget < handle
                 obj.Rows = obj.Rows([]); obj.ObjectsRows = obj.ObjectsRows([]);
                 obj.SelectedProvider = ''; obj.SelectedFamily = uint32(0); obj.SelectedLabel = 0;
                 obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4);
-                obj.FrameText.Text = 'Objects'; obj.Revision = obj.Revision+1;
+                obj.FrameText.Text = 'Annotations'; obj.Revision = obj.Revision+1;
                 obj.enableTools(false);
                 obj.status(['Object model unavailable: ' err.message]);
             end
         end
         function activateFamily(obj,row,label)
-            assert(obj.Viewer.Host.isWidgetVisible('Objects'),'detecdivui:ObjectsHidden', ...
-                'Open Objects before selecting an object family.');
+            assert(~obj.Shared,'detecdivui:AnnotationShared','Separate the tracking results into dedicated mask layers before selecting a result.');
+            assert(obj.Viewer.Host.isWidgetVisible('Annotations'),'detecdivui:ObjectsHidden', ...
+                'Open Annotations before selecting a tracking result.');
             item = obj.Rows(row); context = obj.Viewer.contourContext();
             if ~isequal(context.roi,obj.Source)
                 obj.Viewer.loadCurrentImage(); context = obj.Viewer.contourContext();
             end
-            assert(obj.Viewer.Host.isWidgetVisible('Objects'),'detecdivui:ObjectsHidden', ...
-                'Objects was hidden while the ROI was loading.');
+            assert(obj.Viewer.Host.isWidgetVisible('Annotations'),'detecdivui:ObjectsHidden', ...
+                'Annotations was hidden while the ROI was loading.');
             assert(isequal(context.roi,obj.Source) && any(strcmp(context.masks,item.provider)), ...
-                'detecdivui:ObjectsMask','Load this ROI and its mask layer before editing objects.');
+                'detecdivui:ObjectsMask','Load this ROI and its mask layer before editing annotations.');
             obj.SelectedFamily = item.familyId; obj.SelectedProvider = item.provider; obj.SelectedLabel = double(label);
             obj.Viewer.selectObjectFamily(item.provider,item.familyId,label);
         end
         function refresh(obj)
             if isempty(obj.Source)
                 obj.Rows = obj.Rows([]); obj.ObjectsRows = obj.ObjectsRows([]);
-                obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4); obj.FrameText.Text = 'Objects';
+                obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4); obj.FrameText.Text = 'Annotations';
                 obj.enableTools(false); obj.status('Select a ROI'); return;
             end
             model = obj.currentModel(); obj.Rows = obj.familyRows(model);
@@ -220,44 +236,74 @@ classdef ObjectsWidget < handle
                 obj.SelectedProvider = selection.channel; obj.SelectedLabel = double(selection.label);
                 if isfield(selection,'family') && selection.family > 0, obj.SelectedFamily = uint32(selection.family); end
             end
+            matching = find(strcmp({obj.Rows.provider},provider)); obj.Shared = numel(matching)>1;
             row = obj.selectedRow();
             if isempty(row), row = find(strcmp({obj.Rows.provider},provider),1); end
             if isempty(row)
                 obj.SelectedProvider = ''; obj.SelectedFamily = uint32(0); obj.SelectedLabel = 0;
-                obj.FamilyText.Text = '—'; obj.FamilyText.Tooltip = 'The active Display layer has no object family';
+                obj.FamilyText.Text = '—'; obj.FamilyText.Tooltip = 'Select a mask layer in Display';
             else
                 obj.SelectedProvider = obj.Rows(row).provider; obj.SelectedFamily = obj.Rows(row).familyId;
                 obj.FamilyText.Text = obj.Rows(row).name;
                 obj.FamilyText.Tooltip = [obj.Rows(row).name ' · ' obj.Rows(row).provider];
+                target=obj.Viewer.annotationTarget(provider);
+                obj.FamilyText.Text=[target.role ' · ' provider];
+                if obj.Shared
+                    obj.SelectedFamily=uint32(0); obj.FamilyText.Text=sprintf('%s · %d tracking results',provider,numel(matching));
+                elseif obj.SelectedFamily>0
+                    obj.FamilyText.Tooltip=[obj.Rows(row).name ' · ' provider];
+                end
             end
             frame = obj.Viewer.annotationFrame();
             obj.ObjectsRows = obj.instanceRows(model,frame);
+            target=[]; if ~isempty(obj.SelectedProvider), target=obj.Viewer.annotationTarget(obj.SelectedProvider); end
             data = cell(numel(obj.ObjectsRows),4);
             for k = 1:numel(obj.ObjectsRows)
                 item = obj.ObjectsRows(k);
-                data(k,:) = {num2str(item.label),obj.idText(item.track),obj.idText(item.parent),item.state};
+                track=obj.idText(item.track);
+                if item.track==0 && ~obj.Shared, track='Unassigned'; end
+                data(k,:) = {num2str(item.label),track,obj.idText(item.parent),item.state};
+                if ~isempty(target) && target.semantic
+                    if item.label<=numel(target.classes), data{k,1}=target.classes{item.label}; end
+                    data(k,2:3)={'—','—'};
+                elseif obj.Shared
+                    data(k,2:4)={'—','—',''};
+                end
             end
             if ~isequal(obj.Items.Data,data)
                 removeStyle(obj.Items); obj.StyledObject = -1; obj.Items.Data = data;
             end
             selectedObject = find([obj.ObjectsRows.label] == obj.SelectedLabel,1);
             obj.styleSelection(obj.Items,selectedObject,'StyledObject');
-            obj.FrameText.Text = sprintf('Frame %d · %d objects',frame,numel(obj.ObjectsRows));
+            obj.FrameText.Text = sprintf('Frame %d · %d regions',frame,numel(obj.ObjectsRows));
             obj.Revision = obj.Revision+1; revision = obj.Revision;
             obj.Items.UserData = obj.ObjectsRows;
             obj.Items.CellSelectionCallback = @(~,event)obj.selectEvent('object',event,revision);
             context = obj.Viewer.contourContext(); ready = ~isempty(row) && isequal(context.roi,obj.Source);
             obj.enableTools(ready);
-            if isempty(row), obj.status('No objects for the active layer');
-            elseif ~ready, obj.status('Load the ROI to edit objects');
+            obj.Separate.Enable=obj.onOff(ready && obj.Shared && obj.Viewer.annotationEditingAllowed());
+            obj.NewTracks.Enable=obj.onOff(ready && ~obj.Shared && isempty(obj.Viewer.Session.Classifier) && obj.Viewer.annotationEditingAllowed());
+            if ready
+                target=obj.Viewer.annotationTarget(provider);
+                if target.semantic
+                    for k=1:numel(obj.Controls)
+                        if any(strcmp(obj.Controls{k}.Tag,{'objects-tracks','objects-lineage'})), obj.Controls{k}.Enable='off'; end
+                    end
+                    obj.NewTracks.Enable='off';
+                end
+            end
+            if isempty(row), obj.status('No masks for the active layer');
+            elseif ~ready, obj.status('Load the ROI to edit annotations');
             else
                 draft = obj.existingDraft();
                 if ~isempty(draft) && draft.SaveFailed
                     obj.status(['Save incomplete: ' draft.LastError]);
                 elseif ~isempty(draft) && draft.Dirty
                     obj.status('Unsaved annotations');
+                elseif obj.Shared
+                    obj.status('Shared masks · separate layers to edit each tracking result');
                 elseif obj.SelectedFamily == 0
-                    obj.status('Mask labels · no registered family');
+                    obj.status('Masks · no tracking result');
                 else
                     obj.status('Ready');
                 end
@@ -343,7 +389,8 @@ classdef ObjectsWidget < handle
             obj.(cache) = index;
         end
         function enableTools(obj,ready)
-            ready = ready && obj.Viewer.annotationEditingAllowed();
+            ready = ready && obj.Viewer.annotationLayerEditable(obj.SelectedProvider);
+            obj.NewTracks.Enable='off'; obj.Separate.Enable='off';
             for k = 1:numel(obj.Controls), obj.Controls{k}.Enable = obj.onOff(ready); end
             obj.Controls{3}.Enable = obj.onOff(ready && obj.SelectedFamily > 0);
             draft = obj.existingDraft();
