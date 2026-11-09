@@ -2,6 +2,12 @@
 
 ## Interaction
 
+Image's timeline has explicit Zoom (drag rectangle), Pan (drag image) and Reset
+buttons. Wheel zoom is available during navigation. Numeric keypad 1–9 selects
+the corresponding image third; 0 fits the full image. Viewports stay linked
+across channel panels and are retained per image tab. See
+[Keyboard shortcuts](DETECTIVE_UI_SHORTCUTS.md) for focus and annotation rules.
+
 - Layers uses a custom local HTML/JavaScript table embedded through uihtml, rather than uitable or Swing. Each row shows visibility, a color picker, type, display levels and weight. The selected row exposes numeric Low/High/Weight editors. Selection changes settings without silently changing visibility. Names are inserted as text, and asynchronously received edits are scoped to the current table revision.
 - Solo shows only the active layer.
 - Overlay channels follows Score's display convention: checked combines visible intensity/RGB layers; unchecked displays one horizontal panel per visible intensity/RGB channel, with the same visible masks/contours on every panel. Masks do not get extra panels. Mask-only selection uses one black base tile; no visible layers produces a black tile. A logical RGB channel remains one tile even when its stored planes are non-contiguous.

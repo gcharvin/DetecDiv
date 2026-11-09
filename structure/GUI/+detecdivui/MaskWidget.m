@@ -68,7 +68,8 @@ classdef MaskWidget < handle
             obj.Palette.Layout.Row=1; obj.Palette.Layout.Column=[1 3];
             row.RowHeight={'1x'};
             obj.Tool = uidropdown(grid,'Items',{'Select','Brush','Eraser'},'Tag','mask-tool', ...
-                'Tooltip','Click to select; drag to paint; Shift temporarily erases');
+                'Tooltip','Click to select; drag to paint; Shift temporarily erases', ...
+                'ValueChangedFcn',@(~,~)obj.Viewer.stopImageNavigation());
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',75};
             obj.Shape = uidropdown(row,'Items',{'Polygon','Freehand'},'Tag','mask-shape');
             uibutton(row,'Text','Draw','Tag','mask-draw','Tooltip','Double-click to finish; Escape cancels', ...
@@ -115,6 +116,7 @@ classdef MaskWidget < handle
         end
         function setActive(obj,active)
             entering = active && ~obj.Active;
+            if active~=obj.Active, obj.Viewer.stopImageNavigation(); end
             selected = [];
             if entering, selected = obj.Viewer.selectedAnnotation(); end
             if active && ~obj.Active
@@ -459,7 +461,7 @@ classdef MaskWidget < handle
             delete(obj.Outline(isgraphics(obj.Outline))); obj.Outline = gobjects(0);
         end
         function mouseDown(obj)
-            if ~obj.Active || obj.Viewer.contourGestureActive(), return; end
+            if ~obj.Active || obj.Viewer.contourGestureActive() || obj.Viewer.imageNavigationActive(), return; end
             try
                 obj.cancelStroke(); ax = ancestor(hittest(obj.Viewer.Figure),'axes');
                 if isempty(ax) || ~isequal(ancestor(ax,'figure'),obj.Viewer.Figure), return; end

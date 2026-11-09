@@ -21,7 +21,10 @@ function setup(component) {
         if (!state.enabled || !scope || !(scope.contains(target) || floatingBackground) ||
             !imageTarget || event.defaultPrevented || event.isComposing ||
             event.altKey || event.shiftKey) return;
-        const raw = event.key.toLowerCase();
+        // Physical keypad positions keep working with Num Lock off (End,
+        // Home, Clear...). Ordinary navigation keys keep their native role.
+        const keypad = /^Numpad([0-9])$/.exec(event.code || '');
+        const raw = keypad ? keypad[1] : event.key.toLowerCase();
         const key = ({arrowleft:'leftarrow',arrowright:'rightarrow',arrowup:'uparrow',
             arrowdown:'downarrow',enter:'return',' ':'space'})[raw] || raw;
         const ctrl = event.ctrlKey || event.metaKey;

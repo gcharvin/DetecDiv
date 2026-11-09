@@ -102,6 +102,7 @@ classdef TracksWidget < handle
         end
         function setActive(obj,active)
             entering = active && ~obj.Active; selected = [];
+            if active~=obj.Active, obj.Viewer.stopImageNavigation(); end
             if entering, selected = obj.Viewer.selectedAnnotation(); end
             if active && ~obj.Active
                 obj.DownCallback = obj.Viewer.Figure.WindowButtonDownFcn;
@@ -438,7 +439,8 @@ classdef TracksWidget < handle
             hold(ax,'off');
         end
         function mouseDown(obj)
-            if ~obj.Active || obj.Viewer.contourGestureActive() || ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
+            if ~obj.Active || obj.Viewer.contourGestureActive() || obj.Viewer.imageNavigationActive() || ...
+                    ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
             ax = ancestor(hittest(obj.Viewer.Figure),'axes');
             if isempty(ax) || ~isequal(ancestor(ax,'figure'),obj.Viewer.Figure), return; end
             point = ax.CurrentPoint(1,1:2); obj.pick(point(1),point(2));

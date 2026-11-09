@@ -44,6 +44,35 @@ assert(key(window,'ArrowRight','',false)); waitFrame(18);
 assert(key(window,'ArrowLeft','',false)); waitFrame(17);
 viewer.Host.findCommand('Back 10 Frames').invoke(); assert(frame.Value == 7);
 viewer.Host.findCommand('Forward 10 Frames').invoke(); assert(frame.Value == 17);
+assert(key(window,'l','canvas div',false)); waitFrame(7);
+assert(key(window,'m','canvas div',false)); waitFrame(17);
+% Physical keypad positions also work with Num Lock off. Image coordinates
+% follow the keypad: 7 is top-left, 1 is bottom-left, 5 is the centre.
+ax=viewer.roiAxes();
+for region=1:9
+    assert(key(window,'End','canvas div',false,['Numpad' num2str(region)])); settle();
+    col=mod(region-1,3); row=2-floor((region-1)/3);
+    assert(isequal(ax.XLim,.5+(col+[0 1])*4)&&isequal(ax.YLim,.5+(row+[0 1])*4));
+    assert(frame.Value==17);
+end
+assert(~key(window,'5','input',false,'Numpad5')); settle();
+assert(key(window,'0','canvas div',false,'Numpad0')); settle();
+assert(isequal(ax.XLim,[.5 12.5])&&isequal(ax.YLim,[.5 12.5]));
+clickButton(window,'Zoom'); settle();
+assert(viewer.imageNavigationActive());
+assert(any(arrayfun(@(i)isa(i,'matlab.graphics.interaction.interactions.RegionZoomInteraction'),ax.Interactions)));
+assert(strcmp(ax.InteractionContainer.CurrentMode,'zoom'));
+lastwarn('');
+assert(key(window,'ArrowRight','canvas div',false)); waitFrame(18);
+assert(key(window,'ArrowLeft','canvas div',false)); waitFrame(17);
+[warningText,~]=lastwarn(); assert(isempty(warningText),'Redrawing with Zoom active emitted a warning: %s',warningText);
+assert(strcmp(ax.InteractionContainer.CurrentMode,'zoom'));
+clickButton(window,'Pan'); settle();
+assert(viewer.imageNavigationActive()&&~findall(viewer.Figure,'Tag','image-zoom').Value);
+assert(any(arrayfun(@(i)isa(i,'matlab.graphics.interaction.interactions.PanInteraction'),ax.Interactions)));
+clickButton(window,'Pan'); settle(); assert(~viewer.imageNavigationActive());
+assert(key(window,'5','canvas div',false,'Numpad5')); settle();
+clickButton(window,'Reset'); settle(); assert(isequal(ax.XLim,[.5 12.5]));
 viewer.openROITool(); viewer.Host.focusWidget('Image'); settle();
 assert(~key(window,'ArrowLeft','canvas div',false)); settle(); assert(frame.Value == 1);
 viewer.closeROITool();
@@ -142,11 +171,12 @@ script = "(()=>{const f=Array.from(document.querySelectorAll('iframe')).find(f=>
     jsonencode(label) + ");if(!button)throw Error('Frame button missing');button.focus();button.click();})()";
 window.executeJS(char(script),5);
 end
-function consumed = key(window,keyName,selector,ctrl)
+function consumed = key(window,keyName,selector,ctrl,code)
+if nargin<5, code=''; end
 script = "(()=>{const f=Array.from(document.querySelectorAll('iframe')).find(f=>f.src.includes('/imageKeyboard.html')&&f.closest('.figureContainerNode')?.getBoundingClientRect().width>0&&f.closest('.figureContainerNode')?.querySelector('canvas div'));" + ...
     "const scope=f.closest('.figureContainerNode');const selector=" + jsonencode(selector) + ...
     ";const target=selector?scope.querySelector(selector):document.activeElement;if(selector)target.focus();const event=new KeyboardEvent('keydown',{key:" + jsonencode(keyName) + ...
-    ",bubbles:true,cancelable:true,ctrlKey:" + lower(string(ctrl)) + ...
+    ",code:" + jsonencode(code) + ",bubbles:true,cancelable:true,ctrlKey:" + lower(string(ctrl)) + ...
     "});target.dispatchEvent(event);return event.defaultPrevented;})()";
 consumed = jsondecode(window.executeJS(char(script),5));
 end

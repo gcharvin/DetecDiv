@@ -116,6 +116,10 @@ classdef Viewer < handle
         KeyboardGeneration = 0
         KeyboardFocusRequest = 0
         JumpKeys = {'l','m'}
+        NavigationMode = 'none'
+        ZoomButton
+        PanButton
+        ResetButton
         JumpBackMenu
         JumpForwardMenu
         ShortcutFigure = []
@@ -275,6 +279,17 @@ classdef Viewer < handle
                 'Tooltip','Frame number','ValueChangedFcn',@(~,~)obj.render());
             obj.FrameCount = uilabel(timeline,'Text','/ 1');
             obj.FrameCount.Layout.Column = 5;
+            navigation = uigridlayout(timeline,[1 4]); navigation.Layout.Row = 1; navigation.Layout.Column = 4;
+            navigation.Padding = [0 0 0 0]; navigation.ColumnSpacing = 4;
+            navigation.ColumnWidth = {'1x',56,52,56};
+            obj.ZoomButton = uibutton(navigation,'state','Text','Zoom','Enable','off','Tag','image-zoom', ...
+                'Tooltip','Drag a rectangle to zoom; scroll to zoom at the pointer', ...
+                'ValueChangedFcn',@(src,~)obj.navigationButton('zoom',src.Value)); obj.ZoomButton.Layout.Column = 2;
+            obj.PanButton = uibutton(navigation,'state','Text','Pan','Enable','off','Tag','image-pan', ...
+                'Tooltip','Drag to move the image; click Pan again to return to selection', ...
+                'ValueChangedFcn',@(src,~)obj.navigationButton('pan',src.Value));
+            obj.ResetButton = uibutton(navigation,'Text','Reset','Enable','off','Tag','image-reset', ...
+                'Tooltip','Fit the complete image (0)','ButtonPushedFcn',@(~,~)obj.resetView());
             obj.TimeSlider = uislider(timeline,'Limits',[1 2],'Value',1, ...
                 'MajorTicks',[],'MinorTicks',[],'Enable','off','Tag','time-slider', ...
                 'Tooltip','Browse frames', ...
@@ -891,7 +906,7 @@ classdef Viewer < handle
                 case 'preview', obj.flushPreview();
                 case 'imageLayer', obj.selectImageLayer(varargin{:});
                 case 'zone'
-                    if varargin{3} == obj.ImageRevision && ~obj.DrawingROI
+                    if varargin{3} == obj.ImageRevision && ~obj.DrawingROI && ~obj.imageNavigationActive()
                         if varargin{2} > 0, obj.Channels.Value = varargin{2}; end
                         obj.openZone(varargin{1});
                     end
@@ -954,6 +969,12 @@ classdef Viewer < handle
         function ax = roiAxes(obj)
             ax = obj.Axes;
         end
+        function active = imageNavigationActive(obj)
+            active = ~strcmp(obj.NavigationMode,'none');
+        end
+        function stopImageNavigation(obj)
+            if obj.imageNavigationActive(), obj.navigationButton('none',false); end
+        end
         function openContourTool(obj)
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify annotations.');
@@ -983,6 +1004,7 @@ classdef Viewer < handle
             if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), obj.MasksTab.Parent = []; end
             obj.syncObjectsPages();
             obj.ObjectsSync = previousSync;
+            obj.applyNavigation();
             obj.refreshKeyboard();
         end
         function openTracksTool(obj)
@@ -1020,6 +1042,7 @@ classdef Viewer < handle
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), obj.TracksTab.Parent = []; end
             obj.syncObjectsPages();
             obj.ObjectsSync = previousSync;
+            obj.applyNavigation();
             obj.refreshKeyboard();
         end
         function draft = annotationDraft(obj,channel)
@@ -1160,7 +1183,9 @@ classdef Viewer < handle
             if obj.canClose(), delete(obj); end
         end
         function scope = beginROIGesture(obj)
+            obj.navigationButton('none',false);
             obj.DrawingROI = true;
+            obj.applyNavigation();
             obj.refreshKeyboard();
             scope = onCleanup(@()obj.finishROIGesture());
         end
@@ -1470,7 +1495,7 @@ classdef Viewer < handle
             if ~isempty(obj.TracksPage) && isgraphics(obj.TracksPage), obj.TracksPage.Visible = obj.onOff(tracks); end
         end
         function finishROIGesture(obj)
-            if isvalid(obj), obj.DrawingROI = false; obj.refreshKeyboard(); end
+            if isvalid(obj), obj.DrawingROI = false; obj.applyNavigation(); obj.refreshKeyboard(); end
         end
         function progress = progressOwner(obj,widget)
             progress = obj.Progress;
@@ -1595,7 +1620,9 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.arrangeAnalysisWorkspace());
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.setOutlines(~obj.Overlays.Value));
-            obj.Host.menu(view,'Fit Image','MenuSelectedFcn',@(~,~)obj.resetView());
+            obj.Host.menu(view,'Fit Image','Shortcut','0','MenuSelectedFcn',@(~,~)obj.resetView());
+            obj.Host.menu(view,'Zoom Image','MenuSelectedFcn',@(~,~)obj.navigationButton('zoom',~obj.ZoomButton.Value));
+            obj.Host.menu(view,'Pan Image','MenuSelectedFcn',@(~,~)obj.navigationButton('pan',~obj.PanButton.Value));
             obj.Host.menu(view,'Reload Image','Accelerator','R', ...
                 'MenuSelectedFcn',@(~,~)obj.reloadImage());
             obj.Host.menu(view,'Refresh Workspace', ...
@@ -2119,6 +2146,7 @@ classdef Viewer < handle
             obj.NextMenu.Enable = obj.Next.Enable;
             obj.JumpBackMenu.Enable = obj.Previous.Enable;
             obj.JumpForwardMenu.Enable = obj.Next.Enable;
+            obj.applyNavigation();
             obj.refreshKeyboard();
         end
         function refreshKeyboard(obj)
@@ -2127,14 +2155,16 @@ classdef Viewer < handle
             editing = obj.hasMaskWidget() && obj.Masks.Active;
             tracking = obj.hasTracksWidget() && obj.Tracks.Active;
             enabled = obj.ImageRequested && obj.Session.Position > 0 && ...
-                (strcmp(obj.Frame.Enable,'on') || editing || tracking) && ~obj.DrawingROI && ~toolActive;
-            selection = {obj.Session.Project,obj.Session.Position,obj.Session.Zone,enabled,editing,tracking};
+                ~isempty(findall(obj.Axes,'Type','image')) && ~obj.DrawingROI;
+            selection = {obj.Session.Project,obj.Session.Position,obj.Session.Zone,enabled,editing,tracking,toolActive};
             if ~isequal(selection,obj.KeyboardSelection)
                 obj.KeyboardSelection = selection; obj.KeyboardGeneration = obj.KeyboardGeneration+1;
             end
+            zoomKeys={'0','1','2','3','4','5','6','7','8','9'};
             state = struct('context',sprintf('%d',obj.KeyboardGeneration),'enabled',enabled, ...
-                'keys',{{'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2}}},'ctrlKeys',{{}}, ...
+                'keys',{[obj.frameBindings() zoomKeys]},'ctrlKeys',{{}}, ...
                 'focusRequest',obj.KeyboardFocusRequest);
+            if toolActive, state.keys=zoomKeys; end
             if editing, state.keys = [state.keys obj.Masks.shortcuts()]; state.ctrlKeys = {'z','y'}; end
             if tracking, state.keys = [state.keys {'escape','delete'}]; state.ctrlKeys = {'z','y'}; end
             if isequal(state,obj.KeyboardState), return; end
@@ -2147,17 +2177,29 @@ classdef Viewer < handle
             state = obj.KeyboardState;
             if ~state.enabled || ~strcmp(event.context,state.context), return; end
             ctrl = isfield(event,'ctrl') && event.ctrl;
-            if obj.hasTracksWidget() && obj.Tracks.Active && (ctrl || ~any(strcmpi(event.key,state.keys(1:4))))
+            key = lower(char(event.key));
+            if ~ctrl && ~any(strcmp(key,state.keys)), return; end
+            [frameKeys,offsets]=obj.frameBindings();
+            navigationKeys = [frameKeys {'0','1','2','3','4','5','6','7','8','9'}];
+            if ~ctrl && any(strcmp(key,{'0','1','2','3','4','5','6','7','8','9'}))
+                obj.zoomRegion(str2double(key)); return;
+            end
+            if obj.hasTracksWidget() && obj.Tracks.Active && (ctrl || ~any(strcmpi(key,navigationKeys)))
                 obj.Tracks.key(char(event.key),ctrl); return;
             end
-            if obj.hasMaskWidget() && obj.Masks.Active && (ctrl || ~any(strcmpi(event.key,state.keys(1:4))))
+            if obj.hasMaskWidget() && obj.Masks.Active && (ctrl || ~any(strcmpi(key,navigationKeys)))
                 obj.Masks.key(char(event.key),ctrl); return;
             end
-            index = find(strcmpi(char(event.key),state.keys),1);
+            index = find(strcmpi(key,frameKeys),1);
+            if ctrl, return; end
+            if strcmp(key,'l'), index=5; elseif strcmp(key,'m'), index=6; end
             if isempty(index), return; end
-            offsets = [-1 1 -10 10];
             frame = min(obj.MaxFrame,max(1,obj.Frame.Value+offsets(index)));
             if frame ~= obj.Frame.Value, obj.setFrame(frame); end
+        end
+        function [keys,offsets]=frameBindings(obj)
+            keys={'leftarrow','rightarrow',obj.JumpKeys{1},obj.JumpKeys{2},'l','m'};
+            offsets=[-1 1 -10 10 -10 10];
         end
         function showShortcuts(obj)
             if ~isempty(obj.ShortcutFigure) && isvalid(obj.ShortcutFigure)
@@ -2171,6 +2213,10 @@ classdef Viewer < handle
                 'Right Arrow','Next frame','Image browsing'; ...
                 upper(obj.JumpKeys{1}),'Back 10 frames','Image browsing'; ...
                 upper(obj.JumpKeys{2}),'Forward 10 frames','Image browsing'; ...
+                'L / M','Back / forward 10 frames','Image browsing'; ...
+                'Numpad 1–9','Zoom to one third: 7–9 top, 1–3 bottom','Image browsing'; ...
+                '0','Fit the complete image','Image browsing'; ...
+                'Zoom / Pan','Rectangle zoom / drag image','Image buttons'; ...
                 'Ctrl+O','Open project','Main window'; 'Ctrl+S','Save project','Main window'; ...
                 'Ctrl+W','Close project','Main window'; 'Ctrl+C','Copy image','Main window'; ...
                 'Ctrl+R','Reload image','Main window'};
@@ -2267,6 +2313,8 @@ classdef Viewer < handle
                 key = sprintf('%d:%d:%d',obj.ActiveProject,obj.Session.Position,obj.Session.Zone);
                 keepView = strcmp(key,obj.RenderKey);
                 xl = obj.Axes.XLim; yl = obj.Axes.YLim;
+                obj.suspendNavigation();
+                navigation=onCleanup(@()obj.applyNavigation());
                 obj.renderImagePanels(views,separated,keepView,xl,yl);
                 if ~keepView && obj.ActiveImageView > 0
                     state = obj.ImageViews(obj.ActiveImageView);
@@ -2284,6 +2332,8 @@ classdef Viewer < handle
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), obj.Classifiers.onImageFrame(); end
                 if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), obj.MovieExport.setContext(); end
+                obj.applyNavigation();
+                obj.refreshKeyboard();
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';
                 if obj.Session.Zone > 0, source = 'ROI'; end
@@ -2320,9 +2370,11 @@ classdef Viewer < handle
             end
         end
         function clearImagePanels(obj)
+            obj.suspendNavigation();
             obj.ensureImagePanels(1); obj.Axes = obj.ImageAxes(1);
             cla(obj.Axes); title(obj.Axes,''); obj.Axes.Tag = 'image-view';
             obj.ImageRevision = obj.ImageRevision+1;
+            obj.applyNavigation();
         end
         function renderImagePanels(obj,views,separated,keepView,xl,yl)
             obj.ensureImagePanels(numel(views)); obj.ImageRevision = obj.ImageRevision+1;
@@ -2359,7 +2411,7 @@ classdef Viewer < handle
             if numel(obj.ImageAxes) > 1, obj.ImageLink = linkprop(obj.ImageAxes,{'XLim','YLim'}); end
         end
         function selectImageLayer(obj,index,revision)
-            if revision ~= obj.ImageRevision || obj.DrawingROI || index < 1 || ...
+            if revision ~= obj.ImageRevision || obj.DrawingROI || obj.imageNavigationActive() || index < 1 || ...
                     index > numel(obj.DisplayModel.Layers) || ~obj.DisplayModel.Layers(index).visible, return; end
             if obj.Channels.Value ~= index
                 obj.Channels.Value = index;
@@ -2396,11 +2448,79 @@ classdef Viewer < handle
             obj.Overlays.Value = visible; obj.OverlayMenu.Checked = obj.onOff(visible); obj.render();
         end
         function resetView(obj)
+            if obj.DrawingROI, return; end
             if obj.ActiveImageView > 0
                 obj.ImageViews(obj.ActiveImageView).xlim = [];
                 obj.ImageViews(obj.ActiveImageView).ylim = [];
             end
-            obj.RenderKey = ''; obj.render();
+            obj.zoomRegion(0);
+        end
+        function navigationButton(obj,mode,enabled)
+            if obj.DrawingROI, return; end
+            obj.suspendNavigation();
+            if ~enabled, mode='none'; end
+            obj.NavigationMode=mode;
+            obj.ZoomButton.Value=strcmp(mode,'zoom'); obj.PanButton.Value=strcmp(mode,'pan');
+            if obj.hasMaskWidget(), obj.Masks.onRender(); end % Cancel an unfinished brush stroke before navigation.
+            obj.applyNavigation(); obj.focusImage();
+        end
+        function suspendNavigation(obj)
+            for ax=reshape(obj.ImageAxes,1,[])
+                if ~isgraphics(ax), continue; end
+                mode=getappdata(ax,'DetecDivNavigationMode');
+                if ~isempty(mode)&&~strcmp(mode,'none')
+                    zoom(ax,'off'); pan(ax,'off');
+                    setappdata(ax,'DetecDivNavigationMode','none');
+                end
+            end
+        end
+        function applyNavigation(obj)
+            if ~isvalid(obj)||obj.Closing, return; end
+            if isempty(obj.ZoomButton) || ~isgraphics(obj.ZoomButton) || isempty(obj.Axes) || ~isgraphics(obj.Axes), return; end
+            loaded=obj.ImageRequested && ~isempty(findall(obj.Axes,'Type','image')) && ~obj.DrawingROI;
+            obj.ZoomButton.Enable=obj.onOff(loaded); obj.PanButton.Enable=obj.onOff(loaded); obj.ResetButton.Enable=obj.onOff(loaded);
+            editing=(obj.hasMaskWidget()&&obj.Masks.Active)||(obj.hasTracksWidget()&&obj.Tracks.Active);
+            for ax=reshape(obj.ImageAxes,1,[])
+                if obj.DrawingROI, continue; end
+                switch obj.NavigationMode
+                    case 'zoom', ax.Interactions=[regionZoomInteraction zoomInteraction];
+                    case 'pan', ax.Interactions=[panInteraction zoomInteraction];
+                    otherwise
+                        if editing, ax.Interactions=[];
+                        else, ax.Interactions=zoomInteraction; end
+                end
+                % Assigning Interactions can auto-disable the container when
+                % image/editor callbacks exist. Explicitly enable it last.
+                if loaded && (~editing || obj.imageNavigationActive())
+                    enableDefaultInteractivity(ax);
+                else
+                    disableDefaultInteractivity(ax);
+                end
+                % Explicit web modes survive callback-driven suppression of
+                % built-in gestures in an AppContainer FigureDocument.
+                mode='none'; if loaded, mode=obj.NavigationMode; end
+                if ~isequal(getappdata(ax,'DetecDivNavigationMode'),mode)
+                    switch mode
+                        case 'zoom', zoom(ax,'on');
+                        case 'pan', pan(ax,'on');
+                        otherwise, zoom(ax,'off'); pan(ax,'off');
+                    end
+                    setappdata(ax,'DetecDivNavigationMode',mode);
+                end
+            end
+        end
+        function zoomRegion(obj,key)
+            if ~obj.ImageRequested || obj.DrawingROI, return; end
+            h=findall(obj.Axes,'Type','image'); if isempty(h), return; end
+            if obj.hasMaskWidget(), obj.Masks.onRender(); end
+            height=size(h(1).CData,1); width=size(h(1).CData,2);
+            xl=[.5 width+.5]; yl=[.5 height+.5];
+            if key>0
+                column=mod(key-1,3); row=2-floor((key-1)/3);
+                xl=.5+(column+[0 1])*width/3; yl=.5+(row+[0 1])*height/3;
+            end
+            for ax=reshape(obj.ImageAxes,1,[]), ax.XLim=xl; ax.YLim=yl; end
+            obj.rememberImageView(); obj.applyNavigation(); obj.focusImage();
         end
         function reloadImage(obj)
             obj.loadCurrentImage();
