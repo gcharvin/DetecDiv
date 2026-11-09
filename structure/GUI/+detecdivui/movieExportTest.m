@@ -29,6 +29,10 @@ pixels=r.image; metadata=r.display; layerState=v.DisplayModel.Layers;
 v.Host.findCommand('Export Movie...').invoke(); widget=v.MovieExport;
 assert(~isempty(widget) && isempty(widget.LastError));
 body=v.widgetFigure('Display'); assert(strcmp(findall(body,'Tag','movie-page').Visible,'on'));
+format=findall(body,'Tag','movie-format');
+assert(strcmp(format.Value,'MPEG-4')&&strcmp(format.Items{1},'MP4 (H.264)'));
+assert(strcmp(widget.readSettings().profile,'MPEG-4'));
+assert(endsWith(findall(body,'Tag','movie-path').Value,'.mp4'));
 assert(isempty(findall(body,'Type','uitabgroup','Visible','on')));
 assert(findall(body,'Tag','movie-interval').Value==2.5);
 job=widget.makeJob(); expected=v.DisplayModel.compose(1,3); actual=job.frameViews(1,1);
@@ -48,8 +52,16 @@ options.Controls.scale.Value=2; options.Controls.background.Value=[.1 .1 .1];
 assert(options.apply()); delete(options);
 transformed=widget.makeJob(); views=transformed.frameViews(1,1);
 assert(isequal(size(views{1}.pixels),[60 48 3]));
-% A real three-frame movie is decoded again and has the requested FPS.
-format=findall(body,'Tag','movie-format'); format.Value='Motion JPEG AVI'; format.ValueChangedFcn(format,[]);
+% The default produces a genuine H.264 MP4, not a renamed MJ2 file.
+mp4=widget.exportNow(fullfile(folder,'default.mp4'));
+assert(isfile(mp4)&&endsWith(mp4,'.mp4')&&isempty(widget.LastError),'MP4 export failed: %s',widget.LastError);
+reader=VideoReader(mp4); assert(abs(reader.FrameRate-20)<.01);
+count=0; while hasFrame(reader), readFrame(reader); count=count+1; end
+assert(count==3); clear reader;
+fid=fopen(mp4,'r'); bytes=fread(fid,Inf,'*uint8'); fclose(fid);
+assert(contains(char(bytes'),'ftyp')&&contains(char(bytes'),'avc1'),'Expected an MP4 container with H.264 video.');
+% Explicit AVI remains available and uses the same rendering recipe.
+format.Value='Motion JPEG AVI'; format.ValueChangedFcn(format,[]);
 path=widget.exportNow(fullfile(folder,'test.avi'));
 assert(~isempty(path)&&isempty(widget.LastError),'Movie export failed: %s',widget.LastError);
 reader=VideoReader(path); assert(abs(reader.FrameRate-20)<.01);
@@ -89,7 +101,7 @@ if ~isempty(preview)
 end
 assert(isequal(detecdivui.MovieExportJob.parseFrames('1:2:3',3),[1 3]));
 failed=false; try, detecdivui.MovieExportJob.parseFrames('system(1)',3); catch, failed=true; end; assert(failed);
-disp('Movie export passed: Display/draft pixel parity, frozen state, crop/rotation, video FPS/frame count, PDF, cancellation, isolated preview and flat UI.');
+disp('Movie export passed: default H.264 MP4, explicit AVI, Display/draft pixel parity, frozen state, crop/rotation, video FPS/frame count, PDF, cancellation, isolated preview and flat UI.');
 end
 function closeViewer(v)
 if ~isvalid(v), return; end

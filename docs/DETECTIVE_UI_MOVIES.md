@@ -14,6 +14,10 @@ tab strip. It is created on demand, not during startup.
   increasing list. No MATLAB expressions are evaluated. Differing sequence
   lengths require an explicit common range; `all` never silently truncates.
 - Video profiles are restricted to installed color-capable VideoWriter profiles.
+  MP4 (H.264) is selected explicitly by default when available, followed by AVI
+  and then specialized MJ2 profiles. MATLAB's profile enumeration order is not
+  used as the default: it starts with Archival/MJ2 on Windows. Display labels
+  include the real container and codec; the backend retains the profile name.
   PDF Sequence uses Score's frame-in-columns export layout. PNG Sequence and
   TIFF Sequence write one lossless rendered frame per file in a new directory,
   named `frame_000001.png` / `.tif` using absolute source frame numbers. They

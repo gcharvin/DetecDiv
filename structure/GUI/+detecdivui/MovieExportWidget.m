@@ -54,9 +54,12 @@ classdef MovieExportWidget < handle
                 'Tag','movie-execution','ValueChangedFcn',@(~,~)obj.executionChanged());
             obj.Buttons(end+1)=uibutton(row,'Text','Hub...','Tag','movie-connect','ButtonPushedFcn',@(~,~)viewer.connectHub());
             obj.HubTarget=uidropdown(form,'Items',{'Automatic'},'ItemsData',{''},'Visible','off','Tag','movie-hub-target');
-            profiles=VideoWriter.getProfiles; names={profiles.Name};
-            names=names(ismember(names,{'MPEG-4','Motion JPEG AVI','Uncompressed AVI','Motion JPEG 2000','Archival'}));
-            obj.Format=uidropdown(form,'Items',[names {'PDF Sequence','PNG Sequence','TIFF Sequence'}],'Tag','movie-format', ...
+            profiles=VideoWriter.getProfiles;
+            names={'MPEG-4','Motion JPEG AVI','Uncompressed AVI','Motion JPEG 2000','Archival'};
+            labels={'MP4 (H.264)','AVI (Motion JPEG)','AVI (Uncompressed)','MJ2 (JPEG 2000)','MJ2 (Lossless)'};
+            available=ismember(names,{profiles.Name}); names=names(available); labels=labels(available);
+            sequences={'PDF Sequence','PNG Sequence','TIFF Sequence'}; values=[names sequences];
+            obj.Format=uidropdown(form,'Items',[labels sequences],'ItemsData',values,'Value',values{1},'Tag','movie-format', ...
                 'ValueChangedFcn',@(~,~)obj.formatChanged());
             row=uigridlayout(form,[1 2]); row.Padding=[0 0 0 0]; row.ColumnWidth={'1x',65};
             obj.Path=uieditfield(row,'text','Tag','movie-path','Tooltip','Output file or new image-sequence folder');
