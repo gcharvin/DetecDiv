@@ -48,14 +48,14 @@ classdef DockingHost < handle
             group = matlab.ui.internal.FigureDocumentGroup( ...
                 'Tag','workspace','Title','Workspace','EnableDockControls',true);
             obj.App.add(group);
-            for name = {'Projects','Image','Display','Pipeline','Objects','Data'}
+            for name = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',true);
                 obj.App.add(doc); obj.Widgets.(id) = doc;
                 doc.CanCloseFcn = @(document)obj.requestWidgetClose(id,document);
                 doc.Figure.CloseRequestFcn = @(~,~)obj.deferWidgetClose(id);
-                if ismember(id,{'data','objects'}), doc.Visible = false; end
+                if ismember(id,{'data','objects','classifier'}), doc.Visible = false; end
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
             obj.StateListener = addlistener(obj.App,'StateChanged',@(~,~)obj.appStateChanged());
@@ -71,7 +71,7 @@ classdef DockingHost < handle
         end
         function addDockMenus(obj,parent)
             docking = obj.menu(parent,'Docking','Separator','on');
-            names = {'Projects','Image','Display','Pipeline','Objects','Data'};
+            names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'};
             for k = 1:numel(names)
                 name = names{k};
                 obj.DockCommands{k} = obj.menu(docking,['Undock ' name], ...
@@ -117,7 +117,7 @@ classdef DockingHost < handle
             id = lower(char(name)); previous = [];
             if isKey(obj.HiddenFloating,id), previous = obj.HiddenFloating(id); remove(obj.HiddenFloating,id); end
             doc.Visible = true; doc.Docked = logical(docked);
-            obj.settle(); obj.syncMenus();
+            obj.waitForLayout(); obj.syncMenus();
             if ~docked && ~isempty(previous), doc.WindowBounds = previous.windowBounds; end
             obj.notifyVisibility(name,true);
         end
@@ -127,6 +127,7 @@ classdef DockingHost < handle
         end
         function focusWidget(obj,name)
             obj.setWidgetVisible(name,true);
+            if strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
             obj.App.SelectedChild = struct('tag',lower(char(name)),'documentGroupTag','workspace');
             obj.settle();
         end
@@ -154,7 +155,10 @@ classdef DockingHost < handle
         end
         function setWidgetVisible(obj,name,visible)
             id = lower(char(name)); doc = obj.widget(id);
-            if doc.Visible == logical(visible), obj.syncMenus(); return; end
+            if doc.Visible == logical(visible)
+                if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
+                obj.syncMenus(); return;
+            end
             remembered = []; floating = [];
             if ~visible && ~doc.Docked
                 % Hiding a floating peer directly can discard its document
@@ -196,6 +200,7 @@ classdef DockingHost < handle
                 end
             end
             obj.settle(); obj.syncMenus();
+            if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
             obj.notifyVisibility(id,logical(visible));
         end
         function value = isWidgetVisible(obj,name)
@@ -213,6 +218,7 @@ classdef DockingHost < handle
             activity = obj.activity('Arranging workspace...'); %#ok<NASGU>
             obj.dockAll();
             obj.Widgets.data.Visible = false; obj.Widgets.objects.Visible = false;
+            obj.Widgets.classifier.Visible = false;
             obj.ArrangedWidgets = struct('data',false,'objects',false);
             obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
             names = {'projects','image','display','pipeline'};
@@ -227,6 +233,7 @@ classdef DockingHost < handle
                 occupancy = repmat(struct('children',struct('id','')),1,3);
                 for k = 1:3, occupancy(k).children.id = ['workspace_' names{k}]; end
                 occupancy(3).children(2).id = 'workspace_pipeline';
+                occupancy(1).children(2).id = 'workspace_classifier';
                 layout.tileOccupancy = occupancy;
                 obj.App.DocumentLayout = layout;
             end
@@ -294,6 +301,10 @@ classdef DockingHost < handle
                     record.widgets.objects = struct('docked',true,'visible',false, ...
                         'windowBounds',obj.Widgets.objects.WindowBounds);
                 end
+                if isfield(record,'widgets') && ~isfield(record.widgets,'classifier')
+                    record.widgets.classifier = struct('docked',true,'visible',false, ...
+                        'windowBounds',obj.Widgets.classifier.WindowBounds);
+                end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
                 obj.HiddenFloating = containers.Map('KeyType','char','ValueType','any');
@@ -353,7 +364,7 @@ classdef DockingHost < handle
         function syncMenus(obj)
             if ~obj.MenusInstalled || obj.WebBusy || isempty(obj.Window) || ~isvalid(obj.Window) || obj.Closing, return; end
             for k = 1:numel(obj.DockCommands)
-                names = {'Projects','Image','Display','Pipeline','Objects','Data'}; name = names{k};
+                names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
                 obj.DockCommands{k}.Text = [verb ' ' name];
@@ -397,6 +408,20 @@ classdef DockingHost < handle
         end
     end
     methods (Access = private)
+        function ensureClassifierPlacement(obj)
+            if ~obj.Widgets.classifier.Docked || ~obj.Widgets.classifier.Visible, return; end
+            % Older layouts have no node for this new document. Its controls
+            % may become visible without a native tab unless it is inserted.
+            current = obj.App.DocumentLayout;
+            if ~isempty(detecdivui.WorkspaceLayout.tile(current,'workspace_classifier')), return; end
+            tile = detecdivui.WorkspaceLayout.tile(current,'workspace_projects');
+            if isempty(tile), tile = detecdivui.WorkspaceLayout.tile(current,'workspace_image'); end
+            if isempty(tile), return; end
+            current = detecdivui.WorkspaceLayout.geometry(current);
+            current.tileOccupancy(tile).children(end+1).id = 'workspace_classifier';
+            current.tileOccupancy(tile).showingChildId = 'workspace_classifier';
+            obj.App.DocumentLayout = current; obj.waitForLayout();
+        end
         function openInspector(obj,name,anchor,fraction)
             id = lower(name); doc = obj.widget(id);
             floatingBounds = [];

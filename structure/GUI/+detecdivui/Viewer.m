@@ -18,6 +18,7 @@ classdef Viewer < handle
         Data
         Objects
         RecentProjects
+        Classifiers
     end
     properties (Access = private)
         Tree
@@ -347,6 +348,7 @@ classdef Viewer < handle
             obj.KeyboardView.Layout.Row = 4;
             root.RowHeight = {32,'1x',24,0};
             obj.Pipeline = detecdivui.PipelineWidget(obj.Host.widgetFigure('Pipeline'),recentPipelineFile);
+            obj.Classifiers = detecdivui.ClassifierWidget(obj.Host.widgetFigure('Classifier'),obj);
             obj.ensureDataWidget();
             obj.DisplayTabs.SelectionChangedFcn = @(~,~)obj.displayTabSelected();
             obj.rebindCallbacks();
@@ -470,11 +472,11 @@ classdef Viewer < handle
                     if isequal(file,0), return; end
                     path = fullfile(folder,file);
                 end
-                activity = obj.ProjectProgress.begin('Loading classifier...'); %#ok<NASGU>
+                activity = obj.Classifiers.Progress.begin('Loading classifier...'); %#ok<NASGU>
                 [classifier,message] = classiLoad(path);
                 assert(isa(classifier,'classi') && isscalar(classifier) && isvalid(classifier), ...
                     'detecdivui:ClassifierLoad','Could not open this classifier. %s',char(string(message)));
-                obj.registerLoadedObject(classifier,'classi');
+                obj.Classifiers.add(classifier);
                 obj.Status.Text = 'Classifier opened';
             catch err
                 classifier = []; obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
@@ -484,6 +486,35 @@ classdef Viewer < handle
             if nargin < 2, template = obj.Pipeline.openTemplate();
             else, template = obj.Pipeline.openTemplate(path); end
             if ~isempty(template), obj.Host.focusWidget('Pipeline'); end
+        end
+        function showClassifierROI(obj,classifier,index)
+            % Share canonical ROI handles with the existing image/editing
+            % controllers through a transient Session projection only.
+            k = find(cellfun(@(s)~isempty(s.Classifier) && isequal(s.Classifier,classifier),obj.Sessions),1);
+            if isempty(k)
+                obj.Sessions{end+1} = detecdivui.Session(classifier);
+                obj.DisplayModels{end+1} = detecdivui.LayerModel();
+                obj.DisplayModels{end}.ReadOverride = detecdivui.Callback(obj,'maskPlane');
+                obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
+                obj.ProjectSources{end+1} = ''; k = numel(obj.Sessions);
+            elseif ~isequal(obj.Sessions{k}.Project.fov(1).roi,classifier.roi)
+                obj.forgetImageViews(obj.Sessions{k}.Project);
+                obj.Sessions{k}.Project.fov(1).roi = classifier.roi;
+                obj.DisplayModels{k}.invalidate();
+            end
+            obj.activate(k); obj.Session.selectPosition(1);
+            [~,available] = obj.Session.zoneItems();
+            if index == 0 && ~isempty(available), index = available(1); end
+            obj.Session.selectZone(index); obj.SelectedZone = index;
+            obj.Classifiers.selectROI(classifier,index);
+            obj.refreshView(index > 0);
+        end
+        function ok = prepareClassifierSave(obj,classifier)
+            ok = true;
+            k = find(cellfun(@(s)~isempty(s.Classifier) && isequal(s.Classifier,classifier),obj.Sessions),1);
+            if ~isempty(k) && obj.hasMaskWidget()
+                ok = obj.Masks.resolve(obj.Sessions{k}.Project,detecdivui.Callback(obj.Classifiers,'save',classifier));
+            end
         end
         function newPipeline(obj)
             obj.Host.focusWidget('Pipeline'); obj.Pipeline.newTemplate(); obj.Pipeline.openDefinitionEditor();
@@ -607,6 +638,7 @@ classdef Viewer < handle
         end
         function opened = openROITool(obj,project,node,callback,scope)
             opened = false;
+            if ~isempty(obj.Session.Classifier), obj.widgetEvent('status','Select a project FOV to define ROIs'); return; end
             if nargin < 5, scope = struct(); end
             obj.closeTracksTool();
             obj.closeContourTool();
@@ -881,6 +913,8 @@ classdef Viewer < handle
             active = obj.Session.Project;
             obj.WorkspaceObjects = obj.mergeLoadedObjects(entries(~strcmp({entries.kind},'shallow')));
             obj.Pipeline.importWorkspace(entries);
+            obj.Classifiers.importWorkspace(entries);
+            if any(strcmp({entries.kind},'classi')), obj.Host.setWidgetVisible('Classifier',true); end
             projects = find(strcmp({entries.kind},'shallow')); count = 0;
             for k = projects
                 count = count+1;
@@ -903,6 +937,7 @@ classdef Viewer < handle
             if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
             if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
             if ~isempty(obj.Objects) && isvalid(obj.Objects), delete(obj.Objects); end
+            if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), delete(obj.Classifiers); end
             if obj.hasTracksWidget(), delete(obj.Tracks); end
             if ~isempty(obj.TracksTab) && isvalid(obj.TracksTab), delete(obj.TracksTab); end
             if obj.hasMaskWidget(), delete(obj.Masks); end
@@ -980,6 +1015,7 @@ classdef Viewer < handle
             yes = isa(obj.Masks,'detecdivui.MaskWidget') && isscalar(obj.Masks) && isvalid(obj.Masks);
         end
         function registerLoadedObject(obj,item,kind)
+            if strcmp(kind,'classi'), obj.Classifiers.add(item); return; end
             if strcmp(kind,'pipeline')
                 obj.Pipeline.addTemplate(item); obj.Pipeline.selectDraft(); obj.Host.focusWidget('Pipeline'); return;
             end
@@ -1098,6 +1134,7 @@ classdef Viewer < handle
             owners.Data = obj.Progress;
             if ~isempty(obj.Data) && isvalid(obj.Data), owners.Data = obj.Data.Progress; end
             owners.Objects = obj.Progress;
+            owners.Classifier = obj.Classifiers.Progress;
             if ~isempty(obj.Objects) && isvalid(obj.Objects), owners.Objects = obj.Objects.Progress; end
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
                 owners.Display = obj.ROIs.Progress;
@@ -1107,7 +1144,7 @@ classdef Viewer < handle
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
-            if ismember(widget,{'Pipeline','Display','Data','Objects'})
+            if ismember(widget,{'Pipeline','Display','Data','Objects','Classifier'})
                 selected = obj.Host.App.SelectedChild;
                 visible = visible && isstruct(selected) && isscalar(selected) && ...
                     isfield(selected,'tag') && strcmpi(selected.tag,widget);
@@ -1188,6 +1225,7 @@ classdef Viewer < handle
             obj.Host.widgetMenu(view,'Image');
             obj.ToolsMenu = obj.Host.widgetMenu(view,'Display');
             obj.Host.widgetMenu(view,'Pipeline');
+            obj.Host.widgetMenu(view,'Classifier');
             objectsMenu = obj.Host.widgetMenu(view,'Objects');
             objectsMenu.MenuSelectedFcn = @(~,~)obj.toggleObjects();
             dataMenu = obj.Host.widgetMenu(view,'Data');
@@ -1229,7 +1267,7 @@ classdef Viewer < handle
         function syncPipelineMenu(obj)
             template = obj.Pipeline.Template;
             obj.SavePipelineMenu.Enable = obj.onOff(~isempty(template) && isvalid(template));
-            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project));
+            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project) && isempty(obj.Session.Classifier));
             obj.Host.syncMenus();
         end
         function index = findProject(obj,project)
@@ -1256,6 +1294,7 @@ classdef Viewer < handle
             delete(obj.Tree.Children);
             for k = 1:numel(obj.Sessions)
                 session = obj.Sessions{k};
+                if ~isempty(session.Classifier), continue; end
                 projectNode = obj.browserNode(obj.Tree,obj.projectName(session.Project), ...
                     struct('project',k,'fov',0,'roi',0),'project-node');
                 [labels, indices] = session.positionItems();
@@ -1276,8 +1315,8 @@ classdef Viewer < handle
                     end
                 end
             end
-            kinds = {'classi','process'};
-            labels = {'Classifiers','Processors'};
+            kinds = {'process'};
+            labels = {'Processors'};
             for k = 1:numel(kinds)
                 indices = find(strcmp({obj.WorkspaceObjects.kind},kinds{k}));
                 if isempty(indices), continue; end
@@ -1335,6 +1374,7 @@ classdef Viewer < handle
             obj.refreshView(target.fov > 0);
         end
         function refreshProjectInfo(obj)
+            if ~isempty(obj.Session.Classifier), return; end
             obj.setProjectDetailsMode(true);
             obj.DetailsPanel.Title = 'Project';
             obj.CopyPath.Tooltip = 'Copy the project folder path';
@@ -1440,6 +1480,9 @@ classdef Viewer < handle
                 'channel',name,'selectedROI',obj.SelectedZone);
         end
         function selectCurrentNode(obj)
+            if ~isempty(obj.Session.Classifier)
+                obj.Classifiers.selectROI(obj.Session.Classifier,obj.Session.Zone); return;
+            end
             nodes = findall(obj.Tree,'Type','uitreenode');
             for k = 1:numel(nodes)
                 d = nodes(k).UserData;
@@ -1503,7 +1546,9 @@ classdef Viewer < handle
                 k = numel(obj.ImageViews);
             end
             state = obj.ImageViews(k);
-            if state.zone == 0
+            if state.zone == 0 && ~isempty(obj.Session.Classifier)
+                state.tab.Title = ['Classifier: ' char(string(obj.Session.Classifier.strid))];
+            elseif state.zone == 0
                 state.tab.Title = ['Image: FOV ' char(string(state.project.fov(state.position).id))];
             else
                 state.tab.Title = sprintf('ROI %d',state.zone);
@@ -1626,20 +1671,22 @@ classdef Viewer < handle
             if obj.Session.Zone == 0, obj.closeContourTool(); obj.closeTracksTool(); end
             obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0);
             obj.EditTracksMenu.Enable = obj.EditContoursMenu.Enable;
-            roiEnabled = obj.onOff(obj.Session.Position > 0);
+            isClassifier = ~isempty(obj.Session.Classifier);
+            roiEnabled = obj.onOff(obj.Session.Position > 0 && ~isClassifier);
             for k = 1:numel(obj.ProcessCommands), obj.ProcessCommands{k}.Enable = roiEnabled; end
-            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project));
+            obj.ProjectRunsMenu.Enable = obj.onOff(~isempty(obj.Session.Project) && ~isClassifier);
             obj.DefineROIMenu.Enable = roiEnabled;
             obj.ImageROIMenu.Enable = roiEnabled; obj.TreeROIMenu.Enable = roiEnabled;
-            obj.Pipeline.setContext(obj.Session);
+            if isClassifier, obj.Pipeline.setContext(detecdivui.Session());
+            else, obj.Pipeline.setContext(obj.Session); end
             obj.updateImageContext();
-            obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0);
+            obj.CloseMenu.Enable = obj.onOff(obj.ActiveProject > 0 && ~isClassifier);
             obj.SaveProjectMenu.Enable = obj.onOff(obj.ActiveProject > 0 && ...
                 strlength(string(obj.Session.Project.io.path)) > 0 && strlength(string(obj.Session.Project.io.file)) > 0);
-            obj.RelinkMenu.Enable = obj.onOff(obj.Session.Position > 0);
+            obj.RelinkMenu.Enable = obj.onOff(obj.Session.Position > 0 && ~isClassifier);
             obj.LoadImage.Enable = obj.onOff(obj.Session.Position > 0);
             obj.RelinkImage.Visible = 'off'; obj.MissingRaw = false;
-            obj.Back.Enable = obj.onOff(obj.Session.Zone > 0);
+            obj.Back.Enable = obj.onOff(obj.Session.Zone > 0 && ~isClassifier);
             obj.ParentMenu.Enable = obj.Back.Enable;
             obj.Overlays.Enable = obj.onOff(obj.Session.Position > 0 && obj.Session.Zone == 0);
             obj.OverlayMenu.Enable = obj.Overlays.Enable;

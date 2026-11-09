@@ -115,12 +115,60 @@ See `DETECTIVE_UI_DOCKING.md` for the internal API boundary, classic menu adapte
 
 ## Next implementation tranche
 
+### Classifier workspace (9 November 2026)
+
+Classifier is an independent native dockable document, exposed by File > Open
+Classifier and View > Classifier. Projects contains projects/FOVs/ROIs and
+processors; classifiers are discovered in the separate widget. A compact selector
+chooses the open classifier. Its dataset table lists ROI index, ID, editable
+Training/Test/Validation membership, inclusive frame bounds, annotation status
+and reviewed coverage. Selecting a classifier opens its first ROI;
+selecting a ROI uses the central image tabs and shared Display/Objects/Data.
+Discovery only reads metadata and reports unchecked annotation status explicitly;
+opening/selecting a classifier, selecting a ROI or pressing Refresh checks its
+annotations through annotationManager, with scoped progress. Inclusive bounds
+use trainingBounds.resolve/setRoi/parse and honor global Auto bounds. Set edits
+use classi.setRoiSet to synchronize legacy trainingset and dataset.split while
+preserving other ROIs' validation membership. Invalid edits restore canonical
+values; edits from a stale classifier/ROI binding cannot affect the new context.
+A transient Session projection adapts the legacy
+image controllers to a classifier's flat ROI collection. It is never listed or
+saved as a project, and cannot be used for project pipeline execution, relinking,
+or FOV ROI construction. No classifier becomes a child of a project.
+
+The widget shows package, category, inference/training functions, output type,
+description, classes, input channels and training/execution parameter values.
+Edit uses the existing typed parameter dialog (logical, numeric, dropdown,
+text and numeric arrays); Apply is staged and rejects changed source values or
+another active classifier. Save reuses classiSave. Complex parameter bindings
+and operations retain the existing Advanced editor. Native parameter Apply/Save
+is blocked while that editor is open. Refresh reconciles ROI membership after
+legacy dataset changes. Closing the document hides controls and retains context.
+Existing layout files gain the optional Classifier widget without a reset.
+
+ClassifierGUI migration inventory, based on
+`structure/GUI/classifier/private/classifierGUI_runtime_code.m`:
+
+| Existing area | Integrated here | Remaining migration |
+| --- | --- | --- |
+| Classifier properties / package configuration | Metadata and typed common properties | Package/type changes, model-specific output/postprocessing selectors |
+| Training parameters and bindings | Existing scalar/choice/array values | Typed binding catalog, source/target bindings and specialized selectors |
+| Dataset preparation | ROI table, canonical handles and synchronized split editing | Import/removal, remapping, formatting and missing-ROI checks |
+| Annotation and frame bounds | Status/coverage, editable persistent bounds, shared image/Objects editing | annotationManager sessions, validation and prediction seeding |
+| Training and validation | Advanced compatibility entry | Existing training/validation pipelines, target selection, logs and curves |
+| Runtime export | Advanced compatibility entry | Package-specific checksum/release validation and export UI |
+
+Do not invoke training or formatting automatically while browsing. Preserve
+the existing package contracts and annotationManager rather than reproducing
+those rules in widget callbacks. `classifierWidgetTest`, `fileToolsTest`, and
+`workspaceTest` cover the new browser boundary and source identity.
+
 The complete Score review and staged migration dependencies are in [DETECTIVE_UI_SCORE_PARITY.md](DETECTIVE_UI_SCORE_PARITY.md), backed by a reproducible source inventory. Objects, Contours and Tracks now share scientific drafts/save/undo independently of Display. The dockable read-only Data browser and Tracks lineage dialog reuse Score's plotting and tree renderers; see [DETECTIVE_UI_DATA.md](DETECTIVE_UI_DATA.md) and [DETECTIVE_UI_TRACKS.md](DETECTIVE_UI_TRACKS.md).
 
 The intent bridge now provides metadata-only resource inspection, five curated intent profiles, added/reused/input states in the Pipeline graph, independent effective-configuration forks and run-linked proposal provenance. Use Edit > Plan Workflow... or Pipeline > Plan...; see [DETECTIVE_UI_INTENT_WORKFLOWS.md](DETECTIVE_UI_INTENT_WORKFLOWS.md). The next bridge tranche is common method configuration/binding and validation, then task-triggered execution and full semantic history. Automatic launch is not implemented by this first planner. Missing model artifacts and unverified results must remain explicit prerequisites.
 
 Movie/sequence export, managed Annotation/Review and Data editing remain on the parity roadmap. Export must freeze the visible layer and draft settings and report progress without changing the interactive canvas.
 
-Validate the layered display and main-image ROI assistant on real data, then connect classifier management and selection before guided segmentation. Projects keeps the project/FOV/ROI hierarchy, Classifiers/Processors collections and project context/run list. Pipeline owns its top open/recent tree, compact graph, shared settings dialog and bridged `pipeline2` editor. `recentPipelinesTest` checks the compatible history store; `pipelineLibraryTest` checks single-click opening, draft reuse and missing-entry behavior; `projectRunsTest` checks project-owned run selection and frozen graph reuse. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
+Validate the layered display and main-image ROI assistant on real data, then connect classifier management and selection before guided segmentation. Projects keeps the project/FOV/ROI hierarchy, the Processors collection and project context/run list. Classifier owns its independent library, ROI dataset and common parameters. Pipeline owns its top open/recent tree, compact graph, shared settings dialog and bridged `pipeline2` editor. `recentPipelinesTest` checks the compatible history store; `pipelineLibraryTest` checks single-click opening, draft reuse and missing-entry behavior; `projectRunsTest` checks project-owned run selection and frozen graph reuse. See `DETECTIVE_UI_PIPELINE.md` and `DETECTIVE_UI_DISPLAY.md`. Follow `DETECTIVE_UI_GUIDELINES.md`: conventional desktop menus, English, DetecDiv terminology, a multi-project tree and contextual help through tooltips/status rather than permanent explanatory paragraphs.
 
 Uncommitted fixes in the initial DetecDiv checkout have not been imported into this worktree; compare them before adapting affected loading/display code.

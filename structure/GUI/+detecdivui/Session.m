@@ -4,12 +4,23 @@ classdef Session < handle
         Project = []
         Position = 0
         Zone = 0
+        Classifier = []
     end
     methods
         function obj = Session(project)
             if nargin > 0, obj.setProject(project); end
         end
         function setProject(obj, project)
+            obj.Classifier = [];
+            if isa(project,'classi')
+                % A transient UI projection, never a saved project. ROI handles
+                % remain the classifier's canonical objects and are not copied.
+                obj.Classifier = project;
+                projection = shallow(); projection.io.file = char(string(project.strid));
+                projection.fov.id = char(string(project.strid));
+                projection.fov.roi = project.roi;
+                project = projection;
+            end
             assert(isa(project, 'shallow') && isscalar(project), ...
                 'detecdivui:Project', 'An existing shallow project is required.');
             obj.Project = project;
@@ -116,6 +127,13 @@ classdef Session < handle
         end
         function text = breadcrumb(obj)
             if isempty(obj.Project), text = ''; return; end
+            if ~isempty(obj.Classifier)
+                text = ['Classifier: ' char(string(obj.Classifier.strid))];
+                if obj.Zone > 0
+                    text = sprintf('%s / %s',text,obj.itemLabel('ROI',obj.Zone,obj.Project.fov(1).roi(obj.Zone).id));
+                end
+                return;
+            end
             name = string(obj.Project.io.file);
             if strlength(name) == 0, name = "Untitled Project"; end
             text = char(name);
