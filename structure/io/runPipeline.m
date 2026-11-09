@@ -61,6 +61,10 @@ function [ctx, report] = runPipeline(pipe, ctx)
     end
 
     [pipe, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', allowGui));
+    % Do not restore submitted symbols over the resolved executable nodes.
+    if isfield(ctx.run, 'nodeParams')
+        ctx.run = rmfield(ctx.run, 'nodeParams');
+    end
 
     [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', allowGui));
     if ~ok
