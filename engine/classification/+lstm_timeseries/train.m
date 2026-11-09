@@ -1,5 +1,5 @@
 function out = train(classif, ctx)
-%TRAIN Fit a pure LSTM and frozen training-only feature normalization.
+%TRAIN Fit the selected numeric network and training-only normalization.
 if nargin<2,ctx=struct();end
 if ischar(ctx)||(isstring(ctx)&&isscalar(ctx)),ctx=struct('mode',char(ctx));end
 if isfield(ctx,'mode')&&any(strcmpi(ctx.mode,{'init','param','params'}))

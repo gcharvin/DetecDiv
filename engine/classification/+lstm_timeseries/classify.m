@@ -16,6 +16,8 @@ assert(strcmp(p.outputMode,model.outputMode)&&p.windowLength==model.windowLength
     'lstm_timeseries:ModelMode','Output mode/window length are frozen in the trained model. Restore them or retrain.');
 context=0;if isfield(model,'contextWindowLength'),context=model.contextWindowLength;end
 assert(p.contextWindowLength==context,'lstm_timeseries:ModelMode','Context length is frozen in the trained model. Restore it or retrain.');
+architecture='lstm';if isfield(model,'networkArchitecture'),architecture=model.networkArchitecture;end
+assert(strcmp(p.networkArchitecture,architecture),'lstm_timeseries:ModelMode','Network architecture is frozen in the trained model. Restore it or retrain.');
 requested=[];if isfield(ctx,'sel')&&isfield(ctx.sel,'frames'),requested=ctx.sel.frames;end
 n=size(X,2);selected=trainingBounds.frames(classif,roiObj,n,requested);
 windows=lstm_timeseries.sequences(classif,roiObj,n,selected,p);
@@ -68,6 +70,7 @@ ds.userData=struct('classes',{classes},'quality','pred','producer','lstm_timeser
     'outputMode',model.outputMode,'windowLength',model.windowLength,'features',schema);
 ds.userData.contextWindowLength=context;
 ds.userData.contextBoundaryPolicy='repeat-edge';
+ds.userData.networkArchitecture=architecture;
 for key=fieldnames(oldUserData)'
     if ~isfield(ds.userData,key{1}),ds.userData.(key{1})=oldUserData.(key{1});end
 end

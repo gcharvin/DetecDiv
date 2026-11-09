@@ -1,5 +1,23 @@
 # Numeric dataseries LSTM
 
+The existing numeric module also supports an opt-in small TCN for window
+classification: set the static `networkArchitecture` parameter to `tcn`.
+Default `lstm` and historical saved LSTM models retain their behavior. The TCN
+uses two causal dilated convolutions per residual block (dilations 1, 2, ...),
+ReLU/dropout, a 1x1 skip projection when channel counts change, and global
+temporal average pooling before the same weighted classification head.
+`tcnChannels`, `tcnBlocks`, and `tcnKernelSize` configure its size; `hiddenUnits`
+applies only to LSTM. Defaults 10/2/3 give 1,143 trainable parameters with four
+inputs and three classes, versus 1,395 for a 16-unit LSTM. The maximum causal
+receptive field before pooling is 13 frames; seven-frame inputs use causal
+zero padding within the same window, without reading neighboring frames.
+
+Both architectures share formatting, train-only normalization, loss weights,
+optimizer, best-validation checkpoint selection, ROI prediction patches and
+Classifier GUI statistics. Input selectors remain bindings, separately from
+these static architecture/training controls. Saved model metadata freezes the
+architecture; changing the selector after training cannot silently switch it.
+
 `lstm_timeseries` classifies cell states from an ordered set of scalar numeric
 traces. It does not use images, a CNN, or upstream classifier weights. It can
 consume upstream predicted probabilities, cell geometry, fluorescence metrics,

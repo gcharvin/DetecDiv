@@ -113,6 +113,7 @@ classif.score=score;fig=[];
 if show||~isempty(export)
     visibility='on';if silent,visibility='off';end
     name='Numeric LSTM validation statistics';
+    if isfield(p,'networkArchitecture')&&strcmp(p.networkArchitecture,'tcn'),name='Numeric TCN validation statistics';end
     if cnn_lstm.isFrozenEncoder(classif),name='Frozen CNN LSTM validation statistics';end
     fig=figure('Name',name,'NumberTitle','off','Color','w','Visible',visibility);
     layout=tiledlayout(fig,1,2+double(plotRois));

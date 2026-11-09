@@ -30,11 +30,14 @@ if nargin>=2&&isstruct(overrides)
         p.(names{k})=value;
     end
 end
-for key={'outputMode','missingPolicy','executionEnvironment','classWeighting'}
+for key={'outputMode','missingPolicy','executionEnvironment','classWeighting','networkArchitecture'}
     value=p.(key{1});if iscell(value),value=value{end};end
     p.(key{1})=char(string(value));
 end
 assert(ismember(p.outputMode,{'frame','window','video'}),'lstm_timeseries:Mode','Unknown output mode.');
+assert(ismember(p.networkArchitecture,{'lstm','tcn'}),'lstm_timeseries:Architecture','Unknown numeric sequence architecture.');
+assert(~strcmp(p.networkArchitecture,'tcn')||strcmp(p.outputMode,'window'), ...
+    'lstm_timeseries:Architecture','TCN currently requires window output mode.');
 assert(ismember(p.missingPolicy,{'error','training-median'}),'lstm_timeseries:MissingPolicy','Unknown missing-value policy.');
 assert(ismember(p.executionEnvironment,{'auto','cpu','gpu','module_default'}),'lstm_timeseries:Device','Unknown execution environment.');
 assert(ismember(p.classWeighting,{'none','inverse-frequency'}),'lstm_timeseries:ClassWeighting','Unknown class weighting policy.');
@@ -45,7 +48,7 @@ assert(isnumeric(p.validationPatience)&&isscalar(p.validationPatience)&&isfinite
 assert((islogical(p.returnBestValidation)||isnumeric(p.returnBestValidation))&&isscalar(p.returnBestValidation)&&ismember(p.returnBestValidation,[0 1]), ...
     'lstm_timeseries:Parameter','returnBestValidation must be true or false.');
 p.returnBestValidation=logical(p.returnBestValidation);
-for key={'featureCount','hiddenUnits','maxEpochs','miniBatchSize'}
+for key={'featureCount','hiddenUnits','maxEpochs','miniBatchSize','tcnChannels','tcnBlocks','tcnKernelSize'}
     v=p.(key{1});assert(isnumeric(v)&&isscalar(v)&&isfinite(v)&&v>=1&&v==fix(v), ...
         'lstm_timeseries:Parameter','%s must be a positive integer.',key{1});
 end

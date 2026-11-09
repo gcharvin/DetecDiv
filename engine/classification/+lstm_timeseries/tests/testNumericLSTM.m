@@ -94,6 +94,40 @@ verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:Parameter
 c.trainingParam.contextWindowLength=8;c.trainingParam.outputMode='frame';
 verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:Parameter');
 end
+function testSmallTcnUsesSharedTrainingAndNativeStatistics(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+c.trainingParam.networkArchitecture='tcn';c.trainingParam.tcnChannels=3;c.trainingParam.tcnBlocks=2;
+c.trainingParam.maxEpochs=2;original=c.roi(4).data(2).data;
+c.formatDataForTraining();out=lstm_timeseries.train(c,struct());s=load(out.artifacts.model);
+verifyClass(testCase,s.classifier,'DAGNetwork');verifyEqual(testCase,s.model.networkArchitecture,'tcn');
+verifyEqual(testCase,s.model.trainingClassCounts,[2 2]);
+verifyLessThan(testCase,max(s.model.normalization.mean),50);
+layers=s.classifier.Layers;conv=layers(arrayfun(@(x)isa(x,'nnet.cnn.layer.Convolution1DLayer')&&x.FilterSize==3,layers));
+verifyEqual(testCase,sort([conv.DilationFactor]),[1 1 2 2]);
+c.classifyData(c.roi(4),'Ctx',struct('io',struct('saveMode','defer')));
+t=c.roi(4).data(2).data;
+verifyEqual(testCase,t.id_training,original.id_training);verifyEqual(testCase,t.labels_training,original.labels_training);
+verifyEqual(testCase,sum(t{:,{'prob_budding','prob_dead'}},2),ones(8,1),'AbsTol',1e-5);
+verifyNumElements(testCase,unique(t.id(1:4)),1);verifyNumElements(testCase,unique(t.id(5:8)),1);
+c.stats('Rois',4,'Force','Silent');verifyEqual(testCase,c.score.N,2);
+[score,fig]=lstm_timeseries.statistics(c,'Rois',4,'Force','Silent','Confusion','Classes');
+closeFigure=onCleanup(@()delete(fig)); %#ok<NASGU>
+verifyEqual(testCase,score.N,2);verifyEqual(testCase,fig.Name,'Numeric TCN validation statistics');
+c.trainingParam.networkArchitecture='lstm';
+verifyError(testCase,@()lstm_timeseries.classify(c.roi(4),c,struct()),'lstm_timeseries:ModelMode');
+end
+function testTcnRequiresWindowOutputAndStaticArchitecture(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.networkArchitecture='tcn';
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:Architecture');
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+spec=lstm_timeseries.executionSpec(c,'train');
+verifyTrue(testCase,ismember('networkArchitecture',spec.staticKeys));
+verifyFalse(testCase,ismember('networkArchitecture',spec.inputKeys));
+verifyEqual(testCase,spec.defaults.networkArchitecture,'tcn');
+verifyEqual(testCase,spec.choices.networkArchitecture,{'lstm','tcn'});
+end
 function testTrainingOnlyBalancedClassWeights(testCase)
 [w,n]=lstm_timeseries.classWeights(["budding" "budding" "budding" "arrested" "dead" "dead"], ...
     {'budding','arrested','dead'},'inverse-frequency');

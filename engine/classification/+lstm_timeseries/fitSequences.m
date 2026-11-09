@@ -8,16 +8,12 @@ assert(~isempty(trainIdx)&&all(ismember([d.samples(trainIdx).roiIndex],d.trainRo
  'lstm_timeseries:SplitOverlap','Formatted samples must retain their ROI partition and exclude test ROI.');
 stats=lstm_timeseries.trainingNormalizer(d.samples(trainIdx));
 X=cellfun(@(x)lstm_timeseries.transform(x,stats,p.missingPolicy),{d.samples(trainIdx).X}','UniformOutput',false);
-Y={d.samples(trainIdx).Y}';mode='sequence';
-if ~strcmp(p.outputMode,'frame'),mode='last';Y=vertcat(Y{:});end
+Y={d.samples(trainIdx).Y}';
+if ~strcmp(p.outputMode,'frame'),Y=vertcat(Y{:});end
 [weights,classCounts]=lstm_timeseries.classWeights([d.samples(trainIdx).Y],d.classes,p.classWeighting);
 % Set the seed before any layer initialization as well as trainNetwork.
 rng(p.seed,'twister');
-layers=[sequenceInputLayer(p.featureCount,'Normalization','none','Name','features'); ...
-    lstmLayer(p.hiddenUnits,'OutputMode',mode,'Name','lstm'); ...
-    dropoutLayer(p.dropout,'Name','dropout');fullyConnectedLayer(numel(d.classes),'Name','state'); ...
-    softmaxLayer('Name','probabilities');classificationLayer('Name','classes', ...
-    'Classes',categorical(d.classes,d.classes,d.classes),'ClassWeights',weights)];
+layers=lstm_timeseries.networkLayers(p,d.classes,weights);
 extra={};
 checkpoint='last-iteration';patience=Inf;
 if ~isempty(valIdx)
@@ -41,4 +37,5 @@ model=struct('schemaVersion',1,'module','lstm_timeseries','normalization',stats,
     'trainingClassCounts',classCounts,'classWeights',weights,'checkpointPolicy',checkpoint);
 if isfield(p,'contextWindowLength'),model.contextWindowLength=p.contextWindowLength;else,model.contextWindowLength=0;end
 model.contextBoundaryPolicy='repeat-edge';
+model.networkArchitecture='lstm';if isfield(p,'networkArchitecture'),model.networkArchitecture=p.networkArchitecture;end
 end
