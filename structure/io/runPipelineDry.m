@@ -16,6 +16,9 @@ function [ok, report] = runPipelineDry(pipe, ctx, opts)
     end
 
     [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', allowGui));
+    if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'nodeParams')
+        ctx.run = rmfield(ctx.run, 'nodeParams');
+    end
     [okV, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', allowGui));
     report.bindingResolution = bindingResolution;
 

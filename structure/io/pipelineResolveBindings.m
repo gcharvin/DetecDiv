@@ -13,6 +13,12 @@ if nargin < 3 || isempty(opts)
 end
 
 pipeOut = pipelineToStructLocal(pipeIn);
+% Run choices are inputs to binding resolution, not a patch to apply after it.
+% Reapplying them later can restore @resource tokens over concrete names.
+if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'nodeParams')
+    pipeOut.nodes = pipelineApplyRunNodeParams(pipeOut.nodes, ctx.run.nodeParams);
+    ctx.run = rmfield(ctx.run, 'nodeParams');
+end
 [~, validation] = validatePipeline(pipeOut, ctx, opts);
 report = struct( ...
     'validation', validation, ...

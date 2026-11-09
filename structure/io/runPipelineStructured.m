@@ -60,6 +60,10 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     end
 
     [pipe, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', allowGui));
+    % The executable node copy already includes the resolved run choices.
+    if isfield(ctx.run, 'nodeParams')
+        ctx.run = rmfield(ctx.run, 'nodeParams');
+    end
 
     [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', allowGui));
     if ~ok
@@ -92,7 +96,6 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         checkPipelineCancellation(ctx, 'before_node', nodeId);
 
         % run-level parameter override (optional)
-        node = applyRunNodeOverride(node, ctx, nodeId);
         [node, policy] = applyNodeExecutionPolicy(node, ctx);
 
         % run-level subset selection (optional)
@@ -146,6 +149,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             end
         end
 
+        pipelineAssertConcreteInputs(node);
         ctx.pipeline = struct('currentNode', nodeId, 'nodeType', node.type);
         ctx = applyNodeParams(ctx, node);
         checkPipelineCancellation(ctx, 'prepared_node', nodeId);
@@ -3027,13 +3031,15 @@ if isempty(pkgName) || ~isstruct(params)
 end
 switch lower(strtrim(char(string(pkgName))))
     case 'computemetrics'
-        channels = collectIndexedChannelParams(params, 'channel', '_name', channels);
-        channels = collectIndexedChannelParams(params, 'mask', '_name', channels);
+        channels = collectIndexedChannelParams(params, 'channel', '_name', channels, ...
+            getfielddefault(params, 'scoreChannelCount', inf));
+        channels = collectIndexedChannelParams(params, 'mask', '_name', channels, ...
+            getfielddefault(params, 'maskChannelCount', inf));
 end
 channels = mergeChannelLists({}, channels);
 end
 
-function channels = collectIndexedChannelParams(params, prefix, suffix, channels)
+function channels = collectIndexedChannelParams(params, prefix, suffix, channels, activeCount)
 if nargin < 4 || isempty(channels)
     channels = {};
 end
@@ -3042,6 +3048,10 @@ expr = ['^' regexptranslate('escape', prefix) '\d+' regexptranslate('escape', su
 for i = 1:numel(names)
     key = names{i};
     if isempty(regexp(key, expr, 'once'))
+        continue;
+    end
+    slot = str2double(regexp(key, '\d+', 'match', 'once'));
+    if slot > activeCount
         continue;
     end
     channels = mergeChannelLists(channels, params.(key));

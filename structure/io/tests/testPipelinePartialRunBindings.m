@@ -165,6 +165,32 @@ verifyTrue(testCase, any(contains(validation.errors, ...
     'input instanceChannelName references excluded module classifier_cellposesam_4')));
 end
 
+function testRunSymbolsAreMaterializedAfterOverrides(testCase)
+[pipe, ctx] = fixture();
+ctx.run = struct('nodeParams', struct('id', pipe.nodes(2).id, 'params', ...
+    struct('instanceChannelName', '@resource:segmentation:classifier_cellposesam_4')));
+[resolved, ~] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+verifyEqual(testCase, resolved.nodes(2).params.instanceChannelName, ...
+    'results_pred_cellposesam_cell');
+pipelineAssertConcreteInputs(resolved.nodes(2));
+verifyError(testCase, @()pipelineAssertConcreteInputs(pipe.nodes(2)), ...
+    'runPipeline:UnresolvedResource');
+[ok, report] = runPipelineDry(pipe, ctx, struct('allowGui', false));
+verifyTrue(testCase, ok, strjoin(report.errors, ' | '));
+verifyEqual(testCase, report.nodes(2).params.instanceChannelName, ...
+    'results_pred_cellposesam_cell');
+end
+
+function testRunProducerOutputOverrideIsUsedByConsumer(testCase)
+[pipe, ctx] = fixture();
+ctx.run = struct('nodeParams', struct('id', pipe.nodes(1).id, ...
+    'params', struct('outputName', 'custom_segmentation')));
+[resolved, ~] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+verifyEqual(testCase, resolved.nodes(1).params.outputName, 'custom_segmentation');
+verifyEqual(testCase, resolved.nodes(2).params.instanceChannelName, ...
+    'results_custom_segmentation_cell');
+end
+
 function [pipe, ctx] = fixture()
 cellpose = node('classifier_cellposesam_4', 'classifier', 'cellposesam', ...
     struct('pkg','cellposesam','channel','BF','outputType','segmentation', ...
