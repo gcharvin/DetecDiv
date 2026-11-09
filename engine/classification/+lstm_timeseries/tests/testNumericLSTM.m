@@ -65,6 +65,35 @@ verifyEqual(testCase,s.median,[2;2]);verifyEqual(testCase,s.mean,[2;2]);verifyEq
 verifyError(testCase,@()lstm_timeseries.transform([NaN;2],s,'error'),'lstm_timeseries:MissingValues');
 verifyEqual(testCase,lstm_timeseries.transform([NaN;2],s,'training-median'),single([0;0]));
 end
+function testContextKeepsTargetAndRepeatsOnlyRoiBoundary(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+p=lstm_timeseries.parameters(c);p.outputMode='window';p.windowLength=4;p.contextWindowLength=8;
+verifyEqual(testCase,lstm_timeseries.contextFrames(c,c.roi(1),8,1:4,p),[1 1 1:6]);
+verifyEqual(testCase,lstm_timeseries.contextFrames(c,c.roi(1),8,5:8,p),[3:8 8 8]);
+c.trainingParam=p;c.formatDataForTraining();
+s=load(fullfile(c.path,'trainingdataset','lstm_timeseries_dataset.mat'));d=s.dataset;
+verifyEqual(testCase,numel(d.samples),6);verifyEqual(testCase,d.samples(1).frames,1:4);
+verifyEqual(testCase,size(d.samples(1).X),[2 8]);
+verifyEqual(testCase,string(d.samples(1).Y),"budding");
+stats=lstm_timeseries.trainingNormalizer(d.samples(strcmp({d.samples.split},'train')));
+raw=[lstm_timeseries.features(c,c.roi(1)) lstm_timeseries.features(c,c.roi(2))];
+verifyEqual(testCase,stats,lstm_timeseries.normalizer(raw));
+out=lstm_timeseries.train(c,struct());s=load(out.artifacts.model,'model');
+verifyEqual(testCase,s.model.contextWindowLength,8);
+out=lstm_timeseries.classify(c.roi(4),c,struct());t=out.patch.roi.dataseries.upsert{1}.dataseries.data;
+verifyEqual(testCase,t.id_training,c.roi(4).data(2).data.id_training);
+verifyNumElements(testCase,unique(t.id(1:4)),1);verifyNumElements(testCase,unique(t.id(5:8)),1);
+c.trainingParam.contextWindowLength=0;
+verifyError(testCase,@()lstm_timeseries.classify(c.roi(4),c,struct()),'lstm_timeseries:ModelMode');
+verifyError(testCase,@()lstm_timeseries.train(c,struct()),'lstm_timeseries:StaleDataset');
+end
+function testInvalidContextRejected(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;c.trainingParam.contextWindowLength=7;
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:Parameter');
+c.trainingParam.contextWindowLength=8;c.trainingParam.outputMode='frame';
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:Parameter');
+end
 function testTrainingOnlyBalancedClassWeights(testCase)
 [w,n]=lstm_timeseries.classWeights(["budding" "budding" "budding" "arrested" "dead" "dead"], ...
     {'budding','arrested','dead'},'inverse-frequency');

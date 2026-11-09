@@ -14,6 +14,8 @@ for k=1:numel(schema)
 end
 assert(strcmp(p.outputMode,model.outputMode)&&p.windowLength==model.windowLength, ...
     'lstm_timeseries:ModelMode','Output mode/window length are frozen in the trained model. Restore them or retrain.');
+context=0;if isfield(model,'contextWindowLength'),context=model.contextWindowLength;end
+assert(p.contextWindowLength==context,'lstm_timeseries:ModelMode','Context length is frozen in the trained model. Restore it or retrain.');
 requested=[];if isfield(ctx,'sel')&&isfield(ctx.sel,'frames'),requested=ctx.sel.frames;end
 n=size(X,2);selected=trainingBounds.frames(classif,roiObj,n,requested);
 windows=lstm_timeseries.sequences(classif,roiObj,n,selected,p);
@@ -26,7 +28,8 @@ if isfield(ctx,'exec')&&isfield(ctx.exec,'gpu')&&~isfield(overrides,'executionEn
 end
 if strcmp(env,'module_default'),env='auto';end
 for w=1:numel(windows)
-    f=windows{w};input=lstm_timeseries.transform(X(:,f),model.normalization,model.missingPolicy);
+    f=windows{w};inputFrames=lstm_timeseries.contextFrames(classif,roiObj,n,f,p);
+    input=lstm_timeseries.transform(X(:,inputFrames),model.normalization,model.missingPolicy);
     [~,scores]=classify(classifier,{input},'ExecutionEnvironment',env);
     if iscell(scores),scores=scores{1};end
     if strcmp(model.outputMode,'frame')
@@ -63,6 +66,8 @@ end
 ds=dataseries(t);ds.groupid=name;ds.parentid=roiObj.id;ds.class='classification';ds.type='temporal';
 ds.userData=struct('classes',{classes},'quality','pred','producer','lstm_timeseries', ...
     'outputMode',model.outputMode,'windowLength',model.windowLength,'features',schema);
+ds.userData.contextWindowLength=context;
+ds.userData.contextBoundaryPolicy='repeat-edge';
 for key=fieldnames(oldUserData)'
     if ~isfield(ds.userData,key{1}),ds.userData.(key{1})=oldUserData.(key{1});end
 end

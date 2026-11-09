@@ -182,3 +182,19 @@ contracts and training bindings are callable without GUI. Tests include actual
 CPU training/reloading/inference in all three modes, data-only ROI dispatch,
 GT preservation, ROI split/normalization isolation, symbolic upstream binding,
 dynamic Classifier GUI bindings and trace-editor assignment.
+# Optional context around window targets
+
+`windowLength` remains the annotation and prediction unit. In window mode,
+`contextWindowLength=21` with `windowLength=7` observes seven preceding and
+seven following frames while learning only the original seven-frame label.
+The default `0` preserves existing behavior and existing models. Context is a
+static training parameter; ordered feature selectors remain dataset bindings.
+This symmetric context is intended for retrospective analysis, not online detection.
+
+Formatting and inference share `contextFrames`; context never crosses ROI bounds
+or gaps. At an acquisition/bounds edge, the nearest valid frame is repeated so
+the target always occupies the central positions. Samples retain target `frames`
+and separate `inputFrames`. Normalization counts each training ROI/frame once,
+avoiding overlap and padding weights; validation/test ROI never fit normalization.
+Saved models freeze context length. Statistics continue to score target windows
+through Classifier GUI, without merging their labels or counting context as targets.

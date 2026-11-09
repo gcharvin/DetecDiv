@@ -20,7 +20,7 @@ end
 assert(~isempty(rois),'lstm_timeseries:NoTrainingRois','No training ROI available.');
 requested=[];if isfield(ctx,'sel')&&isfield(ctx.sel,'frames'),requested=ctx.sel.frames;end
 [selection,~]=annotationManager.reviewedFramesForClassifier(classif,[rois val],'Frames',requested);
-samples=struct('roiIndex',{},'roiId',{},'frames',{},'X',{},'Y',{},'split',{});schema=[];
+samples=struct('roiIndex',{},'roiId',{},'frames',{},'inputFrames',{},'X',{},'Y',{},'split',{});schema=[];
 for k=[rois(:)' val(:)']
     r=classif.roi(k);[X,currentSchema]=lstm_timeseries.features(classif,r,p);
     if isempty(schema),schema=currentSchema;end
@@ -44,8 +44,9 @@ for k=[rois(:)' val(:)']
                 'ROI %s frames %d:%d have conflicting state labels; annotate one class for the complete %s.',r.id,f(1),f(end),p.outputMode);
             labels=labels(1);
         else,labels=labels(:)';end
-        if strcmp(p.missingPolicy,'error'),assert(all(isfinite(X(:,f)),'all'),'lstm_timeseries:MissingValues','ROI %s has missing feature values inside a reviewed sequence.',r.id);end
-        samples(end+1)=struct('roiIndex',k,'roiId',r.id,'frames',f,'X',X(:,f),'Y',labels,'split',split); %#ok<AGROW>
+        inputFrames=lstm_timeseries.contextFrames(classif,r,size(X,2),f,p);
+        if strcmp(p.missingPolicy,'error'),assert(all(isfinite(X(:,inputFrames)),'all'),'lstm_timeseries:MissingValues','ROI %s has missing feature values inside a sequence context.',r.id);end
+        samples(end+1)=struct('roiIndex',k,'roiId',r.id,'frames',f,'inputFrames',inputFrames,'X',X(:,inputFrames),'Y',labels,'split',split); %#ok<AGROW>
     end
 end
 isTrain=strcmp({samples.split},'train');assert(any(isTrain),'lstm_timeseries:NoSamples','No complete reviewed training sequence.');

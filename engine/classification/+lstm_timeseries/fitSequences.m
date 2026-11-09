@@ -6,7 +6,7 @@ assert(~isempty(trainIdx)&&all(ismember([d.samples(trainIdx).roiIndex],d.trainRo
  all(ismember([d.samples(valIdx).roiIndex],d.validationRoiIndices))&& ...
  ~any(ismember([d.samples.roiIndex],d.testRoiIndices)), ...
  'lstm_timeseries:SplitOverlap','Formatted samples must retain their ROI partition and exclude test ROI.');
-stats=lstm_timeseries.normalizer([d.samples(trainIdx).X]);
+stats=lstm_timeseries.trainingNormalizer(d.samples(trainIdx));
 X=cellfun(@(x)lstm_timeseries.transform(x,stats,p.missingPolicy),{d.samples(trainIdx).X}','UniformOutput',false);
 Y={d.samples(trainIdx).Y}';mode='sequence';
 if ~strcmp(p.outputMode,'frame'),mode='last';Y=vertcat(Y{:});end
@@ -39,4 +39,6 @@ model=struct('schemaVersion',1,'module','lstm_timeseries','normalization',stats,
     'trainRoiIndices',d.trainRoiIndices,'validationRoiIndices',d.validationRoiIndices, ...
     'testRoiIndices',d.testRoiIndices,'trainingParameters',p, ...
     'trainingClassCounts',classCounts,'classWeights',weights,'checkpointPolicy',checkpoint);
+if isfield(p,'contextWindowLength'),model.contextWindowLength=p.contextWindowLength;else,model.contextWindowLength=0;end
+model.contextBoundaryPolicy='repeat-edge';
 end
