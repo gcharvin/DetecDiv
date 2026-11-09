@@ -510,11 +510,54 @@ classdef Viewer < handle
             obj.refreshView(index > 0);
         end
         function ok = prepareClassifierSave(obj,classifier)
+            ok = obj.resolveClassifierEdits(classifier,detecdivui.Callback(obj.Classifiers,'save',classifier));
+        end
+        function ok = resolveClassifierEdits(obj,classifier,callback)
             ok = true;
             k = find(cellfun(@(s)~isempty(s.Classifier) && isequal(s.Classifier,classifier),obj.Sessions),1);
             if ~isempty(k) && obj.hasMaskWidget()
-                ok = obj.Masks.resolve(obj.Sessions{k}.Project,detecdivui.Callback(obj.Classifiers,'save',classifier));
+                ok = obj.Masks.resolve(obj.Sessions{k}.Project,callback);
             end
+        end
+        function yes = annotationEditingAllowed(obj,source)
+            classifier = obj.Session.Classifier;
+            if nargin > 1
+                classifier = [];
+                for c = reshape(obj.Classifiers.Classifiers,1,[])
+                    if any(arrayfun(@(r)isequal(r,source),c{1}.roi)), classifier = c{1}; break; end
+                end
+            end
+            yes = isempty(classifier) || obj.Classifiers.canEdit(classifier);
+        end
+        function refreshClassifierAccess(obj)
+            if ~isempty(obj.Session.Classifier) && ~obj.annotationEditingAllowed()
+                obj.closeContourTool(); obj.closeTracksTool();
+            end
+            obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0 && obj.annotationEditingAllowed());
+            obj.EditTracksMenu.Enable = obj.EditContoursMenu.Enable;
+            obj.SaveMasksMenu.Enable = obj.onOff(obj.annotationEditingAllowed() && obj.hasMaskWidget() && obj.Masks.dirty());
+            obj.updateImageContext(); obj.refreshKeyboard();
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
+        end
+        function selected = selectDisplayLayer(obj,name)
+            index = find(strcmp({obj.DisplayModel.Layers.name},name),1); selected = ~isempty(index);
+            if ~selected, return; end
+            obj.Channels.Value = index; obj.DisplayModel.setVisible(index,true); obj.render();
+        end
+        function showReviewSelection(obj)
+            delete(findall(obj.Axes,'Tag','review-selection'));
+            if obj.annotationEditingAllowed(), return; end
+            selection = obj.selectedAnnotation();
+            if isempty(selection) || selection.label == 0 || ~strcmp(selection.channel,obj.activeLayer()), return; end
+            source = selection.roi; pix = source.findChannelID(selection.channel);
+            if ~isscalar(pix) || pix > size(source.image,3), return; end
+            boundaries = bwboundaries(source.image(:,:,pix,selection.frame)==selection.label,'noholes');
+            hold(obj.Axes,'on');
+            for k=1:numel(boundaries)
+                b=boundaries{k}; plot(obj.Axes,b(:,2),b(:,1),'Color',[1 .85 .2], ...
+                    'LineWidth',2,'HitTest','off','PickableParts','none','Tag','review-selection');
+            end
+            hold(obj.Axes,'off');
         end
         function newPipeline(obj)
             obj.Host.focusWidget('Pipeline'); obj.Pipeline.newTemplate(); obj.Pipeline.openDefinitionEditor();
@@ -671,6 +714,7 @@ classdef Viewer < handle
         end
         function updateImageContext(obj)
             obj.Crumb.Text = obj.Session.breadcrumb();
+            if ~isempty(obj.Session.Classifier), obj.Crumb.Text = [obj.Crumb.Text ' | ' obj.Classifiers.Mode]; end
             if obj.hasROIWidget()
                 label = obj.ROIs.imageContext();
                 if ~isempty(label), obj.Crumb.Text = [obj.Crumb.Text ' | ' label]; end
@@ -690,6 +734,7 @@ classdef Viewer < handle
         end
         function openContourTool(obj)
             try
+                assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify annotations.');
                 obj.ensureObjectsWidget();
                 previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
                 sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
@@ -717,6 +762,7 @@ classdef Viewer < handle
         end
         function openTracksTool(obj)
             try
+                assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify tracks.');
                 obj.ensureObjectsWidget();
                 previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
                 sync = onCleanup(@()obj.restoreObjectsSync(previousSync));
@@ -804,7 +850,8 @@ classdef Viewer < handle
             if nargin < 4, label = 0; end
             c = obj.contourContext();
             assert(~isempty(c.roi),'detecdivui:ObjectsROI','Select and load a ROI first.');
-            obj.closeROITool(); obj.closeTracksTool(); obj.ensureAnnotationDrafts();
+            obj.closeROITool(); obj.closeTracksTool();
+            if obj.annotationEditingAllowed(), obj.ensureAnnotationDrafts(); end
             index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
             assert(~isempty(index),'detecdivui:ObjectsProvider','The object mask provider is unavailable.');
             changingLayer = obj.Channels.Value ~= index;
@@ -813,7 +860,10 @@ classdef Viewer < handle
             if changingLayer
                 obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
             end
-            obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
+            if obj.annotationEditingAllowed()
+                obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
+            else, obj.closeContourTool();
+            end
             obj.rememberAnnotation(c.roi,provider,c.frame,label,'objects',family);
             obj.render(); obj.refreshKeyboard();
         end
@@ -845,7 +895,7 @@ classdef Viewer < handle
         end
         function contourChanged(obj)
             for k = 1:numel(obj.DisplayModels), obj.DisplayModels{k}.invalidate(); end
-            obj.SaveMasksMenu.Enable = obj.onOff(obj.hasMaskWidget() && obj.Masks.dirty());
+            obj.SaveMasksMenu.Enable = obj.onOff(obj.annotationEditingAllowed() && obj.hasMaskWidget() && obj.Masks.dirty());
             obj.render(); obj.refreshKeyboard();
         end
         function contourOpacity(obj,delta,channel)
@@ -983,6 +1033,9 @@ classdef Viewer < handle
         end
         function objectsTabSelected(obj)
             if obj.ObjectsSync || isempty(obj.Objects) || ~isvalid(obj.Objects), return; end
+            if ~obj.annotationEditingAllowed()
+                obj.closeContourTool(); obj.closeTracksTool(); return;
+            end
             obj.ObjectsSync = true;
             sync = onCleanup(@()obj.restoreObjectsSync(false));
             tab = obj.ObjectsTabs.SelectedTab;
@@ -1668,8 +1721,8 @@ classdef Viewer < handle
             if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.setContext(); end
             if obj.hasROIWidget() && obj.ROIs.setContext(obj.Session), obj.closeROITool(); end
             if obj.Session.Position == 0 || obj.Session.Zone > 0, obj.closeROITool(); end
-            if obj.Session.Zone == 0, obj.closeContourTool(); obj.closeTracksTool(); end
-            obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0);
+            if obj.Session.Zone == 0 || ~obj.annotationEditingAllowed(), obj.closeContourTool(); obj.closeTracksTool(); end
+            obj.EditContoursMenu.Enable = obj.onOff(obj.Session.Zone > 0 && obj.annotationEditingAllowed());
             obj.EditTracksMenu.Enable = obj.EditContoursMenu.Enable;
             isClassifier = ~isempty(obj.Session.Classifier);
             roiEnabled = obj.onOff(obj.Session.Position > 0 && ~isClassifier);
@@ -1919,6 +1972,7 @@ classdef Viewer < handle
                 if obj.hasMaskWidget(), obj.Masks.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
                 if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
+                obj.showReviewSelection();
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
                 source = 'Raw';

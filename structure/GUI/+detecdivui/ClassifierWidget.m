@@ -4,6 +4,7 @@ classdef ClassifierWidget < handle
         Classifiers = {}
         Current = []
         Progress
+        Mode = 'Review'
     end
     properties (Access = private)
         Viewer
@@ -23,6 +24,9 @@ classdef ClassifierWidget < handle
         Advanced = []
         AdvancedSource = []
         Actions = gobjects(0)
+        ModeField
+        ModeSource = []
+        InitializeGT
     end
     methods
         function obj = ClassifierWidget(figure,viewer)
@@ -38,9 +42,16 @@ classdef ClassifierWidget < handle
             obj.Actions(2) = uibutton(bar,'Text','Advanced...','Tag','classifier-advanced', ...
                 'Tooltip','Open the existing Classifier GUI for dataset preparation, training, validation and runtime export', ...
                 'ButtonPushedFcn',@(~,~)obj.openAdvanced());
-            dataset = uigridlayout(root,[2 1]); dataset.Padding = [0 0 0 0]; dataset.RowHeight = {28,'1x'};
+            dataset = uigridlayout(root,[3 1]); dataset.Padding = [0 0 0 0]; dataset.RowHeight = {28,28,'1x'};
             obj.Selector = uidropdown(dataset,'Items',{'—'},'ItemsData',0,'Enable','off', ...
                 'Tag','classifier-selector','Tooltip','Open classifiers','ValueChangedFcn',@(~,~)obj.selected());
+            mode = uigridlayout(dataset,[1 2]); mode.Padding = [0 0 0 0]; mode.ColumnWidth = {'1x',130};
+            obj.ModeField = uidropdown(mode,'Items',{'Review','Edit'},'Value','Review', ...
+                'Tag','classifier-mode','Tooltip','Review data or enable dataset, parameter and annotation editing', ...
+                'ValueChangedFcn',@(~,~)obj.setMode(obj.ModeField.Value));
+            obj.InitializeGT = uibutton(mode,'Text','Initialize GT...','Tag','classifier-initialize-gt', ...
+                'Tooltip','Open existing ground truth or initialize missing ground truth for the selected ROI', ...
+                'ButtonPushedFcn',@(~,~)obj.initializeGT());
             obj.ROIs = uitable(dataset,'Data',cell(0,6),'RowName',{}, ...
                 'ColumnName',{'ROI','ID','Set','Frame bounds','Status','Coverage'}, ...
                 'ColumnWidth',{36,'auto',78,88,80,80}, ...
@@ -52,7 +63,8 @@ classdef ClassifierWidget < handle
             uibutton(row,'Text','Copy','Tooltip','Copy the classifier folder', ...
                 'ButtonPushedFcn',@(~,~)obj.copyPath());
             controls = uigridlayout(root,[1 2]); controls.Padding = [0 0 0 0]; controls.ColumnWidth = {'1x',68};
-            obj.Scope = uidropdown(controls,'Items',{'Properties','Training Parameters','Execution Parameters'}, ...
+            obj.Scope = uidropdown(controls,'Items',{'Properties','Training Parameters','Training Bindings', ...
+                'Inference Parameters','Inference Bindings'}, ...
                 'Tag','classifier-parameter-scope','ValueChangedFcn',@(~,~)obj.parameters());
             obj.Actions(3) = uibutton(controls,'Text','Edit...','Tag','classifier-edit', ...
                 'ButtonPushedFcn',@(~,~)obj.editParameters());
@@ -94,6 +106,10 @@ classdef ClassifierWidget < handle
                 if isempty(index), index = 1; obj.Current = obj.Classifiers{1}; obj.SelectedROI = 0; end
                 obj.Selector.Value = index; obj.Selector.Enable = 'on';
             end
+            if ~isequal(obj.ModeSource,obj.Current)
+                obj.ModeSource = obj.Current; obj.Mode = 'Review'; obj.ModeField.Value = obj.Mode;
+                if ~isempty(obj.Editor) && isvalid(obj.Editor), delete(obj.Editor); end
+            end
             obj.datasetRows();
             obj.parameters();
         end
@@ -105,19 +121,105 @@ classdef ClassifierWidget < handle
         function editor = editParameters(obj)
             editor = [];
             if isempty(obj.Current), return; end
+            obj.assertEdit(obj.Current);
             if ~isempty(obj.Editor) && isvalid(obj.Editor), delete(obj.Editor); end
-            [base,field,keys] = obj.values(); source = obj.Current;
+            source = obj.Current;
             assert(isempty(obj.Advanced) || ~isvalid(obj.Advanced), ...
                 'detecdivui:ClassifierEditor','Close Advanced before editing parameters here.');
-            node = struct('id',char(string(source.strid)),'params',base);
-            editor = detecdivui.StaticParameterDialog(node,keys, ...
-                @(~,values)obj.apply(source,field,base,values));
-            editor.Figure.Name = ['Classifier Parameters - ' char(string(source.strid))];
+            if strcmp(obj.Scope.Value,'Properties')
+                [base,field,keys] = obj.values();
+                node = struct('id',char(string(source.strid)),'params',base);
+                editor = detecdivui.StaticParameterDialog(node,keys, ...
+                    @(~,values)obj.apply(source,field,base,values));
+            else
+                activity = obj.Progress.begin('Loading parameter resources...'); %#ok<NASGU>
+                view = obj.parameterView(true);
+                editor = detecdivui.ClassifierParameterDialog(char(string(source.strid)),view, ...
+                    @(view,changes)obj.applyConfiguration(source,view,changes));
+            end
+            if strcmp(obj.Scope.Value,'Properties'), editor.Figure.Name = ['Classifier Properties - ' char(string(source.strid))]; end
             editor.Figure.Tag = 'classifier-parameter-dialog'; obj.Editor = editor;
+        end
+        function yes = canEdit(obj,classifier)
+            yes = ~isempty(classifier) && isequal(classifier,obj.Current) && strcmp(obj.Mode,'Edit') && ...
+                (isempty(obj.Advanced) || ~isvalid(obj.Advanced));
+        end
+        function setMode(obj,mode)
+            assert(ismember(mode,{'Review','Edit'}),'detecdivui:ClassifierMode','Choose Review or Edit.');
+            if ~isempty(obj.Advanced) && isvalid(obj.Advanced)
+                obj.ModeField.Value = obj.Mode; obj.Status.Text = 'Close Advanced before changing mode'; return;
+            end
+            if strcmp(mode,'Review') && strcmp(obj.Mode,'Edit') && ~isempty(obj.Current)
+                obj.ModeField.Value = obj.Mode;
+                if ~obj.Viewer.resolveClassifierEdits(obj.Current,detecdivui.Callback(obj,'setMode','Review')), return; end
+            end
+            obj.Mode = mode; obj.ModeField.Value = mode;
+            if ~isempty(obj.Editor) && isvalid(obj.Editor), delete(obj.Editor); end
+            obj.datasetRows(); obj.parameters(); obj.Viewer.refreshClassifierAccess();
+        end
+        function initialized = initializeGT(obj,source,index,method,recipe,target)
+            initialized = false;
+            if nargin < 2, source = obj.Current; end
+            if isempty(source), return; end
+            if nargin < 3, index = obj.SelectedROI; end
+            if nargin < 4, method = ''; end
+            if nargin < 5, recipe = struct(); end
+            if nargin < 6
+                if index < 1 || index > numel(source.roi), return; end
+                target = source.roi(index);
+            end
+            try
+                obj.assertEdit(source);
+                assert(index >= 1 && index <= numel(source.roi) && isequal(target,source.roi(index)), ...
+                    'detecdivui:ClassifierContext','The dataset changed. Select the ROI again.');
+                assert(obj.SelectedROI == index,'detecdivui:ClassifierContext','Select this ROI again before initializing its ground truth.');
+                callback = detecdivui.Callback(obj,'initializeGT',source,index,method,recipe,target);
+                if ~obj.Viewer.resolveClassifierEdits(source,callback), return; end
+                session = source.annotationSession(index);
+                summary = session.summary();
+                exists = [summary.components.groundTruthExists];
+                required = [summary.components.required];
+                assert(~isempty(exists),'detecdivui:ClassifierGT','No annotation contract is available for this classifier.');
+                if all(exists(required)) && any(exists)
+                    obj.openGroundTruth(source,index,session.Spec);
+                    obj.scanAnnotations(index); obj.datasetRows();
+                    obj.Status.Text = 'Existing ground truth opened'; return;
+                end
+                assert(~any(exists),'detecdivui:ClassifierGT', ...
+                    'Ground truth is incomplete. Use Advanced to repair it without replacing existing annotations.');
+                if isempty(method)
+                    method = uiconfirm(obj.Figure,'Initialize ground truth for the selected ROI?', ...
+                        'Ground Truth','Options',{'Blank GT','From Existing...','Cancel'}, ...
+                        'DefaultOption',1,'CancelOption',3);
+                end
+                if strcmp(method,'Cancel'), return; end
+                if strcmp(method,'From Existing...') && isempty(fieldnames(recipe))
+                    catalog = session.initializationCatalog();
+                    [recipe,accepted] = annotationInitializationDialog(obj.Figure,catalog);
+                    if ~accepted, return; end
+                end
+                obj.assertEdit(source);
+                assert(isequal(target,source.roi(index)),'detecdivui:ClassifierContext','The dataset changed.');
+                activity = obj.Progress.begin('Initializing ground truth...'); %#ok<NASGU>
+                if strcmp(method,'Blank GT')
+                    session.startBlank('Overwrite',false,'Save',true);
+                elseif strcmp(method,'From Existing...')
+                    session.initialize(recipe,'Overwrite',false,'Save',true);
+                else
+                    error('detecdivui:ClassifierGT','Unknown initialization method.');
+                end
+                initialized = true;
+                obj.openGroundTruth(source,index,session.Spec);
+                obj.scanAnnotations(index); obj.datasetRows(); obj.parameters();
+                obj.Status.Text = 'Ground truth initialized as Draft; save classifier to persist its bindings';
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+            end
         end
         function save(obj,source)
             if isempty(obj.Current), return; end
             try
+                obj.assertEdit(obj.Current);
                 if nargin > 1
                     assert(isequal(source,obj.Current),'detecdivui:ClassifierContext', ...
                         'The active classifier changed. Save it again from its own context.');
@@ -139,6 +241,7 @@ classdef ClassifierWidget < handle
         function openAdvanced(obj)
             if isempty(obj.Current), return; end
             try
+                assert(strcmp(obj.Mode,'Edit'),'detecdivui:ClassifierReview','Switch to Edit to open Advanced.');
                 if ~isempty(obj.Editor) && isvalid(obj.Editor), delete(obj.Editor); end
                 scope = obj.Progress.begin('Opening classifier editor...'); %#ok<NASGU>
                 if ~isempty(obj.Advanced) && isvalid(obj.Advanced)
@@ -199,7 +302,7 @@ classdef ClassifierWidget < handle
                 rows(row,:) = {k,char(string(c.roi(k).id)),subset,trainingBounds.text(bounds),status,coverage};
             end
             obj.RoiIndices = indices; obj.ROIs.Data = rows;
-            editable = isempty(obj.Advanced) || ~isvalid(obj.Advanced);
+            editable = obj.canEdit(c);
             obj.ROIs.ColumnEditable = [false false editable editable && ~globalBounds false false];
             obj.ROIs.Tooltip = 'Select a ROI to open it; edit Set or inclusive Frame bounds (for example 10:100 or all)';
             if globalBounds, obj.ROIs.Tooltip = 'Frame bounds are controlled by global bounds; use Advanced to change the mode'; end
@@ -227,6 +330,7 @@ classdef ClassifierWidget < handle
             row = event.Indices(1,1); column = event.Indices(1,2);
             if ~obj.currentRow(c,indices,sources,row), return; end
             try
+                obj.assertEdit(c);
                 assert(isempty(obj.Advanced) || ~isvalid(obj.Advanced), ...
                     'detecdivui:ClassifierEditor','Close Advanced before editing this dataset.');
                 index = indices(row);
@@ -283,22 +387,30 @@ classdef ClassifierWidget < handle
         end
         function parameters(obj)
             available = ~isempty(obj.Current);
-            for item = reshape(obj.Actions,1,[]), item.Enable = matlab.lang.OnOffSwitchState(available); end
+            editable = obj.canEdit(obj.Current);
+            for item = reshape(obj.Actions,1,[]), item.Enable = matlab.lang.OnOffSwitchState(editable); end
+            obj.ModeField.Enable = matlab.lang.OnOffSwitchState(available);
+            obj.InitializeGT.Enable = matlab.lang.OnOffSwitchState(editable && obj.SelectedROI > 0);
             if ~available
                 obj.Parameters.Data = cell(0,2); return;
             end
             c = obj.Current; obj.Name.Text = char(string(c.strid));
             obj.Path.Value = {char(string(c.path))};
-            [params,field,keys] = obj.values(); rows = cell(numel(keys),2);
-            for k = 1:numel(keys)
-                rows(k,:) = {keys{k},detecdivui.PipelineBindings.valueText(params.(keys{k}))};
-            end
-            if isempty(field)
+            if strcmp(obj.Scope.Value,'Properties')
+                [params,~,keys] = obj.values(); rows = cell(numel(keys),2);
+                for k = 1:numel(keys)
+                    rows(k,:) = {keys{k},detecdivui.PipelineBindings.valueText(params.(keys{k}))};
+                end
                 rows = [{'Package',char(string(c.classifierPkg)); ...
                     'Category',char(strjoin(string(c.category),', ')); ...
                     'Training function',char(string(c.trainingFun)); ...
                     'Inference function',char(string(c.classifyFun)); ...
                     'Output type',char(string(c.outputType))}; rows];
+            else
+                view = obj.parameterView(false); records = view.records; rows = cell(numel(records),2);
+                for k = 1:numel(records)
+                    rows(k,:) = {records(k).label,detecdivui.PipelineBindings.valueText(records(k).value)};
+                end
             end
             obj.Parameters.Data = rows;
             obj.Status.Text = sprintf('%d ROIs | %d training',numel(obj.RoiIndices),numel(intersect(c.trainingset,obj.RoiIndices)));
@@ -315,13 +427,13 @@ classdef ClassifierWidget < handle
                         description = strjoin(cellfun(@detecdivui.PipelineBindings.valueText, ...
                             description(:)','UniformOutput',false),' | ');
                     end
-                    params = struct('description',string(description),'channel',c.channel, ...
-                        'channelName',c.channelName,'classes',strjoin(string(c.classes),' '));
+                    params = struct('description',string(description),'classes',strjoin(string(c.classes),' '));
             end
             if ~isstruct(params) || ~isscalar(params), params = struct(); end
             keys = fieldnames(params);
         end
         function apply(obj,source,field,base,params)
+            obj.assertEdit(source);
             assert(isvalid(source) && isequal(source,obj.Current), ...
                 'detecdivui:ClassifierContext','The active classifier changed. Reopen its parameters.');
             [current,currentField] = obj.values();
@@ -350,7 +462,6 @@ classdef ClassifierWidget < handle
                     if isstring(source.description), source.description = string(params.description);
                     else, source.description = char(params.description); end
                 end
-                source.channel = params.channel; source.channelName = params.channelName;
             else
                 source.(field) = params;
             end
@@ -358,6 +469,31 @@ classdef ClassifierWidget < handle
         end
         function copyPath(obj)
             if ~isempty(obj.Current), clipboard('copy',char(string(obj.Current.path))); end
+        end
+        function assertEdit(obj,source)
+            assert(obj.canEdit(source),'detecdivui:ClassifierReview', ...
+                'Switch this classifier to Edit and close Advanced before making changes.');
+        end
+        function view = parameterView(obj,withCatalog)
+            stage = 'Inference'; if startsWith(obj.Scope.Value,'Training'), stage = 'Training'; end
+            view = detecdivui.ClassifierParameters.describe(obj.Current,stage,endsWith(obj.Scope.Value,'Bindings'),withCatalog);
+        end
+        function applyConfiguration(obj,source,view,changes)
+            obj.assertEdit(source);
+            detecdivui.ClassifierParameters.apply(source,view,changes);
+            obj.parameters(); obj.Status.Text = 'Parameters applied; save classifier to persist';
+        end
+        function openGroundTruth(obj,source,index,spec)
+            obj.Viewer.showClassifierROI(source,index); obj.Viewer.loadCurrentImage();
+            for component = reshape(spec.components,1,[])
+                gt = component.groundTruth; name = '';
+                if isfield(gt,'channel'), name = gt.channel; end
+                if isempty(name) && isfield(gt,'maskProvider'), name = gt.maskProvider; end
+                if ~isempty(name) && obj.Viewer.selectDisplayLayer(name)
+                    if ismember(component.storage,{'channel','cell_model_family'}), obj.Viewer.openContourTool(); end
+                    break;
+                end
+            end
         end
     end
 end

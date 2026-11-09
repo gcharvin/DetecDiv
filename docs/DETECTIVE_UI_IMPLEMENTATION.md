@@ -137,11 +137,13 @@ saved as a project, and cannot be used for project pipeline execution, relinking
 or FOV ROI construction. No classifier becomes a child of a project.
 
 The widget shows package, category, inference/training functions, output type,
-description, classes, input channels and training/execution parameter values.
-Edit uses the existing typed parameter dialog (logical, numeric, dropdown,
-text and numeric arrays); Apply is staged and rejects changed source values or
-another active classifier. Save reuses classiSave. Complex parameter bindings
-and operations retain the existing Advanced editor. Native parameter Apply/Save
+description, classes and separate training/inference static-parameter and binding
+views. Review is the default; Edit enables dataset/configuration/annotation
+changes. Package-described typed controls and compatible resource dropdowns
+stage changes until Apply; Save reuses classiSave. Ground truth can be opened
+or initialized through annotationManager without overwriting existing assets.
+Specialized bindings and operations retain the existing Advanced editor.
+See [DETECTIVE_UI_CLASSIFIER.md](DETECTIVE_UI_CLASSIFIER.md). Native parameter Apply/Save
 is blocked while that editor is open. Refresh reconciles ROI membership after
 legacy dataset changes. Closing the document hides controls and retains context.
 Existing layout files gain the optional Classifier widget without a reset.
@@ -152,9 +154,9 @@ ClassifierGUI migration inventory, based on
 | Existing area | Integrated here | Remaining migration |
 | --- | --- | --- |
 | Classifier properties / package configuration | Metadata and typed common properties | Package/type changes, model-specific output/postprocessing selectors |
-| Training parameters and bindings | Existing scalar/choice/array values | Typed binding catalog, source/target bindings and specialized selectors |
+| Training parameters and bindings | Separate static/binding views, typed controls, resource catalog, common/advanced settings | Specialized package input editors and structured values |
 | Dataset preparation | ROI table, canonical handles and synchronized split editing | Import/removal, remapping, formatting and missing-ROI checks |
-| Annotation and frame bounds | Status/coverage, editable persistent bounds, shared image/Objects editing | annotationManager sessions, validation and prediction seeding |
+| Annotation and frame bounds | Review/Edit, status/coverage, persistent bounds, shared image/Objects editing, blank/source-based annotationManager GT initialization | Batch/partial-GT repair, validation/approval and model-assisted prediction |
 | Training and validation | Advanced compatibility entry | Existing training/validation pipelines, target selection, logs and curves |
 | Runtime export | Advanced compatibility entry | Package-specific checksum/release validation and export UI |
 

@@ -148,6 +148,9 @@ classdef MaskWidget < handle
             scope = obj.Progress.begin('Saving annotation edits...'); %#ok<NASGU>
             try
                 for k = 1:numel(obj.Drafts)
+                    if obj.Drafts{k}.Dirty, obj.assertEditable(obj.Drafts{k},false); end
+                end
+                for k = 1:numel(obj.Drafts)
                     if obj.Drafts{k}.Dirty, obj.Drafts{k}.save(); obj.followSave(obj.Drafts{k}); end
                 end
                 obj.Viewer.contourChanged(); obj.status('Annotation edits saved');
@@ -191,6 +194,8 @@ classdef MaskWidget < handle
             obj.followSave(draft); obj.Viewer.contourChanged();
         end
         function assertEditable(obj,draft,modelMutation)
+            assert(obj.Viewer.annotationEditingAllowed(draft.Source),'detecdivui:ClassifierReview', ...
+                'Switch this classifier to Edit before modifying or saving annotations.');
             for k = 1:numel(obj.Drafts)
                 other = obj.Drafts{k};
                 if other == draft || ~isequal(other.Source,draft.Source) || ~other.Dirty, continue; end
@@ -348,7 +353,7 @@ classdef MaskWidget < handle
             try
                 d = obj.ResolveQueue{1};
                 scope = obj.ResolveProgress.begin('Saving annotations...'); %#ok<NASGU>
-                if strcmp(choice,'Save'), d.save(); obj.followSave(d); else, d.discard(); end
+                if strcmp(choice,'Save'), obj.assertEditable(d,false); d.save(); obj.followSave(d); else, d.discard(); end
                 clear scope; obj.ResolveBusy = false;
                 obj.ResolveQueue(1) = []; obj.nextResolution();
             catch err

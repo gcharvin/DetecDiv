@@ -79,7 +79,7 @@ classdef ObjectsWidget < handle
                 % to the previously selected Display layer.
                 obj.Viewer.closeTracksTool(); obj.Viewer.closeContourTool();
             end
-            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive()
+            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive() && obj.Viewer.annotationEditingAllowed()
                 masks = obj.Viewer.Masks; draft = [];
                 if ~isempty(masks) && isvalid(masks) && masks.Active, draft = masks.current(); end
                 if isempty(draft) || ~isequal(draft.Source,obj.Source) || ~strcmp(draft.Channel,obj.SelectedProvider)
@@ -145,6 +145,7 @@ classdef ObjectsWidget < handle
             obj.LastError = '';
             scope = obj.Progress.begin('Opening object tools...'); %#ok<NASGU>
             try
+                assert(obj.Viewer.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify objects.');
                 switch action
                     case 'contours'
                         obj.Viewer.openContourTool();
@@ -316,8 +317,14 @@ classdef ObjectsWidget < handle
                 end
             else
                 draft = obj.existingDraft();
-                if isempty(draft) || frame > size(draft.Masks,4), return; end
-                labels = unique(draft.read(frame)); labels = labels(labels > 0);
+                if ~isempty(draft) && frame <= size(draft.Masks,4)
+                    plane = draft.read(frame);
+                else
+                    pix = obj.Source.findChannelID(obj.SelectedProvider);
+                    if ~isscalar(pix) || pix > size(obj.Source.image,3) || frame > size(obj.Source.image,4), return; end
+                    plane = obj.Source.image(:,:,pix,frame);
+                end
+                labels = unique(plane); labels = labels(labels > 0);
                 for label = reshape(labels,1,[])
                     rows(end+1) = struct('label',double(label),'track',uint64(0),'parent',uint64(0),'state',''); %#ok<AGROW>
                 end
@@ -336,6 +343,7 @@ classdef ObjectsWidget < handle
             obj.(cache) = index;
         end
         function enableTools(obj,ready)
+            ready = ready && obj.Viewer.annotationEditingAllowed();
             for k = 1:numel(obj.Controls), obj.Controls{k}.Enable = obj.onOff(ready); end
             obj.Controls{3}.Enable = obj.onOff(ready && obj.SelectedFamily > 0);
             draft = obj.existingDraft();
