@@ -43,12 +43,15 @@ for i = 1:maskChannelCount
 end
 for i = 1:scoreChannelCount
     paramout.(sprintf('channel%d_name', i)) = [listChannels listChannels{1}];
+    paramout.(sprintf('channel%d_acquisitionPeriod', i)) = 0;
+    paramout.(sprintf('channel%d_firstAcquisitionFrame', i)) = 1;
 end
 paramout.BrightestPixels = 20;
 paramout.backgroundMethod = {'mean','median','percentile','mean'};
 paramout.backgroundPercentile = 20;
 paramout.backgroundDilatePx = 0;
 paramout.computeMaskCombinations = true;
+paramout.interpolateSparseAcquisition = true;
 paramout.tip = buildTips(maskChannelCount, scoreChannelCount);
 end
 
@@ -97,12 +100,15 @@ function tip = buildTips(maskChannelCount, scoreChannelCount)
     end
     for i = 1:scoreChannelCount
         tip{end+1} = sprintf('Channel name #%d to score', i); %#ok<AGROW>
+        tip{end+1} = 'Acquisition period in global frames: 0 reads OME-Zarr acquisition metadata; 1 means every frame';
+        tip{end+1} = 'First acquired frame for an explicit acquisition period (one-based)';
     end
     tip{end+1} = 'Number of brightest pixels used for top-pixel intensity metrics';
     tip{end+1} = 'Background reducer for pixels outside all segmented objects: mean, median, or percentile';
     tip{end+1} = 'Percentile used when backgroundMethod is percentile';
     tip{end+1} = 'Dilate all segmented objects by this many pixels before selecting background pixels';
     tip{end+1} = 'When multiple masks are selected, compute pairwise AND and NOT composite-mask fluorescence metrics';
+    tip{end+1} = 'Linearly interpolate zero-filled unacquired frames using acquisition cadence; preserve measured frames and do not extrapolate';
 end
 
 function out = normalizeChannelList(ch)

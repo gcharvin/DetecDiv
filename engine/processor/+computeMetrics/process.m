@@ -38,9 +38,9 @@ if shouldDebugFrames(ctx)
 end
 
 if isempty(frames) || (isnumeric(frames) && all(frames == -1))
-    [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj);
+    [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj, [], ctx);
 else
-    [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj, frames);
+    [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj, frames, ctx);
 end
 end
 

@@ -1,7 +1,8 @@
-function [paramout, dataout, imageout] = core(param, roiobj, frames) %#ok<INUSD>
+function [paramout, dataout, imageout] = core(param, roiobj, frames, ctx) %#ok<INUSD>
 % computeMetrics.core  Compute mask geometry and mask-linked channel metrics.
 
 imageout = [];
+if nargin < 4, ctx = struct(); end
 
 if nargin < 3
     frames = [];
@@ -77,7 +78,7 @@ if isempty(channelsExtract)
     return;
 end
 
-dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames);
+dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames, ctx);
 if logical(paramout.computeMaskCombinations)
     [imageout, compositeChannelNames] = buildCompositeMaskAnnotationChannels(roiobj, paramout, frames);
     if ~isempty(compositeChannelNames)
@@ -214,6 +215,10 @@ if ~isfield(paramout, 'computeMaskCombinations') || isempty(paramout.computeMask
     paramout.computeMaskCombinations = true;
 end
 paramout.computeMaskCombinations = logicalScalar(paramout.computeMaskCombinations, true);
+if ~isfield(paramout,'interpolateSparseAcquisition')
+    paramout.interpolateSparseAcquisition = true;
+end
+paramout.interpolateSparseAcquisition = logicalScalar(paramout.interpolateSparseAcquisition,true);
 if ~isfield(paramout, 'outputName') || isempty(paramout.outputName)
     paramout.outputName = 'channel_quantification';
 end
@@ -293,7 +298,13 @@ dataout(cc).userData.schema_version = uint16(2);
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
-function dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames)
+function dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames, ctx)
+requestedFrames = frames;
+sampling = computeMetrics.samplingPlan(roiobj,channelsName,channelsExtract,paramout,ctx);
+if any(arrayfun(@(s)~isempty(s.missing_frames),sampling))
+    % Include measured neighbours even for a partial/non-contiguous request.
+    frames = 1:size(roiobj.image,4);
+end
 im = roiobj.image(:,:,:,frames);
 nFrames = size(im, 4);
 maskCount = paramout.maskChannelCount;
@@ -332,6 +343,7 @@ for m = 1:maskCount
     metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
         metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N, backgroundLabel, maskName, scoreLabel, backgroundOpt);
+        metricByChannel{i} = computeMetrics.interpolateMetrics(metricByChannel{i},idxCol,frames,sampling(i));
         channelName = channelsName{i};
         metricSpecs = { ...
             'Mean', 'Mean', false; ...
@@ -372,7 +384,7 @@ if logical(paramout.computeMaskCombinations)
     maskSpecs = validQuantificationMasks(roiobj, paramout);
     if numel(maskSpecs) > 1
         [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
-            varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt);
+            varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt, frames, sampling);
     end
 end
 
@@ -390,6 +402,8 @@ if isempty(varNames)
 end
 
 tbl = table(columns{:}, 'VariableNames', varNames);
+[~,requestedRows] = ismember(requestedFrames,frames);
+tbl = tbl(requestedRows,:);
 temp = dataseries(tbl, varNames, ...
     'groupid', paramout.outputName, 'parentid', roiobj.id, 'plot', defplot, 'groups', plotgroup);
 
@@ -410,7 +424,10 @@ if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
 dataout(cc).userData.background = backgroundOpt;
-dataout(cc).userData.source_frames = uint32(frames(:));
+dataout(cc).userData.source_frames = uint32(requestedFrames(:));
+
+dataout(cc).userData.acquisition_sampling = sampling;
+dataout(cc).userData.interpolation = 'Linear between acquired measurements of a continuously present mask label; no extrapolation. Missing acquisition endpoints are NaN. Ratios use interpolated component metrics.';
 dataout(cc).userData.schema_version = uint16(2);
 dataout(cc).userData.mask_bindings = quantificationMaskBindings(roiobj, paramout);
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per foreground mask index listed in the corresponding MaskIdx_* cell.';
@@ -468,7 +485,7 @@ end
 end
 
 function [varNames, columns, plotgroup, defplot] = appendCompositeMaskMetrics( ...
-    varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt)
+    varNames, columns, plotgroup, defplot, im, maskSpecs, channelsExtract, channelsName, N, backgroundOpt, frames, sampling)
 
 nFrames = size(im, 4);
 for a = 1:numel(maskSpecs)
@@ -511,6 +528,7 @@ for a = 1:numel(maskSpecs)
                     im, baseSpec.channel, otherSpec.channel, relation, channelsExtract{i}, N, ...
                     baseSpec.backgroundLabel, baseSpec.name, baseSpec.scoreLabel, ...
                     otherSpec.backgroundLabel, otherSpec.name, otherSpec.scoreLabel, backgroundOpt);
+                metricByChannel{i} = computeMetrics.interpolateMetrics(metricByChannel{i},idxCol,frames,sampling(i));
                 channelName = channelsName{i};
                 metricSpecs = { ...
                     'Mean', 'Mean', false; ...
