@@ -111,6 +111,33 @@ verifyTrue(tc,any(contains(string(scope.Value),'input / b (component 2)')));
 verifyFalse(tc,any(startsWith(string(app.UITableParam.Data.Param),'feature')));
 end
 
+function testLegacyTrainingTemplateReadsMissingSettingsFromClassifier(tc)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+classiObj=c;save(fullfile(c.path,[c.strid '_classification.mat']),'classiObj');
+% Old templates contain inputs and an execution placeholder, without any
+% architecture/optimizer/format settings. Preserve an explicit run override.
+p=lstm_timeseries.executionSpec(c).defaults;
+p.pkg='lstm_timeseries';p.modulePath=c.path;p.moduleId=c.strid;p.operation='train';p.dropout=0.45;
+pipe=pipelineConstruct(fileparts(c.path),'legacy_numeric_training',1);
+pipe.nodes=pipelineNormalizeNodes(struct('id',c.strid,'type','classifier','pkg','lstm_timeseries', ...
+    'func','lstm_timeseries.classify','params',p,'enabled',true),'persist');
+app=pipeline2(pipe,'InputMode','classifier_rois','RoiObjects',c.roi, ...
+    'Intent','train','ExecutionTarget','local','LockInputMode',true);
+finish=onCleanup(@()delete(app)); %#ok<NASGU>
+app.UIFigure.Visible='off';
+button=findall(app.UIFigure,'Type','uibutton','Text','Training parameters...');assertNumElements(tc,button,1);
+button.ButtonPushedFcn(button,[]);drawnow;
+dialog=findall(groot,'Type','figure','Name',['Training parameters - ' c.strid]);assertNumElements(tc,dialog,1);
+finishDialog=onCleanup(@()delete(dialog)); %#ok<NASGU>
+dialog.Visible='off';
+verifyEqual(tc,parameterControl(dialog,'hiddenUnits').Value,12);
+verifyEqual(tc,parameterControl(dialog,'maxEpochs').Value,77);
+verifyEqual(tc,parameterControl(dialog,'dropout').Value,0.45);
+verifyEqual(tc,parameterControl(dialog,'outputMode').Value,'window');
+verifyEqual(tc,parameterControl(dialog,'windowLength').Value,4);
+verifyEmpty(tc,parameterControl(dialog,'feature1'));
+end
+
 function testPrelaunchSummaryUsesEffectiveRunBindings(tc)
 [c,cleanup]=fixture(); %#ok<ASGLU>
 p=lstm_timeseries.executionSpec(c,'train').defaults;p.operation='train';

@@ -8574,7 +8574,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 params = struct();
             end
             if strcmpi(pkg,'lstm_timeseries') && isempty(classiObj)
-                classiObj=struct('trainingParam',params);
+                intent=getField(app,params,'operation',getField(app,params,'intent',''));
+                if any(strcmpi(string(intent),{'train','training','fit'}))&& ...
+                        isfield(params,'modulePath')&&~isempty(params.modulePath)
+                    % Legacy training templates contain the bindings but no
+                    % optimizer snapshot. Read their linked classifier before
+                    % filling missing fields; module defaults would otherwise
+                    % silently replace the saved training configuration.
+                    classiObj=linkedClassifierObject(app,struct('params',params));
+                else
+                    classiObj=struct('trainingParam',params);
+                end
             end
             intent=getField(app,params,'operation',getField(app,params,'intent',''));
             [spec, hasExecutionSpec] = classifierExecutionSpec(app, pkg, classiObj, intent);
@@ -17243,6 +17253,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 if ~isfield(nodes(i), 'uiAdvanced') || isempty(nodes(i).uiAdvanced)
                     nodes(i).uiAdvanced = false;
+                end
+                if isNumericTrainingNode(app,nodes(i))
+                    nodes(i).params=applyClassifierExecutionDefaults(app, ...
+                        nodes(i).params,nodes(i).pkg,[],'missing');
                 end
                 try
                     nodes(i).contract = pipelineNodeContract(nodes(i));
