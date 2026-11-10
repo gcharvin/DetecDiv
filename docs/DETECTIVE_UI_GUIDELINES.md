@@ -45,7 +45,7 @@ The requirements below supersede the earlier French labels, renamed data concept
 | Menu | Available commands |
 | --- | --- |
 | File | Open Project..., Recent Projects, Open Classifier..., Recent Classifiers, Save Project, Save Annotations, Export Movie..., New Pipeline..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
-| Edit | Copy Image, Define ROIs..., Edit Masks..., Edit Tracks... |
+| Edit | Copy Image, Display Presets (Copy/Paste/Save/Load), Define ROIs..., Edit Masks..., Edit Tracks... |
 | Pipeline | New Pipeline..., Open Pipeline..., Edit Pipeline..., Project Runs, Refresh Project Runs |
 | View | Projects, Image, Display, Pipeline, Annotations, Data, Arrange Analysis Workspace, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame, Back 10 Frames, Forward 10 Frames |

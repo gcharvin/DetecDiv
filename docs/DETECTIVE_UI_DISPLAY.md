@@ -10,6 +10,8 @@ across channel panels and are retained per image tab. See
 
 - Layers uses a custom local HTML/JavaScript table embedded through uihtml, rather than uitable or Swing. Each row shows visibility, a color picker, type, display levels and weight. The selected row exposes numeric Low/High/Weight editors. Checking a layer also selects it; unchecking leaves the active selection unchanged. Selecting a name changes settings without changing visibility. Checking a mask opens/updates Annotations below Display, with the matching masks and tracks, while keeping Display focused. Names are inserted as text, and asynchronously received edits are scoped to the current table revision.
 - Solo shows only the active layer.
+- Presets... opens Copy, Paste, Save and Load Display Preset; the same commands are under Edit > Display Presets. Presets transfer visibility, source-unit contrast, exact color/colormap, weight, mask fill/contour mode and width by exact layer name. The active layer, overlay/separate layout and ROI-outline visibility are included. Layers absent from the preset retain their settings; missing or incompatible types are skipped and reported in the status line. No layer is retyped and no annotation result is created by applying a preset.
+- Save/Load uses a versioned `.json` display-only preset, independent of project/classifier paths. Loading validates every entry before applying anything; malformed files and presets without compatible layers leave the current view unchanged. Copy/Paste is local to this viewer, with no base-workspace variable or system-clipboard overwrite. Presets remain session display settings and do not write ROI pixels, display metadata, model sidecars or scientific drafts. The legacy Score MAT preset's dataseries, movie and panel-layout sections are outside this contract.
 - Annotations reads an active mask's persisted object model through `score_getCellModel`, without requiring an edit draft or migrating legacy data. Existing drafts remain authoritative for unsaved edits.
 - Overlay channels follows Score's display convention: checked combines visible intensity/RGB layers; unchecked displays one horizontal panel per visible intensity/RGB channel, with the same visible masks/contours on every panel. Masks do not get extra panels. Mask-only selection uses one black base tile; no visible layers produces a black tile. A logical RGB channel remains one tile even when its stored planes are non-contiguous.
 - Separate panels share time, pan and zoom. Clicking an image selects its channel and active drawing/copy target without changing visibility or rebuilding the images during a pan gesture. Per-channel contrast/color stays unchanged when switching modes. As in Score's non-overlay renderer, intensity weights apply only to the combined view; their controls are disabled in separate mode, while mask fill opacity still applies. Copy Image copies the active panel.
@@ -63,6 +65,7 @@ removes its image tabs. Tabs are session-local and do not reopen raw files on st
 detecdivui.layerTest();
 detecdivui.imageTabsTest();
 detecdivui.displayTest();
+detecdivui.displayPresetTest();
 detecdivui.contoursTest();
 detecdivui.separateChannelsTest();
 detecdivui.displayWebTest();
@@ -73,6 +76,8 @@ detecdivui.dockingTest();
 ```
 
 Tests cover known rendered pixels, additive weights, mask alpha/background, label IDs beyond uint16, fractional/negative physical intensities, per-view contrast, current-frame cache invalidation, source immutability, native picker callbacks, signed/constant/RGB/nonfinite histograms and stale events. displayWebTest drives actual embedded DOM click/change/keyboard events through uihtml to MATLAB and checks redocking; it pauses the test session's menu polling timer while issuing direct CEF commands. scoreHistogramTest checks legacy Score curves/counts/level markers against the shared helper. Display tests accept an optional PNG path for visual inspection. The OS color chooser still needs hands-on verification in an unlocked desktop session; the native MATLAB picker remains available alongside the row picker.
+
+displayPresetTest covers reordered and extra channels, skipped incompatible types, rejected invalid/no-match files, exact colors, contour styles, JSON round trips, frame/tab retention, native menu/button callbacks including a floating Display, frozen export parity and preservation of unsaved mask history and source metadata. It uses synthetic ROI data and never writes scientific stores.
 
 liveDisplayTest checks frame/contrast changes before release, latest-value coalescing, exact release values, retained histogram pointer gestures, pointer cancellation, stale-context rejection, unchanged source pixels/metadata and preview-timer cleanup. Its synthetic pointer test stubs native pointer capture only; desktop drag verification checks the native capture path separately.
 

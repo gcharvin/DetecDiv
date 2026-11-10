@@ -73,6 +73,21 @@ classdef LayerModel < handle
         function invalidate(obj)
             obj.Frame = 0; obj.Planes = {}; obj.Histograms = {};
         end
+        function report = applyPreset(obj,preset)
+            styles = repmat(struct('mode','Fill','width',1),1,numel(obj.Layers));
+            for k = 1:numel(obj.Layers)
+                if strcmp(obj.Layers(k).kind,'Labels'), styles(k) = obj.labelStyle(k); end
+            end
+            [layers,styles,report] = detecdivui.DisplayPreset.plan(preset,obj.Layers,styles);
+            % Validation and matching finish before changing this view.
+            obj.Layers = layers;
+            for k = 1:numel(layers)
+                if strcmp(layers(k).kind,'Labels')
+                    obj.setLabelStyle(k,styles(k).mode,styles(k).width);
+                end
+            end
+            obj.store();
+        end
         function copy = copyFor(obj,session)
             % Independent export/display state, with no live draft callback.
             copy=detecdivui.LayerModel(); copy.configure(session,1);

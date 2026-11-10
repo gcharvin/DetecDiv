@@ -145,6 +145,11 @@ classdef Viewer < handle
         DisplayTools
         HistogramButton
         HistogramRequested = []
+        PresetClipboard = []
+        PresetCommands = {}
+        PresetItems = gobjects(0)
+        PresetButton
+        PresetMenu
         ImageTabs
         ImageTabStrip
         NextImageTabId = 0
@@ -318,8 +323,8 @@ classdef Viewer < handle
                 'ValueChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','histogramVisibility')});
             obj.LayerTable = detecdivui.LayerTable(tools);
             obj.LayerTable.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
-            active = uigridlayout(tools,[1 2]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
-            active.ColumnWidth = {'1x','1x'};
+            active = uigridlayout(tools,[1 3]); active.Padding = [0 0 0 0]; active.ColumnSpacing = 4;
+            active.ColumnWidth = {'1x','1x',82};
             % Retain the legacy channel state/callback bridge outside the
             % visible layout. The Layers table is the active-layer selector.
             obj.Channels = uidropdown(obj.Host.widgetFigure('Display'),'Items',{'—'},'ItemsData',1,'Visible','off', ...
@@ -329,6 +334,17 @@ classdef Viewer < handle
                 'ButtonPushedFcn',@(~,~)obj.soloLayer());
             uibutton(active,'Text','Fit','Tooltip','Fit the complete image to the viewport', ...
                 'Tag','fit-image','ButtonPushedFcn',@(~,~)obj.resetView());
+            obj.PresetButton = uibutton(active,'Text','Presets...','Tag','display-presets','Enable','off', ...
+                'Tooltip','Copy, paste, save or load display settings by layer name', ...
+                'ButtonPushedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'showDisplayPresets')});
+            obj.PresetMenu = uicontextmenu(obj.Host.widgetFigure('Display'));
+            actions = {'copy','paste','save','load'};
+            labels = {'Copy Display Preset','Paste Display Preset','Save Display Preset...','Load Display Preset...'};
+            for k = 1:numel(actions)
+                obj.PresetItems(k) = uimenu(obj.PresetMenu,'Text',labels{k},'Enable','off', ...
+                    'MenuSelectedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'displayPreset',actions{k})});
+            end
+            obj.PresetButton.ContextMenu = obj.PresetMenu;
             obj.LayerKind = uidropdown(tools,'Items',{'Intensity','Labels'},'Enable','off', ...
                 'Tag','layer-kind','Tooltip','Labels requires an integer label map', ...
                 'ValueChangedFcn',@(~,~)obj.editLayer('kind'));
@@ -777,6 +793,66 @@ classdef Viewer < handle
             index = find(strcmp({obj.DisplayModel.Layers.name},name),1); selected = ~isempty(index);
             if ~selected, return; end
             obj.Channels.Value = index; obj.DisplayModel.setVisible(index,true); obj.render();
+        end
+        function showDisplayPresets(obj)
+            obj.syncPresetControls();
+            position = getpixelposition(obj.PresetButton,true);
+            obj.PresetMenu.Position = position(1:2);
+            obj.PresetMenu.Visible = 'on';
+        end
+        function result = displayPreset(obj,action,path)
+            result = [];
+            if ~obj.ImageRequested || isempty(obj.DisplayModel) || isempty(obj.DisplayModel.Layers), return; end
+            obj.cancelPreview();
+            try
+                model = obj.DisplayModel; position = obj.Session.Position; zone = obj.Session.Zone;
+                switch action
+                    case {'copy','save'}
+                        preset = detecdivui.DisplayPreset.capture(model,obj.Channels.Value, ...
+                            obj.OverlayChannels.Value,obj.Overlays.Value);
+                        if strcmp(action,'copy')
+                            obj.PresetClipboard = preset; result = preset;
+                            obj.syncPresetControls(); obj.Status.Text = 'Display preset copied'; return;
+                        end
+                        if nargin<3
+                            [file,folder] = uiputfile('*.json','Save Display Preset','display-preset.json');
+                            if isequal(file,0), return; end
+                            path = fullfile(folder,file);
+                        end
+                        scope = obj.DisplayProgress.begin('Saving display preset...'); %#ok<NASGU>
+                        detecdivui.DisplayPreset.write(path,preset); result = path;
+                        obj.Status.Text = 'Display preset saved';
+                    case {'paste','load'}
+                        if strcmp(action,'paste')
+                            preset = obj.PresetClipboard;
+                            assert(~isempty(preset),'detecdivui:DisplayPreset','Copy a display preset first.');
+                        else
+                            if nargin<3
+                                [file,folder] = uigetfile('*.json','Load Display Preset');
+                                if isequal(file,0), return; end
+                                path = fullfile(folder,file);
+                            end
+                            scope = obj.DisplayProgress.begin('Loading display preset...'); %#ok<NASGU>
+                            preset = detecdivui.DisplayPreset.read(path);
+                        end
+                        assert(isequal(model,obj.DisplayModel)&&position==obj.Session.Position&&zone==obj.Session.Zone, ...
+                            'detecdivui:DisplayPresetContext','The image selection changed. Load the preset again.');
+                        scope = obj.DisplayProgress.begin('Applying display preset...'); %#ok<NASGU>
+                        result = model.applyPreset(preset);
+                        selected = find(strcmp({model.Layers.name},preset.active),1);
+                        if ~isempty(selected)&&ismember(preset.active,result.matched), obj.Channels.Value = selected; end
+                        obj.OverlayChannels.Value = preset.overlay; obj.Overlays.Value = preset.outlines;
+                        obj.OverlayMenu.Checked = obj.onOff(preset.outlines);
+                        obj.render();
+                        skipped = numel(result.missing)+numel(result.incompatible);
+                        obj.Status.Text = sprintf('Display preset applied: %d layers; %d skipped',numel(result.matched),skipped);
+                        obj.Status.Tooltip = strjoin([result.missing result.incompatible],', ');
+                    otherwise, error('detecdivui:DisplayPreset','Unknown display preset action.');
+                end
+            catch err
+                obj.Status.Text = err.message; obj.Status.Tooltip = err.message;
+                result = [];
+            end
         end
         function showReviewSelection(obj)
             delete(findall(obj.Axes,'Tag','review-selection'));
@@ -1583,6 +1659,14 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.EditTracksMenu = obj.Host.menu(edit,'Edit Tracks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openTracksTool());
+            presets = obj.Host.menu(edit,'Display Presets');
+            actions = {'copy','paste','save','load'};
+            labels = {'Copy Display Preset','Paste Display Preset','Save Display Preset...','Load Display Preset...'};
+            for k = 1:numel(actions)
+                action = actions{k};
+                obj.PresetCommands{k} = obj.Host.menu(presets,labels{k},'Enable','off', ...
+                    'MenuSelectedFcn',@(~,~)obj.displayPreset(action));
+            end
             obj.PlanWorkflowMenu = obj.Host.menu(edit,'Plan Workflow...','Enable','off','Separator','on', ...
                 'MenuSelectedFcn',@(~,~)obj.planWorkflow());
             process = obj.Host.menu([],'Process');
@@ -2556,6 +2640,7 @@ classdef Viewer < handle
             if nargin < 2, previewContrast = false; end
             layers = obj.DisplayModel.Layers;
             if isempty(layers), obj.clearLayerControls(); return; end
+            obj.syncPresetControls();
             index = obj.Channels.Value;
             obj.LayerTable.update(layers,index,~obj.isSeparated());
             if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'on'; end
@@ -2626,6 +2711,7 @@ classdef Viewer < handle
             if ~isequal(obj.DisplayTools.RowHeight,rows), obj.DisplayTools.RowHeight = rows; end
         end
         function clearLayerControls(obj)
+            obj.syncPresetControls(false);
             if ~isempty(obj.OverlayChannels), obj.OverlayChannels.Enable = 'off'; end
             obj.LayerTable.update(struct([]),0); obj.Histogram.clear();
             if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
@@ -2640,6 +2726,17 @@ classdef Viewer < handle
                 item = control{1}; item.Enable = 'off';
             end
             obj.layoutDisplayTools();
+        end
+        function syncPresetControls(obj,enabled)
+            if nargin<2, enabled = obj.ImageRequested && ~isempty(obj.DisplayModel) && ~isempty(obj.DisplayModel.Layers); end
+            if isgraphics(obj.PresetButton), obj.PresetButton.Enable = obj.onOff(enabled); end
+            for k = 1:4
+                available = enabled && (k~=2 || ~isempty(obj.PresetClipboard));
+                if numel(obj.PresetCommands)>=k, obj.PresetCommands{k}.Enable = obj.onOff(available); end
+                if numel(obj.PresetItems)>=k && isgraphics(obj.PresetItems(k))
+                    obj.PresetItems(k).Enable = obj.onOff(available);
+                end
+            end
         end
         function editLayerRow(obj,action,index,value)
             if ~obj.ImageRequested || isempty(obj.DisplayModel), return; end
