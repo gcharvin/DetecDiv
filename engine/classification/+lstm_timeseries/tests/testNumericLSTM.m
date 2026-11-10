@@ -126,7 +126,7 @@ spec=lstm_timeseries.executionSpec(c,'train');
 verifyTrue(testCase,ismember('networkArchitecture',spec.staticKeys));
 verifyFalse(testCase,ismember('networkArchitecture',spec.inputKeys));
 verifyEqual(testCase,spec.defaults.networkArchitecture,'tcn');
-verifyEqual(testCase,spec.choices.networkArchitecture,{'lstm','tcn'});
+verifyEqual(testCase,spec.choices.networkArchitecture,{'lstm','bilstm','tcn'});
 end
 function testTrajectoryLossUsesOnlyEndpointsAndExcludesPadding(testCase)
 layer=lstm_timeseries.WindowEndpointLoss(2,{'a','b'},[1 2]);
@@ -166,6 +166,36 @@ c.classifyData(c.roi(4),'Ctx',struct('io',struct('saveMode','defer')));c.stats('
 c.trainingParam.sequenceScope='window';
 verifyError(testCase,@()lstm_timeseries.classify(c.roi(4),c,struct()),'lstm_timeseries:ModelMode');
 verifyError(testCase,@()lstm_timeseries.train(c,struct()),'lstm_timeseries:StaleDataset');
+end
+function testBidirectionalTrajectoryUsesFutureAndNativeStatistics(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;c.trainingParam.sequenceScope='trajectory';
+c.trainingParam.networkArchitecture='bilstm';c.trainingParam.miniBatchSize=1;c.trainingParam.maxEpochs=2;
+c.formatDataForTraining();out=lstm_timeseries.train(c,struct());s=load(out.artifacts.model);
+verifyEqual(testCase,s.model.networkArchitecture,'bilstm');verifyEqual(testCase,s.model.trainingClassCounts,[2 2]);
+verifyClass(testCase,s.classifier.Layers(2),'nnet.cnn.layer.BiLSTMLayer');
+whole=lstm_timeseries.classify(c.roi(1),c,struct());a=whole.patch.roi.dataseries.upsert{1}.dataseries.data;
+part=lstm_timeseries.classify(c.roi(1),c,struct('sel',struct('frames',1:4)));b=part.patch.roi.dataseries.upsert{1}.dataseries.data;
+verifyEqual(testCase,a.prob_dead(1:4),b.prob_dead(1:4),'AbsTol',1e-6);verifyEqual(testCase,b.id(5:8),zeros(4,1));
+c.roi(1).data(1).data.a(5:8)=-10;
+changed=lstm_timeseries.classify(c.roi(1),c,struct());d=changed.patch.roi.dataseries.upsert{1}.dataseries.data;
+verifyGreaterThan(testCase,abs(d.prob_dead(1)-a.prob_dead(1)),1e-6);
+c.classifyData(c.roi(4),'Ctx',struct('io',struct('saveMode','defer')));
+[score,fig]=lstm_timeseries.statistics(c,'Rois',4,'Force','Silent','Confusion','Classes');
+closeFigure=onCleanup(@()delete(fig)); %#ok<NASGU>
+verifyEqual(testCase,score.N,2);verifyEqual(testCase,fig.Name,'Trajectory BiLSTM validation statistics');
+c.trainingParam.networkArchitecture='lstm';
+verifyError(testCase,@()lstm_timeseries.classify(c.roi(4),c,struct()),'lstm_timeseries:ModelMode');
+end
+function testBidirectionalRequiresTrajectoryAndKeepsStaticContract(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.networkArchitecture='bilstm';c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:SequenceScope');
+c.trainingParam.sequenceScope='trajectory';spec=lstm_timeseries.executionSpec(c,'train');
+verifyTrue(testCase,ismember('networkArchitecture',spec.staticKeys));verifyFalse(testCase,ismember('networkArchitecture',spec.inputKeys));
+verifyEqual(testCase,spec.defaults.networkArchitecture,'bilstm');
+c.trainingParam.contextWindowLength=8;
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:SequenceScope');
 end
 function testTrajectoryNeverJoinsGapsAndRequiresLstmWindowMode(testCase)
 verifyEqual(testCase,lstm_timeseries.trajectoryRuns({1:4,5:8,13:16}),{1:8,13:16});

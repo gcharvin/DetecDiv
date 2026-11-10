@@ -1,12 +1,12 @@
 # Numeric dataseries LSTM
 
-`sequenceScope=trajectory` is an opt-in causal sequence-to-sequence LSTM. It
+`sequenceScope=trajectory` is an opt-in sequence-to-sequence recurrent model. It
 processes each entire contiguous bounded ROI run without resetting at window
 boundaries, while annotations, loss targets and published predictions remain
 one per `windowLength` frames. Complete reviewed windows are joined only within
 one ROI/split and never over a review gap. Inputs outside configured bounds are
-excluded. At inference, a partial output request still processes preceding
-bounded history; future frames cannot influence earlier outputs.
+excluded. At inference, a partial output request still processes the whole
+bounded run. The default LSTM is causal; BiLSTM also uses following inputs.
 
 The native `trainNetwork` optimizer/checkpoint machinery is retained. A small
 custom output loss (`WindowEndpointLoss`) computes weighted cross entropy only
@@ -15,7 +15,7 @@ through their recurrent states. Duplicated per-frame labels satisfy MATLAB's
 sequence target shape; they do not multiply supervised targets or class counts.
 Padding endpoints have zero targets and are excluded from the loss denominator.
 The native progress accuracy is frame-based; the authoritative output-window
-metrics remain Classifier GUI statistics. This mode requires LSTM, window
+metrics remain Classifier GUI statistics. This mode requires LSTM or BiLSTM, window
 output and `contextWindowLength=0`. Default window scope and old models retain
 their existing behavior; changing scope requires reformatting and retraining.
 
@@ -227,6 +227,17 @@ CPU training/reloading/inference in all three modes, data-only ROI dispatch,
 GT preservation, ROI split/normalization isolation, symbolic upstream binding,
 dynamic Classifier GUI bindings and trace-editor assignment.
 # Optional context around window targets
+
+`networkArchitecture=bilstm` requires `sequenceScope=trajectory`, window output
+and `contextWindowLength=0`. It replaces the causal recurrent layer with a
+bidirectional layer using `hiddenUnits` per direction. Each bounded contiguous
+ROI run is processed once; preceding and following inputs inform each window
+endpoint. This is retrospective inference. Even a subset request retains the
+whole bounded run but publishes only the requested complete windows. It never
+crosses ROI boundaries or gaps. The endpoint loss, original window labels,
+train-only normalization, split and native Classifier GUI statistics are shared
+with the causal trajectory model. Architecture remains a static parameter;
+ordered input selectors remain bindings. Existing models/defaults stay causal.
 
 `windowLength` remains the annotation and prediction unit. In window mode,
 `contextWindowLength=21` with `windowLength=7` observes seven preceding and

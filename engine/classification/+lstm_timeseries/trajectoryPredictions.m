@@ -1,7 +1,7 @@
 function [prob,ids]=trajectoryPredictions(classif,roiObj,X,p,model,classifier,selected,environment)
 %TRAJECTORYPREDICTIONS One recurrent pass per contiguous bounded ROI run.
-% Subset requests retain the preceding bounded history; only requested
-% complete units are published. A unidirectional LSTM cannot use future input.
+% Subset requests retain the whole bounded run, including following inputs
+% for BiLSTM. Only requested complete units are published. LSTM stays causal.
 n=size(X,2);C=numel(model.classes);prob=nan(n,C);ids=zeros(n,1);
 base=trainingBounds.frames(classif,roiObj,n,[]);
 units=lstm_timeseries.sequences(classif,roiObj,n,base,p);runs=lstm_timeseries.trajectoryRuns(units);
