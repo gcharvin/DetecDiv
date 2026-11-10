@@ -53,7 +53,7 @@ classdef MovieExportJob < handle
                 project.fov(source.position)=frozen;
                 session=detecdivui.Session(project); session.selectPosition(source.position); session.selectZone(source.zone);
                 [names,count]=session.dimensions();
-                model=source.model.copyFor(session);
+                model=source.model.copyFor(session,settings.includeDrafts);
                 assert(any([model.Layers.visible]),'detecdivui:ExportLayers','Select at least one visible layer in Display.');
                 selected=find(strcmp(names,source.channel),1);
                 if isempty(selected), selected=find([model.Layers.visible],1); end

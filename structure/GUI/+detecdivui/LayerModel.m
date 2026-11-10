@@ -2,9 +2,11 @@ classdef LayerModel < handle
     % Per-session display state. Source images and ROI display metadata stay intact.
     properties (SetAccess = private)
         Layers = struct([])
+        LineageError = ''
     end
     properties
         ReadOverride = []
+        AnnotationOverride = []
     end
     properties (Access = private)
         Session
@@ -15,6 +17,8 @@ classdef LayerModel < handle
         Histograms = {}
         Styles = []
         Scratch
+        LinkVisibility = []
+        FrozenLineages = []
     end
     methods
         function obj = LayerModel()
@@ -74,6 +78,7 @@ classdef LayerModel < handle
             obj.Frame = 0; obj.Planes = {}; obj.Histograms = {};
         end
         function report = applyPreset(obj,preset)
+            preset = detecdivui.DisplayPreset.validate(preset);
             styles = repmat(struct('mode','Fill','width',1),1,numel(obj.Layers));
             for k = 1:numel(obj.Layers)
                 if strcmp(obj.Layers(k).kind,'Labels'), styles(k) = obj.labelStyle(k); end
@@ -84,12 +89,15 @@ classdef LayerModel < handle
             for k = 1:numel(layers)
                 if strcmp(layers(k).kind,'Labels')
                     obj.setLabelStyle(k,styles(k).mode,styles(k).width);
+                    at = find(strcmp({preset.layers.name},layers(k).name),1);
+                    if ~isempty(at)&&ismember(layers(k).name,report.matched), obj.setParentLinks(k,preset.parentLinks(at)); end
                 end
             end
             obj.store();
         end
-        function copy = copyFor(obj,session)
+        function copy = copyFor(obj,session,includeDrafts)
             % Independent export/display state, with no live draft callback.
+            if nargin<3, includeDrafts=true; end
             copy=detecdivui.LayerModel(); copy.configure(session,1);
             key=sprintf('%d:%d',session.Position,session.Zone);
             if isKey(obj.Views,key)
@@ -109,6 +117,23 @@ classdef LayerModel < handle
                         copy.Styles(keys{k})=obj.Styles(keys{k});
                     end
                 end
+            end
+            copy.LinkVisibility=containers.Map('KeyType','char','ValueType','any');
+            copy.FrozenLineages=containers.Map('KeyType','char','ValueType','any');
+            if session.Zone>0
+                original=obj.Session.Project.fov(session.Position).roi(session.Zone);
+                for k=1:numel(copy.Layers)
+                    if ~strcmp(copy.Layers(k).kind,'Labels'), continue; end
+                    name=copy.Layers(k).name; linkKey=sprintf('%s:%s',key,name);
+                    enabled=true;
+                    if isa(obj.LinkVisibility,'containers.Map')&&isKey(obj.LinkVisibility,linkKey), enabled=obj.LinkVisibility(linkKey); end
+                    copy.LinkVisibility(linkKey)=enabled;
+                    if ~copy.Layers(k).visible||~enabled, continue; end
+                    copy.AnnotationOverride=[];
+                    if includeDrafts, copy.AnnotationOverride=obj.AnnotationOverride; end
+                    copy.FrozenLineages(name)=copy.lineageState(k,original);
+                end
+                copy.AnnotationOverride=[];
             end
             copy.store();
         end
@@ -223,6 +248,48 @@ classdef LayerModel < handle
             key = sprintf('%s:%d:%s',obj.Key,index,obj.Layers(index).name);
             obj.Styles(key) = struct('mode',char(mode),'width',double(width));
         end
+        function visible = parentLinks(obj,index)
+            visible = strcmp(obj.Layers(index).kind,'Labels');
+            key=sprintf('%s:%s',obj.Key,obj.Layers(index).name);
+            if isa(obj.LinkVisibility,'containers.Map')&&isKey(obj.LinkVisibility,key)
+                visible=obj.LinkVisibility(key);
+            elseif isa(obj.Session,'detecdivui.MovieSnapshotSession')
+                visible=obj.Session.parentLinks(index);
+            end
+        end
+        function setParentLinks(obj,index,visible)
+            validateattributes(visible,{'logical'},{'scalar'});
+            assert(strcmp(obj.Layers(index).kind,'Labels'),'detecdivui:ParentLinks','Select a mask layer.');
+            if ~isa(obj.LinkVisibility,'containers.Map'), obj.LinkVisibility=containers.Map('KeyType','char','ValueType','any'); end
+            obj.LinkVisibility(sprintf('%s:%s',obj.Key,obj.Layers(index).name))=visible;
+        end
+        function vectors = lineageVectors(obj,index,frame)
+            vectors=struct('x',{},'y',{},'FaceColor',{},'FaceAlpha',{},'EdgeColor',{},'LineWidth',{});
+            obj.LineageError='';
+            if obj.Session.Zone<1||~obj.parentLinks(index)||~strcmp(obj.Layers(index).kind,'Labels'), return; end
+            if isa(obj.Session,'detecdivui.MovieSnapshotSession')
+                vectors=obj.Session.lineageVectors(index,frame); return;
+            end
+            name=obj.Layers(index).name;
+            try
+                if isa(obj.FrozenLineages,'containers.Map')
+                    if ~isKey(obj.FrozenLineages,name), return; end
+                    state=obj.FrozenLineages(name);
+                else, state=obj.lineageState(index);
+                end
+                if isempty(state), return; end
+                segments=cellModelLineageSegments(state.model,state.family,frame,state.masks,true,state.plane);
+                for segment=reshape(segments,1,[])
+                    vectors(end+1)=struct('x',[segment.parentXY(1) segment.childXY(1)], ...
+                        'y',[segment.parentXY(2) segment.childXY(2)],'FaceColor',[0 0 0],'FaceAlpha',0, ...
+                        'EdgeColor',state.color,'LineWidth',state.width); %#ok<AGROW>
+                end
+            catch err
+                % Optional lineage metadata must not clear a valid image.
+                % The Annotations inspector reports model-read errors.
+                vectors=struct([]); obj.LineageError=err.message;
+            end
+        end
         function views = separate(obj,frame,selected)
             % Score's non-overlay layout: intensity tiles, shared mask overlays.
             base = obj.read(selected,frame);
@@ -230,6 +297,7 @@ classdef LayerModel < handle
             masks = visible(labels(visible)); intensities = visible(~labels(visible));
             overlay = zeros(size(base,1),size(base,2),3); alpha = zeros(size(base,1),size(base,2));
             vectors = struct([]);
+            links = struct([]);
             for index = masks
                 plane = obj.read(index,frame);
                 assert(isequal(size(plane,1),size(base,1)) && isequal(size(plane,2),size(base,2)), ...
@@ -238,13 +306,16 @@ classdef LayerModel < handle
                 combined = weight + alpha.*(1-weight);
                 overlay = (color.*weight + overlay.*alpha.*(1-weight))./max(combined,eps);
                 alpha = combined; vectors = [vectors edges]; %#ok<AGROW>
+                links = [links obj.lineageVectors(index,frame)]; %#ok<AGROW>
             end
+            vectors=[vectors links];
             if isempty(intensities), intensities = 0; end
             views = cell(1,numel(intensities));
             for k = 1:numel(intensities)
                 index = intensities(k);
                 view = struct('pixels',[],'limits',[0 1],'native',false, ...
-                    'names',{{obj.Layers(masks).name}},'vectors',vectors,'layer',index,'title','Masks');
+                    'names',{{obj.Layers(masks).name}},'vectors',vectors,'layer',index,'title','Masks', ...
+                    'parentLinkCount',numel(links));
                 if index == 0
                     rgb = zeros(size(base,1),size(base,2),3,'uint8');
                     if ~isempty(masks), view.layer = masks(1); end
@@ -275,7 +346,8 @@ classdef LayerModel < handle
             assert(~isempty(obj.Layers),'detecdivui:NoChannels','No image channels available for this FOV.');
             base = obj.read(selected,frame);
             visible = find([obj.Layers.visible]);
-            view = struct('pixels',[],'limits',[0 1],'native',false,'names',{{obj.Layers(visible).name}},'vectors',struct([]));
+            view = struct('pixels',[],'limits',[0 1],'native',false,'names',{{obj.Layers(visible).name}}, ...
+                'vectors',struct([]),'parentLinkCount',0);
             if isscalar(visible)
                 k = visible(1); plane = obj.read(k,frame); layer = obj.Layers(k);
                 rgbColor = sscanf(strrep(layer.color,',',' '),'%f');
@@ -303,10 +375,35 @@ classdef LayerModel < handle
                     composite = imlincomb(1,composite,layer.opacity,rgb);
                 end
             end
+            for k=visible(labels(visible))
+                links=obj.lineageVectors(k,frame); view.vectors=[view.vectors links];
+                view.parentLinkCount=view.parentLinkCount+numel(links);
+            end
             view.pixels = composite;
         end
     end
     methods (Access = private)
+        function state = lineageState(obj,index,modelSource)
+            state=[];
+            source=obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone);
+            if nargin<3, modelSource=source; end
+            provider=obj.Layers(index).name;
+            [model,~]=score_getCellModel(modelSource);
+            masks=source.image; plane=source.findChannelID(provider);
+            if ~isempty(obj.AnnotationOverride)
+                [model,masks,plane]=detecdivui.Callback.call(obj.AnnotationOverride,modelSource,provider,model,masks,plane);
+            end
+            if ~isstruct(model)||~isfield(model,'schema_version')||~isscalar(plane)||isempty(masks), return; end
+            families=find(strcmp(model.families.mask_provider,provider));
+            % Shared legacy providers remain readable, without guessing a
+            % tracking result or mixing relationships from several families.
+            if ~isscalar(families), return; end
+            family=model.families.family_id(families);
+            if ~any(model.relations.family_id==family), return; end
+            cfg=score_getObjectDisplayConfig(modelSource,provider);
+            state=struct('model',model,'masks',masks,'plane',plane,'family',family, ...
+                'color',cfg.genealogyLinkColor,'width',cfg.linkWidthPx);
+        end
         function store(obj)
             if ~isempty(obj.Key), obj.Views(obj.Key) = obj.Layers; end
         end

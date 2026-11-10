@@ -25,6 +25,7 @@ classdef ObjectsWidget < handle
         NewTracks
         Separate
         Shared = false
+        ParentLinks
     end
     methods
         function obj = ObjectsWidget(parent,viewer)
@@ -36,8 +37,12 @@ classdef ObjectsWidget < handle
             obj.Load = uibutton(row,'Text','Load','Tag','objects-load','Enable','off', ...
                 'Tooltip','Load this ROI mask layers and tracking results on demand', ...
                 'ButtonPushedFcn',@(~,~)obj.loadObjects());
-            obj.FamilyText = uilabel(grid,'Text','—','Interpreter','none','Tag','objects-family', ...
+            row=uigridlayout(grid,[1 2]); row.Padding=[0 0 0 0]; row.ColumnWidth={'1x',110};
+            obj.FamilyText = uilabel(row,'Text','—','Interpreter','none','Tag','objects-family', ...
                 'Tooltip','Annotation target associated with the selected Display layer');
+            obj.ParentLinks=uicheckbox(row,'Text','Parent links','Value',true,'Enable','off', ...
+                'Tag','annotations-parent-links','Tooltip','Show the active mask result parentage from its event frames', ...
+                'ValueChangedFcn',@(control,~)viewer.setParentLinks(control.Value));
             obj.FrameText = uilabel(grid,'Text','Masks','Interpreter','none','Tag','objects-frame');
             obj.Items = uitable(grid,'Data',cell(0,4),'RowName',{}, ...
                 'ColumnName',{'Mask','Track','Parent','State'},'ColumnWidth',{50,80,80,'auto'}, ...
@@ -221,6 +226,7 @@ classdef ObjectsWidget < handle
             obj.Viewer.selectObjectFamily(item.provider,item.familyId,label);
         end
         function refresh(obj)
+            obj.ParentLinks.Enable='off'; obj.ParentLinks.Tooltip='No parentage for the active mask layer';
             if isempty(obj.Source)
                 obj.Rows = obj.Rows([]); obj.ObjectsRows = obj.ObjectsRows([]);
                 obj.FamilyText.Text = '—'; obj.Items.Data = cell(0,4); obj.FrameText.Text = 'Annotations';
@@ -280,6 +286,17 @@ classdef ObjectsWidget < handle
             obj.Items.UserData = obj.ObjectsRows;
             obj.Items.CellSelectionCallback = @(~,event)obj.selectEvent('object',event,revision);
             context = obj.Viewer.contourContext(); ready = ~isempty(row) && isequal(context.roi,obj.Source);
+            firstEvent=[];
+            if ready&&~obj.Shared&&obj.SelectedFamily>0&&isstruct(model)&&isfield(model,'relations')
+                relations=model.relations.family_id==obj.SelectedFamily & model.relations.type_id==1;
+                if any(relations)
+                    firstEvent=min(double(model.relations.event_frame(relations)));
+                    index=find(strcmp({obj.Viewer.DisplayModel.Layers.name},provider),1);
+                    obj.ParentLinks.Value=obj.Viewer.DisplayModel.parentLinks(index);
+                    obj.ParentLinks.Enable='on';
+                    obj.ParentLinks.Tooltip=sprintf('%d parent links; first event: frame %d',sum(relations),firstEvent);
+                end
+            end
             obj.enableTools(ready);
             obj.Separate.Enable=obj.onOff(ready && obj.Shared && obj.Viewer.annotationEditingAllowed());
             obj.NewTracks.Enable=obj.onOff(ready && ~obj.Shared && isempty(obj.Viewer.Session.Classifier) && obj.Viewer.annotationEditingAllowed());
@@ -304,11 +321,16 @@ classdef ObjectsWidget < handle
                     obj.status('Shared masks · separate layers to edit each tracking result');
                 elseif obj.SelectedFamily == 0
                     obj.status('Masks · no tracking result');
+                elseif ~isempty(firstEvent)&&frame<firstEvent
+                    obj.status(sprintf('Parent links start at frame %d',firstEvent));
                 else
                     obj.status('Ready');
                 end
             end
             if ~isempty(obj.LastError), obj.status(obj.LastError); end
+            if ready&&~isempty(obj.Viewer.DisplayModel.LineageError)
+                obj.status(['Parent links unavailable: ' obj.Viewer.DisplayModel.LineageError]);
+            end
         end
         function model = currentModel(obj)
             model = [];

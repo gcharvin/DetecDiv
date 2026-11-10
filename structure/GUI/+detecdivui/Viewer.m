@@ -434,6 +434,7 @@ classdef Viewer < handle
                 obj.Sessions{end+1} = detecdivui.Session(project);
                 obj.DisplayModels{end+1} = detecdivui.LayerModel();
                 obj.DisplayModels{end}.ReadOverride = detecdivui.Callback(obj,'maskPlane');
+                obj.DisplayModels{end}.AnnotationOverride = detecdivui.Callback(obj,'annotationState');
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
                 obj.ProjectSources{end+1} = '';
                 index = numel(obj.Sessions);
@@ -601,6 +602,7 @@ classdef Viewer < handle
                 obj.Sessions{end+1} = detecdivui.Session(classifier);
                 obj.DisplayModels{end+1} = detecdivui.LayerModel();
                 obj.DisplayModels{end}.ReadOverride = detecdivui.Callback(obj,'maskPlane');
+                obj.DisplayModels{end}.AnnotationOverride = detecdivui.Callback(obj,'annotationState');
                 obj.ViewStates{end+1} = struct('frame',1,'channel','','selectedROI',0);
                 obj.ProjectSources{end+1} = ''; k = numel(obj.Sessions);
             elseif ~isequal(obj.Sessions{k}.Project.fov(1).roi,classifier.roi)
@@ -930,6 +932,9 @@ classdef Viewer < handle
         end
         function rebindCallbacks(obj)
             % Can repair an already-open viewer without changing project data.
+            for k=1:numel(obj.DisplayModels)
+                obj.DisplayModels{k}.AnnotationOverride=detecdivui.Callback(obj,'annotationState');
+            end
             obj.Pipeline.OnStatus = detecdivui.Callback(obj,'widgetEvent','status');
             obj.Pipeline.OnChanged = detecdivui.Callback(obj,'widgetEvent','pipelineChanged');
             obj.Pipeline.OnDefineROIs = detecdivui.Callback(obj,'widgetEvent','defineROIs');
@@ -1238,6 +1243,20 @@ classdef Viewer < handle
         end
         function plane = maskPlane(obj,session,index,frame,plane)
             if obj.hasMaskWidget(), plane = obj.Masks.override(session,index,frame,plane); end
+        end
+        function [model,masks,plane] = annotationState(obj,source,provider,model,masks,plane)
+            if ~obj.hasMaskWidget(), return; end
+            for k=1:numel(obj.Masks.Drafts)
+                draft=obj.Masks.Drafts{k};
+                if isequal(draft.Source,source)&&strcmp(draft.Channel,provider)
+                    model=draft.previewModel(); masks=draft.Masks; plane=1; return;
+                end
+            end
+        end
+        function setParentLinks(obj,visible)
+            if ~obj.ImageRequested||isempty(obj.DisplayModel)||isempty(obj.activeLayer()), return; end
+            if ~strcmp(obj.DisplayModel.Layers(obj.Channels.Value).kind,'Labels'), return; end
+            obj.DisplayModel.setParentLinks(obj.Channels.Value,logical(visible)); obj.render();
         end
         function yes = canClose(obj)
             yes = true;
@@ -2490,6 +2509,9 @@ classdef Viewer < handle
                     options = score_collectDisplayOptions('mode','display','frames',1,'hideStamp',true);
                     [~,contours] = score_displayVectorGraphics(ax,1,1,view.vectors,options);
                     set(contours,'Tag','mask-contour','HitTest','off','PickableParts','none');
+                    if isfield(view,'parentLinkCount')&&view.parentLinkCount>0
+                        set(contours(end-view.parentLinkCount+1:end),'Tag','track-link');
+                    end
                 end
             end
             if numel(obj.ImageAxes) > 1, obj.ImageLink = linkprop(obj.ImageAxes,{'XLim','YLim'}); end

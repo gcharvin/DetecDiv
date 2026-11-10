@@ -429,13 +429,8 @@ classdef TracksWidget < handle
                         'Color',[1 .75 0],'LineWidth',2,'HitTest','off','PickableParts','none','Tag','track-selection');
                 end
             end
-            segments = cellModelLineageSegments(model,obj.Family.Value,frame,draft.Masks,true);
-            cfg = score_getObjectDisplayConfig(draft.Source,draft.Channel);
-            for segment = reshape(segments,1,[])
-                obj.Overlays(end+1) = plot(ax,[segment.parentXY(1) segment.childXY(1)], ...
-                    [segment.parentXY(2) segment.childXY(2)],'Color',cfg.genealogyLinkColor, ...
-                    'LineWidth',cfg.linkWidthPx,'HitTest','off','PickableParts','none','Tag','track-link');
-            end
+            % Parent links belong to the shared Display renderer, including
+            % export and read-only browsing. Do not draw a second copy here.
             hold(ax,'off');
         end
         function mouseDown(obj)

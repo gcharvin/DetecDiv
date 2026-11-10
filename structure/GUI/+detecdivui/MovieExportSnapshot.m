@@ -13,6 +13,8 @@ classdef MovieExportSnapshot
             for k=1:numel(job.Entries)
                 e=job.Entries(k); keep=unique([find([e.model.Layers.visible]) e.selected],'stable');
                 layers=e.model.Layers(keep); styles=cell(1,numel(keep)); planes=zeros(1,numel(keep));
+                lineages=cell(numel(keep),numel(options.frames));
+                parentLinks=arrayfun(@(index)e.model.parentLinks(index),keep);
                 asset=sprintf('pixels_%03d.h5',k); file=fullfile(folder,asset);
                 for j=1:numel(keep)
                     first=e.model.read(keep(j),options.frames(1)); planes(j)=size(first,3);
@@ -26,6 +28,7 @@ classdef MovieExportSnapshot
                     for j=1:numel(keep)
                         pixels=e.model.read(keep(j),frame);
                         h5write(file,sprintf('/layer_%03d',j),pixels,[1 1 1 local],[size(pixels,1) size(pixels,2) planes(j) 1]);
+                        lineages{j,local}=e.model.lineageVectors(keep(j),frame);
                     end
                     done=done+1;
                     if ~isempty(job.Progress), job.Progress(done/(total+1)); end
@@ -43,7 +46,8 @@ classdef MovieExportSnapshot
                     'styles',{styles},'planes',planes,'width',size(first,2),'height',size(first,1), ...
                     'asset',asset,'sha256',detecdivui.MovieExportSnapshot.hashFile(file), ...
                     'frames',options.frames,'frameCount',e.frameCount,'selected',find(keep==e.selected,1), ...
-                    'overlay',e.overlay,'regions',e.regions,'viewport',e.viewport,'data',data);
+                    'overlay',e.overlay,'regions',e.regions,'viewport',e.viewport,'data',data, ...
+                    'lineages',{lineages},'parentLinks',parentLinks);
                 if isempty(payload.entries), payload.entries=item; else, payload.entries(k)=item; end
             end
             % Resolve export geometry once on the client; a worker must match

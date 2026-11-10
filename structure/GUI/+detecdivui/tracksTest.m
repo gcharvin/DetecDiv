@@ -57,11 +57,13 @@ setFrame(slider,4); widget.pick(5,21);
 % Contours and Tracks own a single provider draft and history.
 viewer.openContourTool(); assert(~widget.Active && viewer.Masks.Active && viewer.Masks.current()==d);
 selectedLabel = findall(viewer.widgetFigure('Objects'),'Tag','mask-label'); assert(selectedLabel.Value==4);
-provider = findall(viewer.widgetFigure('Objects'),'Tag','mask-provider');
-provider.Value = 'Extra'; provider.ValueChangedFcn(provider,[]); selectedLabel.Value = 1;
+% Provider selection now belongs to Display; the old hidden dropdown is only
+% a compatibility bridge and intentionally snaps back to the active layer.
+viewer.closeContourTool(); viewer.selectDisplayLayer('Extra'); viewer.openContourTool();
+assert(strcmp(viewer.Masks.current().Channel,'Extra')); selectedLabel.Value = 1;
 viewer.Masks.action('fill'); assert(~viewer.Masks.current().Dirty);
 message = findall(viewer.widgetFigure('Objects'),'Tag','mask-status'); assert(contains(message.Text,'Save or discard'));
-provider.Value = 'Mask'; provider.ValueChangedFcn(provider,[]); viewer.Masks.select(5,21);
+viewer.closeContourTool(); viewer.selectDisplayLayer('Mask'); viewer.openContourTool(); viewer.Masks.select(5,21);
 d.edit(4,'paint',[15 15],5,1,false); viewer.contourChanged();
 viewer.openTracksTool();
 status = findall(viewer.Figure,'Tag','status');

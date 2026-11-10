@@ -50,6 +50,13 @@ the viewer. Mask overlays remain shared across separated intensity panels.
 Open ROI tabs retain their own cached Display state. Incompatible channel panel
 layouts require separate exports, rather than silently relabeling panels.
 
+Existing parent links and their per-layer visibility are frozen with the image.
+Draft inclusion also controls pending parentage edits; disabling it uses the
+saved model. Portable snapshots store resolved lineage segments for each
+requested frame, so a historical endpoint can stay correct even when its source
+frame is outside the exported sequence. Tracks-only selection labels and active
+tool handles remain transient UI, not scientific Display overlays.
+
 ROI pixels and optional dirty masks are copied on write into isolated ROI
 proxies. The raw-FOV adapter snapshots metadata and reads requested frames on
 demand with the existing reader; it does not search for missing raw roots.

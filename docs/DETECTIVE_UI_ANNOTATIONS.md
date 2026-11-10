@@ -14,6 +14,20 @@ on project ROIs and classifier ROIs. Masks supports painting, erasing, drawing
 and contour editing; Tracks supports explicit assignment, linking and lineage.
 They share one provider draft, Undo/Redo, Discard and Save Edits.
 
+Parentage is part of the ordinary Image rendering, including read-only review,
+with or without Annotations/Tracks open. **Parent links** toggles it for the
+selected mask layer, independently per FOV/ROI view. It defaults to on when a
+unique tracking result provides relations. The tooltip reports the relation
+count and first event frame; before that event the status identifies its frame.
+Existing parents are not inferred from spatial proximity or reused pixel labels.
+The Score `cellModelLineageSegments` helper determines current/historical
+endpoints and binary-fission sister links. Shared legacy providers do not borrow
+an arbitrary family's parentage; separate the results to inspect them individually.
+Visible mask layers carry their own links in overlay and separate-channel views.
+Hidden masks do not retain links, and an unrelated selected mask never inherits
+another provider's relationships. Line/contour display, presets and export share
+the same per-layer setting. Undo/Redo redraws the pending model without saving.
+
 Classifier Review is read-only. In Edit, the declared GT layers are editable;
 prediction layers remain read-only in that classifier context. Semantic GT uses
 a class palette from its package contract, including Unlabeled (0). It does not
@@ -61,3 +75,10 @@ H5 reload, partial-save retry and unassigned IDs; `objectsTest` covers explicit
 shared-layer separation and shared editing; `annotationsTest` covers semantic
 GT, classifier access and the common editor. Existing mask/track draft tests
 continue to exercise the reused editing and persistence functions.
+
+`lineageDisplayTest` covers first-event timing, historical endpoints under label
+reuse, provider/ROI isolation, native toggles, read-only display, shared draft
+parent edits and undo, separate panels, presets and immutable movie snapshots.
+Snapshots retain the resolved segments for each exported frame, including
+historical endpoints outside the requested frame range, without adding raw
+history or whole cellular-model trees to the worker bundle.

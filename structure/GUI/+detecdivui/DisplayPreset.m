@@ -10,6 +10,7 @@ classdef DisplayPreset
             preset = struct('schema','detecdiv.ui.display-preset.v1', ...
                 'layers',layers,'styles',styles,'active',layers(active).name, ...
                 'overlay',logical(overlay),'outlines',logical(outlines));
+            preset.parentLinks=arrayfun(@(index)model.parentLinks(index),1:numel(layers));
             preset = detecdivui.DisplayPreset.validate(preset);
         end
         function [layers,styles,report] = plan(preset,layers,styles)
@@ -111,9 +112,12 @@ classdef DisplayPreset
                 'detecdivui:DisplayPreset','Invalid preset active layer.');
             validateattributes(preset.overlay,{'logical'},{'scalar'});
             validateattributes(preset.outlines,{'logical'},{'scalar'});
+            if ~isfield(preset,'parentLinks'), preset.parentLinks=true(1,numel(preset.layers)); end
+            validateattributes(preset.parentLinks,{'logical'},{'vector','numel',numel(preset.layers)});
             % Keep only the contract, including when reading an extended file.
             preset = struct('schema',preset.schema,'layers',preset.layers,'styles',preset.styles, ...
-                'active',preset.active,'overlay',preset.overlay,'outlines',preset.outlines);
+                'active',preset.active,'overlay',preset.overlay,'outlines',preset.outlines, ...
+                'parentLinks',reshape(preset.parentLinks,1,[]));
         end
     end
     methods (Static, Access = private)

@@ -27,5 +27,15 @@ classdef MovieSnapshotSession < handle
             plane=h5read(fullfile(obj.Folder,obj.Entry.asset),sprintf('/layer_%03d',channel), ...
                 [1 1 1 local],[obj.Entry.height obj.Entry.width obj.Entry.planes(channel) 1]);
         end
+        function visible=parentLinks(obj,index)
+            visible=true;
+            if isfield(obj.Entry,'parentLinks'), visible=obj.Entry.parentLinks(index); end
+        end
+        function vectors=lineageVectors(obj,index,frame)
+            vectors=struct([]);
+            if ~isfield(obj.Entry,'lineages'), return; end
+            local=find(obj.Entry.frames==frame,1);
+            if ~isempty(local), vectors=obj.Entry.lineages{index,local}; end
+        end
     end
 end
