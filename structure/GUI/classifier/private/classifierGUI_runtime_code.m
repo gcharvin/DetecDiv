@@ -934,6 +934,30 @@ function openModuleCatalogue(app)
     end
 end
 
+function ensureCellFateSummaryMenu(app)
+    menu=findall(app.ClassifierMenu,'Tag','ClassifierCellFateSummaryMenu');
+    if isempty(menu)
+        menu=uimenu(app.ClassifierMenu,'Text','Cell fate summary (four populations)...', ...
+            'Tag','ClassifierCellFateSummaryMenu','MenuSelectedFcn',@(~,~)openCellFateSummary(app));
+    end
+    supported=lstm_timeseries.supportsCellFate(app.Data.classiObj);
+    menu.Visible=matlab.lang.OnOffSwitchState(supported);
+end
+
+function openCellFateSummary(app)
+    if ~app.roiTableInitialized,displayData(app);end
+    indices=selectedTestRoiIndices(app);
+    if isempty(indices)
+        uialert(app.ClassifierUIFigure,'Select test ROI(s) in the Dataset tab. Existing saved predictions are required; reviewed GT is optional.', ...
+            'Cell fate summary','Icon','info');return;
+    end
+    try
+        classifierDisplayCellFateSummary(app.Data.classiObj,indices);
+    catch ME
+        uialert(app.ClassifierUIFigure,ME.message,'Cell fate summary unavailable','Icon','error');
+    end
+end
+
 function ensureGroundTruthValidationMenu(app)
     if ~isempty(findall(app.ClassifierMenu,'Tag','GroundTruthValidationMenu')), return; end
     menu = uimenu(app.ClassifierMenu,'Text','Validate ground truth', ...
@@ -1514,6 +1538,7 @@ end
         function  displayClassi(app) % displays the data from classi as they are
 
                classiObj = app.Data.classiObj;
+               ensureCellFateSummaryMenu(app);
 
     % guard: classlist must be loaded
     if ~isfield(app.Data,'classlist') || isempty(app.Data.classlist) || size(app.Data.classlist,2) < 6

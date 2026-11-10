@@ -2,7 +2,11 @@ function classifierDisplayStatistics(classif,roiIndices)
 %CLASSIFIERDISPLAYSTATISTICS Frontend selection for independently named outputs.
 % The backend never guesses which classifier produced an arbitrary channel.
 if cnn_lstm.isFrozenEncoder(classif) || ~classifierStats.supports(classif)
-    classif.stats('Confusion','Classes','Rois',roiIndices,'Force');return;
+    classif.stats('Confusion','Classes','Rois',roiIndices,'Force');
+    if lstm_timeseries.supportsCellFate(classif)&&isstruct(classif.score)&&isfield(classif.score,'cellFate')
+        lstm_timeseries.displayCellFateSummary(classif.score.cellFate);
+    end
+    return;
 end
 spec=annotationManager.specForClassifier(classif);channelBindings=struct();groupBindings=struct();
 for component=spec.components(:).'

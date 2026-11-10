@@ -113,6 +113,9 @@ for k=rois
         'N',nnz(used),'accuracy',mean(truth(used)==predicted(used))); %#ok<AGROW>
 end
 score.roi=roiScores;
+if lstm_timeseries.supportsCellFate(classif)
+    score.cellFate=lstm_timeseries.cellFateSummary(classif,'Rois',rois);
+end
 classif.score=score;fig=[];
 if show||~isempty(export)
     visibility='on';if silent,visibility='off';end
@@ -144,6 +147,7 @@ if ~isempty(export)
     writetable(metrics,[export '_classes.csv']);
     writematrix(matrix,[export '_confusion.csv']);
     writetable(struct2table(roiScores),[export '_rois.csv']);
+    if isfield(score,'cellFate'),lstm_timeseries.exportCellFateSummary(score.cellFate,export);end
     exportgraphics(fig,[export '_statistics.png']);
 end
 

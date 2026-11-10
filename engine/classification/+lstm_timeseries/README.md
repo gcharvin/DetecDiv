@@ -1,5 +1,35 @@
 # Numeric dataseries LSTM
 
+## Cell fate synthesis in Classifier GUI
+
+For window classifiers with `budding`, `arrested`, `dead` classes, **Display
+classifier statistics** also opens the native four-population view. The menu
+**Classifier > Cell fate summary (four populations)...** uses the selected test
+ROI identities and can summarize saved predictions before GT is reviewed.
+It does not run inference, training, or change bindings/model parameters/GT.
+
+`cellFateSummary` processes complete windows within each ROI's configured
+bounds. Terminal dead means dead fate; a return to non-dead after an earlier
+dead unit is unresolved. Prediction arrest episodes require two consecutive
+windows, and a terminal recovery requires both a confirmed arrest and two
+terminal budding windows. Thus an isolated arrested flip does not invent a
+recovery. A single terminal budding/arrested flip after a confirmed episode
+stays unresolved. GT uses its exact reviewed labels without episode filtering.
+The policy is recorded as `minEpisodeWindows=2` (14 frames for a seven-frame
+model), separate from all model inputs/static training settings. It is a
+descriptive policy requiring independent validation, not a new trained model.
+
+The four populations are adapted/budding, transient arrest with terminal
+recovery, arrested at observation end, and dead. Arrested at observation end
+does not establish irreversibility or viability. Missing/gapped/unreviewed GT,
+missing predictions and incomplete terminal windows are explicit review cases;
+unresolved trajectories do not enter the four-population confusion matrix.
+The ROI table preserves first/last evaluated and last available frame, coverage,
+ignored short episodes and review reasons. Configured bounds may stop before
+the experiment ends. Counts and GT comparison have explicit independent/paired
+denominators. `score.cellFate` and exports retain this information. Backend
+helpers are reusable without GUI; only `displayCellFateSummary` opens a view.
+
 `sequenceScope=trajectory` is an opt-in sequence-to-sequence recurrent model. It
 processes each entire contiguous bounded ROI run without resetting at window
 boundaries, while annotations, loss targets and published predictions remain
