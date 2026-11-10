@@ -1,5 +1,31 @@
 # Numeric dataseries LSTM
 
+`sequenceScope=trajectory` is an opt-in causal sequence-to-sequence LSTM. It
+processes each entire contiguous bounded ROI run without resetting at window
+boundaries, while annotations, loss targets and published predictions remain
+one per `windowLength` frames. Complete reviewed windows are joined only within
+one ROI/split and never over a review gap. Inputs outside configured bounds are
+excluded. At inference, a partial output request still processes preceding
+bounded history; future frames cannot influence earlier outputs.
+
+The native `trainNetwork` optimizer/checkpoint machinery is retained. A small
+custom output loss (`WindowEndpointLoss`) computes weighted cross entropy only
+at window endpoints. Other frames carry no direct loss, but gradients propagate
+through their recurrent states. Duplicated per-frame labels satisfy MATLAB's
+sequence target shape; they do not multiply supervised targets or class counts.
+Padding endpoints have zero targets and are excluded from the loss denominator.
+The native progress accuracy is frame-based; the authoritative output-window
+metrics remain Classifier GUI statistics. This mode requires LSTM, window
+output and `contextWindowLength=0`. Default window scope and old models retain
+their existing behavior; changing scope requires reformatting and retraining.
+
+For budget comparisons, record sequence size and supervised targets per update,
+not just update count. With 15 training ROI x49 frames, batch1 and80epochs give
+1200updates x7 target windows =8400 target presentations. The independent
+window reference used1040updates x8 =8320. Both process almost the same number
+of input frames and use the same16-unit network (1395 parameters for4 inputs
+and3 classes), optimizer, class weights and train-only normalization.
+
 The existing numeric module also supports an opt-in small TCN for window
 classification: set the static `networkArchitecture` parameter to `tcn`.
 Default `lstm` and historical saved LSTM models retain their behavior. The TCN

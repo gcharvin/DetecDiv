@@ -49,6 +49,8 @@ for k=[rois(:)' val(:)']
         samples(end+1)=struct('roiIndex',k,'roiId',r.id,'frames',f,'inputFrames',inputFrames,'X',X(:,inputFrames),'Y',labels,'split',split); %#ok<AGROW>
     end
 end
+targetTraining=nnz(strcmp({samples.split},'train'));targetValidation=nnz(strcmp({samples.split},'val'));
+if lstm_timeseries.isTrajectory(p),samples=lstm_timeseries.trajectorySamples(samples);end
 isTrain=strcmp({samples.split},'train');assert(any(isTrain),'lstm_timeseries:NoSamples','No complete reviewed training sequence.');
 labels=string([samples(isTrain).Y]);
 assert(all(ismember(string(classes),labels)),'lstm_timeseries:MissingTrainingClass','Every class must occur in training ROI. Adjust the ROI split or add reviewed examples.');
@@ -58,6 +60,7 @@ folder=fullfile(classif.path,'trainingdataset');if ~isfolder(folder),mkdir(folde
 filename=fullfile(folder,'lstm_timeseries_dataset.mat');save(filename,'dataset','-v7.3');
 out=lstm_timeseries.result('format');out.artifacts.dataset=filename;
 out.metrics=struct('outputCount',numel(samples),'outputUnit','sequences', ...
-    'trainingSequences',nnz(isTrain),'validationSequences',nnz(~isTrain));
+    'trainingSequences',nnz(isTrain),'validationSequences',nnz(~isTrain), ...
+    'trainingTargetUnits',targetTraining,'validationTargetUnits',targetValidation);
 out.provides={'NumericSequenceTrainingSet'};
 end

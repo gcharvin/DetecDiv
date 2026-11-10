@@ -12,4 +12,9 @@ catch
 end
 c.description={['Numeric dataseries ' architecture],comment, ...
     'Numeric sequence classification with reviewed labels; LSTM or window TCN architecture.'};
+try
+    scope=c.trainingParam.sequenceScope;if iscell(scope),scope=scope{end};end
+    if strcmp(scope,'trajectory'),c.description{1}='Numeric LSTM — continuous ROI trajectory';end
+catch
+end
 end

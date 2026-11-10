@@ -2,8 +2,9 @@ function layers=networkLayers(p,classes,weights)
 %NETWORKLAYERS Reuse the numeric training contract for LSTM or small TCN.
 architecture='lstm';if isfield(p,'networkArchitecture'),architecture=p.networkArchitecture;end
 output=classificationLayer('Name','classes','Classes',categorical(classes,classes,classes),'ClassWeights',weights);
+if lstm_timeseries.isTrajectory(p),output=lstm_timeseries.WindowEndpointLoss(p.windowLength,classes,weights);end
 if strcmp(architecture,'lstm')
-    mode='sequence';if ~strcmp(p.outputMode,'frame'),mode='last';end
+    mode='sequence';if ~strcmp(p.outputMode,'frame')&&~lstm_timeseries.isTrajectory(p),mode='last';end
     layers=[sequenceInputLayer(p.featureCount,'Normalization','none','Name','features'); ...
         lstmLayer(p.hiddenUnits,'OutputMode',mode,'Name','lstm'); ...
         dropoutLayer(p.dropout,'Name','dropout');fullyConnectedLayer(numel(classes),'Name','state'); ...

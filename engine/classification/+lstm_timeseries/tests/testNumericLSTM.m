@@ -128,6 +128,53 @@ verifyFalse(testCase,ismember('networkArchitecture',spec.inputKeys));
 verifyEqual(testCase,spec.defaults.networkArchitecture,'tcn');
 verifyEqual(testCase,spec.choices.networkArchitecture,{'lstm','tcn'});
 end
+function testTrajectoryLossUsesOnlyEndpointsAndExcludesPadding(testCase)
+layer=lstm_timeseries.WindowEndpointLoss(2,{'a','b'},[1 2]);
+Y=single(repmat(reshape([.7 .3],2,1,1),1,2,4));T=zeros(size(Y),'single');T(1,:,:)=1;T(:,2,3:4)=0;
+loss=layer.forwardLoss(Y,T);verifyEqual(testCase,loss,-log(single(.7)+eps('single')),'AbsTol',1e-6);
+gradient=layer.backwardLoss(Y,T);verifyEqual(testCase,gradient(:,:,1:2:end),zeros(2,2,2,'single'));
+verifyEqual(testCase,gradient(:,2,4),zeros(2,1,'single'));
+altered=Y;altered(:,:,1:2:end)=.01;
+verifyEqual(testCase,layer.forwardLoss(altered,T),loss);
+% Finite differences validate the weighted endpoint derivative.
+delta=single(1e-3);plus=Y;minus=Y;plus(1,1,2)=plus(1,1,2)+delta;minus(1,1,2)=minus(1,1,2)-delta;
+finite=(layer.forwardLoss(plus,T)-layer.forwardLoss(minus,T))/(2*delta);
+verifyEqual(testCase,double(gradient(1,1,2)),double(finite),'AbsTol',1e-4);
+weighted=T;weighted(1,1,2)=0;weighted(2,1,2)=1;
+expected=-(2*log(double(.7+eps('single')))+2*log(double(.3+eps('single'))))/3;
+verifyEqual(testCase,double(layer.forwardLoss(Y,weighted)),expected,'AbsTol',1e-6);
+end
+function testTrajectoryRoundTripPreservesWindowStatisticsAndHistory(testCase)
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;c.trainingParam.sequenceScope='trajectory';
+c.trainingParam.miniBatchSize=1;c.trainingParam.maxEpochs=2;
+out=c.formatDataForTraining();s=load(out.artifacts.dataset);d=s.dataset;
+verifyEqual(testCase,numel(d.samples),3);verifyEqual(testCase,d.samples(1).frames,1:8);
+verifyEqual(testCase,size(d.samples(1).X),[2 8]);verifyEqual(testCase,string(d.samples(1).Y),[repmat("budding",1,4) repmat("dead",1,4)]);
+out=lstm_timeseries.train(c,struct());s=load(out.artifacts.model);
+verifyEqual(testCase,s.model.sequenceScope,'trajectory');verifyEqual(testCase,s.model.trainingClassCounts,[2 2]);
+verifyEqual(testCase,s.classifier.Layers(2).OutputMode,'sequence');verifyClass(testCase,s.classifier.Layers(end),'lstm_timeseries.WindowEndpointLoss');
+whole=lstm_timeseries.classify(c.roi(4),c,struct());tableAll=whole.patch.roi.dataseries.upsert{1}.dataseries.data;
+part=lstm_timeseries.classify(c.roi(4),c,struct('sel',struct('frames',5:8)));tablePart=part.patch.roi.dataseries.upsert{1}.dataseries.data;
+verifyEqual(testCase,tableAll.id(5:8),tablePart.id(5:8));verifyEqual(testCase,tablePart.id(1:4),zeros(4,1));
+verifyEqual(testCase,tablePart.prob_dead(5:8),tableAll.prob_dead(5:8),'AbsTol',1e-6);
+% A changed future cannot affect the first window (causal trajectory model).
+old=c.roi(4).data(1).data;c.roi(4).data(1).data.a(5:8)=1e5;
+future=lstm_timeseries.classify(c.roi(4),c,struct());tableFuture=future.patch.roi.dataseries.upsert{1}.dataseries.data;
+verifyEqual(testCase,tableAll.prob_budding(1:4),tableFuture.prob_budding(1:4),'AbsTol',1e-6);c.roi(4).data(1).data=old;
+c.classifyData(c.roi(4),'Ctx',struct('io',struct('saveMode','defer')));c.stats('Rois',4,'Force','Silent');verifyEqual(testCase,c.score.N,2);
+c.trainingParam.sequenceScope='window';
+verifyError(testCase,@()lstm_timeseries.classify(c.roi(4),c,struct()),'lstm_timeseries:ModelMode');
+verifyError(testCase,@()lstm_timeseries.train(c,struct()),'lstm_timeseries:StaleDataset');
+end
+function testTrajectoryNeverJoinsGapsAndRequiresLstmWindowMode(testCase)
+verifyEqual(testCase,lstm_timeseries.trajectoryRuns({1:4,5:8,13:16}),{1:8,13:16});
+[c,cleanup]=fixture(); %#ok<ASGLU>
+c.trainingParam.sequenceScope='trajectory';
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:SequenceScope');
+c.trainingParam.outputMode='window';c.trainingParam.windowLength=4;c.trainingParam.networkArchitecture='tcn';
+verifyError(testCase,@()lstm_timeseries.parameters(c),'lstm_timeseries:SequenceScope');
+end
 function testTrainingOnlyBalancedClassWeights(testCase)
 [w,n]=lstm_timeseries.classWeights(["budding" "budding" "budding" "arrested" "dead" "dead"], ...
     {'budding','arrested','dead'},'inverse-frequency');

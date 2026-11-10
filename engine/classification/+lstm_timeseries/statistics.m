@@ -59,6 +59,10 @@ for k=rois
         assert(strcmp(metadata.outputMode,p.outputMode)&&metadata.windowLength==p.windowLength, ...
             'lstm_timeseries:StalePredictions','ROI %s predictions use another output mode/window length. Run validation with the current model.',r.id);
     end
+    if isfield(p,'sequenceScope')
+        scope='window';if isstruct(metadata)&&isfield(metadata,'sequenceScope'),scope=metadata.sequenceScope;end
+        assert(strcmp(scope,p.sequenceScope),'lstm_timeseries:StalePredictions','ROI %s predictions use another sequence scope. Run validation again.',r.id);
+    end
     n=annotationManager.frameCount(r);
     truth=alignedLabels(r.data(gtIndex).data,'labels_training',n,names);
     predicted=alignedLabels(r.data(predIndex).data,'labels',n,names);
@@ -113,6 +117,7 @@ classif.score=score;fig=[];
 if show||~isempty(export)
     visibility='on';if silent,visibility='off';end
     name='Numeric LSTM validation statistics';
+    if lstm_timeseries.isTrajectory(p),name='Trajectory LSTM validation statistics';end
     if isfield(p,'networkArchitecture')&&strcmp(p.networkArchitecture,'tcn'),name='Numeric TCN validation statistics';end
     if cnn_lstm.isFrozenEncoder(classif),name='Frozen CNN LSTM validation statistics';end
     fig=figure('Name',name,'NumberTitle','off','Color','w','Visible',visibility);

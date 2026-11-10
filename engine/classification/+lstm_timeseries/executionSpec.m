@@ -61,5 +61,6 @@ spec.choices.outputMode={'frame','window','video'};
 spec.choices.missingPolicy={'error','training-median'};
 spec.choices.classWeighting={'none','inverse-frequency'};
 spec.choices.networkArchitecture={'lstm','tcn'};
+spec.choices.sequenceScope={'window','trajectory'};
 if isTraining,spec.choices.executionEnvironment={'auto','cpu','gpu','module_default'};end
 end

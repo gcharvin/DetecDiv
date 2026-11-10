@@ -12,9 +12,10 @@ filename=fullfile(classif.path,'trainingdataset','lstm_timeseries_dataset.mat');
 assert(isfile(filename),'lstm_timeseries:Dataset','Format reviewed numeric sequences before training.');
 s=load(filename,'dataset');d=s.dataset;
 if ~isfield(d.parameters,'contextWindowLength'),d.parameters.contextWindowLength=0;end
+if ~isfield(d.parameters,'sequenceScope'),d.parameters.sequenceScope='window';end
 assert(isequal(cellstr(string(classif.classes(:).')),d.classes), ...
     'lstm_timeseries:StaleDataset','Classes changed; format the dataset again.');
-for key={'featureCount','outputMode','windowLength','contextWindowLength','missingPolicy'}
+for key={'featureCount','outputMode','windowLength','contextWindowLength','sequenceScope','missingPolicy'}
     assert(isequal(p.(key{1}),d.parameters.(key{1})),'lstm_timeseries:StaleDataset','%s changed; format the dataset again.',key{1});
 end
 for k=1:p.featureCount

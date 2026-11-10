@@ -9,17 +9,23 @@ assert(~isempty(trainIdx)&&all(ismember([d.samples(trainIdx).roiIndex],d.trainRo
 stats=lstm_timeseries.trainingNormalizer(d.samples(trainIdx));
 X=cellfun(@(x)lstm_timeseries.transform(x,stats,p.missingPolicy),{d.samples(trainIdx).X}','UniformOutput',false);
 Y={d.samples(trainIdx).Y}';
-if ~strcmp(p.outputMode,'frame'),Y=vertcat(Y{:});end
-[weights,classCounts]=lstm_timeseries.classWeights([d.samples(trainIdx).Y],d.classes,p.classWeighting);
+trajectory=lstm_timeseries.isTrajectory(p);
+if ~strcmp(p.outputMode,'frame')&&~trajectory,Y=vertcat(Y{:});end
+labels=[d.samples(trainIdx).Y];
+if trajectory
+    endpointLabels=cellfun(@(y)y(p.windowLength:p.windowLength:end),Y,'UniformOutput',false);labels=[endpointLabels{:}];
+end
+[weights,classCounts]=lstm_timeseries.classWeights(labels,d.classes,p.classWeighting);
 % Set the seed before any layer initialization as well as trainNetwork.
 rng(p.seed,'twister');
 layers=lstm_timeseries.networkLayers(p,d.classes,weights);
 extra={};
+if trajectory,extra={'SequenceLength','longest'};end
 checkpoint='last-iteration';patience=Inf;
 if ~isempty(valIdx)
     XV=cellfun(@(x)lstm_timeseries.transform(x,stats,p.missingPolicy),{d.samples(valIdx).X}','UniformOutput',false);
-    YV={d.samples(valIdx).Y}';if ~strcmp(p.outputMode,'frame'),YV=vertcat(YV{:});end
-    extra={'ValidationData',{XV,YV},'ValidationFrequency',max(1,floor(numel(X)/p.miniBatchSize))};
+    YV={d.samples(valIdx).Y}';if ~strcmp(p.outputMode,'frame')&&~trajectory,YV=vertcat(YV{:});end
+    extra=[extra {'ValidationData',{XV,YV},'ValidationFrequency',max(1,floor(numel(X)/p.miniBatchSize))}];
     if p.returnBestValidation,checkpoint='best-validation-loss';end
     if p.validationPatience>0,patience=p.validationPatience;end
 end
@@ -38,4 +44,6 @@ model=struct('schemaVersion',1,'module','lstm_timeseries','normalization',stats,
 if isfield(p,'contextWindowLength'),model.contextWindowLength=p.contextWindowLength;else,model.contextWindowLength=0;end
 model.contextBoundaryPolicy='repeat-edge';
 model.networkArchitecture='lstm';if isfield(p,'networkArchitecture'),model.networkArchitecture=p.networkArchitecture;end
+model.sequenceScope='window';if trajectory,model.sequenceScope='trajectory';end
+model.lossUnit='native';if trajectory,model.lossUnit='window-endpoint';end
 end

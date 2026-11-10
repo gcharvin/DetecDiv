@@ -30,7 +30,7 @@ if nargin>=2&&isstruct(overrides)
         p.(names{k})=value;
     end
 end
-for key={'outputMode','missingPolicy','executionEnvironment','classWeighting','networkArchitecture'}
+for key={'outputMode','missingPolicy','executionEnvironment','classWeighting','networkArchitecture','sequenceScope'}
     value=p.(key{1});if iscell(value),value=value{end};end
     p.(key{1})=char(string(value));
 end
@@ -38,6 +38,9 @@ assert(ismember(p.outputMode,{'frame','window','video'}),'lstm_timeseries:Mode',
 assert(ismember(p.networkArchitecture,{'lstm','tcn'}),'lstm_timeseries:Architecture','Unknown numeric sequence architecture.');
 assert(~strcmp(p.networkArchitecture,'tcn')||strcmp(p.outputMode,'window'), ...
     'lstm_timeseries:Architecture','TCN currently requires window output mode.');
+assert(ismember(p.sequenceScope,{'window','trajectory'}),'lstm_timeseries:SequenceScope','Unknown sequence scope.');
+assert(~strcmp(p.sequenceScope,'trajectory')||(strcmp(p.networkArchitecture,'lstm')&&strcmp(p.outputMode,'window')&&p.contextWindowLength==0), ...
+    'lstm_timeseries:SequenceScope','Trajectory scope requires LSTM, window output and contextWindowLength=0.');
 assert(ismember(p.missingPolicy,{'error','training-median'}),'lstm_timeseries:MissingPolicy','Unknown missing-value policy.');
 assert(ismember(p.executionEnvironment,{'auto','cpu','gpu','module_default'}),'lstm_timeseries:Device','Unknown execution environment.');
 assert(ismember(p.classWeighting,{'none','inverse-frequency'}),'lstm_timeseries:ClassWeighting','Unknown class weighting policy.');

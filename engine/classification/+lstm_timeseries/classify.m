@@ -18,6 +18,8 @@ context=0;if isfield(model,'contextWindowLength'),context=model.contextWindowLen
 assert(p.contextWindowLength==context,'lstm_timeseries:ModelMode','Context length is frozen in the trained model. Restore it or retrain.');
 architecture='lstm';if isfield(model,'networkArchitecture'),architecture=model.networkArchitecture;end
 assert(strcmp(p.networkArchitecture,architecture),'lstm_timeseries:ModelMode','Network architecture is frozen in the trained model. Restore it or retrain.');
+scope='window';if isfield(model,'sequenceScope'),scope=model.sequenceScope;end
+assert(strcmp(p.sequenceScope,scope),'lstm_timeseries:ModelMode','Sequence scope is frozen in the trained model. Restore it or retrain.');
 requested=[];if isfield(ctx,'sel')&&isfield(ctx.sel,'frames'),requested=ctx.sel.frames;end
 n=size(X,2);selected=trainingBounds.frames(classif,roiObj,n,requested);
 windows=lstm_timeseries.sequences(classif,roiObj,n,selected,p);
@@ -29,6 +31,9 @@ if isfield(ctx,'exec')&&isfield(ctx.exec,'gpu')&&~isfield(overrides,'executionEn
     if ctx.exec.gpu,env='gpu';else,env='cpu';end
 end
 if strcmp(env,'module_default'),env='auto';end
+if lstm_timeseries.isTrajectory(p)&&~isempty(windows)
+    [prob,ids]=lstm_timeseries.trajectoryPredictions(classif,roiObj,X,p,model,classifier,selected,env);
+else
 for w=1:numel(windows)
     f=windows{w};inputFrames=lstm_timeseries.contextFrames(classif,roiObj,n,f,p);
     input=lstm_timeseries.transform(X(:,inputFrames),model.normalization,model.missingPolicy);
@@ -44,6 +49,7 @@ for w=1:numel(windows)
     learned=cellstr(string(classifier.Layers(end).Classes));[ok,order]=ismember(classes,learned);
     assert(all(ok),'lstm_timeseries:Classes','Trained model class metadata do not match.');
     scores=scores(:,order);prob(f,:)=scores;[~,ids(f)]=max(scores,[],2);
+end
 end
 name=classif.strid;
 if isfield(ctx,'names')&&isfield(ctx.names,'outputName')&&~isempty(ctx.names.outputName),name=char(string(ctx.names.outputName));
@@ -71,6 +77,7 @@ ds.userData=struct('classes',{classes},'quality','pred','producer','lstm_timeser
 ds.userData.contextWindowLength=context;
 ds.userData.contextBoundaryPolicy='repeat-edge';
 ds.userData.networkArchitecture=architecture;
+ds.userData.sequenceScope=scope;
 for key=fieldnames(oldUserData)'
     if ~isfield(ds.userData,key{1}),ds.userData.(key{1})=oldUserData.(key{1});end
 end
