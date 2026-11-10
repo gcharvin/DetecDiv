@@ -2,7 +2,7 @@ function [ydata, varNames, yTickInfo, sourceIndex] = score_extractYData(T, dataI
 % Extract ydata from table T(:,dataIndices) into a numeric matrix.
 % - numeric/logical: cast to double
 % - categorical: display <undefined> on a labelled level, keeping source data
-%   and the original category codes unchanged
+%   unchanged; overlaid label columns align by category name for display
 % - string/cellstr/char: try numeric parsing; else categorical(string(v)) (LOCAL)
 % - cell arrays containing numeric scalars/vectors: expand to one curve per
 %   vector element, preserving scalar columns as one curve.
@@ -113,7 +113,7 @@ for k = 1:nCol
         c = categorical(v);
         [values, ticks, labels] = categoricalPlotData(c);
         [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
+            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels, true);
         continue
     end
 
@@ -123,7 +123,7 @@ for k = 1:nCol
     if iscategorical(v)
         [values, ticks, labels] = categoricalPlotData(v);
         [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
+            ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels, true);
         continue
     end
 
@@ -148,12 +148,16 @@ for k = 1:nCol
     c = categorical(s);
     [values, ticks, labels] = categoricalPlotData(c);
     [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-        ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels);
+        ydata, varNames, sourceIndex, yTickInfo, values, baseName, dataIndices(k), true, ticks, labels, true);
+end
+if isfield(yTickInfo,'categoryMaps')
+    [ydata,yTickInfo]=alignCategoryCurves(ydata,yTickInfo);
+    yTickInfo=rmfield(yTickInfo,'categoryMaps');
 end
 end
 
 function [ydata, varNames, sourceIndex, yTickInfo] = appendSeries( ...
-    ydata, varNames, sourceIndex, yTickInfo, series, name, srcIdx, isLabel, ticks, labels)
+    ydata, varNames, sourceIndex, yTickInfo, series, name, srcIdx, isLabel, ticks, labels, semanticLabel)
 
 series = double(series);
 if isrow(series)
@@ -169,6 +173,36 @@ if isLabel && isempty(yTickInfo.ticks)
     yTickInfo.ticks = ticks;
     yTickInfo.labels = labels;
 end
+if nargin>=11 && semanticLabel
+    if ~isfield(yTickInfo,'categoryMaps'),yTickInfo.categoryMaps={};end
+    yTickInfo.categoryMaps{end+1}=struct('column',size(ydata,2),'ticks',ticks(:).','labels',{labels(:)});
+end
+end
+
+function [ydata,info]=alignCategoryCurves(ydata,info)
+% Category codes are private to each column. Only names can align curves on
+% one axis, e.g. prediction categories without a legacy 'undefined' category.
+maps=info.categoryMaps;if numel(maps)<2,return;end
+ticks=maps{1}.ticks;labels=maps{1}.labels;
+for k=2:numel(maps)
+    for j=1:numel(maps{k}.labels)
+        name=maps{k}.labels{j};
+        if any(strcmp(labels,name)),continue;end
+        if strcmpi(name,'undefined')&&~any(ticks==0),value=0;
+        else,value=max([0 ticks])+1;end
+        ticks(end+1)=value;labels{end+1,1}=name; %#ok<AGROW>
+    end
+end
+[ticks,order]=sort(ticks);labels=labels(order);labels=labels(:);
+for k=1:numel(maps)
+    map=maps{k};original=ydata(:,map.column);aligned=original;
+    for j=1:numel(map.labels)
+        match=find(strcmp(labels,map.labels{j}),1);
+        aligned(original==map.ticks(j))=ticks(match);
+    end
+    ydata(:,map.column)=aligned;
+end
+info.ticks=ticks;info.labels=labels;
 end
 
 function [cellData, cellNames] = expandNumericCellColumn(v, baseName, maskIdx)
