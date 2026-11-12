@@ -89,4 +89,25 @@ The startup regressions added on 5 November 2026 reproduce the native listener's
 
 An optional PNG path to either test captures the main workspace for visual inspection. Real acquisition testing, multi-monitor layout migration and other MATLAB releases remain outside this validation scope.
 
+Measurements is an additional hidden-by-default native document. Its first
+opening adds a tab to the Display/Pipeline group rather than splitting Image.
+When those inspectors are hidden, an existing docked inspector group is used;
+the host does not impose a new image split. Float/redock, native Close/reopen
+and saved layout use the same host controls. Older records without
+`measurements` receive a hidden document state while keeping their geometry.
+Prototype layouts that automatically placed Measurements alone below Image
+are migrated once, including hidden/reopened placements; other Annotations
+and Data panels are retained. The `measurementsLayoutVersion` marker records
+the migration. Subsequently saved custom positions, including a deliberate
+below-image placement or a floating window, remain user-owned. Measurements
+owns temporary shapes only when active; floating or restoring an already-visible
+suspended document does not switch scientific drawing modes. `measurementsTest`
+and `measurementsPlacementTest` cover the native document lifecycle and migration.
+
+Verified on 10 November 2026 in Windows MATLAB R2026a: Measurements opens
+with Display without changing Image geometry; visible and hidden prototype
+splits migrate, Annotations remains in place, and subsequently saved custom
+or floating positions survive close/reopen and restore. `measurementsTest`
+and `analysisLayoutTest` also passed; the right-hand widget was visually checked.
+
 Validated on 4 November 2026 under Windows MATLAB R2026a: `dockingTest` and `smokeTest` passed without warnings, Code Analyzer was clean, and the exported workspace was inspected. Gilles subsequently confirmed successful interactive use of the shell. The agent's separate mouse-drag check was interrupted with Escape and is not counted as a completed drag-and-drop test.

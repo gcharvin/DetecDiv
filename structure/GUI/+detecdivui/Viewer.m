@@ -22,6 +22,7 @@ classdef Viewer < handle
         Classifiers
         MovieExport
         Hub
+        Measurements
     end
     properties (Access = private)
         LayerDialog = []
@@ -110,6 +111,8 @@ classdef Viewer < handle
         TreeROIMenu
         SaveProjectMenu
         DrawingROI = false
+        GestureFrame = []
+        MeasurementsVisible = false
         KeyboardView
         KeyboardState = struct()
         KeyboardSelection = {}
@@ -268,6 +271,7 @@ classdef Viewer < handle
             uimenu(obj.ImageMenu,'Text','Edit Masks...','MenuSelectedFcn',@(~,~)obj.openContourTool());
             uimenu(obj.ImageMenu,'Text','Edit Tracks...','MenuSelectedFcn',@(~,~)obj.openTracksTool());
             uimenu(obj.ImageMenu,'Text','Export Movie...','Separator','on','MenuSelectedFcn',@(~,~)obj.openMovieExport());
+            uimenu(obj.ImageMenu,'Text','Measure Intensity...','MenuSelectedFcn',@(~,~)obj.openMeasurements());
             obj.Axes.ContextMenu = obj.ImageMenu;
             obj.Axes.XTick = []; obj.Axes.YTick = [];
             timeline = uigridlayout(canvas,[2 5]);
@@ -413,6 +417,7 @@ classdef Viewer < handle
             obj.Data.initializeAxes();
             if obj.Host.isWidgetVisible('Data'), obj.ensureDataWidget(); end
             if obj.Host.isWidgetVisible('Objects'), obj.ensureObjectsWidget(); end
+            if obj.Host.isWidgetVisible('Measurements'), obj.ensureMeasurements(); obj.Measurements.setActive(true); end
             if iscell(project)
                 for k = 1:numel(project), obj.addProject(project{k}); end
             elseif ~isempty(project)
@@ -481,6 +486,7 @@ classdef Viewer < handle
             wasActive = index == obj.ActiveProject;
             obj.Pipeline.forgetProject(obj.Sessions{index}.Project);
             if obj.hasROIWidget(), obj.ROIs.forgetProject(obj.Sessions{index}.Project); end
+            if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), obj.Measurements.forgetProject(obj.Sessions{index}.Project); end
             obj.storeView();
             obj.forgetImageViews(obj.Sessions{index}.Project);
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
@@ -996,6 +1002,7 @@ classdef Viewer < handle
         end
         function opened = openROITool(obj,project,node,callback,scope)
             opened = false;
+            obj.suspendMeasurements();
             obj.closeMovieExport();
             if ~isempty(obj.Session.Classifier), obj.widgetEvent('status','Select a project FOV to define ROIs'); return; end
             if nargin < 5, scope = struct(); end
@@ -1057,6 +1064,7 @@ classdef Viewer < handle
             if obj.imageNavigationActive(), obj.navigationButton('none',false); end
         end
         function openContourTool(obj)
+            obj.suspendMeasurements();
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify annotations.');
                 obj.prepareAnnotationLayer();
@@ -1089,6 +1097,7 @@ classdef Viewer < handle
             obj.refreshKeyboard();
         end
         function openTracksTool(obj)
+            obj.suspendMeasurements();
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify tracks.');
                 obj.prepareAnnotationLayer();
@@ -1153,7 +1162,7 @@ classdef Viewer < handle
             if index >= 1 && index <= numel(layers), name = layers(index).name; end
         end
         function yes = objectsBrowserActive(obj)
-            yes = ~obj.ObjectsSync && ~isempty(obj.ObjectsBrowserTab) && isvalid(obj.ObjectsBrowserTab) && ...
+            yes = ~obj.measurementActive() && ~obj.ObjectsSync && ~isempty(obj.ObjectsBrowserTab) && isvalid(obj.ObjectsBrowserTab) && ...
                 isequal(obj.ObjectsTabs.SelectedTab,obj.ObjectsBrowserTab) && obj.Host.isWidgetVisible('Objects');
         end
         function context = contourContext(obj)
@@ -1167,6 +1176,31 @@ classdef Viewer < handle
         end
         function openData(obj)
             obj.ensureDataWidget(); obj.Host.openData(); obj.Data.open();
+        end
+        function openMeasurements(obj)
+            if obj.DrawingROI, return; end
+            obj.closeROITool(); obj.closeTracksTool(); obj.closeContourTool();
+            % Place the document before graphics creation can reveal its
+            % native figure in an automatically chosen tile.
+            obj.Host.openMeasurements(); obj.ensureMeasurements();
+            obj.Measurements.setActive(true); obj.Host.show();
+        end
+        function active=measurementActive(obj)
+            active=~isempty(obj.Measurements)&&isvalid(obj.Measurements)&&obj.Measurements.Active&& ...
+                obj.Host.isWidgetVisible('Measurements');
+        end
+        function context=measurementContext(obj)
+            context=struct('ready',false,'project',obj.Session.Project,'position',obj.Session.Position, ...
+                'zone',obj.Session.Zone,'frame',obj.Frame.Value,'name','','shortName','','source',[],'channels',struct([]));
+            if obj.Closing||~obj.ImageRequested||isempty(obj.DisplayModel)||isempty(obj.DisplayModel.Layers)|| ...
+                    isempty(findall(obj.Axes,'Type','image')), return; end
+            context.ready=true; context.name=obj.Session.breadcrumb();
+            context.shortName=obj.Session.Project.fov(obj.Session.Position).id;
+            [~,~,context.channels]=obj.Session.dimensions();
+            if obj.Session.Zone>0
+                context.source=obj.Session.Project.fov(obj.Session.Position).roi(obj.Session.Zone);
+                context.shortName=context.source.id;
+            end
         end
         function openObjects(obj)
             obj.ensureObjectsWidget(); obj.Host.openObjects(); obj.Objects.setContext();
@@ -1184,6 +1218,7 @@ classdef Viewer < handle
         end
         function selectObjectFamily(obj,provider,family,label)
             if nargin < 4, label = 0; end
+            obj.suspendMeasurements();
             c = obj.contourContext();
             assert(~isempty(c.roi),'detecdivui:ObjectsROI','Select and load a ROI first.');
             obj.closeROITool(); obj.closeTracksTool();
@@ -1210,6 +1245,10 @@ classdef Viewer < handle
         function toggleData(obj)
             if obj.Host.isWidgetVisible('Data'), obj.Host.setWidgetVisible('Data',false);
             else, obj.openData(); end
+        end
+        function toggleMeasurements(obj)
+            if obj.Host.isWidgetVisible('Measurements'), obj.Host.setWidgetVisible('Measurements',false);
+            else, obj.openMeasurements(); end
         end
         function frame = annotationFrame(obj)
             frame = obj.Frame.Value;
@@ -1279,6 +1318,7 @@ classdef Viewer < handle
         end
         function scope = beginROIGesture(obj)
             obj.navigationButton('none',false);
+            obj.GestureFrame=obj.Frame.Value;
             obj.DrawingROI = true;
             obj.applyNavigation();
             obj.refreshKeyboard();
@@ -1347,6 +1387,7 @@ classdef Viewer < handle
             obj.cancelPreview();
             if ~isempty(obj.PreviewTimer) && isvalid(obj.PreviewTimer), delete(obj.PreviewTimer); end
             if ~isempty(obj.Data) && isvalid(obj.Data), delete(obj.Data); end
+            if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), delete(obj.Measurements); end
             if ~isempty(obj.Objects) && isvalid(obj.Objects), delete(obj.Objects); end
             if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), delete(obj.Classifiers); end
             if obj.hasTracksWidget(), delete(obj.Tracks); end
@@ -1362,6 +1403,14 @@ classdef Viewer < handle
         end
     end
     methods (Access = private)
+        function ensureMeasurements(obj)
+            if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), return; end
+            obj.Measurements=detecdivui.MeasurementsWidget(obj.Host.widgetFigure('Measurements'),obj);
+            obj.Measurements.Progress.Route=detecdivui.Callback(obj,'widgetEvent','progressOwner','Measurements');
+        end
+        function suspendMeasurements(obj)
+            if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), obj.Measurements.setActive(false); end
+        end
         function finishConstruction(obj,~)
             % The retained startup scope also covers disposal of a failed
             % constructor, including errors before Host.start was reached.
@@ -1417,6 +1466,20 @@ classdef Viewer < handle
             if isvalid(obj), obj.ObjectsSync = value; end
         end
         function widgetVisibility(obj,name,visible)
+            if strcmpi(name,'Measurements')
+                revealed=visible&&~obj.MeasurementsVisible; obj.MeasurementsVisible=visible;
+                if visible&&obj.ConstructionComplete
+                    obj.ensureMeasurements();
+                    if revealed
+                        obj.closeROITool(); obj.closeTracksTool(); obj.closeContourTool(); obj.Measurements.setActive(true);
+                    elseif obj.Measurements.Active
+                        obj.Measurements.onRender();
+                    end
+                elseif ~visible
+                    obj.suspendMeasurements();
+                end
+                return;
+            end
             if ~strcmpi(name,'Objects'), return; end
             if ~visible
                 obj.closeTracksTool(); obj.closeContourTool();
@@ -1590,7 +1653,7 @@ classdef Viewer < handle
             if ~isempty(obj.TracksPage) && isgraphics(obj.TracksPage), obj.TracksPage.Visible = obj.onOff(tracks); end
         end
         function finishROIGesture(obj)
-            if isvalid(obj), obj.DrawingROI = false; obj.applyNavigation(); obj.refreshKeyboard(); end
+            if isvalid(obj), obj.DrawingROI = false; obj.GestureFrame=[]; obj.applyNavigation(); obj.refreshKeyboard(); end
         end
         function progress = progressOwner(obj,widget)
             progress = obj.Progress;
@@ -1600,6 +1663,8 @@ classdef Viewer < handle
             owners.Data = obj.Progress;
             if ~isempty(obj.Data) && isvalid(obj.Data), owners.Data = obj.Data.Progress; end
             owners.Objects = obj.Progress;
+            owners.Measurements = obj.Progress;
+            if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), owners.Measurements=obj.Measurements.Progress; end
             owners.Classifier = obj.Classifiers.Progress;
             if ~isempty(obj.Objects) && isvalid(obj.Objects), owners.Objects = obj.Objects.Progress; end
             if obj.hasROIWidget() && isequal(obj.DisplayTabs.SelectedTab,obj.ROIsTab)
@@ -1613,7 +1678,7 @@ classdef Viewer < handle
             visible = obj.Host.isWidgetVisible(widget);
             % A document can be visible but covered by another tab. Use the
             % main view unless Pipeline/Display actually owns the focus.
-            if ismember(widget,{'Pipeline','Display','Data','Objects','Classifier'})
+            if ismember(widget,{'Pipeline','Display','Data','Objects','Classifier','Measurements'})
                 selected = obj.Host.App.SelectedChild;
                 visible = visible && isstruct(selected) && isscalar(selected) && ...
                     isfield(selected,'tag') && strcmpi(selected.tag,widget);
@@ -1678,6 +1743,7 @@ classdef Viewer < handle
                 'MenuSelectedFcn',@(~,~)obj.openContourTool());
             obj.EditTracksMenu = obj.Host.menu(edit,'Edit Tracks...','Enable','off', ...
                 'MenuSelectedFcn',@(~,~)obj.openTracksTool());
+            obj.Host.menu(edit,'Measure Intensity...','MenuSelectedFcn',@(~,~)obj.openMeasurements());
             presets = obj.Host.menu(edit,'Display Presets');
             actions = {'copy','paste','save','load'};
             labels = {'Copy Display Preset','Paste Display Preset','Save Display Preset...','Load Display Preset...'};
@@ -1719,6 +1785,8 @@ classdef Viewer < handle
             objectsMenu.MenuSelectedFcn = @(~,~)obj.toggleObjects();
             dataMenu = obj.Host.widgetMenu(view,'Data');
             dataMenu.MenuSelectedFcn = @(~,~)obj.toggleData();
+            measurementsMenu=obj.Host.widgetMenu(view,'Measurements');
+            measurementsMenu.MenuSelectedFcn=@(~,~)obj.toggleMeasurements();
             obj.Host.menu(view,'Arrange Analysis Workspace', ...
                 'MenuSelectedFcn',@(~,~)obj.arrangeAnalysisWorkspace());
             obj.OverlayMenu = obj.Host.menu(view,'ROI Outlines','Checked','on','Separator','on', ...
@@ -2344,6 +2412,11 @@ classdef Viewer < handle
             uibutton(grid,'Text','Close','ButtonPushedFcn',@(~,~)delete(obj.ShortcutFigure));
         end
         function setFrame(obj,frame)
+            if obj.Closing, return; end
+            if obj.DrawingROI
+                if ~isempty(obj.GestureFrame), obj.Frame.Value=obj.GestureFrame; obj.TimeSlider.Value=obj.GestureFrame; end
+                return;
+            end
             obj.cancelPreview();
             obj.Frame.Value = min(max(1,frame),obj.MaxFrame); obj.render();
         end
@@ -2388,6 +2461,7 @@ classdef Viewer < handle
             end
         end
         function stepFrame(obj,delta)
+            if obj.DrawingROI, return; end
             obj.setFrame(obj.Frame.Value+delta);
             obj.focusImage();
         end
@@ -2435,6 +2509,7 @@ classdef Viewer < handle
                 if ~isempty(obj.Data) && isvalid(obj.Data), obj.Data.onFrame(); end
                 if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers), obj.Classifiers.onImageFrame(); end
                 if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), obj.MovieExport.setContext(); end
+                if obj.measurementActive(), obj.Measurements.onRender(); end
                 obj.applyNavigation();
                 obj.refreshKeyboard();
                 obj.RenderKey = key; obj.CopyMenu.Enable = 'on';
@@ -2478,6 +2553,7 @@ classdef Viewer < handle
             cla(obj.Axes); title(obj.Axes,''); obj.Axes.Tag = 'image-view';
             obj.ImageRevision = obj.ImageRevision+1;
             obj.applyNavigation();
+            if obj.measurementActive(), obj.Measurements.onRender(); end
         end
         function renderImagePanels(obj,views,separated,keepView,xl,yl)
             obj.ensureImagePanels(numel(views)); obj.ImageRevision = obj.ImageRevision+1;
@@ -2531,6 +2607,7 @@ classdef Viewer < handle
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
                 if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
+                if obj.measurementActive(), obj.Measurements.onRender(); end
             end
         end
         function drawRegions(obj,ax,layer)
@@ -2568,6 +2645,7 @@ classdef Viewer < handle
             obj.NavigationMode=mode;
             obj.ZoomButton.Value=strcmp(mode,'zoom'); obj.PanButton.Value=strcmp(mode,'pan');
             if obj.hasMaskWidget(), obj.Masks.onRender(); end % Cancel an unfinished brush stroke before navigation.
+            if obj.measurementActive(), obj.Measurements.updateNavigation(); end
             obj.applyNavigation(); obj.focusImage();
         end
         function suspendNavigation(obj)

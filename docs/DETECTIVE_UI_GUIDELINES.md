@@ -40,14 +40,19 @@ The requirements below supersede the earlier French labels, renamed data concept
 
 21. Keep one visible docking tab level for Display, Annotations and Pipeline. Display and the Annotations browser occupy their document bodies directly. On-demand ROI/Masks/Tracks assistants replace that body and offer an explicit return action, preserving drafts and controller state. Do not add a duplicate Display/Annotations tab strip beneath the document header.
 
+22. Measurements initially opens with the right-hand Display/Pipeline tabs.
+Do not automatically split Image to place it underneath. The initial prototype
+placement migrates once; later manual docking/floating and saved positions are
+retained. Compact controls must remain usable at the inspector's normal width.
+
 ## Initial menu structure
 
 | Menu | Available commands |
 | --- | --- |
 | File | Open Project..., Recent Projects, Open Classifier..., Recent Classifiers, Save Project, Save Annotations, Export Movie..., New Pipeline..., Open Pipeline..., Save Pipeline, Close Project, Relink Raw Data..., Exit |
-| Edit | Copy Image, Display Presets (Copy/Paste/Save/Load), Define ROIs..., Edit Masks..., Edit Tracks... |
+| Edit | Copy Image, Display Presets (Copy/Paste/Save/Load), Measure Intensity..., Define ROIs..., Edit Masks..., Edit Tracks... |
 | Pipeline | New Pipeline..., Open Pipeline..., Edit Pipeline..., Project Runs, Refresh Project Runs |
-| View | Projects, Image, Display, Pipeline, Annotations, Data, Arrange Analysis Workspace, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
+| View | Projects, Image, Display, Pipeline, Annotations, Data, Measurements, Arrange Analysis Workspace, ROI Outlines, Fit Image, Reload Image, Refresh Workspace, Expand/Collapse Projects, Docking, Save/Restore/Reset Layout |
 | Navigate | Parent FOV, Previous Frame, Next Frame, Back 10 Frames, Forward 10 Frames |
 | Help | Keyboard Shortcuts..., About DetecDiv |
 

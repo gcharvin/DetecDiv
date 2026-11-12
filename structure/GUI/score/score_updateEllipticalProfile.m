@@ -74,53 +74,27 @@ function score_updateEllipticalProfile(app, ellipseObj)
         
         % Extraction des pixels dans la région définie par l'ellipse
         pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
-        if numel(pix) == 3
-            % Canal RGB : extraire les trois composantes et convertir en niveaux de gris
-            rawR = double(selectedROI.image(:, :, pix(1), currentFrame));
-            rawG = double(selectedROI.image(:, :, pix(2), currentFrame));
-            rawB = double(selectedROI.image(:, :, pix(3), currentFrame));
-            grayImage = 0.2989 * rawR + 0.5870 * rawG + 0.1140 * rawB;
-            pixelValues = grayImage(mask);
-        else
-            % Canal monochrome
-            rawImg = double(selectedROI.image(:, :, pix(1), currentFrame));
-            pixelValues = rawImg(mask);
-        end
-        pixelValues = score_decodeChannelValues(selectedROI, channelIdx, pixelValues);
+        sample = score_measureIntensity(selectedROI.image(:,:,pix,currentFrame), ...
+            'Region',mask,selectedROI,channelIdx);
         
         % Vérifier que pixelValues n'est pas vide
-        if isempty(pixelValues)
+        if sample.count == 0
             continue;
         end
         
         % Calcul des bornes pour ce canal
-        channelMin = min(pixelValues);
-        channelMax = max(pixelValues);
+        channelMin = sample.minimum;
+        channelMax = sample.maximum;
         globalMin = min(globalMin, channelMin);
         globalMax = max(globalMax, channelMax);
         
-        % Calcul du bin width avec la règle de Freedman-Diaconis
-        n = numel(pixelValues);
-        binWidth = 2 * iqr(pixelValues) / (n^(1/3));
-        if isempty(binWidth) || isnan(binWidth) || binWidth <= 0 || (channelMax == channelMin)
-            % Si la règle ne donne pas de résultat valable, utiliser 10 bins par défaut
-            numBinsChannel = 10;
-        else
-            numBinsChannel = ceil((channelMax - channelMin) / binWidth);
-            % S'assurer d'avoir au moins 10 bins pour avoir une courbe lisse
-            numBinsChannel = max(numBinsChannel, 10);
-        end
-        
-        % Calcul des binEdges et binCenters pour ce canal
-        binEdges = linspace(channelMin, channelMax, numBinsChannel+1);
-        binCenters = (binEdges(1:end-1) + binEdges(2:end)) / 2;
-        
-        % Calcul de l'histogramme
-        counts = histcounts(pixelValues, binEdges);
+        % Histogramme partagé avec la nouvelle interface.
+        binCenters = sample.centers;
+        counts = sample.counts;
         
         % Calcul de la médiane des pixels pour la légende
-        medVal = median(pixelValues);
-        stdVal = std(pixelValues);
+        medVal = sample.median;
+        stdVal = sample.std;
         if strcmp(score_channelDisplayUnit(selectedROI, channelIdx), 'raw')
             channelNames{k} = sprintf('%s (Med=%.0f; Std=%.0f)', baseName, medVal, stdVal);
         else

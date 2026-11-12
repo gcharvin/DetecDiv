@@ -24,6 +24,7 @@ Progress objects, GUI handles and scopes are never added to persisted run contex
 | Relink raw paths | Projects | Indeterminate around the existing relink helper |
 | Read raw pixels or ROI H5, render visible layers | Image | Indeterminate around existing readers and score rendering |
 | Adjust display/Auto, copy image | Display / Image | Indeterminate; cached source data is preserved |
+| Measure visible intensity channels, export current profile/region CSV | Measurements / Image | Scoped indeterminate computation/export; MovingROI previews are throttled, with exact final sampling on ROIMoved; no cancellable backend work is claimed |
 | Open/refresh/save pipeline | Pipeline | Indeterminate around existing helpers and graph refresh |
 | Validate/dry run, save run, read run review | Pipeline | Indeterminate around shared backend calls |
 | Movie/PDF/PNG/TIFF snapshot, preview and export | Export Movie (Display), falling back to Image/visible footer | Source loading indeterminate; real video-frame/sequence-cell fractions; cooperative Cancel, writer/temp cleanup |

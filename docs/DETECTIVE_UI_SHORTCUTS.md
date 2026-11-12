@@ -73,11 +73,15 @@ suppression of built-in gestures required explicit MATLAB `zoom(ax,'on')` /
 verified linked channel panels, L/M (1 → 11 → 1), Reset, and further rectangle
 zoom after a frame redraw. Native modes are suspended around callback/axes
 reconstruction and restored afterwards, avoiding WebAxesModeWarnings.
-The older `tracksTest` fails at line 62
-when driving the now-hidden provider selector. This also reproduces with the
-unchanged Viewer/MaskWidget/TracksWidget from `de02be11`, so the test needs a
-separate update to the current Display-owned provider workflow.
+The older hidden-provider path in `tracksTest` was updated with the parent-link
+integration to select providers through Display. Cross-provider draft protection
+remains asserted and the complete test passes.
 
 With Contours active, Ctrl+Z/Ctrl+Y undo/redo the mask draft, and Escape cancels a pending stroke/returns to Select. Its Delete/fill/opacity bindings share the existing Score preferences. Frame navigation remains active outside drawing gestures. See `DETECTIVE_UI_CONTOURS.md` and `detecdivui.contourTest()` for editor scope and persistence.
 
 Tracks uses the same navigation and shared annotation Undo/Redo. Escape cancels a pending parent/continuity pick; Delete retains the current-frame contour meaning. Whole-track deletion is an explicitly labeled button, not the Delete key. Inputs retain text editing, including exact decimal uint64 IDs. See `DETECTIVE_UI_TRACKS.md` and `detecdivui.tracksTest()`.
+
+Measurements keeps normal image frame navigation outside geometry gestures.
+While placing or moving a line/ellipse, frame menu commands and numeric/slider
+commits retain the gesture's starting frame. Native shape handles own their
+movement; leaving/hiding Measurements releases them without scientific writes.

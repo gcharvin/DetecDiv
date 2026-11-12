@@ -82,7 +82,40 @@ displayPresetTest covers reordered and extra channels, skipped incompatible type
 
 liveDisplayTest checks frame/contrast changes before release, latest-value coalescing, exact release values, retained histogram pointer gestures, pointer cancellation, stale-context rejection, unchanged source pixels/metadata and preview-timer cleanup. Its synthetic pointer test stubs native pointer capture only; desktop drag verification checks the native capture path separately.
 
-## Next widgets: classifiers and pipelines
+## Intensity measurements
+
+**Edit > Measure Intensity...**, the Image context menu or **View > Measurements**
+opens a dockable Measurements tab in the right-hand Display/Pipeline group.
+Opening it does not split or shrink Image. Display remains available in that
+group for selecting visible intensity/RGB channels. Line samples use pixel
+distance; Ellipse plots the selected region's intensity histogram. The table
+shows finite sample count, mean, median, standard deviation and units. RGB is
+converted with Score's luminance weights, and encoded channels use its physical
+value transform. Contrast and intensity weight never change measured values.
+The plot and statistics sit side by side in a wide panel and stack vertically
+when the document is narrower; the toolbar uses two compact rows in a narrow
+inspector, without a second tab level. Floating and manually chosen positions
+remain user-owned after the initial placement.
+
+Draw places a temporary native shape on Image. Dragging updates the plot during
+movement and applies the exact final geometry at release. Frames remain browsable
+outside a draw/move gesture; menus and frame controls are blocked during it.
+Geometry is retained independently by project/FOV/ROI and shape type. Switching
+image tabs or modes does not transfer it to another ROI. Done/native Close hides
+the widget and releases its drawing handles. Opening Masks, Tracks or ROI
+definition suspends measurement interaction while retaining geometry. Redocking
+a suspended document does not steal the active drawing tool.
+
+Export CSV writes the current source, layer, frame, unit and sampled values or
+histogram bins. It does not create ROI definitions, annotation pixels or a
+dataseries. Transient measurement shapes are excluded from movie output.
+`score_measureIntensity` is shared by the new widget and both legacy Score
+profile wrappers, including finite-value handling and bounded Freedman–Diaconis
+region histograms. `measurementsTest` exercises values, units, RGB grouping,
+geometry/frame/context isolation, exports, ownership and docking. Fluorescence
+over time remains a separate backend/processor integration.
+
+## Classifiers and pipelines
 
 Classifiers now have an independent Classifier widget with an open-model selector, a ROI dataset table and common parameter editing. The table exposes dataset membership, persistent frame bounds and annotation status/coverage. A classifier remains a canonical `@classi` object. Its flat ROI collection uses a transient image-session adapter; this is never listed or saved as a project. Compatible-model selection for guided actions remains a separate integration.
 

@@ -76,5 +76,80 @@ classdef WorkspaceLayout
                 end
             end
         end
+        function yes = isBelowImage(layout,id)
+            image=detecdivui.WorkspaceLayout.tile(layout,'workspace_image');
+            item=detecdivui.WorkspaceLayout.tile(layout,id); yes=false;
+            if isempty(image)||isempty(item)||image==item||numel(layout.tileOccupancy(item).children)~=1, return; end
+            [ir,ic]=find(layout.tileCoverage==image); [mr,mc]=find(layout.tileCoverage==item);
+            if isempty(ir)||isempty(mr), return; end
+            yes=max(ir)<min(mr)&&isequal(unique(ic),unique(mc));
+        end
+        function layout = tabWith(layout,anchorId,id)
+            layout=detecdivui.WorkspaceLayout.geometry(layout);
+            anchor=detecdivui.WorkspaceLayout.tile(layout,anchorId);
+            assert(~isempty(anchor),'detecdivui:InspectorLayout','The target document group is unavailable.');
+            previous=detecdivui.WorkspaceLayout.tile(layout,id);
+            for k=1:numel(layout.tileOccupancy)
+                children=layout.tileOccupancy(k).children;
+                children=children(~strcmp({children.id},id)); layout.tileOccupancy(k).children=children;
+                if strcmp(layout.tileOccupancy(k).showingChildId,id)
+                    shown=''; if ~isempty(children), shown=children(1).id; end
+                    layout.tileOccupancy(k).showingChildId=shown;
+                end
+            end
+            if ~isempty(previous)&&previous~=anchor&&isempty(layout.tileOccupancy(previous).children)
+                layout=detecdivui.WorkspaceLayout.closeEmptyTile(layout,previous);
+                anchor=detecdivui.WorkspaceLayout.tile(layout,anchorId);
+            end
+            layout.tileOccupancy(anchor).children(end+1).id=char(id);
+            layout.tileOccupancy(anchor).showingChildId=char(id);
+        end
+        function anchor = inspectorAnchor(layout)
+            anchor='';
+            for id={'workspace_display','workspace_pipeline','workspace_objects','workspace_image','workspace_projects'}
+                tile=detecdivui.WorkspaceLayout.tile(layout,id{1});
+                if ~isempty(tile)&&any(layout.tileCoverage(:)==tile), anchor=id{1}; return; end
+            end
+        end
+    end
+    methods (Static,Access=private)
+        function layout = closeEmptyTile(layout,tile)
+            coverage=layout.tileCoverage; [rows,columns]=find(coverage==tile);
+            if ~isempty(rows)
+                rr=min(rows):max(rows); cc=min(columns):max(columns);
+                image=detecdivui.WorkspaceLayout.tile(layout,'workspace_image');
+                ir=[]; ic=[];
+                if ~isempty(image), [ir,ic]=find(coverage==image); end
+                outside=setdiff(1:size(coverage,2),cc);
+                collapse=~isempty(ir)&&isequal(unique(ic),unique(columns))&&max(ir)<min(rows);
+                if collapse
+                    same=coverage(rr,outside)==coverage(max(ir),outside);
+                    collapse=all(same(:));
+                end
+                if collapse
+                    % Return the former profile row to Image. The cells in
+                    % other columns belong to the same spanning documents.
+                    layout.rowWeights(max(ir))=layout.rowWeights(max(ir))+sum(layout.rowWeights(rr));
+                    layout.rowWeights(rr)=[]; coverage(rr,:)=[];
+                else
+                    candidates=[];
+                    if min(rr)>1, candidates=[candidates coverage(min(rr)-1,cc)]; end
+                    if max(rr)<size(coverage,1), candidates=[candidates coverage(max(rr)+1,cc)]; end
+                    if min(cc)>1, candidates=[candidates coverage(rr,min(cc)-1)']; end
+                    if max(cc)<size(coverage,2), candidates=[candidates coverage(rr,max(cc)+1)']; end
+                    replacement=[];
+                    for candidate=unique(candidates,'stable')
+                        [r,c]=find(coverage==candidate|coverage==tile);
+                        block=coverage(min(r):max(r),min(c):max(c));
+                        if all(block(:)==candidate|block(:)==tile), replacement=candidate; break; end
+                    end
+                    assert(~isempty(replacement),'detecdivui:InspectorLayout','Cannot collapse the former widget tile.');
+                    coverage(coverage==tile)=replacement;
+                end
+            end
+            layout.tileOccupancy(tile)=[]; coverage(coverage>tile)=coverage(coverage>tile)-1;
+            layout.tileCoverage=coverage; layout.tileCount=numel(layout.tileOccupancy);
+            layout.gridDimensions=struct('w',size(coverage,2),'h',size(coverage,1));
+        end
     end
 end

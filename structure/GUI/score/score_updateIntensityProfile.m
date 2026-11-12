@@ -64,19 +64,9 @@ function score_updateIntensityProfile(app, pos)
         
         % Extraire le profil d'intensité en fonction du type de canal
         pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
-        if numel(pix) == 3
-            % Canal RGB : extraire les 3 composantes et calculer le profil en niveaux de gris
-            rawR = double(selectedROI.image(:, :, pix(1), currentFrame));
-            rawG = double(selectedROI.image(:, :, pix(2), currentFrame));
-            rawB = double(selectedROI.image(:, :, pix(3), currentFrame));
-            grayImage = 0.2989 * rawR + 0.5870 * rawG + 0.1140 * rawB;
-            profile = improfile(grayImage, xCoords, yCoords);
-        else
-            % Canal monochrome : extraire directement les intensités brutes
-            rawImg = double(selectedROI.image(:, :, pix(1), currentFrame));
-            profile = improfile(rawImg, xCoords, yCoords);
-        end
-        profile = score_decodeChannelValues(selectedROI, channelIdx, profile);
+        sample = score_measureIntensity(selectedROI.image(:,:,pix,currentFrame), ...
+            'Line',[xCoords(:) yCoords(:)],selectedROI,channelIdx);
+        profile = sample.values;
         profile = squeeze(profile);  % éliminer les dimensions unitaires
         profiles{k} = profile;
         

@@ -455,6 +455,7 @@
 "Helper","score_lineageTreeLayout","structure/GUI/score/score_lineageTreeLayout.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_loadChannelsForDisplay","structure/GUI/score/score_loadChannelsForDisplay.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_makeComposite","structure/GUI/score/score_makeComposite.m","1","","Top-level helper; may still depend on a Score app handle"
+"Helper","score_measureIntensity","structure/GUI/score/score_measureIntensity.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_normalizeMovieEvents","structure/GUI/score/score_normalizeMovieEvents.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_paintOverlay","structure/GUI/score/score_paintOverlay.m","1","","Top-level helper; may still depend on a Score app handle"
 "Helper","score_prepareSelectedTrackPaint","structure/GUI/score/score_prepareSelectedTrackPaint.m","1","","Top-level helper; may still depend on a Score app handle"

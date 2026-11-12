@@ -28,7 +28,8 @@ classdef DockingHost < handle
         VisibilityCommands = {}
         InvalidLayout = false
         HiddenLayouts
-        ArrangedWidgets = struct('data',false,'objects',false)
+        ArrangedWidgets = struct('data',false,'objects',false,'measurements',false)
+        MeasurementsLayoutVersion = 0
         AppCloseApproved = false
         PendingCloses
         HiddenFloating
@@ -48,7 +49,7 @@ classdef DockingHost < handle
             group = matlab.ui.internal.FigureDocumentGroup( ...
                 'Tag','workspace','Title','Workspace','EnableDockControls',true);
             obj.App.add(group);
-            for name = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'}
+            for name = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier','Measurements'}
                 id = lower(name{1});
                 doc = matlab.ui.internal.FigureDocument('Tag',id,'Title',name{1}, ...
                     'DocumentGroupTag','workspace','EnableDockControls',true,'Closable',true);
@@ -56,7 +57,7 @@ classdef DockingHost < handle
                 obj.App.add(doc); obj.Widgets.(id) = doc;
                 doc.CanCloseFcn = @(document)obj.requestWidgetClose(id,document);
                 doc.Figure.CloseRequestFcn = @(~,~)obj.deferWidgetClose(id);
-                if ismember(id,{'data','objects','classifier'}), doc.Visible = false; end
+                if ismember(id,{'data','objects','classifier','measurements'}), doc.Visible = false; end
             end
             obj.App.CanCloseFcn = @(~)obj.allowClose();
             obj.StateListener = addlistener(obj.App,'StateChanged',@(~,~)obj.appStateChanged());
@@ -78,7 +79,7 @@ classdef DockingHost < handle
         end
         function addDockMenus(obj,parent)
             docking = obj.menu(parent,'Docking','Separator','on');
-            names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'};
+            names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier','Measurements'};
             for k = 1:numel(names)
                 name = names{k};
                 obj.DockCommands{k} = obj.menu(docking,['Undock ' obj.widgetLabel(name)], ...
@@ -141,6 +142,9 @@ classdef DockingHost < handle
         function openData(obj)
             obj.openInspector('Data','Image',.70);
         end
+        function openMeasurements(obj)
+            obj.show(); obj.setWidgetVisible('Measurements',true); obj.focusWidget('Measurements');
+        end
         function openObjects(obj,focus)
             if nargin<2, focus=true; end
             obj.openInspector('Objects','Display',.55,focus);
@@ -166,6 +170,7 @@ classdef DockingHost < handle
             if doc.Visible == logical(visible)
                 if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
                 if visible && strcmp(id,'objects'), obj.ensureAnnotationPlacement(); end
+                if visible && strcmp(id,'measurements'), obj.ensureMeasurementPlacement(); end
                 obj.syncMenus(); return;
             end
             remembered = []; floating = [];
@@ -215,6 +220,7 @@ classdef DockingHost < handle
             obj.settle(); obj.syncMenus();
             if visible && strcmpi(name,'Classifier'), obj.ensureClassifierPlacement(); end
             if visible && strcmp(id,'objects'), obj.ensureAnnotationPlacement(annotationLayout); end
+            if visible && strcmp(id,'measurements'), obj.ensureMeasurementPlacement(); end
             obj.notifyVisibility(id,logical(visible));
         end
         function value = isWidgetVisible(obj,name)
@@ -233,7 +239,8 @@ classdef DockingHost < handle
             obj.dockAll();
             obj.Widgets.data.Visible = false; obj.Widgets.objects.Visible = false;
             obj.Widgets.classifier.Visible = false;
-            obj.ArrangedWidgets = struct('data',false,'objects',false);
+            obj.Widgets.measurements.Visible = false;
+            obj.ArrangedWidgets = struct('data',false,'objects',false,'measurements',false);
             obj.HiddenLayouts = containers.Map('KeyType','char','ValueType','any');
             names = {'projects','image','display','pipeline'};
             for k = 1:numel(names)
@@ -259,7 +266,7 @@ classdef DockingHost < handle
             obj.waitForLayout();
             record = struct('schema','detecdiv.ui.layout.v1','release',version('-release'), ...
                 'layout',obj.App.Layout,'windowBounds',obj.App.WindowBounds,'widgets',struct(), ...
-                'annotationsLayoutVersion',2);
+                'annotationsLayoutVersion',2,'measurementsLayoutVersion',obj.MeasurementsLayoutVersion);
             names = fieldnames(obj.Widgets);
             for k = 1:numel(names)
                 doc = obj.widget(names{k});
@@ -320,6 +327,27 @@ classdef DockingHost < handle
                     record.widgets.classifier = struct('docked',true,'visible',false, ...
                         'windowBounds',obj.Widgets.classifier.WindowBounds);
                 end
+                if isfield(record,'widgets') && ~isfield(record.widgets,'measurements')
+                    record.widgets.measurements = struct('docked',true,'visible',false, ...
+                        'windowBounds',obj.Widgets.measurements.WindowBounds);
+                end
+                % Migrate geometry before native restoration so the old
+                % automatic image split is never briefly reintroduced.
+                modern=isfield(record,'measurementsLayoutVersion')&&isequal(record.measurementsLayoutVersion,2);
+                if ~modern&&isfield(record,'widgets')&&record.widgets.measurements.docked
+                    layout=record.layout.documentLayout;
+                    if detecdivui.WorkspaceLayout.isBelowImage(layout,'workspace_measurements')
+                        anchor=detecdivui.WorkspaceLayout.inspectorAnchor(layout);
+                        record.layout.documentLayout=detecdivui.WorkspaceLayout.tabWith(layout,anchor,'workspace_measurements');
+                        record.widgets.measurements.placed=true;
+                    end
+                    if isfield(record,'hiddenLayouts')&&isfield(record.hiddenLayouts,'measurements')&& ...
+                            detecdivui.WorkspaceLayout.isBelowImage(record.hiddenLayouts.measurements.visible,'workspace_measurements')
+                        record.hiddenLayouts=rmfield(record.hiddenLayouts,'measurements');
+                        if ~record.widgets.measurements.visible, record.widgets.measurements.placed=false; end
+                    end
+                    record.measurementsLayoutVersion=2;
+                end
                 obj.validateRecord(record);
                 obj.App.WindowBounds = reshape(record.windowBounds,1,4);
                 obj.HiddenFloating = containers.Map('KeyType','char','ValueType','any');
@@ -365,6 +393,11 @@ classdef DockingHost < handle
                     obj.ArrangedWidgets.objects=false;
                     obj.ensureAnnotationPlacement();
                 end
+                obj.MeasurementsLayoutVersion=0;
+                if isfield(record,'measurementsLayoutVersion')&&isequal(record.measurementsLayoutVersion,2)
+                    obj.MeasurementsLayoutVersion=2;
+                end
+                obj.ensureMeasurementPlacement();
                 for k = 1:numel(names), obj.notifyVisibility(names{k},obj.widget(names{k}).Visible); end
                 obj.LastLayoutError = ''; ok = true;
                 obj.InvalidLayout = false;
@@ -386,7 +419,7 @@ classdef DockingHost < handle
         function syncMenus(obj)
             if ~obj.MenusInstalled || obj.WebBusy || isempty(obj.Window) || ~isvalid(obj.Window) || obj.Closing, return; end
             for k = 1:numel(obj.DockCommands)
-                names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier'}; name = names{k};
+                names = {'Projects','Image','Display','Pipeline','Objects','Data','Classifier','Measurements'}; name = names{k};
                 verb = 'Undock';
                 if ~obj.isDocked(name), verb = 'Dock'; end
                 obj.DockCommands{k}.Text = [verb ' ' obj.widgetLabel(name)];
@@ -430,6 +463,26 @@ classdef DockingHost < handle
         end
     end
     methods (Access = private)
+        function ensureMeasurementPlacement(obj)
+            doc=obj.Widgets.measurements;
+            if obj.MeasurementsLayoutVersion<2
+                candidate=obj.App.DocumentLayout;
+                if isKey(obj.HiddenLayouts,'measurements'), candidate=obj.HiddenLayouts('measurements').visible; end
+                if obj.isDocked('Measurements')&&detecdivui.WorkspaceLayout.isBelowImage(candidate,'workspace_measurements')
+                    obj.ArrangedWidgets.measurements=false;
+                    if isKey(obj.HiddenLayouts,'measurements'), remove(obj.HiddenLayouts,'measurements'); end
+                end
+                obj.MeasurementsLayoutVersion=2;
+            end
+            if obj.ArrangedWidgets.measurements||~doc.Visible||~doc.Docked, return; end
+            layout=detecdivui.WorkspaceLayout.geometry(obj.App.DocumentLayout);
+            anchor=detecdivui.WorkspaceLayout.inspectorAnchor(layout);
+            if ~isempty(anchor)
+                layout=detecdivui.WorkspaceLayout.tabWith(layout,anchor,'workspace_measurements');
+                obj.App.DocumentLayout=layout; obj.waitForLayout();
+            end
+            obj.ArrangedWidgets.measurements=true; obj.settle();
+        end
         function ensureAnnotationPlacement(obj,reference)
             if obj.ArrangedWidgets.objects || ~obj.Widgets.objects.Visible || ~obj.Widgets.objects.Docked || ...
                     ~obj.Widgets.display.Visible || ~obj.Widgets.display.Docked, return; end
