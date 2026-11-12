@@ -23,6 +23,9 @@ tree.SelectedNodes = findall(tree,'Tag','roi-node'); tree.SelectionChangedFcn(tr
 figure = viewer.widgetFigure('Display');
 table = findall(figure,'Tag','layers'); active = findall(figure,'Tag','channels');
 assert(strcmp(active.Visible,'off')); % Selection is exposed by the table only.
+minimum = findall(figure,'Tag','contrast-min'); opacity = findall(figure,'Tag','layer-opacity');
+assert(strcmp(minimum.Parent.Visible,'off') && strcmp(opacity.Parent.Visible,'off'));
+assert(strcmp(table.Parent.RowHeight{2},'1x'));
 ax = findall(viewer.Figure,'Tag','image-view');
 assert(numel(table.Data.layers) == 3 && all([viewer.DisplayModel.Layers.visible]));
 histogram = findall(figure,'Tag','display-histogram');

@@ -332,7 +332,7 @@ classdef Viewer < handle
             obj.DisplayPage = displayPanel;
             tools = uigridlayout(displayPanel,[13 1]); obj.DisplayTools = tools;
             tools.RowSpacing = 6; tools.Scrollable = 'on';
-            tools.RowHeight = {22,'1x',28,28,0,150,28,28,28,32,28,22,22};
+            tools.RowHeight = {22,'1x',28,28,0,150,0,28,28,0,28,22,22};
             heading = uigridlayout(tools,[1 3]); heading.Padding = [0 0 0 0]; heading.ColumnWidth = {42,'1x',45};
             uilabel(heading,'Text','Layers','FontWeight','bold');
             obj.OverlayChannels = uicheckbox(heading,'Text','Overlay channels','Value',true, ...
@@ -378,7 +378,7 @@ classdef Viewer < handle
                 'ValueChangedFcn',@(~,~)obj.editLayer('mask-style'));
             obj.Histogram = detecdivui.HistogramView(tools);
             obj.Histogram.OnEdit = detecdivui.Callback(obj,'widgetEvent','layerEdit');
-            limits = uigridlayout(tools,[1 2]); limits.Padding = [0 0 0 0];
+            limits = uigridlayout(tools,[1 2]); limits.Padding = [0 0 0 0]; limits.Visible = 'off';
             limits.ColumnWidth = {'1x','1x'};
             obj.MinField = uieditfield(limits,'numeric','Value',0,'Enable','off', ...
                 'Tag','contrast-min','Tooltip','Minimum intensity in source units', ...
@@ -395,6 +395,7 @@ classdef Viewer < handle
                 'Tooltip','Set contrast from this frame and keep it while browsing', ...
                 'ButtonPushedFcn',@(~,~)obj.editLayer('auto'));
             opacity = uigridlayout(tools,[1 2]); opacity.Padding = [0 0 4 0]; opacity.ColumnWidth = {43,'1x'};
+            opacity.Visible = 'off';
             uilabel(opacity,'Text','Weight');
             obj.OpacitySlider = uislider(opacity,'Limits',[0 1],'Value',1,'Enable','off', ...
                 'MajorTicks',[0 1],'Tag','layer-opacity','Tooltip','Active layer opacity / intensity weight', ...
@@ -2838,10 +2839,9 @@ classdef Viewer < handle
             isLabel = strcmp(layer.kind,'Labels'); isRGB = strcmp(layer.kind,'RGB');
             if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
                 rows = obj.MaskOptions.Parent.RowHeight; rows{5} = 0; rows{6} = 150;
-                rows(7:9) = {28,28,28};
+                rows(7:9) = {0,28,28}; rows{10} = 0;
                 obj.MaskOptions.Visible = obj.onOff(isLabel);
                 obj.Histogram.View.Visible = obj.onOff(~isLabel);
-                obj.MinField.Parent.Visible = obj.onOff(~isLabel);
                 obj.ContrastSlider.Visible = obj.onOff(~isLabel); obj.AutoButton.Visible = obj.onOff(~isLabel);
                 if isLabel
                     rows{5} = 28; rows{6} = 0;
@@ -2889,7 +2889,8 @@ classdef Viewer < handle
             compact = obj.DisplayTools.Parent.InnerPosition(4) < 650;
             rows = obj.DisplayTools.RowHeight;
             spacing = 6;
-            if compact, rows{2} = 100; spacing = 4; else, rows{2} = '1x'; end
+            rows{2} = '1x';
+            if compact, spacing = 4; end
             show = ~compact;
             if ~isempty(obj.HistogramRequested), show = obj.HistogramRequested; end
             isLabel = strcmp(obj.MaskOptions.Visible,'on');
@@ -2906,9 +2907,9 @@ classdef Viewer < handle
             obj.LayerTable.update(struct([]),0); obj.Histogram.clear();
             if ~isempty(obj.MaskOptions) && isvalid(obj.MaskOptions)
                 obj.MaskOptions.Visible = 'off'; obj.Histogram.View.Visible = 'on';
-                obj.MinField.Parent.Visible = 'on'; obj.ContrastSlider.Visible = 'on'; obj.AutoButton.Visible = 'on';
+                obj.ContrastSlider.Visible = 'on'; obj.AutoButton.Visible = 'on';
                 rows = obj.MaskOptions.Parent.RowHeight; rows{5} = 0; rows{6} = 150;
-                rows(7:9) = {28,28,28};
+                rows(7:9) = {0,28,28}; rows{10} = 0;
                 obj.MaskOptions.Parent.RowHeight = rows;
             end
             for control = {obj.LayerKind,obj.ColorField,obj.ColorPicker,obj.MinField,obj.MaxField, ...
