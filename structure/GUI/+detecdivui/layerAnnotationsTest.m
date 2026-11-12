@@ -35,13 +35,13 @@ check(2); assert(strcmp(v.activeLayer(),'Cellpose')&&isscalar(v.Objects.ObjectsR
 check(1); check(1); assert(strcmp(v.activeLayer(),'Phase')&&isempty(v.Objects.ObjectsRows));
 check(2); assert(strcmp(v.activeLayer(),'HOCT')&&numel(v.Objects.ObjectsRows)==2);
 assert(isequal(r.image,pixels)&&isequal(r.display,metadata)&&isequal(r.cellModel,baseline));
-for k=1:numel(v.Masks.Drafts), assert(~v.Masks.Drafts{k}.Dirty); end
+assert(isempty(v.Masks));
 
 % Model metadata is read without needing to activate a paint/edit draft.
-v.Host.setWidgetVisible('Annotations',false); v.Masks.forgetCleanSource(r);
+v.Host.setWidgetVisible('Annotations',false);
 r.cellModel=[]; r.cellModelInfo=struct('loaded',false);
 select(1); select(2);
-assert(~v.Host.isWidgetVisible('Annotations')&&~v.Masks.Active);
+assert(~v.Host.isWidgetVisible('Annotations')&&isempty(v.Masks));
 assert(v.Objects.SelectedFamily==1&&numel(v.Objects.ObjectsRows)==2&&v.Objects.ObjectsRows(1).track==101);
 check(2); check(2); assert(v.Host.isWidgetVisible('Annotations'));
 

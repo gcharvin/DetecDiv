@@ -37,11 +37,11 @@ table = findall(viewer.widgetFigure('Objects'),'Tag','objects-table');
 assert(strcmp(table.Data{1,2},char(string(exact))) && strcmp(table.Data{1,4},'Dividing'));
 widget.selectObject(1); selection = viewer.selectedAnnotation();
 assert(selection.label==1 && selection.family==secondFamily);
-assert(~isempty(findall(viewer.roiAxes(),'Tag','mask-selection')));
+assert(isempty(viewer.Masks) && ~isempty(findall(viewer.roiAxes(),'Tag','review-selection')));
 layer = find(strcmp({viewer.DisplayModel.Layers.name},resultLayer));
 assert(viewer.DisplayModel.Layers(layer).visible && strcmp(viewer.DisplayModel.Layers(layer).color,'Labels'));
 draft = viewer.annotationDraft(resultLayer);
-assert(viewer.Masks.current()==draft && ~draft.Dirty);
+assert(~viewer.Masks.Active && ~draft.Dirty);
 assert(isequal(source.image,pixels) && isequal(source.display,metadata) && isequal(source.cellModel,baseline));
 
 % The separated tracking result remains selected when entering the track editor.
@@ -52,7 +52,7 @@ assert(strcmp(info.UserData{2,2},char(string(exact))));
 tabs = findall(viewer.widgetFigure('Objects'),'Tag','objects-tools');
 browser = findall(tabs,'Tag','objects-browser-tab'); tabs.SelectedTab = browser;
 detecdivui.Callback.call(tabs.SelectionChangedFcn,tabs,[]);
-assert(viewer.Masks.Active && ~viewer.Tracks.Active && viewer.Masks.current()==draft);
+assert(~viewer.Masks.Active && ~viewer.Tracks.Active);
 selection = viewer.selectedAnnotation(); assert(selection.family==secondFamily && selection.label==1);
 widget.action('tracks'); assert(viewer.Tracks.Active && viewer.Tracks.current()==draft);
 family = findall(viewer.widgetFigure('Objects'),'Tag','tracks-family'); assert(family.Value==double(secondFamily));
@@ -100,12 +100,16 @@ viewer.Host.setWidgetVisible('Objects',false);
 assert(~viewer.Masks.Active && (isempty(viewer.Tracks) || ~viewer.Tracks.Active));
 hiddenSelection = table.CellSelectionCallback;
 hiddenSelection(table,struct('Indices',[1 1]));
-assert(~viewer.Masks.Active && ~widget.resumeSelection(), ...
+assert(~viewer.Masks.Active, ...
     'A hidden Objects document resumed image editing from a queued selection.');
 assert(isequal(other.image,otherPixels) && isequal(other.cellModel,otherModel));
 viewer.openObjects(); selectLayer('Alternative');
 assert(strcmp(widget.SelectedProvider,'Alternative') && numel(widget.ObjectsRows)==1 && widget.ObjectsRows.label==5);
-assert(strcmp(viewer.Masks.current().Channel,'Alternative'));
+assert(~viewer.Masks.Active,'Selecting a Display layer must not activate painting.');
+viewer.openContourTool();
+status = findall(viewer.Figure,'Tag','status');
+assert(viewer.Masks.Active,status.Text);
+assert(strcmp(viewer.Masks.current().Channel,'Alternative'),'The editor picked the previously selected mask layer.');
 selectLayer('Phase');
 assert(isempty(widget.ObjectsRows) && isempty(widget.SelectedProvider) && ~viewer.Masks.Active);
 assert(strcmp(findall(viewer.widgetFigure('Objects'),'Tag','objects-family').Text,'—'));

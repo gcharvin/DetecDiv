@@ -28,8 +28,11 @@ classdef ObjectsWidget < handle
         ParentLinks
     end
     methods
-        function obj = ObjectsWidget(parent,viewer)
+        function obj = ObjectsWidget(parent,viewer,toolbar)
             obj.Viewer = viewer;
+            obj.Controls{1} = uibutton(toolbar,'state','Text','Paint','Tag','objects-contours', ...
+                'Enable','off','Tooltip','Turn mask painting on or off', ...
+                'ValueChangedFcn',@(button,~)obj.togglePaint(button.Value));
             grid = uigridlayout(parent,[8 1]); grid.Padding = [6 6 6 6];
             grid.RowHeight = {24,22,20,'1x',28,26,26,22}; grid.RowSpacing = 4;
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',65};
@@ -55,10 +58,9 @@ classdef ObjectsWidget < handle
             obj.Separate=uibutton(row,'Text','Separate Layers...','Tag','annotations-separate-layers', ...
                 'Tooltip','Give shared tracking results independent mask layers before editing', ...
                 'ButtonPushedFcn',@(~,~)viewer.createAnnotationLayers());
-            row = uigridlayout(grid,[1 3]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x','1x','1x'};
-            for name = {'Masks','Tracks','Lineage'}
+            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x','1x'};
+            for name = {'Tracks','Lineage'}
                 action = lower(name{1});
-                if strcmp(action,'masks'), action='contours'; end % Preserve callback/tag compatibility.
                 obj.Controls{end+1} = uibutton(row,'Text',[name{1} '...'],'Tag',['objects-' action], ...
                     'Enable','off','ButtonPushedFcn',@(~,~)obj.action(action));
             end
@@ -95,26 +97,10 @@ classdef ObjectsWidget < handle
                 % to the previously selected Display layer.
                 obj.Viewer.closeTracksTool(); obj.Viewer.closeContourTool();
             end
-            if ~isempty(obj.SelectedProvider) && obj.Viewer.objectsBrowserActive() && obj.Viewer.annotationLayerEditable(obj.SelectedProvider)
-                masks = obj.Viewer.Masks; draft = [];
-                if ~isempty(masks) && isvalid(masks) && masks.Active, draft = masks.current(); end
-                if isempty(draft) || ~isequal(draft.Source,obj.Source) || ~strcmp(draft.Channel,obj.SelectedProvider)
-                    obj.resumeSelection();
-                end
-            end
         end
-        function resumed = resumeSelection(obj)
-            resumed = false;
-            if obj.Busy || isempty(obj.Source) || ~obj.Viewer.Host.isWidgetVisible('Annotations'), return; end
-            context = obj.Viewer.contourContext(); row = obj.selectedRow();
-            if isempty(row) || ~isequal(context.roi,obj.Source) || ...
-                    ~any(strcmp(context.masks,obj.SelectedProvider)), return; end
-            obj.Busy = true; cleanup = onCleanup(@()obj.finish());
-            obj.LastError = '';
-            try
-                obj.activateFamily(row,obj.SelectedLabel); resumed = obj.Viewer.annotationLayerEditable(obj.SelectedProvider);
-            catch err, obj.LastError = err.message;
-            end
+        function syncPaint(obj)
+            masks = obj.Viewer.Masks;
+            obj.Controls{1}.Value = ~isempty(masks) && isvalid(masks) && masks.Active;
         end
         function loadObjects(obj)
             if obj.Busy || isempty(obj.Source), return; end
@@ -129,8 +115,6 @@ classdef ObjectsWidget < handle
                 [~,status] = score_getCellModel(source);
                 assert(any(strcmp(status,{'ok','missing'})),'detecdivui:ObjectsModel','Cannot read the cellular model: %s',status);
                 obj.refresh();
-                row = obj.selectedRow();
-                if ~isempty(row) && ~obj.Shared, obj.activateFamily(row,0); end
                 if ~obj.Shared, obj.status('Ready'); end
             catch err, obj.LastError = err.message;
             end
@@ -169,7 +153,6 @@ classdef ObjectsWidget < handle
                 switch action
                     case 'contours'
                         obj.Viewer.openContourTool();
-                        obj.Viewer.Masks.selectProvider(obj.SelectedProvider,obj.SelectedLabel);
                     case {'tracks','lineage'}
                         obj.Viewer.openTracksTool();
                         obj.Viewer.Tracks.selectProvider(obj.SelectedProvider,obj.SelectedFamily,obj.SelectedLabel);
@@ -194,6 +177,14 @@ classdef ObjectsWidget < handle
         end
     end
     methods (Access = private)
+        function togglePaint(obj,enabled)
+            if enabled
+                obj.action('contours');
+            else
+                obj.Viewer.closeContourTool();
+            end
+            obj.syncPaint();
+        end
         function finish(obj)
             obj.Busy = false; obj.safeRefresh();
         end

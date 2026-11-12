@@ -14,9 +14,15 @@ on project ROIs and classifier ROIs. Masks supports painting, erasing, drawing
 and contour editing; Tracks supports explicit assignment, linking and lineage.
 They share one provider draft, Undo/Redo, Discard and Save Edits.
 
-Entering Masks shows the contextual toolbar above the image. Brush is the
+Click a visible mask in Image to select its Display layer and highlight the
+frame-local label. Where masks overlap, the uppermost visible layer wins.
+
+Turn **Paint** on in Annotations to edit the selected layer. Turning it off
+returns to mask selection and keeps unsaved edits available for **Save Edits**.
+Painting shows the contextual toolbar above the image. Brush is the
 initial tool. Click a mask to pick its frame-local label, or drag to paint
-with the disk brush. A stroke previews the affected pixels and creates one
+with the disk brush. Starting on empty pixels creates a new label for instance
+masks. A stroke previews the affected pixels and creates one
 undo entry on release. Shift or Ctrl held at the start of a stroke erases.
 Use **[ / ]** to resize the brush and **K** (the default Score shortcut) to
 fill holes in the selected mask. A solid amber outline identifies **Mask N**

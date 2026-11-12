@@ -122,8 +122,7 @@ classdef TracksWidget < handle
             end
             obj.Active = logical(active);
             if obj.Active, obj.refresh(); end
-            if entering && ~isempty(selected)
-                if any(strcmp(obj.Provider.Items,selected.channel)), obj.Provider.Value = selected.channel; obj.refresh(); end
+            if entering && obj.Active && ~isempty(selected) && strcmp(obj.Provider.Value,selected.channel)
                 d = obj.current(); c = obj.Viewer.contourContext();
                 if strcmp(d.Channel,selected.channel)
                     model = d.previewModel();

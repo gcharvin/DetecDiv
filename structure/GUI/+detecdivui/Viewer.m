@@ -879,19 +879,26 @@ classdef Viewer < handle
             end
         end
         function showReviewSelection(obj)
-            delete(findall(obj.Axes,'Tag','review-selection'));
-            if obj.annotationLayerEditable(obj.activeLayer()), return; end
+            delete(findall(obj.ImageAxes,'Tag','review-selection'));
+            if (obj.hasMaskWidget() && obj.Masks.Active) || (obj.hasTracksWidget() && obj.Tracks.Active), return; end
             selection = obj.selectedAnnotation();
             if isempty(selection) || selection.label == 0 || ~strcmp(selection.channel,obj.activeLayer()), return; end
-            source = selection.roi; pix = source.findChannelID(selection.channel);
-            if ~isscalar(pix) || pix > size(source.image,3), return; end
-            boundaries = bwboundaries(source.image(:,:,pix,selection.frame)==selection.label,'noholes');
-            hold(obj.Axes,'on');
-            for k=1:numel(boundaries)
-                b=boundaries{k}; plot(obj.Axes,b(:,2),b(:,1),'Color',[1 .85 .2], ...
-                    'LineWidth',2,'HitTest','off','PickableParts','none','Tag','review-selection');
+            if ~obj.DisplayModel.Layers(obj.Channels.Value).visible, return; end
+            mask = obj.DisplayModel.read(obj.Channels.Value,selection.frame);
+            boundaries = bwboundaries(mask == selection.label,'noholes');
+            if isempty(boundaries), return; end
+            [~,largest] = max(cellfun(@(b)size(b,1),boundaries));
+            b = boundaries{largest}; color = [1 .75 0];
+            for ax = reshape(obj.ImageAxes,1,[])
+                for k = 1:numel(boundaries)
+                    edge = boundaries{k};
+                    line(ax,edge(:,2),edge(:,1),'Color',color,'LineWidth',2, ...
+                        'HitTest','off','PickableParts','none','Tag','review-selection');
+                end
+                text(ax,mean(b(:,2)),min(b(:,1)),sprintf('Mask %d',selection.label), ...
+                    'Color',color,'FontWeight','bold','HorizontalAlignment','center','VerticalAlignment','bottom', ...
+                    'Clipping','on','HitTest','off','PickableParts','none','Tag','review-selection');
             end
-            hold(obj.Axes,'off');
         end
         function newPipeline(obj)
             obj.Host.focusWidget('Pipeline'); obj.Pipeline.newTemplate(); obj.Pipeline.openDefinitionEditor();
@@ -1096,14 +1103,15 @@ classdef Viewer < handle
                 obj.ensureAnnotationDrafts();
                 obj.ObjectsSync = true;
                 obj.MasksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.MasksTab;
-                obj.syncObjectsPages();
-                obj.Masks.setActive(true); obj.refreshKeyboard();
+                obj.Masks.setActive(true);
+                obj.syncObjectsPages(); obj.showReviewSelection(); obj.refreshKeyboard();
                 obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeContourTool(); obj.widgetEvent('status',err.message);
             end
         end
         function closeContourTool(obj)
             previousSync = obj.ObjectsSync;
+            wasPainting = obj.hasMaskWidget() && obj.Masks.Active;
             obj.ObjectsSync = true;
             if obj.hasMaskWidget(), obj.Masks.setActive(false); end
             if ~isempty(obj.MasksTab) && isvalid(obj.MasksTab), obj.MasksTab.Parent = []; end
@@ -1111,6 +1119,7 @@ classdef Viewer < handle
             obj.ObjectsSync = previousSync;
             obj.applyNavigation();
             obj.refreshKeyboard();
+            if wasPainting && ~obj.Closing, obj.showReviewSelection(); end
         end
         function openTracksTool(obj)
             obj.suspendMeasurements();
@@ -1130,13 +1139,14 @@ classdef Viewer < handle
                 if ~obj.hasTracksWidget()
                     obj.TracksTab = uitab(obj.ObjectsTabs,'Title','Tracks','Tag','tracks-tab');
                     obj.TracksPage = obj.toolPage(obj.ObjectsRoot,'tracks-page');
+                    obj.TracksPage.Layout.Row = 2;
                     obj.Tracks = detecdivui.TracksWidget(obj.TracksPage,obj);
                     obj.Tracks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
                 end
                 obj.ObjectsSync = true;
                 obj.TracksTab.Parent = obj.ObjectsTabs; obj.ObjectsTabs.SelectedTab = obj.TracksTab;
                 obj.syncObjectsPages();
-                obj.Tracks.setActive(true); obj.refreshKeyboard();
+                obj.Tracks.setActive(true); obj.showReviewSelection(); obj.refreshKeyboard();
                 obj.Host.openObjects(); obj.Host.focusWidget('Objects'); obj.Host.show();
             catch err, obj.closeTracksTool(); obj.widgetEvent('status',err.message);
             end
@@ -1237,8 +1247,7 @@ classdef Viewer < handle
             obj.suspendMeasurements();
             c = obj.contourContext();
             assert(~isempty(c.roi),'detecdivui:ObjectsROI','Select and load a ROI first.');
-            obj.closeROITool(); obj.closeTracksTool();
-            if obj.annotationLayerEditable(provider), obj.ensureAnnotationDrafts(); end
+            obj.closeROITool(); obj.closeTracksTool(); obj.closeContourTool();
             index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
             assert(~isempty(index),'detecdivui:ObjectsProvider','The mask layer is unavailable.');
             changingLayer = obj.Channels.Value ~= index;
@@ -1246,10 +1255,6 @@ classdef Viewer < handle
             if ~strcmp(obj.DisplayModel.Layers(index).kind,'Labels'), obj.DisplayModel.setKind(index,'Labels'); end
             if changingLayer
                 obj.DisplayModel.setColor(index,'Labels'); obj.DisplayModel.setVisible(index,true);
-            end
-            if obj.annotationLayerEditable(provider)
-                obj.Masks.setActive(true); obj.Masks.selectProvider(provider,label);
-            else, obj.closeContourTool();
             end
             obj.rememberAnnotation(c.roi,provider,c.frame,label,'objects',family);
             obj.render(); obj.refreshKeyboard();
@@ -1445,24 +1450,28 @@ classdef Viewer < handle
             obj.ensureObjectsWidget();
             obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Masks','Tag','mask-tab');
             obj.MasksPage = obj.toolPage(obj.ObjectsRoot,'mask-page');
+            obj.MasksPage.Layout.Row = 2;
             obj.Masks = detecdivui.MaskWidget(obj.MasksPage,obj,obj.MaskBar);
             obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
             obj.MasksTab.Parent = [];
         end
         function ensureObjectsWidget(obj)
             if ~isempty(obj.Objects) && isvalid(obj.Objects), return; end
-            grid = uigridlayout(obj.Host.widgetFigure('Objects'),[1 1],'Padding',[0 0 0 0]);
+            grid = uigridlayout(obj.Host.widgetFigure('Objects'),[2 1],'Padding',[0 0 0 0]);
+            grid.RowHeight = {30,'1x'};
+            grid.RowSpacing = 0;
+            toolbar = uigridlayout(grid,[1 2],'Padding',[6 0 6 4],'ColumnWidth',{78,'1x'});
             obj.ObjectsRoot = grid;
             obj.ObjectsTabs = uitabgroup(obj.Host.widgetFigure('Objects'),'Tag','objects-tools','Visible','off', ...
                 'SelectionChangedFcn',{@detecdivui.Callback.event,detecdivui.Callback(obj,'widgetEvent','objectsTab')});
             obj.ObjectsBrowserTab = uitab(obj.ObjectsTabs,'Title','Annotations','Tag','objects-browser-tab');
             obj.ObjectsPage = obj.toolPage(grid,'objects-page'); obj.ObjectsPage.Visible = 'on';
-            obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsPage,obj);
+            obj.ObjectsPage.Layout.Row = 2;
+            obj.Objects = detecdivui.ObjectsWidget(obj.ObjectsPage,obj,toolbar);
             obj.Objects.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
         end
         function objectsTabSelected(obj)
             if obj.ObjectsSync || isempty(obj.Objects) || ~isvalid(obj.Objects), return; end
-            obj.syncObjectsPages();
             if ~obj.annotationEditingAllowed()
                 obj.closeContourTool(); obj.closeTracksTool(); return;
             end
@@ -1474,8 +1483,9 @@ classdef Viewer < handle
             elseif isequal(tab,obj.TracksTab)
                 obj.closeContourTool(); obj.Tracks.setActive(true);
             else
-                obj.closeTracksTool(); obj.Objects.setContext(); obj.Objects.resumeSelection();
+                obj.closeTracksTool(); obj.closeContourTool(); obj.Objects.setContext();
             end
+            obj.syncObjectsPages();
             obj.refreshKeyboard();
         end
         function restoreObjectsSync(obj,value)
@@ -1672,6 +1682,7 @@ classdef Viewer < handle
             obj.MaskBar.Visible = obj.onOff(mask);
             obj.MaskModeButton.Enable = obj.onOff(~mask);
             obj.TrackModeButton.Enable = obj.onOff(~tracks);
+            if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.syncPaint(); end
         end
         function finishROIGesture(obj)
             if isvalid(obj), obj.DrawingROI = false; obj.GestureFrame=[]; obj.applyNavigation(); obj.refreshKeyboard(); end
@@ -2595,9 +2606,9 @@ classdef Viewer < handle
                 axis(ax,'image'); ax.XTick = []; ax.YTick = []; ax.YDir = 'reverse';
                 ax.ContextMenu = obj.ImageMenu; ax.UserData = struct('layer',view.layer);
                 callback = detecdivui.Callback(obj,'widgetEvent','imageLayer',view.layer,obj.ImageRevision);
-                ax.ButtonDownFcn = {@detecdivui.Callback.event,callback};
+                ax.ButtonDownFcn = {@detecdivui.Callback.eventWithSource,callback};
                 imageHandle = findall(ax,'Type','image');
-                set(imageHandle,'ContextMenu',obj.ImageMenu,'ButtonDownFcn',{@detecdivui.Callback.event,callback});
+                set(imageHandle,'ContextMenu',obj.ImageMenu,'ButtonDownFcn',{@detecdivui.Callback.eventWithSource,callback});
                 label = ''; if separated, label = view.title; end
                 color = [.25 .3 .35]; if matched && k == selected, color = [0 .4 .65]; end
                 title(ax,label,'Interpreter','none','FontSize',11,'Color',color);
@@ -2615,10 +2626,30 @@ classdef Viewer < handle
             end
             if numel(obj.ImageAxes) > 1, obj.ImageLink = linkprop(obj.ImageAxes,{'XLim','YLim'}); end
         end
-        function selectImageLayer(obj,index,revision)
-            if revision ~= obj.ImageRevision || obj.DrawingROI || obj.imageNavigationActive() || index < 1 || ...
-                    index > numel(obj.DisplayModel.Layers) || ~obj.DisplayModel.Layers(index).visible, return; end
+        function selectImageLayer(obj,index,revision,source,event)
+            if nargin < 5, event = []; end
+            if revision ~= obj.ImageRevision || obj.DrawingROI || obj.imageNavigationActive(), return; end
             if (obj.hasMaskWidget() && obj.Masks.Active) || (obj.hasTracksWidget() && obj.Tracks.Active), return; end
+            if ~any(strcmp(obj.Figure.SelectionType,{'normal','open'})), return; end
+            context = obj.contourContext(); label = 0;
+            canPick = ~isempty(event) && ~isempty(context.masks) && ~obj.measurementActive();
+            if canPick
+                ax = ancestor(source,'axes');
+                if isempty(ax), return; end
+                point = ax.CurrentPoint(1,1:2);
+                if (isobject(event) && isprop(event,'IntersectionPoint')) || ...
+                        (isstruct(event) && isfield(event,'IntersectionPoint'))
+                    point = event.IntersectionPoint(1:2);
+                end
+                % Keep the hit tolerance fixed in screen pixels when zooming.
+                scale = min(ax.InnerPosition(3:4) ./ [diff(ax.XLim) diff(ax.YLim)]);
+                radius = 0;
+                if isfinite(scale) && scale > 0, radius = 5 / scale; end
+                [hit,label] = obj.maskAtPoint(context,point,radius);
+                if hit > 0, index = hit; end
+            end
+            layers = obj.DisplayModel.Layers;
+            if index < 1 || index > numel(layers) || ~layers(index).visible, return; end
             if obj.Channels.Value ~= index
                 obj.Channels.Value = index;
                 for ax = obj.ImageAxes
@@ -2630,8 +2661,43 @@ classdef Viewer < handle
                 obj.refreshLayerControls();
                 if obj.hasROIWidget(), obj.ROIs.onRender(); end
                 if obj.hasTracksWidget(), obj.Tracks.onRender(); end
-                if ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
+                if ~canPick && ~isempty(obj.Objects) && isvalid(obj.Objects), obj.Objects.onRender(); end
                 if obj.measurementActive(), obj.Measurements.onRender(); end
+            end
+            if canPick
+                obj.rememberAnnotation(context.roi,layers(index).name,context.frame,label,'image');
+                obj.showReviewSelection();
+                if label > 0 && ~obj.Host.isWidgetVisible('Objects')
+                    obj.Host.openObjects(false);
+                end
+            end
+        end
+        function [index,label] = maskAtPoint(obj,context,point,radius)
+            index = 0; label = 0;
+            if any(~isfinite(point)), return; end
+            layers = obj.DisplayModel.Layers;
+            candidates = find([layers.visible] & ismember({layers.name},context.masks));
+            center = round(point); nearest = inf;
+            % Display composites indexed layers in list order.
+            for k = fliplr(candidates)
+                if layers(k).opacity == 0 && strcmp(obj.DisplayModel.labelStyle(k).mode,'Fill'), continue; end
+                mask = obj.DisplayModel.read(k,context.frame);
+                extent = [size(mask,2) size(mask,1)];
+                if all(center >= 1 & center <= extent) && mask(center(2),center(1)) > 0
+                    index = k; label = double(mask(center(2),center(1)));
+                    return;
+                end
+                first = max(1,ceil(point-radius-.5));
+                last = min(extent,floor(point+radius+.5));
+                [rows,cols] = find(mask(first(2):last(2),first(1):last(1)) > 0);
+                if isempty(rows), continue; end
+                cols = cols + first(1) - 1;
+                rows = rows + first(2) - 1;
+                distances = hypot(max(0,abs(cols-point(1))-.5),max(0,abs(rows-point(2))-.5));
+                [distance,at] = min(distances);
+                if distance <= radius && distance < nearest
+                    index = k; label = double(mask(rows(at),cols(at))); nearest = distance;
+                end
             end
         end
         function drawRegions(obj,ax,layer)

@@ -123,6 +123,7 @@ classdef MaskWidget < handle
             selected = [];
             if entering, selected = obj.Viewer.selectedAnnotation(); end
             if active && ~obj.Active
+                obj.Tool.Value = 'Brush';
                 fig = obj.Viewer.Figure;
                 obj.Callbacks = {fig.WindowButtonDownFcn,fig.WindowButtonMotionFcn,fig.WindowButtonUpFcn,fig.Pointer};
                 fig.WindowButtonDownFcn = @(~,~)obj.mouseDown();
@@ -146,11 +147,9 @@ classdef MaskWidget < handle
             end
             obj.Active = logical(active);
             if obj.Active, obj.refresh(); end
-            if entering && ~isempty(selected)
-                if any(strcmp(obj.Provider.Items,selected.channel)), obj.Provider.Value = selected.channel; end
-                if strcmp(obj.current().Channel,selected.channel)
-                    obj.Label.Value = selected.label; obj.selectCurrentLabel();
-                end
+            if entering && obj.Active && ~isempty(selected) && strcmp(obj.Provider.Value,selected.channel)
+                obj.Label.Value = selected.label;
+                obj.selectCurrentLabel();
             end
         end
         function onRender(obj)
@@ -562,7 +561,7 @@ classdef MaskWidget < handle
             if first
                 if stroke.erase
                     stroke.label = 0;
-                elseif ~obj.Semantic && (stroke.clicked > 0 || stroke.label == 0)
+                elseif ~obj.Semantic
                     if stroke.clicked > 0, obj.Label.Value = stroke.clicked; else, obj.newLabel(); end
                     stroke.label = obj.Label.Value;
                 end
@@ -590,13 +589,18 @@ classdef MaskWidget < handle
         function selectTrack(obj,label,draft,frame)
             if label == 0 || obj.Semantic, return; end
             model = draft.previewModel();
-            if ~isfield(model,'schema_version'), return; end
-            families = find(strcmp(model.families.mask_provider,draft.Channel));
-            if ~isscalar(families), return; end
-            family = model.families.family_id(families);
-            instance = cellModel.findInstance(model,family,frame,label);
+            instance = [];
+            if isfield(model,'schema_version')
+                families = find(strcmp(model.families.mask_provider,draft.Channel));
+                if isscalar(families)
+                    family = model.families.family_id(families);
+                    instance = cellModel.findInstance(model,family,frame,label);
+                end
+            end
             if isempty(instance) || instance.track_id == 0
-                obj.status('This mask has no assigned track');
+                message = sprintf('Mask %d has no assigned track',label);
+                obj.status(message);
+                obj.Viewer.widgetEvent('status',message);
                 return;
             end
             obj.Viewer.rememberAnnotation(draft.Source,draft.Channel,frame,label,'Contours',family);

@@ -14,6 +14,9 @@ classdef Callback
         function event(~,~,callback)
             detecdivui.Callback.call(callback);
         end
+        function eventWithSource(source,event,callback)
+            detecdivui.Callback.call(callback,source,event);
+        end
         function varargout = call(callback,varargin)
             varargout = cell(1,nargout);
             if isempty(callback), return; end
