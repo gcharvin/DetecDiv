@@ -16,6 +16,7 @@ classdef MaskWidget < handle
         LabelControls
         Semantic = false
         Label
+        SelectionFrame = 0
         Tool
         Shape
         Radius
@@ -36,17 +37,18 @@ classdef MaskWidget < handle
         AlphaKeys = {'g','h'}
     end
     methods
-        function obj = MaskWidget(parent,viewer)
+        function obj = MaskWidget(parent,viewer,toolbar)
             obj.Viewer = viewer;
             [~,keys,prefs] = detecdiv_prefs_get_shortcuts();
             if ~isempty(keys{4}), obj.FillKey = lower(keys{4}{1}); end
             if numel(keys{5}) == 2, obj.AlphaKeys = cellfun(@lower,keys{5},'UniformOutput',false); end
             radius = 7;
-            if isfield(prefs,'painting_normal_brush_radius'), radius = prefs.painting_normal_brush_radius; end
+            if isfield(prefs,'painting_left_brush_radius'), radius = prefs.painting_left_brush_radius;
+            elseif isfield(prefs,'painting_normal_brush_radius'), radius = prefs.painting_normal_brush_radius; end
             radius = min(256,max(1,round(double(radius))));
-            grid = uigridlayout(parent,[12 1]); grid.Padding = [6 6 6 6];
+            grid = uigridlayout(parent,[10 1]); grid.Padding = [6 6 6 6];
             grid.Scrollable='on';
-            grid.RowHeight = {24,28,28,28,28,28,28,28,24,'1x',28,24};
+            grid.RowHeight = {24,28,28,28,28,28,24,'1x',28,24};
             header = uigridlayout(grid,[1 2]); header.Padding = [0 0 0 0]; header.ColumnWidth = {'1x',110};
             obj.Target = uilabel(header,'Text','','Interpreter','none','Tag','mask-target');
             uibutton(header,'Text','← Annotations','Tag','mask-done','Tooltip','Return to Annotations and keep mask drafts', ...
@@ -59,7 +61,7 @@ classdef MaskWidget < handle
             labelTitle=uilabel(row,'Text','Label');
             obj.Label = uieditfield(row,'numeric','Value',0,'Limits',[0 65535],'RoundFractionalValues','on', ...
                 'Tag','mask-label','Tooltip','Mask label, distinct from track ID', ...
-                'ValueChangedFcn',@(~,~)obj.showSelection());
+                'ValueChangedFcn',@(~,~)obj.selectCurrentLabel());
             newLabelButton=uibutton(row,'Text','New Label','ButtonPushedFcn',@(~,~)obj.newLabel());
             obj.LabelControls={labelTitle,obj.Label,newLabelButton};
             obj.Palette=uidropdown(row,'Visible','off','Items',{'Unlabeled'},'ItemsData',0, ...
@@ -67,40 +69,39 @@ classdef MaskWidget < handle
                 'ValueChangedFcn',@(~,~)obj.classChanged());
             obj.Palette.Layout.Row=1; obj.Palette.Layout.Column=[1 3];
             row.RowHeight={'1x'};
-            obj.Tool = uidropdown(grid,'Items',{'Select','Brush','Eraser'},'Tag','mask-tool', ...
-                'Tooltip','Click to select; drag to paint; Shift temporarily erases', ...
+            obj.Tool = uidropdown(toolbar,'Items',{'Brush','Eraser','Select'},'Tag','mask-tool', ...
+                'Tooltip','Click a mask to pick its label. Drag to paint. Shift or Ctrl drag erases. Double-click an assigned mask to select its track.', ...
                 'ValueChangedFcn',@(~,~)obj.Viewer.stopImageNavigation());
+            obj.Radius = uieditfield(toolbar,'numeric','Value',radius,'Limits',[1 256], ...
+                'RoundFractionalValues','on','Tag','mask-radius','Tooltip','Brush radius in image pixels ([ / ])');
+            uibutton(toolbar,'Text','Fill Holes','Tag','mask-fill','Tooltip',['Fill holes in the selected mask (' upper(obj.FillKey) ')'], ...
+                'ButtonPushedFcn',@(~,~)obj.action('fill'));
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {'1x',75};
             obj.Shape = uidropdown(row,'Items',{'Polygon','Freehand'},'Tag','mask-shape');
             uibutton(row,'Text','Draw','Tag','mask-draw','Tooltip','Double-click to finish; Escape cancels', ...
                 'ButtonPushedFcn',@(~,~)obj.draw(false));
-            row = uigridlayout(grid,[1 3]); row.Padding = [0 0 0 0];
-            uibutton(row,'Text','Edit','Tag','mask-edit','Tooltip','Move contour vertices; double-click to apply', ...
+            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0];
+            uibutton(row,'Text','Edit Contour','Tag','mask-edit','Tooltip','Move contour vertices; double-click to apply', ...
                 'ButtonPushedFcn',@(~,~)obj.draw(true));
-            uibutton(row,'Text','Fill Holes','Tag','mask-fill','ButtonPushedFcn',@(~,~)obj.action('fill'));
             uibutton(row,'Text','Delete','Tag','mask-delete','Tooltip','Delete selected label on this frame only', ...
                 'ButtonPushedFcn',@(~,~)obj.action('delete'));
-            row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0]; row.ColumnWidth = {45,'1x'};
-            uilabel(row,'Text','Radius');
-            obj.Radius = uieditfield(row,'numeric','Value',radius,'Limits',[1 256], ...
-                'RoundFractionalValues','on','Tag','mask-radius','Tooltip','Brush radius in source pixels');
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0];
             uibutton(row,'Text','Undo','Tag','mask-undo','ButtonPushedFcn',@(~,~)obj.action('undo'));
             uibutton(row,'Text','Redo','Tag','mask-redo','ButtonPushedFcn',@(~,~)obj.action('redo'));
             obj.Overwrite = uicheckbox(grid,'Text','Overwrite other labels','Value',false,'Tag','mask-overwrite');
             row = uigridlayout(grid,[1 2]); row.Padding = [0 0 0 0];
-            row.Layout.Row = 11;
+            row.Layout.Row = 9;
             uibutton(row,'Text','Save Edits','Tag','mask-save','Tooltip','Save masks, tracks and annotation lifecycle data', ...
                 'ButtonPushedFcn',@(~,~)obj.action('save'));
             uibutton(row,'Text','Discard','Tag','mask-discard','Tooltip','Discard this provider draft', ...
                 'ButtonPushedFcn',@(~,~)obj.action('discard'));
             obj.Status = uilabel(grid,'Text','Ready','Interpreter','none','Tag','mask-status');
-            obj.Status.Layout.Row = 12;
+            obj.Status.Layout.Row = 10;
             obj.Progress = detecdivui.Progress(grid,obj.Status,'mask-progress');
-            grid.RowHeight = {24,28,28,28,28,28,28,28,24,'1x',28,24};
+            grid.RowHeight = {24,28,28,28,28,28,24,'1x',28,24};
         end
         function keys = shortcuts(obj)
-            keys = [{'delete','escape','uparrow','downarrow',obj.FillKey},obj.AlphaKeys];
+            keys = [{'delete','escape','uparrow','downarrow',obj.FillKey},obj.AlphaKeys,{'[',']'}];
         end
         function key(obj,key,ctrl)
             if ~obj.Active, return; end
@@ -109,6 +110,8 @@ classdef MaskWidget < handle
             elseif strcmp(key,'delete'), obj.action('delete');
             elseif strcmp(key,'escape'), obj.cancelStroke(); obj.Tool.Value = 'Select';
             elseif strcmp(key,obj.FillKey), obj.action('fill');
+            elseif any(strcmp(key,{'[',']'}))
+                obj.Radius.Value = min(256,max(1,obj.Radius.Value + 2*strcmp(key,']') - 1));
             elseif any(strcmp(key,[obj.AlphaKeys {'uparrow','downarrow'}]))
                 up = strcmp(key,obj.AlphaKeys{2}) || strcmp(key,'uparrow');
                 obj.Viewer.contourOpacity(.1*(2*up-1),obj.Provider.Value);
@@ -146,7 +149,7 @@ classdef MaskWidget < handle
             if entering && ~isempty(selected)
                 if any(strcmp(obj.Provider.Items,selected.channel)), obj.Provider.Value = selected.channel; end
                 if strcmp(obj.current().Channel,selected.channel)
-                    obj.Label.Value = selected.label; obj.showSelection();
+                    obj.Label.Value = selected.label; obj.selectCurrentLabel();
                 end
             end
         end
@@ -185,7 +188,8 @@ classdef MaskWidget < handle
                 'detecdivui:MaskProvider','Load the selected mask layer first.');
             obj.cancelStroke(); obj.refresh();
             obj.Provider.Value = char(string(channel)); obj.Label.Value = double(label);
-            obj.Tool.Value = 'Select'; obj.refresh();
+            obj.SelectionFrame = c.frame;
+            obj.refresh();
         end
         function selectObject(obj,label)
             obj.selectProvider(obj.Provider.Value,label);
@@ -298,7 +302,9 @@ classdef MaskWidget < handle
                         d.save();
                         obj.followSave(d);
                     case 'discard', d.discard();
-                    otherwise, d.edit(c.frame,action,[],obj.Label.Value,obj.Radius.Value,obj.Overwrite.Value);
+                    otherwise
+                        assert(obj.SelectionFrame == c.frame,'detecdivui:MaskSelection','Select a mask on this frame first.');
+                        d.edit(c.frame,action,[],obj.Label.Value,obj.Radius.Value,obj.Overwrite.Value);
                 end
                 obj.Viewer.contourChanged(); obj.refresh();
             catch err, obj.status(err.message);
@@ -308,7 +314,7 @@ classdef MaskWidget < handle
             d = obj.current(); c = obj.Viewer.contourContext();
             mask = d.read(c.frame); x = round(x); y = round(y);
             if x < 1 || y < 1 || x > size(mask,2) || y > size(mask,1), return; end
-            obj.Label.Value = double(mask(y,x)); obj.showSelection();
+            obj.Label.Value = double(mask(y,x)); obj.selectCurrentLabel();
         end
         function draw(obj,editing)
             shape = [];
@@ -320,6 +326,7 @@ classdef MaskWidget < handle
                 label = obj.Label.Value; args = {};
                 assert(~obj.Semantic || label>0,'detecdivui:SemanticClass','Choose a class before drawing; use Eraser to clear annotations.');
                 if editing
+                    assert(obj.SelectionFrame == c.frame,'detecdivui:MaskSelection','Select a mask on this frame first.');
                     selected = mask == label; components = bwconncomp(selected);
                     assert(components.NumObjects == 1,'detecdivui:MaskComponents', ...
                         'Select one connected object. Use Brush for objects with multiple components.');
@@ -338,6 +345,7 @@ classdef MaskWidget < handle
                 coverage = createMask(shape) & ~holes; delete(shape); shape = [];
                 action = 'draw'; if editing, action = 'replace'; end
                 d.edit(c.frame,action,coverage,label,obj.Radius.Value,obj.Overwrite.Value);
+                obj.SelectionFrame = c.frame;
                 clear guard; obj.Viewer.contourChanged();
             catch err, obj.status(err.message);
             end
@@ -410,7 +418,7 @@ classdef MaskWidget < handle
             changed=~isequal(obj.ContextROI,c.roi) || ~strcmp(obj.Provider.Value,provider);
             if changed
                 obj.ContextROI = c.roi; obj.Provider.Items = c.masks; obj.Provider.Value = provider;
-                obj.Label.Value = 0;
+                obj.Label.Value = 0; obj.SelectionFrame = 0;
             end
             target=obj.Viewer.annotationTarget(provider); obj.Semantic=target.semantic;
             if changed, obj.Overwrite.Value=obj.Semantic; end
@@ -430,89 +438,174 @@ classdef MaskWidget < handle
             obj.showSelection();
         end
         function providerChanged(obj)
-            obj.cancelStroke(); obj.Label.Value = 0; obj.refresh();
+            obj.cancelStroke(); obj.Label.Value = 0; obj.SelectionFrame = 0; obj.refresh();
         end
         function classChanged(obj)
-            obj.Label.Value=obj.Palette.Value; obj.showSelection();
+            obj.Label.Value=obj.Palette.Value; obj.selectCurrentLabel();
         end
         function newLabel(obj)
             assert(~obj.Semantic,'detecdivui:SemanticLabel','Select a class in the palette.');
             d = obj.current(); value = double(max(d.Masks(:)))+1;
             assert(value <= 65535,'detecdivui:MaskLabels','No free uint16 label remains.');
             obj.Label.Value = value;
+            obj.SelectionFrame = 0; obj.showSelection();
+        end
+        function selectCurrentLabel(obj)
+            obj.SelectionFrame = obj.Viewer.annotationFrame();
+            obj.showSelection();
         end
         function showSelection(obj)
             obj.clearOutline(); if ~obj.Active, return; end
             if obj.Semantic && any(obj.Palette.ItemsData==obj.Label.Value), obj.Palette.Value=obj.Label.Value; end
             d = obj.current(); c = obj.Viewer.contourContext(); mask = d.read(c.frame);
             label = obj.Label.Value;
-            if label == 0 || ~any(mask(:) == label), label = 0; end
+            if obj.SelectionFrame ~= c.frame || label == 0 || ~any(mask(:) == label), label = 0; end
             obj.Viewer.rememberAnnotation(c.roi,d.Channel,c.frame,label,'Contours');
             if label == 0, return; end
             b = bwboundaries(mask == label,'noholes');
             ax = obj.Viewer.roiAxes(); hold(ax,'on');
+            color = [1 .75 0];
             for k = 1:numel(b)
-                obj.Outline(end+1) = plot(ax,b{k}(:,2),b{k}(:,1),'Color',[1 .75 0], ...
+                obj.Outline(end+1) = plot(ax,b{k}(:,2),b{k}(:,1),'Color',color, ...
                     'LineWidth',2,'HitTest','off','PickableParts','none','Tag','mask-selection');
             end
+            [~,at] = max(cellfun(@(boundary)size(boundary,1),b));
+            boundary = b{at};
+            obj.Outline(end+1) = text(ax,mean(boundary(:,2)),min(boundary(:,1)),sprintf('Mask %d',label), ...
+                'Color',color,'FontWeight','bold','VerticalAlignment','bottom','HorizontalAlignment','center', ...
+                'Clipping','on','HitTest','off','PickableParts','none','Tag','mask-selection-id');
             hold(ax,'off');
         end
         function clearOutline(obj)
             delete(obj.Outline(isgraphics(obj.Outline))); obj.Outline = gobjects(0);
         end
-        function mouseDown(obj)
+    end
+    methods
+        function mouseDown(obj,ax,point,selectionType,modifiers)
             if ~obj.Active || obj.Viewer.contourGestureActive() || obj.Viewer.imageNavigationActive(), return; end
             try
-                obj.cancelStroke(); ax = ancestor(hittest(obj.Viewer.Figure),'axes');
-                if isempty(ax) || ~isequal(ancestor(ax,'figure'),obj.Viewer.Figure), return; end
-                point = ax.CurrentPoint(1,1:2); d = obj.current(); c = obj.Viewer.contourContext();
-                if strcmp(obj.Tool.Value,'Select'), obj.select(point(1),point(2)); return; end
-                obj.assertEditable(d,false);
-                if ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
-                erase = strcmp(obj.Tool.Value,'Eraser') || any(strcmp(obj.Viewer.Figure.CurrentModifier,'shift'));
-                if obj.Label.Value == 0 && ~erase && ~obj.Semantic
-                    mask = d.read(c.frame); x = round(point(1)); y = round(point(2));
-                    if x >= 1 && x <= size(mask,2) && y >= 1 && y <= size(mask,1) && mask(y,x) > 0
-                        obj.Label.Value = double(mask(y,x));
-                    else
-                        obj.newLabel();
-                    end
+                obj.cancelStroke();
+                fig = obj.Viewer.Figure;
+                if nargin < 2
+                    ax = ancestor(hittest(fig),'axes');
+                    if isempty(ax), return; end
+                    point = ax.CurrentPoint(1,1:2);
+                    selectionType = fig.SelectionType;
+                    modifiers = fig.CurrentModifier;
                 end
-                label = obj.Label.Value; if erase, label = 0; end
-                obj.Stroke = struct('draft',d,'roi',c.roi,'frame',c.frame,'points',point,'label',label,'axes',ax,'line',[]);
-                obj.Viewer.Figure.Pointer = 'cross';
+                if isempty(ax) || ~any(strcmp(ax.Tag,{'image-view','channel-view'})), return; end
+                point = round(point);
+                d = obj.current(); c = obj.Viewer.contourContext();
+                mask = d.read(c.frame);
+                if any(point < 1) || point(1) > size(mask,2) || point(2) > size(mask,1), return; end
+                clicked = double(mask(point(2),point(1)));
+                if strcmp(selectionType,'open')
+                    obj.selectTrack(clicked,d,c.frame);
+                    return;
+                end
+                modifierErase = any(ismember(modifiers,{'shift','control'}));
+                if ~strcmp(selectionType,'normal') && ~modifierErase, return; end
+                if strcmp(obj.Tool.Value,'Select')
+                    obj.select(point(1),point(2));
+                    return;
+                end
+                obj.assertEditable(d,false);
+                erase = strcmp(obj.Tool.Value,'Eraser') || modifierErase;
+                obj.Stroke = struct('draft',d,'roi',c.roi,'frame',c.frame,'start',point,'last',point, ...
+                    'points',zeros(0,2),'clicked',clicked,'erase',erase,'label',obj.Label.Value, ...
+                    'radius',obj.Radius.Value,'overwrite',obj.Overwrite.Value,'axes',ax, ...
+                    'before',mask,'preview',mask,'image',[]);
+                fig.Pointer = 'cross';
+                if erase || clicked == 0, obj.previewStroke(point); end
             catch err, obj.cancelStroke(); obj.status(err.message);
             end
         end
-        function mouseMove(obj)
+        function mouseMove(obj,point)
             if isempty(obj.Stroke), return; end
             ax = obj.Stroke.axes;
             if ~isvalid(ax), obj.cancelStroke(); return; end
-            point = ax.CurrentPoint(1,1:2); previous = obj.Stroke.points(end,:);
-            count = max(2,ceil(norm(point-previous))+1);
-            if count > 10000, return; end
-            points = [linspace(previous(1),point(1),count).' linspace(previous(2),point(2),count).'];
-            obj.Stroke.points = [obj.Stroke.points; points(2:end,:)];
-            if isempty(obj.Stroke.line) || ~isgraphics(obj.Stroke.line)
-                hold(ax,'on'); obj.Stroke.line = plot(ax,obj.Stroke.points(:,1),obj.Stroke.points(:,2), ...
-                    'Color',[1 .6 .1],'LineWidth',2,'HitTest','off','Tag','mask-stroke'); hold(ax,'off');
-            else
-                obj.Stroke.line.XData = obj.Stroke.points(:,1); obj.Stroke.line.YData = obj.Stroke.points(:,2);
+            if nargin < 2, point = ax.CurrentPoint(1,1:2); end
+            point = round(point);
+            try
+                if ~isequal(point,obj.Stroke.last), obj.previewStroke(point); end
+            catch err
+                obj.cancelStroke(); obj.status(err.message);
             end
         end
-        function mouseUp(obj)
+        function mouseUp(obj,point)
+            if isempty(obj.Stroke), return; end
+            if nargin < 2, obj.mouseMove(); else, obj.mouseMove(point); end
             if isempty(obj.Stroke), return; end
             stroke = obj.Stroke; obj.cancelStroke(); c = obj.Viewer.contourContext();
-            if ~isequal(c.roi,stroke.roi) || c.frame ~= stroke.frame, return; end
+            if ~isequal(c.roi,stroke.roi) || c.frame ~= stroke.frame || ...
+                    ~strcmp(obj.Provider.Value,stroke.draft.Channel), return; end
             try
+                if isempty(stroke.points)
+                    obj.select(stroke.start(1),stroke.start(2));
+                    return;
+                end
                 obj.assertEditable(stroke.draft,false);
-                stroke.draft.edit(stroke.frame,'paint',stroke.points,stroke.label,obj.Radius.Value,obj.Overwrite.Value);
+                stroke.draft.edit(stroke.frame,'paint',stroke.points,stroke.label,stroke.radius,stroke.overwrite);
+                obj.SelectionFrame = c.frame;
                 obj.Viewer.contourChanged();
             catch err, obj.status(err.message);
             end
         end
+    end
+    methods (Access = private)
+        function previewStroke(obj,point)
+            stroke = obj.Stroke;
+            extent = [size(stroke.before,2),size(stroke.before,1)];
+            point = min(extent + stroke.radius,max(1 - stroke.radius,point));
+            if ~isempty(stroke.points) && isequal(point,stroke.last), return; end
+            first = isempty(stroke.points);
+            if first
+                if stroke.erase
+                    stroke.label = 0;
+                elseif ~obj.Semantic && (stroke.clicked > 0 || stroke.label == 0)
+                    if stroke.clicked > 0, obj.Label.Value = stroke.clicked; else, obj.newLabel(); end
+                    stroke.label = obj.Label.Value;
+                end
+            end
+            count = max(2,ceil(norm(point-stroke.last))+1);
+            points = round([linspace(stroke.last(1),point(1),count).' linspace(stroke.last(2),point(2),count).']);
+            if ~first, points(1,:) = []; end
+            stroke.preview = score_editMaskPlane('paint',stroke.preview,points,stroke.label,stroke.radius,stroke.overwrite);
+            stroke.last = point;
+            stroke.points = [stroke.points; points];
+            % Paint the exact changed pixels, including a separate eraser tint.
+            alpha = .65*double(stroke.preview ~= stroke.before);
+            if isempty(stroke.image) || ~isgraphics(stroke.image)
+                color = uint8([0 205 255]);
+                if stroke.label == 0, color = uint8([255 105 70]); end
+                pixels = repmat(reshape(color,1,1,3),size(alpha,1),size(alpha,2));
+                stroke.image = image('Parent',stroke.axes,'CData',pixels,'AlphaData',alpha, ...
+                    'HitTest','off','PickableParts','none','Tag','mask-stroke');
+            else
+                stroke.image.AlphaData = alpha;
+            end
+            obj.Stroke = stroke;
+            drawnow limitrate nocallbacks;
+        end
+        function selectTrack(obj,label,draft,frame)
+            if label == 0 || obj.Semantic, return; end
+            model = draft.previewModel();
+            if ~isfield(model,'schema_version'), return; end
+            families = find(strcmp(model.families.mask_provider,draft.Channel));
+            if ~isscalar(families), return; end
+            family = model.families.family_id(families);
+            instance = cellModel.findInstance(model,family,frame,label);
+            if isempty(instance) || instance.track_id == 0
+                obj.status('This mask has no assigned track');
+                return;
+            end
+            obj.Viewer.rememberAnnotation(draft.Source,draft.Channel,frame,label,'Contours',family);
+            obj.Viewer.openTracksTool();
+        end
         function cancelStroke(obj)
-            if ~isempty(obj.Stroke) && ~isempty(obj.Stroke.line) && isgraphics(obj.Stroke.line), delete(obj.Stroke.line); end
+            if ~isempty(obj.Stroke) && ~isempty(obj.Stroke.image) && isgraphics(obj.Stroke.image)
+                delete(obj.Stroke.image);
+            end
             obj.Stroke = []; if isvalid(obj.Viewer.Figure), obj.Viewer.Figure.Pointer = 'arrow'; end
         end
         function status(obj,message)

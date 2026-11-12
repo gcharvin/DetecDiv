@@ -416,17 +416,21 @@ classdef TracksWidget < handle
                 label = model.instances.mask_label(row); [y,x] = find(mask == label);
                 if isempty(x), continue; end
                 track = model.instances.track_id(row); color = [1 1 1];
-                if track == obj.SelectedTrack && track > 0, color = [1 .75 0]; end
+                if track == obj.SelectedTrack && track > 0, color = [0 .85 1]; end
                 trackText=char(string(track)); if track==0, trackText='Unassigned'; end
+                if track > 0 && track == obj.SelectedTrack, trackText = ['Track ' trackText]; end
                 obj.Overlays(end+1) = text(ax,mean(x),mean(y),trackText, ...
                     'Color',color,'FontWeight','bold','HitTest','off','PickableParts','none','Tag','track-label');
             end
             label = obj.currentLabel(model,frame);
             if label > 0
                 boundaries = bwboundaries(mask == label,'noholes');
+                color = [0 .85 1]; style = '--';
+                if obj.SelectedTrack == 0, color = [1 .75 0]; style = '-'; end
                 for k = 1:numel(boundaries)
                     obj.Overlays(end+1) = plot(ax,boundaries{k}(:,2),boundaries{k}(:,1), ...
-                        'Color',[1 .75 0],'LineWidth',2,'HitTest','off','PickableParts','none','Tag','track-selection');
+                        'Color',color,'LineStyle',style,'LineWidth',2, ...
+                        'HitTest','off','PickableParts','none','Tag','track-selection');
                 end
             end
             % Parent links belong to the shared Display renderer, including
@@ -437,7 +441,7 @@ classdef TracksWidget < handle
             if ~obj.Active || obj.Viewer.contourGestureActive() || obj.Viewer.imageNavigationActive() || ...
                     ~strcmp(obj.Viewer.Figure.SelectionType,'normal'), return; end
             ax = ancestor(hittest(obj.Viewer.Figure),'axes');
-            if isempty(ax) || ~isequal(ancestor(ax,'figure'),obj.Viewer.Figure), return; end
+            if isempty(ax) || ~any(strcmp(ax.Tag,{'image-view','channel-view'})), return; end
             point = ax.CurrentPoint(1,1:2); obj.pick(point(1),point(2));
         end
         function resetContext(obj)

@@ -65,10 +65,13 @@ viewer.Masks.action('fill'); assert(~viewer.Masks.current().Dirty);
 message = findall(viewer.widgetFigure('Objects'),'Tag','mask-status'); assert(contains(message.Text,'Save or discard'));
 viewer.closeContourTool(); viewer.selectDisplayLayer('Mask'); viewer.openContourTool(); viewer.Masks.select(5,21);
 d.edit(4,'paint',[15 15],5,1,false); viewer.contourChanged();
-viewer.openTracksTool();
+viewer.Masks.mouseDown(viewer.roiAxes(),[5 21],'open',{});
 status = findall(viewer.Figure,'Tag','status');
 messageText = ''; if ~isempty(status), messageText = status.Text; end
 assert(widget.Active && ~viewer.Masks.Active,['Track assistant failed to become active: ' messageText]);
+outlines = findall(viewer.roiAxes(),'Tag','track-selection');
+assert(~isempty(outlines) && all(strcmp({outlines.LineStyle},'--')));
+assert(~isempty(findall(viewer.roiAxes(),'Tag','track-label','String','Track 20')));
 widget.action('undo'); assert(d.Masks(15,15,1,4)==0 && d.Dirty);
 setFrame(slider,1); widget.pick(22,5); target.Value = '9007199254740993'; scope.Value = 'all';
 widget.action('assign'); assert(strcmp(info.UserData{2,2},target.Value));

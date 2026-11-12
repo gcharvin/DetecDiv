@@ -44,6 +44,10 @@ classdef Viewer < handle
         LayerKind
         ColorField
         ColorPicker
+        AnnotationBar
+        MaskBar
+        MaskModeButton
+        TrackModeButton
         MaskOptions
         MaskStyle
         MaskWidth
@@ -259,8 +263,20 @@ classdef Viewer < handle
                 'CellSelectionCallback',@(~,event)obj.widgetEvent('projectRunSelected',event));
             projectStatus = uilabel(nav,'Text','','Tag','projects-status');
             obj.ProjectProgress = detecdivui.Progress(nav,projectStatus,'projects-progress');
-            canvas = uigridlayout(root,[2 1]);
-            canvas.RowHeight = {'1x',60}; canvas.Padding = [0 0 0 0];
+            canvas = uigridlayout(root,[3 1]);
+            canvas.RowHeight = {0,'1x',60}; canvas.Padding = [0 0 0 0]; canvas.RowSpacing = 0;
+            obj.AnnotationBar = uigridlayout(canvas,[1 3],'Visible','off','Tag','image-annotation-toolbar');
+            obj.AnnotationBar.Padding = [0 0 0 4]; obj.AnnotationBar.ColumnSpacing = 4;
+            obj.AnnotationBar.ColumnWidth = {62,62,'1x'};
+            obj.MaskModeButton = uibutton(obj.AnnotationBar,'Text','Masks', ...
+                'Tooltip','Select and paint frame-local mask labels', ...
+                'ButtonPushedFcn',@(~,~)obj.openContourTool());
+            obj.TrackModeButton = uibutton(obj.AnnotationBar,'Text','Tracks', ...
+                'Tooltip','Select and edit track identities across frames', ...
+                'ButtonPushedFcn',@(~,~)obj.openTracksTool());
+            obj.MaskBar = uigridlayout(obj.AnnotationBar,[1 3]);
+            obj.MaskBar.Padding = [0 0 0 0]; obj.MaskBar.ColumnSpacing = 4;
+            obj.MaskBar.ColumnWidth = {84,52,78};
             obj.ImageGrid = uigridlayout(canvas,[1 1]); obj.ImageGrid.Padding = [0 0 0 0];
             obj.ImageGrid.ColumnSpacing = 8;
             obj.Axes = uiaxes(obj.ImageGrid,'Color',[0.07 0.09 0.11],'Tag','image-view','Toolbar',[]);
@@ -1429,7 +1445,7 @@ classdef Viewer < handle
             obj.ensureObjectsWidget();
             obj.MasksTab = uitab(obj.ObjectsTabs,'Title','Masks','Tag','mask-tab');
             obj.MasksPage = obj.toolPage(obj.ObjectsRoot,'mask-page');
-            obj.Masks = detecdivui.MaskWidget(obj.MasksPage,obj);
+            obj.Masks = detecdivui.MaskWidget(obj.MasksPage,obj,obj.MaskBar);
             obj.Masks.Progress.Route = detecdivui.Callback(obj,'widgetEvent','progressOwner','Objects');
             obj.MasksTab.Parent = [];
         end
@@ -1651,6 +1667,11 @@ classdef Viewer < handle
             obj.ObjectsPage.Visible = obj.onOff(~mask && ~tracks);
             if ~isempty(obj.MasksPage) && isgraphics(obj.MasksPage), obj.MasksPage.Visible = obj.onOff(mask); end
             if ~isempty(obj.TracksPage) && isgraphics(obj.TracksPage), obj.TracksPage.Visible = obj.onOff(tracks); end
+            obj.AnnotationBar.Visible = obj.onOff(mask || tracks);
+            obj.AnnotationBar.Parent.RowHeight = {32*double(mask || tracks),'1x',60};
+            obj.MaskBar.Visible = obj.onOff(mask);
+            obj.MaskModeButton.Enable = obj.onOff(~mask);
+            obj.TrackModeButton.Enable = obj.onOff(~tracks);
         end
         function finishROIGesture(obj)
             if isvalid(obj), obj.DrawingROI = false; obj.GestureFrame=[]; obj.applyNavigation(); obj.refreshKeyboard(); end
@@ -2399,7 +2420,9 @@ classdef Viewer < handle
                     'Up / Down Arrow','Increase / decrease mask opacity','Masks'; ...
                     'Ctrl+Z / Ctrl+Y','Undo / redo annotation edit','Masks'; ...
                     'Escape','Cancel stroke / return to Select','Masks'; ...
-                    'Shift + drag','Erase with the brush','Masks'}];
+                    '[ / ]','Decrease / increase brush radius','Masks'; ...
+                    'Shift or Ctrl + drag','Erase with the brush','Masks'; ...
+                    'Click / double-click','Select mask / select assigned track','Masks'}];
             end
             if obj.hasTracksWidget()
                 rows = [rows; {'Delete','Delete selected contour on this frame','Tracks'; ...
@@ -2595,6 +2618,7 @@ classdef Viewer < handle
         function selectImageLayer(obj,index,revision)
             if revision ~= obj.ImageRevision || obj.DrawingROI || obj.imageNavigationActive() || index < 1 || ...
                     index > numel(obj.DisplayModel.Layers) || ~obj.DisplayModel.Layers(index).visible, return; end
+            if (obj.hasMaskWidget() && obj.Masks.Active) || (obj.hasTracksWidget() && obj.Tracks.Active), return; end
             if obj.Channels.Value ~= index
                 obj.Channels.Value = index;
                 for ax = obj.ImageAxes
