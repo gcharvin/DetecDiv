@@ -87,6 +87,8 @@ classdef ClassifierWidget < handle
         function add(obj,classifier,focus)
             if nargin < 3, focus = true; end
             assert(isa(classifier,'classi') && isscalar(classifier) && isvalid(classifier));
+            obj.Viewer.noteSessionContent();
+            obj.Viewer.publishWorkspaceObject(classifier);
             index = find(cellfun(@(c)isequal(c,classifier),obj.Classifiers),1);
             if isempty(index), obj.Classifiers{end+1} = classifier; end
             if focus, obj.Current = classifier; end

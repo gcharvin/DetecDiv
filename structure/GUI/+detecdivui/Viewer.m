@@ -142,6 +142,8 @@ classdef Viewer < handle
         PreviewTimer = []
         PendingPreview = []
         ConstructionComplete = true % Existing live viewers predate this startup flag.
+        SessionParticipates = false
+        SettingsWindow = []
         ObjectsTabs
         ObjectsBrowserTab
         ObjectsRoot
@@ -450,6 +452,7 @@ classdef Viewer < handle
             % Add or focus a project; existing projects stay in the tree.
             assert(isa(project,'shallow') && isscalar(project), ...
                 'detecdivui:Project','A shallow project is required.');
+            obj.noteSessionContent();
             activity = obj.ProjectProgress.begin('Opening project...'); %#ok<NASGU>
             index = obj.findProject(project);
             if index == 0
@@ -463,6 +466,7 @@ classdef Viewer < handle
                 obj.rebuildTree();
             elseif ~isequal(obj.Sessions{index}.Project,project)
                 session = obj.Sessions{index}; old = session.Project;
+                detecdivui.WorkspaceExposure.forget(old);
                 position = session.Position; zone = session.Zone;
                 obj.Pipeline.rebindProject(old,project);
                 if obj.hasROIWidget(), obj.ROIs.forgetProject(old); end
@@ -479,6 +483,7 @@ classdef Viewer < handle
             obj.activate(index);
             obj.selectProjectNode();
             obj.refreshView(false);
+            detecdivui.WorkspaceExposure.publish(project);
         end
         function closeProject(obj,index)
             % Closing removes the UI reference only; scientific data is unchanged.
@@ -506,6 +511,9 @@ classdef Viewer < handle
             if ~isempty(obj.Measurements)&&isvalid(obj.Measurements), obj.Measurements.forgetProject(obj.Sessions{index}.Project); end
             obj.storeView();
             obj.forgetImageViews(obj.Sessions{index}.Project);
+            if isempty(obj.Sessions{index}.Classifier)
+                detecdivui.WorkspaceExposure.forget(obj.Sessions{index}.Project);
+            end
             obj.Sessions(index) = []; obj.ViewStates(index) = [];
             if numel(obj.ProjectSources) >= index, obj.ProjectSources(index) = []; end
             obj.DisplayModels(index) = [];
@@ -1414,11 +1422,100 @@ classdef Viewer < handle
             obj.rebuildTree(); obj.selectProjectNode(); obj.refreshView(false);
             obj.Status.Text = 'Workspace refreshed';
         end
+        function noteSessionContent(obj)
+            obj.SessionParticipates = true;
+        end
+        function publishWorkspaceObject(~,object)
+            detecdivui.WorkspaceExposure.publish(object);
+        end
+        function setWorkspaceVisibility(obj,value)
+            detecdivui.WorkspaceExposure.setEnabled(value);
+            if value
+                for k = 1:numel(obj.Sessions)
+                    session = obj.Sessions{k};
+                    if isempty(session.Classifier) && ~isempty(session.Project)
+                        detecdivui.WorkspaceExposure.publish(session.Project);
+                    end
+                end
+                for k = 1:numel(obj.Classifiers.Classifiers)
+                    detecdivui.WorkspaceExposure.publish(obj.Classifiers.Classifiers{k});
+                end
+            end
+        end
+        function showSettings(obj)
+            if ~isempty(obj.SettingsWindow) && isvalid(obj.SettingsWindow)
+                figure(obj.SettingsWindow); return;
+            end
+            obj.SettingsWindow = uifigure('Name','Detective Settings','Position',[200 200 510 180], ...
+                'Tag','detective-settings');
+            outer = uigridlayout(obj.SettingsWindow,[1 1]);
+            panel = uipanel(outer,'Title','Advanced users','Tag','settings-advanced');
+            grid = uigridlayout(panel,[2 1]);
+            grid.RowHeight = {32,'1x'};
+            uicheckbox(grid,'Text','Show open projects and classifiers in MATLAB Workspace', ...
+                'Value',detecdivui.WorkspaceExposure.enabled(),'Tag','settings-workspace-objects', ...
+                'ValueChangedFcn',@(src,~)obj.setWorkspaceVisibility(src.Value));
+            uilabel(grid,'Text',{'Edits in MATLAB affect the live objects used by Detective.', ...
+                'Turning this off removes only variables created by Detective.'}, ...
+                'WordWrap','on');
+        end
+        function discardSessionCapture(obj)
+            obj.SessionParticipates = false;
+        end
+        function restoreSession(obj)
+            key = 'DetecDivUISession';
+            if ~isappdata(0,key), return; end
+            state = getappdata(0,key);
+            if ~isstruct(state) || ~isfield(state,'projects') || ~isfield(state,'classifiers'), return; end
+            obj.SessionParticipates = true;
+            for k = 1:numel(state.projects)
+                project = state.projects{k};
+                if ~isa(project,'shallow') || ~isscalar(project) || ~isvalid(project), continue; end
+                obj.addProject(project);
+                if isfield(state,'projectSources') && numel(state.projectSources) >= k
+                    obj.ProjectSources{obj.ActiveProject} = state.projectSources{k};
+                end
+            end
+            for k = 1:numel(state.classifiers)
+                classifier = state.classifiers{k};
+                if isa(classifier,'classi') && isscalar(classifier) && isvalid(classifier)
+                    obj.Classifiers.add(classifier,false);
+                end
+            end
+            if ~isempty(obj.Classifiers.Classifiers), obj.Host.setWidgetVisible('Classifier',true); end
+            if isfield(state,'activeProject') && ~isempty(state.activeProject) && isvalid(state.activeProject)
+                index = obj.findProject(state.activeProject);
+                if index > 0, obj.activate(index); obj.selectProjectNode(); obj.refreshView(false); end
+            end
+        end
+        function saveSession(obj)
+            projects = {}; sources = {}; active = [];
+            for k = 1:numel(obj.Sessions)
+                session = obj.Sessions{k};
+                if ~isempty(session.Classifier) || isempty(session.Project) || ~isvalid(session.Project), continue; end
+                projects{end+1} = session.Project; %#ok<AGROW>
+                source = ''; if numel(obj.ProjectSources) >= k, source = obj.ProjectSources{k}; end
+                sources{end+1} = source; %#ok<AGROW>
+                if k == obj.ActiveProject, active = session.Project; end
+            end
+            classifiers = {};
+            if ~isempty(obj.Classifiers) && isvalid(obj.Classifiers)
+                classifiers = obj.Classifiers.Classifiers;
+                classifiers = classifiers(cellfun(@isvalid,classifiers));
+            end
+            state = struct('projects',{projects},'projectSources',{sources}, ...
+                'classifiers',{classifiers},'activeProject',active);
+            setappdata(0,'DetecDivUISession',state);
+        end
         function delete(obj)
             if obj.Closing, return; end
+            if obj.ConstructionComplete && obj.SessionParticipates
+                obj.saveSession();
+            end
             if ~obj.ConstructionComplete && ~isempty(obj.Host) && isvalid(obj.Host), obj.Host.abortStartup(); end
             if obj.hasMaskWidget() && obj.Masks.dirty(), obj.Masks.recover(); end
             obj.Closing = true;
+            if ~isempty(obj.SettingsWindow) && isvalid(obj.SettingsWindow), delete(obj.SettingsWindow); end
             if ~isempty(obj.MovieExport)&&isvalid(obj.MovieExport), delete(obj.MovieExport); end
             if ~isempty(obj.MovieTab)&&isvalid(obj.MovieTab), delete(obj.MovieTab); end
             if ~isempty(obj.LayerDialog) && isvalid(obj.LayerDialog), delete(obj.LayerDialog); end
@@ -1751,6 +1848,7 @@ classdef Viewer < handle
         end
         function createMenus(obj)
             file = obj.Host.menu([],'File');
+            obj.Host.menu(file,'Settings...','MenuSelectedFcn',@(~,~)obj.showSettings());
             obj.Host.menu(file,'Open Project...','Accelerator','O', ...
                 'MenuSelectedFcn',@(~,~)obj.openProject());
             obj.RecentMenu = obj.Host.menu(file,'Recent Projects','Enable','off');

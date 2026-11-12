@@ -1,6 +1,7 @@
 function viewer = detecdiv_ui(project, varargin)
 %DETECDIV_UI Launch the isolated unified-viewer prototype.
-%   viewer = detecdiv_ui() discovers live DetecDiv objects in the base workspace.
+%   viewer = detecdiv_ui() restores the last viewer session and discovers
+%   live DetecDiv objects in the base workspace.
 %   viewer = detecdiv_ui([]) opens an empty viewer without discovery.
 %   viewer = detecdiv_ui(shallowObj) explores an existing project.
 %   viewer = detecdiv_ui({projectA,projectB}) opens multiple projects.
@@ -22,9 +23,11 @@ startup = detecdivui.startupGuard('begin'); %#ok<NASGU>
 viewer = detecdivui.Viewer(project,p.Results.Visible,p.Results.LayoutFile,p.Results.AutoSaveLayout, ...
     p.Results.RecentProjectsFile,p.Results.RecentPipelinesFile,p.Results.RecentClassifiersFile);
 try
+    if discover, viewer.restoreSession(); end
     if p.Results.DiscoverWorkspace, viewer.refreshWorkspace(); end
 catch err
     viewer.Host.abortStartup();
+    viewer.discardSessionCapture();
     delete(viewer); % Do not leave an orphaned window/menu timer after import fails.
     rethrow(err);
 end
