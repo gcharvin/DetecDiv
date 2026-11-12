@@ -502,6 +502,16 @@ for i = 1:numel(names)
         continue;
     end
     value = raw.(name);
+    if strcmp(name,'pageMap') && isnumeric(value) && ~isempty(value)
+        if numel(f.channel) <= 1
+            value = {reshape(value,1,[])};
+        elseif size(value,1) == numel(f.channel)
+            value = mat2cell(value,ones(1,size(value,1)),size(value,2));
+            value = reshape(value,1,[]);
+        elseif size(value,2) == numel(f.channel)
+            value = mat2cell(value,size(value,1),ones(1,size(value,2)));
+        end
+    end
     if any(strcmp(name, {'tiffSource','ndtiffPath','omeZarrPath'}))
         value = localResolvePathValue(value, projectDir, hubPathSettings);
     end

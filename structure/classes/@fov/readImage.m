@@ -210,7 +210,16 @@ if usesMultiTiff
         bigTiffPath = obj.tiffSource{1};
     end
 
-    if channel <= numel(obj.pageMap) && numel(obj.pageMap{channel}) >= frameEff ...
+    if isnumeric(obj.pageMap) && ~isempty(obj.pageMap)
+        if nChan == 1
+            obj.pageMap = {reshape(obj.pageMap,1,[])};
+        elseif size(obj.pageMap,1) == nChan
+            obj.pageMap = reshape(mat2cell(obj.pageMap,ones(1,nChan),size(obj.pageMap,2)),1,[]);
+        elseif size(obj.pageMap,2) == nChan
+            obj.pageMap = mat2cell(obj.pageMap,size(obj.pageMap,1),ones(1,nChan));
+        end
+    end
+    if iscell(obj.pageMap) && channel <= numel(obj.pageMap) && numel(obj.pageMap{channel}) >= frameEff ...
             && ~isempty(obj.pageMap{channel})
         pageToRead = obj.pageMap{channel}(frameEff);
     else

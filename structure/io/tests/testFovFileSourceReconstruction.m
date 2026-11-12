@@ -6,7 +6,7 @@ end
 function setupOnce(~)
 repoRoot = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
 addpath(repoRoot);
-detecdiv_setup_path(repoRoot, 'ResetPath', false, 'Verbose', false);
+detecdiv_setup_path(repoRoot, 'DetecDivRoot', repoRoot, 'ResetPath', false, 'Verbose', false);
 end
 
 function testEmptySrclistUsesNaturalFrameOrder(testCase)
@@ -93,6 +93,35 @@ field.srclist = {files(order)};
 
 verifyFrameValues(testCase, field, 1, [1000 99 100]);
 verifyEqual(testCase, {field.srclist{1}.name}, requestedNames);
+end
+
+function testMultiTiffPageMapsSurviveProjectRoundTrip(testCase)
+root = tempname;
+mkdir(root);
+cleanup = onCleanup(@() rmdir(root, 's')); %#ok<NASGU>
+source = fullfile(root,'stack.tif');
+for page = 1:6
+    if page == 1
+        imwrite(uint16(page .* ones(3,4)),source);
+    else
+        imwrite(uint16(page .* ones(3,4)),source,'WriteMode','append');
+    end
+end
+project = shallow();
+project.setPath(root,'multitiff');
+field = fileFov({root,root},{'a','b'},3);
+field.isMultiTiff = true;
+field.tiffSource = {source,source};
+field.pageMap = {[1 3 5],[2 4 6]};
+field.parent = project;
+project.fov = field;
+shallowSave(project,'shallowObj');
+loaded = shallowProjectImportLight(fullfile(root,'multitiff.json'));
+verifyEqual(testCase,loaded.fov.pageMap,{[1 3 5],[2 4 6]});
+verifyFrameValues(testCase,loaded.fov,1,[1 3 5]);
+verifyFrameValues(testCase,loaded.fov,2,[2 4 6]);
+loaded.fov.pageMap = [1 3 5; 2 4 6];
+verifyFrameValues(testCase,loaded.fov,2,[2 4 6]);
 end
 
 function field = fileFov(folders, channels, frameCount)
