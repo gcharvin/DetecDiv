@@ -693,7 +693,8 @@ classdef Viewer < handle
             assert(numel(target.families)<=1,'detecdivui:AnnotationShared', ...
                 'Separate the tracking results into dedicated mask layers before editing.');
         end
-        function prepareAnnotationLayer(obj)
+        function prepareAnnotationLayer(obj,painting)
+            if nargin < 2, painting = false; end
             c=obj.contourContext();
             assert(~isempty(c.roi) && ~isempty(c.masks),'detecdivui:AnnotationROI','Load a ROI with a mask layer first.');
             provider=obj.activeLayer();
@@ -701,9 +702,24 @@ classdef Viewer < handle
                 editable=cellfun(@(name)obj.annotationLayerEditable(name),c.masks);
                 at=find(editable,1);
                 assert(~isempty(at),'detecdivui:AnnotationLayer','Select an editable GT or dedicated mask layer in Display.');
-                provider=c.masks{at}; obj.selectDisplayLayer(provider);
+                provider=c.masks{at};
             end
             obj.assertAnnotationLayer(c.roi,provider);
+            index = find(strcmp({obj.DisplayModel.Layers.name},provider),1);
+            layer = obj.DisplayModel.Layers(index);
+            refresh = ~layer.visible || ~strcmp(provider,obj.activeLayer());
+            if painting
+                style = obj.DisplayModel.labelStyle(index);
+                if layer.opacity == 0
+                    obj.DisplayModel.setOpacity(index,.45);
+                    refresh = true;
+                end
+                if strcmp(style.mode,'Contours')
+                    obj.DisplayModel.setLabelStyle(index,'Fill + Contours',style.width);
+                    refresh = true;
+                end
+            end
+            if refresh, obj.selectDisplayLayer(provider); end
         end
         function dialog = createAnnotationLayers(obj,newResult)
             if nargin<2, newResult=''; end
@@ -1091,7 +1107,7 @@ classdef Viewer < handle
             obj.suspendMeasurements();
             try
                 assert(obj.annotationEditingAllowed(),'detecdivui:ClassifierReview','Switch the classifier to Edit to modify annotations.');
-                obj.prepareAnnotationLayer();
+                obj.prepareAnnotationLayer(true);
                 obj.ensureObjectsWidget();
                 previousSync = obj.ObjectsSync; obj.ObjectsSync = true;
                 sync = onCleanup(@()obj.restoreObjectsSync(previousSync));

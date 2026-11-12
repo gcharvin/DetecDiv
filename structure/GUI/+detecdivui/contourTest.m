@@ -32,8 +32,14 @@ detecdivui.Callback.call(image.ButtonDownFcn,image,struct('IntersectionPoint',[4
 selection = viewer.selectedAnnotation();
 assert(selection.label==1 && isempty(viewer.Masks) && isequal(r.image,source));
 oldDown = viewer.Figure.WindowButtonDownFcn;
+% The selected layer may be hidden or set to display contours alone.
+viewer.DisplayModel.setVisible(2,false);
+viewer.DisplayModel.setOpacity(2,0);
+viewer.DisplayModel.setLabelStyle(2,'Contours',1);
 viewer.Host.findCommand('Edit Contours...').invoke();
 assert(isa(viewer.Masks,'detecdivui.MaskWidget') && viewer.Masks.Active);
+assert(viewer.DisplayModel.Layers(2).visible && viewer.DisplayModel.Layers(2).opacity > 0);
+assert(strcmp(viewer.DisplayModel.labelStyle(2).mode,'Fill + Contours'));
 assert(isempty(findall(viewer.roiAxes(),'Tag','review-selection')));
 widget = viewer.Masks;
 label = findall(viewer.widgetFigure('Objects'),'Tag','mask-label'); assert(label.Value==1);
@@ -43,6 +49,8 @@ tool = findall(toolbar,'Tag','mask-tool'); radius = findall(toolbar,'Tag','mask-
 assert(strcmp(toolbar.Visible,'on') && strcmp(tool.Value,'Brush'));
 ax = viewer.roiAxes(); draft = widget.current(); radius.Value = 2;
 before = draft.read(1);
+image = findall(ax,'Type','image');
+unpaintedPixel = image.CData(7,24,:);
 widget.mouseDown(ax,[18 7],'normal',{});
 widget.mouseMove([25 7]);
 preview = findall(ax,'Tag','mask-stroke');
@@ -52,6 +60,12 @@ widget.mouseUp([25 7]);
 expected = score_editMaskPlane('paint',before,[(18:25)' repmat(7,8,1)],1,2,false);
 assert(isequal(draft.read(1),expected));
 assert(numel(draft.UndoStack)==1 && isempty(findall(ax,'Tag','mask-stroke')));
+image = findall(ax,'Type','image');
+assert(~isequal(image.CData(7,24,:),unpaintedPixel),'The painted draft is missing from the rendered image.');
+viewer.closeContourTool();
+image = findall(ax,'Type','image');
+assert(~isequal(image.CData(7,24,:),unpaintedPixel) && isequal(r.image,source));
+viewer.openContourTool();
 widget.action('undo');
 widget.mouseDown(ax,[7 7],'extend',{'shift'});
 widget.mouseMove([8 7]);
